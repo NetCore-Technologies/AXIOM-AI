@@ -30,3 +30,4 @@ htmlcov/
 .axiom/
 outputs/
 experiments/*/checkpoints/
+test-data/*.cleaned.jsonl
