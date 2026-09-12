@@ -8,7 +8,7 @@ from rich.table import Table
 from axiom.core.project import create_project
 from axiom.models.registry import Model, ModelRegistry
 from axiom.datasets.inspector import inspect_dataset
-
+from axiom.datasets.cleaner import clean_jsonl
 
 app = typer.Typer(
     name="axiom",
@@ -106,6 +106,57 @@ def dataset_inspect(path: str):
             f"Duplicates:       {result.duplicates:,}\n"
             f"Estimated tokens: {result.estimated_tokens:,}\n\n"
             f"Fields: {', '.join(result.fields) if result.fields else '-'}",
+            title="AXIOM",
+        )
+    )
+
+
+
+@dataset_app.command("clean")
+def dataset_clean(
+    path: str,
+    output: str | None = None,
+):
+    """Clean a JSONL dataset without modifying the original."""
+    source = Path(path)
+
+    if not source.exists():
+        console.print(f"[red]Error:[/red] Dataset not found: {source}")
+        raise typer.Exit(code=1)
+
+    if not source.is_file():
+        console.print(f"[red]Error:[/red] Not a file: {source}")
+        raise typer.Exit(code=1)
+
+    if source.suffix.lower() != ".jsonl":
+        console.print(
+            "[red]Error:[/red] Cleaning currently supports .jsonl files."
+        )
+        raise typer.Exit(code=1)
+
+    destination = (
+        Path(output)
+        if output
+        else source.with_name(f"{source.stem}.cleaned.jsonl")
+    )
+
+    try:
+        result = clean_jsonl(source, destination)
+    except OSError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    console.print(
+        Panel.fit(
+            f"[bold cyan]AXIOM DATASET CLEANING[/bold cyan]\n\n"
+            f"Source:             {result.source}\n"
+            f"Output:             {result.output}\n\n"
+            f"Input rows:         {result.total_lines:,}\n"
+            f"Kept:               {result.kept:,}\n"
+            f"Invalid removed:    {result.removed_invalid:,}\n"
+            f"Empty removed:      {result.removed_empty:,}\n"
+            f"Duplicates removed: {result.removed_duplicates:,}\n"
+            f"Schema removed:     {result.removed_schema:,}",
             title="AXIOM",
         )
     )
