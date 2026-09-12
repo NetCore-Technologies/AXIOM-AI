@@ -14,9 +14,11 @@ from axiom.datasets.inspector import inspect_dataset
 from axiom.models.inspector import inspect_model
 from axiom.models.analysis import analyze_config, disk_info
 from axiom.models.registry import Model, ModelRegistry
+from axiom.runtime.supercompress import compress_context
 
 from axiom.training.planner import create_training_plan
 from axiom.core.hardware import detect_hardware, estimate_model_fit
+from axiom.core.integrations import AgentIntegration, IntegrationRegistry, IntegrationType
 
 app = typer.Typer(
     name="axiom",
@@ -28,11 +30,15 @@ dataset_app = typer.Typer(help="Inspect and manage datasets.")
 system_app = typer.Typer(help="Inspect system hardware and capabilities.")
 
 hf_app = typer.Typer(help="Authenticate and manage Hugging Face access.")
+supercompress_app = typer.Typer(help="Use SuperCompress before inference.")
+integration_app = typer.Typer(help="Connect AXIOM to AI agents and runtimes.")
 
 app.add_typer(model_app, name="model")
 app.add_typer(dataset_app, name="dataset")
 app.add_typer(system_app, name="system")
 app.add_typer(hf_app, name="hf")
+app.add_typer(supercompress_app, name="supercompress")
+app.add_typer(integration_app, name="integration")
 
 train_app = typer.Typer(help="Plan and manage AI training jobs.")
 app.add_typer(train_app, name="train")
@@ -152,6 +158,273 @@ def hf_logout():
     console.print(
         "[green]✓[/green] Hugging Face authentication removed."
     )
+
+
+
+
+
+@supercompress_app.command("status")
+def supercompress_status():
+    """Show SuperCompress configuration without exposing secrets."""
+    import os
+
+    configured = bool(
+        os.getenv("SUPERCOMPRESS_API_KEY")
+    )
+
+    endpoint = os.getenv(
+        "SUPERCOMPRESS_API_BASE",
+        "https://api.supercompress.dev",
+    )
+
+    key_status = (
+        "[green]configured[/green]"
+        if configured
+        else "[red]not configured[/red]"
+    )
+
+    console.print(
+        Panel.fit(
+            f"[bold cyan]AXIOM SUPERCOMPRESS[/bold cyan]\n\n"
+            f"Endpoint: {endpoint}\n"
+            f"API key:  {key_status}\n\n"
+            "[dim]The secret value is never displayed.[/dim]",
+            title="AXIOM",
+        )
+    )
+
+
+@supercompress_app.command("compress")
+def supercompress_compress(
+    context_file: str,
+    query: str = typer.Option(
+        ...,
+        "--query",
+        "-q",
+    ),
+    budget_ratio: float = typer.Option(
+        0.35,
+        "--budget-ratio",
+        min=0.05,
+        max=1.0,
+    ),
+    ccr: bool = typer.Option(
+        False,
+        "--ccr",
+        help="Enable reversible Cache-Compress-Retrieve mode.",
+    ),
+):
+    """Compress a context file before inference."""
+    path = Path(context_file)
+
+    if not path.is_file():
+        console.print(
+            f"[red]Error:[/red] Context file not found: {path}"
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        context = path.read_text(encoding="utf-8")
+
+        result = compress_context(
+            context,
+            query,
+            budget_ratio=budget_ratio,
+            ccr=ccr,
+        )
+
+    except (OSError, RuntimeError) as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    savings = (
+        f"{result.savings_pct:.1f}%"
+        if result.savings_pct is not None
+        else "Unknown"
+    )
+
+    console.print(
+        Panel.fit(
+            f"[bold cyan]AXIOM + SUPERCOMPRESS[/bold cyan]\n\n"
+            f"Original tokens: "
+            f"{result.original_tokens or 'Unknown'}\n"
+            f"Kept tokens:     "
+            f"{result.kept_tokens or 'Unknown'}\n"
+            f"Tokens saved:    "
+            f"{result.tokens_saved or 'Unknown'}\n"
+            f"Reduction:       {savings}\n"
+            f"Risk:             "
+            f"{result.compression_risk or 'Unknown'}\n"
+            f"Policy:           "
+            f"{result.policy_name or 'Unknown'}\n"
+            f"Mode:             "
+            f"{result.mode or 'Unknown'}\n\n"
+            f"{result.compressed_text}",
+            title="AXIOM",
+        )
+    )
+
+
+@integration_app.command("list")
+def integration_list():
+    """List configured AI agent integrations."""
+    registry = IntegrationRegistry()
+    integrations = registry.list()
+
+    if not integrations:
+        console.print(
+            "[yellow]No agent integrations configured.[/yellow]"
+        )
+        return
+
+    table = Table(title="AXIOM Agent Integrations")
+    table.add_column("Name")
+    table.add_column("Type")
+    table.add_column("Target")
+    table.add_column("Description")
+
+    for item in integrations:
+        target = item.command or item.url or "-"
+        table.add_row(
+            item.name,
+            item.type.value,
+            target,
+            item.description or "-",
+        )
+
+    console.print(table)
+
+
+@integration_app.command("add")
+def integration_add(
+    name: str,
+    type: str = typer.Option(
+        "mcp",
+        "--type",
+        help="Integration type: mcp, cli, http, or a2a.",
+    ),
+    command: str | None = typer.Option(
+        None,
+        "--command",
+        help="Command used by CLI/MCP integrations.",
+    ),
+    url: str | None = typer.Option(
+        None,
+        "--url",
+        help="URL used by HTTP/A2A integrations.",
+    ),
+):
+    """Register an external AI agent or runtime."""
+    try:
+        integration_type = IntegrationType(type.lower())
+    except ValueError:
+        console.print(
+            "[red]Error:[/red] Type must be one of: "
+            "mcp, cli, http, a2a."
+        )
+        raise typer.Exit(code=1)
+
+    if integration_type in {
+        IntegrationType.MCP,
+        IntegrationType.CLI,
+    } and not command:
+        console.print(
+            "[red]Error:[/red] --command is required for "
+            f"{integration_type.value} integrations."
+        )
+        raise typer.Exit(code=1)
+
+    if integration_type in {
+        IntegrationType.HTTP,
+        IntegrationType.A2A,
+    } and not url:
+        console.print(
+            "[red]Error:[/red] --url is required for "
+            f"{integration_type.value} integrations."
+        )
+        raise typer.Exit(code=1)
+
+    registry = IntegrationRegistry()
+
+    try:
+        registry.add(
+            AgentIntegration(
+                name=name,
+                type=integration_type,
+                command=command,
+                url=url,
+                description=f"AXIOM {integration_type.value} integration",
+            )
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    console.print(
+        f"[green]✓[/green] Registered integration: "
+        f"[cyan]{name}[/cyan]"
+    )
+
+
+@integration_app.command("remove")
+def integration_remove(name: str):
+    """Remove an agent integration."""
+    registry = IntegrationRegistry()
+
+    if not registry.remove(name):
+        console.print(
+            f"[yellow]Integration not found:[/yellow] {name}"
+        )
+        raise typer.Exit(code=1)
+
+    console.print(
+        f"[green]✓[/green] Removed integration: [cyan]{name}[/cyan]"
+    )
+
+
+@integration_app.command("doctor")
+def integration_doctor():
+    """Check whether configured integration commands exist."""
+    import shutil
+
+    registry = IntegrationRegistry()
+    integrations = registry.list()
+
+    if not integrations:
+        console.print(
+            "[yellow]No agent integrations configured.[/yellow]"
+        )
+        return
+
+    table = Table(title="AXIOM Integration Doctor")
+    table.add_column("Name")
+    table.add_column("Type")
+    table.add_column("Status")
+    table.add_column("Target")
+
+    for item in integrations:
+        if item.command:
+            executable = item.command.split()[0]
+            available = shutil.which(executable) is not None
+
+            status = (
+                "[green]✓ Available[/green]"
+                if available
+                else "[red]✗ Not found[/red]"
+            )
+        elif item.url:
+            status = "[cyan]Configured[/cyan]"
+        else:
+            status = "[yellow]Incomplete[/yellow]"
+
+        table.add_row(
+            item.name,
+            item.type.value,
+            status,
+            item.command or item.url or "-",
+        )
+
+    console.print(table)
 
 
 @system_app.command("info")
