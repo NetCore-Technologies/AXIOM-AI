@@ -6,17 +6,21 @@ from rich.panel import Panel
 from rich.table import Table
 
 from axiom.core.project import create_project
-from axiom.models.registry import Model, ModelRegistry
-from axiom.datasets.inspector import inspect_dataset
 from axiom.datasets.cleaner import clean_jsonl
+from axiom.datasets.inspector import inspect_dataset
+from axiom.models.inspector import inspect_model
+from axiom.models.registry import Model, ModelRegistry
 
 app = typer.Typer(
     name="axiom",
-    help="Build, train, evaluate, and deploy AI models."
+    help="Build, train, evaluate, and deploy AI models.",
 )
 
 model_app = typer.Typer(help="Manage AI models.")
+dataset_app = typer.Typer(help="Inspect and manage datasets.")
+
 app.add_typer(model_app, name="model")
+app.add_typer(dataset_app, name="dataset")
 
 console = Console()
 
@@ -32,10 +36,7 @@ def init(name: str):
     """Create a new AXIOM AI project."""
     try:
         root = create_project(name, Path.cwd())
-    except FileExistsError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=1)
-    except ValueError as exc:
+    except (FileExistsError, ValueError) as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1)
 
@@ -43,9 +44,9 @@ def init(name: str):
         Panel.fit(
             f"[bold green]✓ AXIOM project created[/bold green]\n\n"
             f"[cyan]{root}[/cyan]\n\n"
-            f"Next steps:\n"
+            "Next steps:\n"
             f"  cd {name}\n"
-            f"  axiom model list",
+            "  axiom model list",
             title="AXIOM",
         )
     )
@@ -62,7 +63,6 @@ def model_list():
         return
 
     table = Table(title="AXIOM Models")
-
     table.add_column("Name")
     table.add_column("Source")
     table.add_column("Format")
@@ -81,8 +81,79 @@ def model_list():
     console.print(table)
 
 
-dataset_app = typer.Typer(help="Inspect and manage datasets.")
-app.add_typer(dataset_app, name="dataset")
+@model_app.command("add")
+def model_add(
+    name: str,
+    source: str,
+    format: str = "unknown",
+    parameters: str | None = None,
+    quantization: str | None = None,
+):
+    """Register a model with AXIOM."""
+    registry = ModelRegistry()
+
+    try:
+        registry.add(
+            Model(
+                name=name,
+                source=source,
+                format=format,
+                parameters=parameters,
+                quantization=quantization,
+            )
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    console.print(
+        f"[green]✓[/green] Registered model: [cyan]{name}[/cyan]"
+    )
+
+
+@model_app.command("inspect")
+def model_inspect(path: str):
+    """Inspect a local AI model directory."""
+    try:
+        result = inspect_model(path)
+    except (FileNotFoundError, ValueError) as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    parameters = (
+        f"{result.parameter_count / 1_000_000_000:.2f}B"
+        if result.parameter_count
+        else "Unknown"
+    )
+
+    size_gb = result.weight_size_bytes / (1024 ** 3)
+
+    vram = (
+        f"{result.estimated_vram_gb:.2f} GB"
+        if result.estimated_vram_gb is not None
+        else "Unknown"
+    )
+
+    console.print(
+        Panel.fit(
+            f"[bold cyan]AXIOM MODEL INSPECTION[/bold cyan]\n\n"
+            f"Path:           {result.path}\n"
+            f"Architecture:   {result.architecture or 'Unknown'}\n"
+            f"Model type:     {result.model_type or 'Unknown'}\n"
+            f"Format:         {result.model_format}\n"
+            f"Parameters:     {parameters}\n"
+            f"Weight size:    {size_gb:.2f} GB\n"
+            f"Estimated VRAM: {vram}\n\n"
+            f"Config:         {'✓' if result.has_config else '✗'}\n"
+            f"Tokenizer:      {'✓' if result.has_tokenizer else '✗'}\n"
+            f"Safetensors:    {'✓' if result.has_safetensors else '✗'}\n"
+            f"GGUF:           {'✓' if result.has_gguf else '✗'}\n"
+            f"PyTorch:        {'✓' if result.has_pytorch_weights else '✗'}\n\n"
+            f"Capabilities:   {', '.join(result.capabilities)}\n\n"
+            f"Status:         {result.status}",
+            title="AXIOM",
+        )
+    )
 
 
 @dataset_app.command("inspect")
@@ -97,8 +168,8 @@ def dataset_inspect(path: str):
     console.print(
         Panel.fit(
             f"[bold cyan]AXIOM DATASET INSPECTION[/bold cyan]\n\n"
-            f"File: [white]{result.path}[/white]\n"
-            f"Format: [white]{result.format}[/white]\n\n"
+            f"File: {result.path}\n"
+            f"Format: {result.format}\n\n"
             f"Samples:          {result.samples:,}\n"
             f"Valid:            {result.valid:,}\n"
             f"Invalid:          {result.invalid:,}\n"
@@ -109,7 +180,6 @@ def dataset_inspect(path: str):
             title="AXIOM",
         )
     )
-
 
 
 @dataset_app.command("clean")
@@ -159,36 +229,6 @@ def dataset_clean(
             f"Schema removed:     {result.removed_schema:,}",
             title="AXIOM",
         )
-    )
-
-
-@model_app.command("add")
-def model_add(
-    name: str,
-    source: str,
-    format: str = "unknown",
-    parameters: str | None = None,
-    quantization: str | None = None,
-):
-    """Register a model with AXIOM."""
-    registry = ModelRegistry()
-
-    try:
-        registry.add(
-            Model(
-                name=name,
-                source=source,
-                format=format,
-                parameters=parameters,
-                quantization=quantization,
-            )
-        )
-    except ValueError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=1)
-
-    console.print(
-        f"[green]✓[/green] Registered model: [cyan]{name}[/cyan]"
     )
 
 
