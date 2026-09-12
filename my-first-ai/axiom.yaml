@@ -1,0 +1,22 @@
+project:
+  name: my-first-ai
+  version: 0.1.0
+
+model:
+  base: null
+  source: null
+
+dataset:
+  source: null
+  format: jsonl
+
+training:
+  method: null
+  epochs: 1
+  learning_rate: null
+
+evaluation:
+  enabled: true
+
+deployment:
+  target: local
