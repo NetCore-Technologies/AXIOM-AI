@@ -37,3 +37,6 @@ test-data/*.cleaned.jsonl
 hf_token
 .env
 .env.*
+
+.mcp/
+mcp-logs/

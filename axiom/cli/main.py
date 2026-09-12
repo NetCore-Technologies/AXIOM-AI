@@ -32,6 +32,7 @@ system_app = typer.Typer(help="Inspect system hardware and capabilities.")
 hf_app = typer.Typer(help="Authenticate and manage Hugging Face access.")
 supercompress_app = typer.Typer(help="Use SuperCompress before inference.")
 integration_app = typer.Typer(help="Connect AXIOM to AI agents and runtimes.")
+mcp_app = typer.Typer(help="Run AXIOM as an MCP server.")
 
 app.add_typer(model_app, name="model")
 app.add_typer(dataset_app, name="dataset")
@@ -39,6 +40,7 @@ app.add_typer(system_app, name="system")
 app.add_typer(hf_app, name="hf")
 app.add_typer(supercompress_app, name="supercompress")
 app.add_typer(integration_app, name="integration")
+app.add_typer(mcp_app, name="mcp")
 
 train_app = typer.Typer(help="Plan and manage AI training jobs.")
 app.add_typer(train_app, name="train")
@@ -1027,3 +1029,11 @@ def dataset_clean(
 
 if __name__ == "__main__":
     app()
+
+
+@mcp_app.command("serve")
+def mcp_serve():
+    """Run the AXIOM MCP server over stdio."""
+    from axiom.mcp.server import mcp
+
+    mcp.run()
