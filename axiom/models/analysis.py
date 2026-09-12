@@ -28,22 +28,29 @@ def _find_number(config: dict, keys: tuple[str, ...]) -> int | None:
     return None
 
 
-def _estimate_parameters(config: dict) -> int | None:
-    direct = _find_number(
-        config,
-        ("num_parameters", "parameter_count", "n_parameters"),
+def _estimate_parameters(config: dict) -> tuple[int | None, str]:
+    direct_keys = (
+        "num_parameters",
+        "parameter_count",
+        "n_parameters",
     )
 
-    if direct:
-        return direct
+    for key in direct_keys:
+        value = config.get(key)
+
+        if isinstance(value, int) and value > 0:
+            return value, "model metadata"
 
     hidden = config.get("hidden_size")
     layers = config.get("num_hidden_layers")
     vocab = config.get("vocab_size")
     intermediate = config.get("intermediate_size")
 
-    if all(isinstance(v, int) for v in (hidden, layers, vocab, intermediate)):
-        return int(
+    if all(
+        isinstance(value, int) and value > 0
+        for value in (hidden, layers, vocab, intermediate)
+    ):
+        estimate = int(
             layers
             * (
                 4 * hidden * intermediate
@@ -51,8 +58,9 @@ def _estimate_parameters(config: dict) -> int | None:
             )
             + vocab * hidden
         )
+        return estimate, "architecture estimate"
 
-    return None
+    return None, "unknown"
 
 
 def analyze_config(
@@ -72,20 +80,7 @@ def analyze_config(
 
     model_type = str(config.get("model_type") or "Unknown")
 
-    direct_parameters = _find_number(
-        config,
-        ("num_parameters", "parameter_count", "n_parameters"),
-    )
-
-    parameters = direct_parameters or _estimate_parameters(config)
-
-    parameter_source = (
-        "model metadata"
-        if direct_parameters
-        else "architecture estimate"
-        if parameters
-        else "unknown"
-    )
+    parameters, parameter_source = _estimate_parameters(config)
 
     context_length = _find_number(
         config,
@@ -97,19 +92,30 @@ def analyze_config(
         ),
     )
 
-    precision = "Unknown"
+    precision = str(config.get("torch_dtype") or "Unknown")
 
-    torch_dtype = config.get("torch_dtype")
+    quantization = config.get("quantization_config")
 
-    if isinstance(torch_dtype, str):
-        precision = torch_dtype
+    if isinstance(quantization, dict):
+        bits = quantization.get("bits")
+        method = (
+            quantization.get("quant_method")
+            or quantization.get("method")
+            or "quantized"
+        )
+
+        if bits:
+            precision = f"{method} {bits}-bit"
+        else:
+            precision = str(method)
 
     if any(name.lower().endswith(".gguf") for name in files):
-        precision = "quantized / GGUF"
+        if precision == "Unknown":
+            precision = "quantized / GGUF"
 
     elif any(name.lower().endswith(".safetensors") for name in files):
         if precision == "Unknown":
-            precision = "safetensors (dtype from config unavailable)"
+            precision = "safetensors"
 
     weight_size_gb = (
         round(weight_size_bytes / (1024 ** 3), 2)

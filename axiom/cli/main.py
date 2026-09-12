@@ -385,11 +385,16 @@ def model_analyze(repo_id: str):
             filename="config.json",
         )
 
-        config = json.loads(
-            Path(config_file).read_text(encoding="utf-8")
+        config_path = Path(config_file)
+
+        if config_path.is_file():
+            config = json.loads(
+                config_path.read_text(encoding="utf-8")
+            )
+    except Exception as exc:
+        console.print(
+            f"[yellow]Warning:[/yellow] Could not read config.json: {exc}"
         )
-    except Exception:
-        config = {}
 
     total_size = 0
 
