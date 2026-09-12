@@ -1,0 +1,240 @@
+name: Build and Publish Release Assets
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Git tag to build
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+          pip install "pyinstaller>=6.22,<7"
+
+      - name: Build executable
+        shell: pwsh
+        run: |
+          pyinstaller `
+            --clean `
+            --noconfirm `
+            --onefile `
+            --name AXIOM `
+            scripts/build_entry.py
+
+      - name: Package Windows release
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag || github.ref_name }}"
+          $version = $tag.TrimStart("v")
+
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+
+          Copy-Item `
+            "dist/AXIOM.exe" `
+            "release/AXIOM-$version-windows-x64.exe"
+
+          @"
+          AXIOM $version
+          Windows x64 portable build.
+          "@ | Set-Content "release/README.txt"
+
+          Compress-Archive `
+            -Path `
+              "release/AXIOM-$version-windows-x64.exe", `
+              "release/README.txt" `
+            -DestinationPath `
+              "release/AXIOM-$version-windows-x64-portable.zip"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: release/*
+
+  linux:
+    name: Linux x64
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+          pip install "pyinstaller>=6.22,<7"
+
+      - name: Build executable
+        run: |
+          pyinstaller \
+            --clean \
+            --noconfirm \
+            --onefile \
+            --name axiom \
+            scripts/build_entry.py
+
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev
+
+      - name: Package Linux release
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+
+          mkdir -p release
+
+          # Standalone Linux executable
+          cp dist/axiom \
+            "release/AXIOM-${VERSION}-linux-x64"
+
+          chmod +x \
+            "release/AXIOM-${VERSION}-linux-x64"
+
+          # AppImage layout
+          mkdir -p \
+            AppDir/usr/bin \
+            AppDir/usr/share/applications
+
+          cp dist/axiom AppDir/usr/bin/axiom
+          chmod +x AppDir/usr/bin/axiom
+
+          cat > AppDir/axiom.desktop <<'EOF'
+          [Desktop Entry]
+          Name=AXIOM
+          Comment=Build AI. Own AI.
+          Exec=axiom
+          Type=Application
+          Terminal=true
+          Categories=Development;
+          EOF
+
+          cp \
+            AppDir/axiom.desktop \
+            AppDir/usr/share/applications/axiom.desktop
+
+          cat > AppDir/AppRun <<'EOF'
+          #!/bin/sh
+          HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+          exec "$HERE/usr/bin/axiom" "$@"
+          EOF
+
+          chmod +x AppDir/AppRun
+
+          curl -fL \
+            -o appimagetool.AppImage \
+            https://github.com/AppImage/appimagetool/releases/latest/download/appimagetool-x86_64.AppImage
+
+          chmod +x appimagetool.AppImage
+
+          ARCH=x86_64 \
+            ./appimagetool.AppImage \
+            AppDir \
+            "release/AXIOM-${VERSION}-linux-x64.AppImage"
+
+          # Debian package
+          PKG="axiom-ai_${VERSION}_amd64"
+
+          mkdir -p \
+            "$PKG/DEBIAN" \
+            "$PKG/usr/bin" \
+            "$PKG/usr/share/doc/axiom-ai"
+
+          cp dist/axiom "$PKG/usr/bin/axiom"
+          chmod +x "$PKG/usr/bin/axiom"
+
+          cat > "$PKG/DEBIAN/control" <<EOF
+          Package: axiom-ai
+          Version: ${VERSION}
+          Section: devel
+          Priority: optional
+          Architecture: amd64
+          Maintainer: NetCore Technologies
+          Description: AXIOM AI engineering platform
+           Build AI. Own AI.
+          EOF
+
+          cp README.md \
+            "$PKG/usr/share/doc/axiom-ai/README.md"
+
+          cp LICENSE \
+            "$PKG/usr/share/doc/axiom-ai/LICENSE"
+
+          dpkg-deb \
+            --build \
+            "$PKG" \
+            "release/AXIOM-${VERSION}-linux-x64.deb"
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release
+          path: release/*
+
+  publish:
+    name: Publish GitHub Release Assets
+    needs:
+      - windows
+      - linux
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v5
+        with:
+          name: windows-release
+          path: release
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v5
+        with:
+          name: linux-release
+          path: release
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+
+          gh release upload \
+            "$TAG" \
+            release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
