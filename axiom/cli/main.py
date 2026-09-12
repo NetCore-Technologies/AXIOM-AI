@@ -10,6 +10,8 @@ from axiom.datasets.cleaner import clean_jsonl
 from axiom.datasets.inspector import inspect_dataset
 from axiom.models.inspector import inspect_model
 from axiom.models.registry import Model, ModelRegistry
+
+from axiom.training.planner import create_training_plan
 from axiom.core.hardware import detect_hardware, estimate_model_fit
 
 app = typer.Typer(
@@ -24,6 +26,9 @@ system_app = typer.Typer(help="Inspect system hardware and capabilities.")
 app.add_typer(model_app, name="model")
 app.add_typer(dataset_app, name="dataset")
 app.add_typer(system_app, name="system")
+
+train_app = typer.Typer(help="Plan and manage AI training jobs.")
+app.add_typer(train_app, name="train")
 
 console = Console()
 
@@ -93,6 +98,65 @@ def system_info():
             )
 
         console.print(table)
+
+
+
+@train_app.command("plan")
+def train_plan(
+    parameters: float = typer.Argument(..., help="Model size in billions of parameters."),
+    method: str = typer.Option(
+        "auto",
+        "--method",
+        help="Training method: auto, qlora, lora, or full.",
+    ),
+):
+    """Generate a hardware-aware training plan."""
+    hardware = detect_hardware()
+
+    try:
+        plan = create_training_plan(
+            parameter_billions=parameters,
+            hardware=hardware,
+            method=method.lower(),
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    if hardware.gpu_name:
+        gpu = hardware.gpu_name
+        vram = (
+            f"{hardware.vram_gb:.2f} GB"
+            if hardware.vram_gb is not None
+            else "Unknown"
+        )
+    else:
+        gpu = "Not detected"
+        vram = "N/A"
+
+    fit = "[green]✓ FITS[/green]" if plan.fits_hardware else "[red]✗ DOES NOT FIT[/red]"
+
+    console.print(
+        Panel.fit(
+            f"[bold cyan]AXIOM TRAINING PLANNER[/bold cyan]\n\n"
+            f"Model:              {parameters:g}B parameters\n"
+            f"Method:             {plan.method}\n\n"
+            f"Hardware\n"
+            f"GPU:                {gpu}\n"
+            f"VRAM:               {vram}\n\n"
+            f"Recommended\n"
+            f"Precision:           {plan.precision}\n"
+            f"LoRA rank:          {plan.lora_rank}\n"
+            f"Batch size:         {plan.batch_size}\n"
+            f"Grad accumulation:  {plan.gradient_accumulation}\n"
+            f"Sequence length:    {plan.sequence_length}\n"
+            f"Learning rate:      {plan.learning_rate:g}\n\n"
+            f"Estimated VRAM:     {plan.estimated_vram_gb:.2f} GB\n"
+            f"Hardware check:     {fit}\n\n"
+            f"{plan.reason}",
+            title="AXIOM",
+        )
+    )
 
 
 @model_app.command("list")
