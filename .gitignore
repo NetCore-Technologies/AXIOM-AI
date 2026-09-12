@@ -31,3 +31,7 @@ htmlcov/
 outputs/
 experiments/*/checkpoints/
 test-data/*.cleaned.jsonl
+
+# Hugging Face
+.huggingface/
+hf_token

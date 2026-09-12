@@ -1,8 +1,9 @@
+import json
 from pathlib import Path
 
 import typer
 
-from huggingface_hub import HfApi, snapshot_download
+from huggingface_hub import HfApi, login, logout, whoami
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -26,9 +27,12 @@ model_app = typer.Typer(help="Manage AI models.")
 dataset_app = typer.Typer(help="Inspect and manage datasets.")
 system_app = typer.Typer(help="Inspect system hardware and capabilities.")
 
+hf_app = typer.Typer(help="Authenticate and manage Hugging Face access.")
+
 app.add_typer(model_app, name="model")
 app.add_typer(dataset_app, name="dataset")
 app.add_typer(system_app, name="system")
+app.add_typer(hf_app, name="hf")
 
 train_app = typer.Typer(help="Plan and manage AI training jobs.")
 app.add_typer(train_app, name="train")
@@ -60,6 +64,93 @@ def init(name: str):
             "  axiom model list",
             title="AXIOM",
         )
+    )
+
+
+
+
+@hf_app.command("login")
+def hf_login():
+    """Authenticate AXIOM with Hugging Face."""
+    console.print(
+        Panel.fit(
+            "[bold cyan]AXIOM HUGGING FACE LOGIN[/bold cyan]\n\n"
+            "A Hugging Face login will be started.\n"
+            "Your token is handled by Hugging Face's authentication system\n"
+            "and is not written into the AXIOM repository.",
+            title="AXIOM",
+        )
+    )
+
+    try:
+        login()
+    except Exception as exc:
+        console.print(f"[red]Error:[/red] Hugging Face login failed: {exc}")
+        raise typer.Exit(code=1)
+
+    console.print(
+        "[green]✓[/green] Hugging Face authentication configured."
+    )
+
+
+@hf_app.command("status")
+def hf_status():
+    """Show Hugging Face authentication status."""
+    try:
+        user = whoami()
+    except Exception:
+        console.print(
+            Panel.fit(
+                "[yellow]Not authenticated[/yellow]\n\n"
+                "Run:\n"
+                "  axiom hf login",
+                title="AXIOM",
+            )
+        )
+        return
+
+    name = (
+        user.get("name")
+        or user.get("fullname")
+        or user.get("username")
+        or "Unknown"
+    )
+
+    orgs = user.get("orgs") or []
+
+    if isinstance(orgs, list):
+        organization_names = [
+            item.get("name", str(item))
+            if isinstance(item, dict)
+            else str(item)
+            for item in orgs
+        ]
+    else:
+        organization_names = []
+
+    console.print(
+        Panel.fit(
+            f"[bold green]✓ Authenticated[/bold green]\n\n"
+            f"Account: {name}\n"
+            f"Organizations: "
+            f"{', '.join(organization_names) if organization_names else 'None'}\n\n"
+            "[dim]Token value is never displayed.[/dim]",
+            title="AXIOM",
+        )
+    )
+
+
+@hf_app.command("logout")
+def hf_logout():
+    """Log out of Hugging Face."""
+    try:
+        logout()
+    except Exception as exc:
+        console.print(f"[red]Error:[/red] Hugging Face logout failed: {exc}")
+        raise typer.Exit(code=1)
+
+    console.print(
+        "[green]✓[/green] Hugging Face authentication removed."
     )
 
 
