@@ -320,19 +320,45 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME}"
 
-          if [[ "$TAG" == *"-"* ]]; then
-            PRERELEASE="--prerelease"
-          else
-            PRERELEASE=""
-          fi
+          # AXIOM release channels:
+          #
+          #   v0.108.0-b.90
+          #       -> GitHub Pre-release
+          #
+          #   v0.108.0
+          #       -> GitHub Latest stable release
+          #
+          # This matches the AdGuard Home-style beta versioning scheme.
 
-          gh release create "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "AXIOM $TAG" \
-            $PRERELEASE \
-            --verify-tag \
-            --generate-notes \
-            release/*
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-b\.[0-9]+$ ]]; then
+            echo "Publishing AXIOM beta: $TAG"
+
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "AXIOM $TAG" \
+              --prerelease \
+              --verify-tag \
+              --generate-notes \
+              release/*
+
+          elif [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Publishing AXIOM stable release: $TAG"
+
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "AXIOM $TAG" \
+              --verify-tag \
+              --generate-notes \
+              release/*
+
+          else
+            echo "Unsupported AXIOM release tag: $TAG"
+            echo
+            echo "Expected formats:"
+            echo "  v0.108.0-b.90  -> Beta / Pre-release"
+            echo "  v0.108.0       -> Stable / Latest"
+            exit 1
+          fi
 
       - name: Apply AXIOM release notes
         env:
