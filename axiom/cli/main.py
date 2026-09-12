@@ -1,6 +1,8 @@
 from pathlib import Path
 
 import typer
+
+from huggingface_hub import HfApi
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -186,6 +188,142 @@ def model_list():
         )
 
     console.print(table)
+
+
+
+@model_app.command("info")
+def model_info(repo_id: str):
+    """Show metadata for a Hugging Face model."""
+    api = HfApi()
+
+    try:
+        info = api.model_info(repo_id=repo_id, files_metadata=True)
+    except Exception as exc:
+        console.print(
+            f"[red]Error:[/red] Could not retrieve model information: {exc}"
+        )
+        raise typer.Exit(code=1)
+
+    files = getattr(info, "siblings", None) or []
+
+    file_names = []
+    for item in files:
+        name = getattr(item, "rfilename", None)
+        if name:
+            file_names.append(name)
+
+    formats = set()
+
+    for name in file_names:
+        lower = name.lower()
+
+        if lower.endswith(".safetensors"):
+            formats.add("Safetensors")
+        elif lower.endswith(".gguf"):
+            formats.add("GGUF")
+        elif lower.endswith((".bin", ".pt", ".pth")):
+            formats.add("PyTorch")
+
+    format_text = ", ".join(sorted(formats)) if formats else "Not detected"
+
+    tags = getattr(info, "tags", None) or []
+    library = getattr(info, "library_name", None) or "Unknown"
+    pipeline = getattr(info, "pipeline_tag", None) or "Unknown"
+
+    downloads = getattr(info, "downloads", 0) or 0
+    likes = getattr(info, "likes", 0) or 0
+
+    gated = getattr(info, "gated", False)
+    private = getattr(info, "private", False)
+
+    console.print(
+        Panel.fit(
+            f"[bold cyan]AXIOM HUGGING FACE MODEL[/bold cyan]\n\n"
+            f"Repository:   {info.id}\n"
+            f"Author:       {getattr(info, 'author', None) or 'Unknown'}\n"
+            f"Library:      {library}\n"
+            f"Task:         {pipeline}\n"
+            f"Formats:      {format_text}\n"
+            f"Downloads:    {downloads:,}\n"
+            f"Likes:        {likes:,}\n"
+            f"Gated:        {'✓' if gated else '✗'}\n"
+            f"Private:      {'✓' if private else '✗'}\n\n"
+            f"Files:        {len(file_names):,}\n"
+            f"Tags:         {', '.join(tags[:8]) if tags else '-'}\n\n"
+            "[dim]Metadata only — no model weights were downloaded.[/dim]",
+            title="AXIOM",
+        )
+    )
+
+
+@model_app.command("add-hf")
+def model_add_hf(repo_id: str):
+    """Discover and register a Hugging Face model."""
+    api = HfApi()
+
+    try:
+        info = api.model_info(repo_id=repo_id, files_metadata=True)
+    except Exception as exc:
+        console.print(
+            f"[red]Error:[/red] Could not retrieve model information: {exc}"
+        )
+        raise typer.Exit(code=1)
+
+    files = getattr(info, "siblings", None) or []
+
+    file_names = [
+        getattr(item, "rfilename", "")
+        for item in files
+    ]
+
+    formats = set()
+
+    for name in file_names:
+        lower = name.lower()
+
+        if lower.endswith(".safetensors"):
+            formats.add("safetensors")
+        elif lower.endswith(".gguf"):
+            formats.add("gguf")
+        elif lower.endswith((".bin", ".pt", ".pth")):
+            formats.add("pytorch")
+
+    model_format = (
+        ", ".join(sorted(formats))
+        if formats
+        else "unknown"
+    )
+
+    pipeline = getattr(info, "pipeline_tag", None)
+
+    registry = ModelRegistry()
+
+    try:
+        registry.add(
+            Model(
+                name=repo_id,
+                source=f"huggingface:{repo_id}",
+                format=model_format,
+                parameters=None,
+                quantization=None,
+            )
+        )
+    except ValueError:
+        console.print(
+            f"[yellow]Model already registered:[/yellow] {repo_id}"
+        )
+        return
+
+    console.print(
+        Panel.fit(
+            f"[bold green]✓ Model discovered and registered[/bold green]\n\n"
+            f"Model:    [cyan]{repo_id}[/cyan]\n"
+            f"Task:     {pipeline or 'Unknown'}\n"
+            f"Format:   {model_format}\n\n"
+            "[dim]Weights were not downloaded.[/dim]",
+            title="AXIOM",
+        )
+    )
 
 
 @model_app.command("add")
