@@ -1,0 +1,2 @@
+[console_scripts]
+axiom = axiom.cli.main:app

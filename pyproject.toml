@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "axiom-ai"
+version = "0.1.0"
+description = "Open-source platform for building, training, evaluating, and deploying AI models."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+
+dependencies = [
+    "typer>=0.12",
+    "pydantic>=2.7",
+    "rich>=13.7"
+]
+
+[project.scripts]
+axiom = "axiom.cli.main:app"
+
+[tool.setuptools.packages.find]
+include = ["axiom*"]
