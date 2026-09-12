@@ -10,6 +10,7 @@ from axiom.datasets.cleaner import clean_jsonl
 from axiom.datasets.inspector import inspect_dataset
 from axiom.models.inspector import inspect_model
 from axiom.models.registry import Model, ModelRegistry
+from axiom.core.hardware import detect_hardware, estimate_model_fit
 
 app = typer.Typer(
     name="axiom",
@@ -18,9 +19,11 @@ app = typer.Typer(
 
 model_app = typer.Typer(help="Manage AI models.")
 dataset_app = typer.Typer(help="Inspect and manage datasets.")
+system_app = typer.Typer(help="Inspect system hardware and capabilities.")
 
 app.add_typer(model_app, name="model")
 app.add_typer(dataset_app, name="dataset")
+app.add_typer(system_app, name="system")
 
 console = Console()
 
@@ -50,6 +53,46 @@ def init(name: str):
             title="AXIOM",
         )
     )
+
+
+@system_app.command("info")
+def system_info():
+    """Show detected hardware and AI runtime capability."""
+    hardware = detect_hardware()
+
+    gpu = hardware.gpu_name or "Not detected"
+    vram = (
+        f"{hardware.vram_gb:.2f} GB"
+        if hardware.vram_gb is not None
+        else "N/A"
+    )
+
+    console.print(
+        Panel.fit(
+            f"[bold cyan]AXIOM HARDWARE[/bold cyan]\n\n"
+            f"OS:              {hardware.os_name}\n"
+            f"Architecture:    {hardware.architecture}\n"
+            f"CPU cores:       {hardware.cpu_cores}\n"
+            f"RAM:             {hardware.ram_gb:.2f} GB\n"
+            f"GPU:             {gpu}\n"
+            f"VRAM:            {vram}\n"
+            f"CUDA available:  {'✓' if hardware.cuda_available else '✗'}",
+            title="AXIOM",
+        )
+    )
+
+    if hardware.vram_gb is not None:
+        table = Table(title="Model Fit Estimates")
+        table.add_column("Model")
+        table.add_column("FP16 / Q4")
+
+        for billions in (1, 3, 7, 8, 14, 32, 70):
+            table.add_row(
+                f"{billions}B",
+                estimate_model_fit(billions, hardware),
+            )
+
+        console.print(table)
 
 
 @model_app.command("list")
