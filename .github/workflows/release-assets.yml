@@ -313,51 +313,51 @@ jobs:
           echo "All required AXIOM release assets exist."
           find release -maxdepth 1 -type f -printf "%f\n" | sort
 
-      - name: Create GitHub Release
+      - name: Create or Update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           TAG="${GITHUB_REF_NAME}"
 
-          # AXIOM release channels:
-          #
-          #   v0.108.0-b.90
-          #       -> GitHub Pre-release
-          #
-          #   v0.108.0
-          #       -> GitHub Latest stable release
-          #
-          # This matches the AdGuard Home-style beta versioning scheme.
-
           if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-b\.[0-9]+$ ]]; then
+            RELEASE_FLAG="--prerelease"
             echo "Publishing AXIOM beta: $TAG"
-
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "AXIOM $TAG" \
-              --prerelease \
-              --verify-tag \
-              --generate-notes \
-              release/*
-
           elif [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            RELEASE_FLAG=""
             echo "Publishing AXIOM stable release: $TAG"
-
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "AXIOM $TAG" \
-              --verify-tag \
-              --generate-notes \
-              release/*
-
           else
             echo "Unsupported AXIOM release tag: $TAG"
-            echo
-            echo "Expected formats:"
-            echo "  v0.108.0-b.90  -> Beta / Pre-release"
-            echo "  v0.108.0       -> Stable / Latest"
             exit 1
+          fi
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; updating it."
+
+            gh release upload "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber \
+              release/*
+
+            if [[ -n "$RELEASE_FLAG" ]]; then
+              gh release edit "$TAG" \
+                --repo "$GITHUB_REPOSITORY" \
+                --prerelease
+            else
+              gh release edit "$TAG" \
+                --repo "$GITHUB_REPOSITORY" \
+                --latest
+            fi
+          else
+            echo "Creating release $TAG."
+
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "AXIOM $TAG" \
+              $RELEASE_FLAG \
+              --verify-tag \
+              --generate-notes \
+              release/*
           fi
 
       - name: Apply AXIOM release notes
