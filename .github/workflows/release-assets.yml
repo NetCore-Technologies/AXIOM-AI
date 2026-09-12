@@ -1,9 +1,10 @@
-name: Build and Publish Release Assets
+name: AXIOM Release
 
 on:
   push:
     tags:
       - "v*"
+
 permissions:
   contents: write
 
@@ -16,7 +17,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ github.ref }}
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -30,41 +31,45 @@ jobs:
           pip install .
           pip install "pyinstaller>=6.22,<7"
 
-      - name: Build executable
+      - name: Build AXIOM
         shell: pwsh
         run: |
-          pyinstaller `
-            --clean `
-            --noconfirm `
-            --onefile `
-            --name AXIOM `
-            scripts/build_entry.py
+          pyinstaller --clean --noconfirm --onefile --name AXIOM scripts/build_entry.py
 
-      - name: Package Windows release
+      - name: Package Windows
         shell: pwsh
         run: |
-          $tag = "${{ github.event.inputs.tag || github.ref_name }}"
-          $version = $tag.TrimStart("v")
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          New-Item -ItemType Directory -Force release | Out-Null
 
-          New-Item -ItemType Directory -Force -Path release | Out-Null
-
-          Copy-Item `
-            "dist/AXIOM.exe" `
-            "release/AXIOM-$version-windows-x64.exe"
+          Copy-Item dist/AXIOM.exe "release/AXIOM-$version-windows-x64.exe"
+          Copy-Item installers/install.ps1 "release/AXIOM-$version-install.ps1"
 
           @"
           AXIOM $version
           Windows x64 portable build.
-          "@ | Set-Content "release/README.txt"
+          "@ | Set-Content "release/README-windows.txt"
 
           Compress-Archive `
             -Path `
               "release/AXIOM-$version-windows-x64.exe", `
-              "release/README.txt" `
+              "release/AXIOM-$version-install.ps1", `
+              "release/README-windows.txt" `
             -DestinationPath `
               "release/AXIOM-$version-windows-x64-portable.zip"
 
-      - name: Upload Windows artifact
+      - name: Verify Windows artifacts
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+
+          if (!(Test-Path "release/AXIOM-$version-windows-x64.exe")) { exit 1 }
+          if (!(Test-Path "release/AXIOM-$version-windows-x64-portable.zip")) { exit 1 }
+          if (!(Test-Path "release/AXIOM-$version-install.ps1")) { exit 1 }
+
+          Get-ChildItem release
+
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-release
@@ -78,7 +83,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ github.ref }}
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -91,7 +96,7 @@ jobs:
           pip install .
           pip install "pyinstaller>=6.22,<7"
 
-      - name: Build executable
+      - name: Build AXIOM
         run: |
           pyinstaller \
             --clean \
@@ -105,39 +110,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y dpkg-dev
 
-      - name: Package Linux release
-        shell: bash
+      - name: Package Linux
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          VERSION="${TAG#v}"
+          VERSION="${GITHUB_REF_NAME#v}"
 
           mkdir -p release
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
 
-          # Standalone Linux executable
-          cp dist/axiom \
-            "release/AXIOM-${VERSION}-linux-x64"
-
-          chmod +x \
-            "release/AXIOM-${VERSION}-linux-x64"
-
-          # AppImage layout
-          mkdir -p \
-            AppDir/usr/bin \
-            AppDir/usr/share/applications
+          cp dist/axiom "release/AXIOM-$VERSION-linux-x64"
+          chmod +x "release/AXIOM-$VERSION-linux-x64"
 
           cp dist/axiom AppDir/usr/bin/axiom
           chmod +x AppDir/usr/bin/axiom
-
-          # Create a minimal valid application icon.
-          # This is an SVG so the AppImage can package it without
-          # needing an additional image-processing dependency.
-          cat > AppDir/axiom.svg <<'EOF'
-          <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-            <rect width="256" height="256" rx="48" fill="#0b1020"/>
-            <path d="M128 36L214 214H178L157 168H99L78 214H42L128 36ZM128 91L113 137H143L128 91Z" fill="#64ffda"/>
-            <circle cx="128" cy="128" r="104" fill="none" stroke="#64ffda" stroke-width="4" opacity="0.35"/>
-          </svg>
-          EOF
 
           cat > AppDir/axiom.desktop <<'EOF'
           [Desktop Entry]
@@ -150,9 +136,17 @@ jobs:
           Categories=Development;
           EOF
 
-          cp \
-            AppDir/axiom.desktop \
-            AppDir/usr/share/applications/axiom.desktop
+          cp AppDir/axiom.desktop AppDir/usr/share/applications/axiom.desktop
+
+          cat > AppDir/axiom.svg <<'EOF'
+          <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+            <rect width="256" height="256" rx="48" fill="#0b1020"/>
+            <path d="M128 36L214 214H178L157 168H99L78 214H42L128 36ZM128 91L113 137H143L128 91Z" fill="#64ffda"/>
+            <circle cx="128" cy="128" r="104" fill="none" stroke="#64ffda" stroke-width="4" opacity="0.35"/>
+          </svg>
+          EOF
+
+          cp AppDir/axiom.svg AppDir/usr/share/icons/hicolor/256x256/apps/axiom.svg
 
           cat > AppDir/AppRun <<'EOF'
           #!/bin/sh
@@ -171,10 +165,9 @@ jobs:
           ARCH=x86_64 \
             ./appimagetool.AppImage \
             AppDir \
-            "release/AXIOM-${VERSION}-linux-x64.AppImage"
+            "release/AXIOM-$VERSION-linux-x64.AppImage"
 
-          # Debian package
-          PKG="axiom-ai_${VERSION}_amd64"
+          PKG="AXIOM-${VERSION}-linux-x64"
 
           mkdir -p \
             "$PKG/DEBIAN" \
@@ -186,34 +179,93 @@ jobs:
 
           cat > "$PKG/DEBIAN/control" <<EOF
           Package: axiom-ai
-          Version: ${VERSION}
+          Version: $VERSION
           Section: devel
           Priority: optional
           Architecture: amd64
-          Maintainer: NetCore Technologies
-          Description: AXIOM AI engineering platform
+          Maintainer: AXIOM
+          Description: AXIOM AI development platform
            Build AI. Own AI.
           EOF
 
-          cp README.md \
-            "$PKG/usr/share/doc/axiom-ai/README.md"
+          mkdir -p "$PKG/usr/share/applications"
 
-          cp LICENSE \
-            "$PKG/usr/share/doc/axiom-ai/LICENSE"
+          cat > "$PKG/usr/share/applications/axiom.desktop" <<'EOF'
+          [Desktop Entry]
+          Name=AXIOM
+          Comment=Build AI. Own AI.
+          Exec=axiom
+          Icon=axiom
+          Type=Application
+          Terminal=true
+          Categories=Development;
+          EOF
 
-          dpkg-deb \
-            --build \
-            "$PKG" \
-            "release/AXIOM-${VERSION}-linux-x64.deb"
+          mkdir -p "$PKG/usr/share/icons/hicolor/256x256/apps"
+          cp AppDir/axiom.svg "$PKG/usr/share/icons/hicolor/256x256/apps/axiom.svg"
 
-      - name: Upload Linux artifact
+          cp README.md "$PKG/usr/share/doc/axiom-ai/README.md"
+          cp LICENSE "$PKG/usr/share/doc/axiom-ai/LICENSE"
+
+          cat > "release/AXIOM-$VERSION-install.sh" <<'EOF'
+          #!/bin/sh
+          set -eu
+
+          PREFIX="${PREFIX:-/usr/local}"
+          BIN_DIR="$PREFIX/bin"
+          DESKTOP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+
+          SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+          BINARY="$SCRIPT_DIR/AXIOM-__VERSION__-linux-x64"
+
+          if [ ! -f "$BINARY" ]; then
+            echo "AXIOM binary not found: $BINARY" >&2
+            exit 1
+          fi
+
+          install -Dm755 "$BINARY" "$BIN_DIR/axiom"
+
+          mkdir -p "$DESKTOP_DIR"
+
+          cat > "$DESKTOP_DIR/axiom.desktop" <<'DESKTOP_EOF'
+          [Desktop Entry]
+          Name=AXIOM
+          Comment=Build AI. Own AI.
+          Exec=axiom
+          Icon=axiom
+          Type=Application
+          Terminal=true
+          Categories=Development;
+          DESKTOP_EOF
+
+          echo "AXIOM installed to $BIN_DIR/axiom"
+          EOF
+
+          sed -i "s/__VERSION__/$VERSION/g" "release/AXIOM-$VERSION-install.sh"
+          chmod +x "release/AXIOM-$VERSION-install.sh"
+
+          dpkg-deb --build "$PKG" "release/${PKG}.deb"
+          rm -rf "$PKG"
+
+      - name: Verify Linux artifacts
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          test -s "release/AXIOM-$VERSION-linux-x64"
+          test -s "release/AXIOM-$VERSION-linux-x64.AppImage"
+          test -s "release/AXIOM-$VERSION-linux-x64.deb"
+          test -s "release/AXIOM-$VERSION-install.sh"
+
+          find release -maxdepth 1 -type f -printf "%f\n" | sort
+
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-release
           path: release/*
 
   publish:
-    name: Publish GitHub Release Assets
+    name: Publish AXIOM Release
     needs:
       - windows
       - linux
@@ -232,30 +284,65 @@ jobs:
           name: linux-release
           path: release
 
-      - name: Create GitHub release
+      - name: Verify complete release
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          required=(
+            "AXIOM-$VERSION-windows-x64.exe"
+            "AXIOM-$VERSION-windows-x64-portable.zip"
+            "AXIOM-$VERSION-install.ps1"
+            "AXIOM-$VERSION-linux-x64"
+            "AXIOM-$VERSION-linux-x64.AppImage"
+            "AXIOM-$VERSION-linux-x64.deb"
+            "AXIOM-$VERSION-install.sh"
+          )
+
+          for file in "${required[@]}"; do
+            test -s "release/$file" || {
+              echo "MISSING: $file"
+              exit 1
+            }
+          done
+
+          cd release
+          sha256sum * > SHA256SUMS
+          cd ..
+
+          echo "All required AXIOM release assets exist."
+          find release -maxdepth 1 -type f -printf "%f\n" | sort
+
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           TAG="${GITHUB_REF_NAME}"
 
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $TAG already exists."
+          if [[ "$TAG" == *"-"* ]]; then
+            PRERELEASE="--prerelease"
           else
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "AXIOM $TAG" \
-              --prerelease \
-              --generate-notes
+            PRERELEASE=""
           fi
 
-      - name: Upload release assets
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "AXIOM $TAG" \
+            $PRERELEASE \
+            --verify-tag \
+            --generate-notes \
+            release/*
+
+      - name: Apply AXIOM release notes
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           TAG="${GITHUB_REF_NAME}"
 
-          gh release upload \
-            "$TAG" \
-            release/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
+          if [ -f RELEASE.md ]; then
+            gh release edit "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --notes-file RELEASE.md
+          fi
