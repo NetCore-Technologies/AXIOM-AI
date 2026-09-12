@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "axiom-ai"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 description = "Open-source platform for building, training, evaluating, and deploying AI models."
 readme = "README.md"
 requires-python = ">=3.11"

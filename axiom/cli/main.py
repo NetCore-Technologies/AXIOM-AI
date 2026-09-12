@@ -17,6 +17,7 @@ from axiom.models.registry import Model, ModelRegistry
 from axiom.runtime.supercompress import compress_context
 
 from axiom.training.planner import create_training_plan
+from axiom.version import __version__
 from axiom.core.hardware import detect_hardware, estimate_model_fit
 from axiom.core.integrations import AgentIntegration, IntegrationRegistry, IntegrationType
 
@@ -51,7 +52,7 @@ console = Console()
 @app.command()
 def version():
     """Show AXIOM version."""
-    console.print("[bold cyan]AXIOM[/bold cyan] v0.1.0")
+    console.print(f"[bold cyan]AXIOM[/bold cyan] v{__version__}")
 
 
 @app.command()

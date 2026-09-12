@@ -12,10 +12,11 @@ from axiom.models.inspector import inspect_model
 from axiom.models.registry import ModelRegistry
 from axiom.runtime.supercompress import compress_context
 from axiom.training.planner import create_training_plan
+from axiom.version import __version__
 
 
 mcp = MCPServer(
-    "AXIOM",
+    f"AXIOM v{__version__}",
     instructions=(
         "AXIOM is an AI engineering platform. "
         "Use AXIOM tools to inspect models, inspect and clean datasets, "
@@ -24,6 +25,26 @@ mcp = MCPServer(
     ),
 )
 
+
+    
+@mcp.tool()
+def axiom_info() -> dict:
+    """Return AXIOM release information."""
+    return {
+        "name": "AXIOM",
+        "version": __version__,
+        "release_channel": "beta",
+        "status": "experimental",
+        "capabilities": [
+            "models",
+            "datasets",
+            "hardware",
+            "training_planning",
+            "supercompress",
+            "mcp",
+            "agent_integrations",
+        ],
+    }
 
 @mcp.tool()
 def axiom_model_list() -> list[dict]:
