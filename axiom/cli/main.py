@@ -2,7 +2,7 @@ from pathlib import Path
 
 import typer
 
-from huggingface_hub import HfApi
+from huggingface_hub import HfApi, snapshot_download
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -11,6 +11,7 @@ from axiom.core.project import create_project
 from axiom.datasets.cleaner import clean_jsonl
 from axiom.datasets.inspector import inspect_dataset
 from axiom.models.inspector import inspect_model
+from axiom.models.analysis import analyze_config, disk_info
 from axiom.models.registry import Model, ModelRegistry
 
 from axiom.training.planner import create_training_plan
@@ -355,6 +356,184 @@ def model_add(
         f"[green]✓[/green] Registered model: [cyan]{name}[/cyan]"
     )
 
+
+
+@model_app.command("analyze")
+def model_analyze(repo_id: str):
+    """Analyze a Hugging Face model without downloading weights."""
+    api = HfApi()
+
+    try:
+        info = api.model_info(repo_id=repo_id, files_metadata=True)
+    except Exception as exc:
+        console.print(
+            f"[red]Error:[/red] Could not retrieve model information: {exc}"
+        )
+        raise typer.Exit(code=1)
+
+    files = [
+        getattr(item, "rfilename", "")
+        for item in (getattr(info, "siblings", None) or [])
+        if getattr(item, "rfilename", None)
+    ]
+
+    config = {}
+
+    try:
+        config_file = api.hf_hub_download(
+            repo_id=repo_id,
+            filename="config.json",
+        )
+
+        config = json.loads(
+            Path(config_file).read_text(encoding="utf-8")
+        )
+    except Exception:
+        config = {}
+
+    total_size = 0
+
+    for item in (getattr(info, "siblings", None) or []):
+        name = getattr(item, "rfilename", "") or ""
+        size = getattr(item, "size", None)
+
+        if size is not None and (
+            name.endswith(".safetensors")
+            or name.endswith(".gguf")
+            or name.endswith(".bin")
+            or name.endswith(".pt")
+            or name.endswith(".pth")
+        ):
+            total_size += int(size)
+
+    analysis = analyze_config(
+        repo_id=repo_id,
+        config=config,
+        files=files,
+        weight_size_bytes=total_size,
+    )
+
+    parameters = (
+        f"{analysis.parameter_count / 1_000_000_000:.2f}B"
+        if analysis.parameter_count
+        else "Unknown"
+    )
+
+    context = (
+        f"{analysis.context_length:,}"
+        if analysis.context_length
+        else "Unknown"
+    )
+
+    weight_size = (
+        f"{analysis.weight_size_gb:.2f} GB"
+        if analysis.weight_size_gb is not None
+        else "Unknown"
+    )
+
+    console.print(
+        Panel.fit(
+            f"[bold cyan]AXIOM MODEL ANALYSIS[/bold cyan]\n\n"
+            f"Repository:      {analysis.repo_id}\n"
+            f"Architecture:    {analysis.architecture}\n"
+            f"Model type:      {analysis.model_type}\n"
+            f"Parameters:      {parameters}\n"
+            f"Parameter basis: {analysis.parameter_source}\n"
+            f"Context length:  {context}\n"
+            f"Precision:       {analysis.precision}\n"
+            f"Weight size:     {weight_size}\n"
+            f"Files:           {analysis.file_count:,}\n\n"
+            f"[dim]No model weights were downloaded.[/dim]",
+            title="AXIOM",
+        )
+    )
+
+
+@model_app.command("pull")
+def model_pull(
+    repo_id: str,
+    max_disk_usage_gb: float = typer.Option(
+        85.0,
+        "--max-disk-usage",
+        help="Maximum allowed disk usage percentage.",
+    ),
+):
+    """Safely download a Hugging Face model after disk checks."""
+    api = HfApi()
+
+    try:
+        info = api.model_info(repo_id=repo_id, files_metadata=True)
+    except Exception as exc:
+        console.print(
+            f"[red]Error:[/red] Could not retrieve model information: {exc}"
+        )
+        raise typer.Exit(code=1)
+
+    total_size = 0
+
+    for item in (getattr(info, "siblings", None) or []):
+        size = getattr(item, "size", None)
+        name = getattr(item, "rfilename", "") or ""
+
+        if size is not None:
+            total_size += int(size)
+
+    free_bytes, total_bytes = disk_info(".")
+
+    used_bytes = total_bytes - free_bytes
+    used_percent = (used_bytes / total_bytes) * 100 if total_bytes else 100
+    download_gb = total_size / (1024 ** 3)
+    free_gb = free_bytes / (1024 ** 3)
+    remaining_gb = free_gb - download_gb
+
+    console.print(
+        Panel.fit(
+            f"[bold cyan]AXIOM MODEL DOWNLOAD CHECK[/bold cyan]\n\n"
+            f"Model:             {repo_id}\n"
+            f"Repository size:   {download_gb:.2f} GB\n"
+            f"Free disk:         {free_gb:.2f} GB\n"
+            f"Free after pull:   {remaining_gb:.2f} GB\n"
+            f"Current usage:     {used_percent:.1f}%\n"
+            f"Usage limit:       {max_disk_usage_gb:.1f}%",
+            title="AXIOM",
+        )
+    )
+
+    if remaining_gb < 0:
+        console.print(
+            "[red]✗ Download blocked:[/red] insufficient disk space."
+        )
+        raise typer.Exit(code=1)
+
+    projected_used_percent = (
+        ((total_bytes - free_bytes + total_size) / total_bytes) * 100
+        if total_bytes
+        else 100
+    )
+
+    if projected_used_percent > max_disk_usage_gb:
+        console.print(
+            "[red]✗ Download blocked:[/red] "
+            f"projected disk usage would reach {projected_used_percent:.1f}%."
+        )
+        raise typer.Exit(code=1)
+
+    console.print("[green]✓ Disk safety check passed.[/green]")
+
+    try:
+        destination = snapshot_download(
+            repo_id=repo_id,
+            local_dir=Path("models") / repo_id.replace("/", "__"),
+        )
+    except Exception as exc:
+        console.print(
+            f"[red]Error:[/red] Model download failed: {exc}"
+        )
+        raise typer.Exit(code=1)
+
+    console.print(
+        f"[green]✓ Model downloaded:[/green] {destination}"
+    )
 
 @model_app.command("inspect")
 def model_inspect(path: str):
