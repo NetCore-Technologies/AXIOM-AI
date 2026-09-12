@@ -135,11 +135,23 @@ jobs:
           cp dist/axiom AppDir/usr/bin/axiom
           chmod +x AppDir/usr/bin/axiom
 
+          # Create a minimal valid application icon.
+          # This is an SVG so the AppImage can package it without
+          # needing an additional image-processing dependency.
+          cat > AppDir/axiom.svg <<'EOF'
+          <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+            <rect width="256" height="256" rx="48" fill="#0b1020"/>
+            <path d="M128 36L214 214H178L157 168H99L78 214H42L128 36ZM128 91L113 137H143L128 91Z" fill="#64ffda"/>
+            <circle cx="128" cy="128" r="104" fill="none" stroke="#64ffda" stroke-width="4" opacity="0.35"/>
+          </svg>
+          EOF
+
           cat > AppDir/axiom.desktop <<'EOF'
           [Desktop Entry]
           Name=AXIOM
           Comment=Build AI. Own AI.
           Exec=axiom
+          Icon=axiom
           Type=Application
           Terminal=true
           Categories=Development;
@@ -226,6 +238,22 @@ jobs:
         with:
           name: linux-release
           path: release
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists."
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "AXIOM $TAG" \
+              --prerelease \
+              --generate-notes
+          fi
 
       - name: Upload release assets
         env:
