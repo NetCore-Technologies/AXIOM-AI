@@ -4,13 +4,6 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing Git tag to build
-        required: true
-        type: string
-
 permissions:
   contents: write
 
@@ -115,7 +108,7 @@ jobs:
       - name: Package Linux release
         shell: bash
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
 
           mkdir -p release
@@ -243,7 +236,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          TAG="${GITHUB_REF_NAME}"
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG already exists."
@@ -259,7 +252,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          TAG="${GITHUB_REF_NAME}"
 
           gh release upload \
             "$TAG" \
