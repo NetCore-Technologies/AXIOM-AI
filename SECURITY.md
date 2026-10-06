@@ -1,63 +1,84 @@
+# Security Policy
+
+## Supported Versions
+
+AXIOM is currently under active development.
+
+Security fixes will generally target the latest version on the `main` branch.
+
+| Version        | Supported |
+| -------------- | --------- |
+| `main`         | ✅         |
+| Older releases | ❌         |
+
+---
+
 ## Reporting a Vulnerability
 
-**Please do not report security vulnerabilities through public GitHub issues.**
+Please **do not open a public GitHub issue for a security vulnerability**.
 
-For vulnerabilities affecting QuantumGrid OS, please use GitHub's private security reporting mechanism:
+Instead, report security issues privately through the repository's GitHub security reporting mechanism.
 
-**GitHub → Security → Advisories → Report a vulnerability**
+When reporting a vulnerability, please include:
 
-When reporting an issue, please include:
+* a clear description of the issue
+* affected component or feature
+* steps to reproduce
+* potential impact
+* relevant logs or proof of concept
+* any suggested mitigation
 
-* A clear description of the vulnerability
-* The affected QuantumGrid OS version or commit
-* The affected component or package
-* Steps required to reproduce the issue
-* Any relevant logs, configuration, screenshots, or proof-of-concept information
-* The potential security impact
-* A suggested mitigation, if known
+Please avoid including secrets, credentials, private datasets, API keys, or other sensitive information in the report.
 
-Please provide enough information for the issue to be reproduced and investigated.
+---
 
-## Response Process
+## What to Report
 
-We will make a reasonable effort to:
+Examples of security issues include:
 
-1. Acknowledge a vulnerability report.
-2. Investigate and reproduce the issue.
-3. Determine its severity and affected versions.
-4. Develop and test a fix where practical.
-5. Release or document the appropriate mitigation.
-6. Publish a security advisory when disclosure is appropriate.
+* remote code execution
+* arbitrary command execution
+* authentication bypass
+* privilege escalation
+* unsafe model loading
+* malicious model or dataset execution
+* path traversal
+* insecure API endpoints
+* accidental exposure of credentials
+* unauthorized access to private data
+* vulnerabilities in AXIOM's deployment mechanisms
 
-Response and remediation times may vary depending on the severity, complexity, affected hardware, and whether the issue involves QuantumGrid code or an upstream dependency.
+---
+
+## Model and Dataset Security
+
+AI systems introduce risks beyond traditional software.
+
+AXIOM may eventually process:
+
+* downloaded models
+* user-provided datasets
+* generated files
+* external repositories
+* inference inputs
+* training artifacts
+
+Treat third-party models and datasets as **untrusted inputs** unless their origin and integrity are known.
+
+Do not run untrusted model files or training code with unnecessary system privileges.
+
+---
+
+## Disclosure
+
+We aim to investigate valid security reports promptly and coordinate responsible disclosure where appropriate.
+
+Once an issue has been fixed, relevant security information may be published through the repository's release notes or security advisories.
+
+---
 
 ## Scope
 
-Security reports may include vulnerabilities in:
+This policy applies to the AXIOM open-source project and its official repositories.
 
-* QuantumGrid OS services
-* QuantumGrid web interface
-* QuantumGrid APIs
-* Authentication and session handling
-* SSH and management controls
-* Management ACLs
-* Network security components
-* QuantumGrid packages
-* Firmware/build integration
-* Wi-Fi configuration and management
-* Cellular/5G management
-* System update mechanisms
-
-QuantumGrid incorporates upstream software such as OpenWrt and other open-source components. Vulnerabilities that originate entirely in an upstream project should also be reported to the appropriate upstream security team where applicable.
-
-## Responsible Disclosure
-
-Please allow reasonable time for investigation and remediation before publicly disclosing a vulnerability.
-
-We appreciate responsible security research and will make a good-faith effort to work with researchers to understand and resolve reported issues.
-
-## Security Updates
-
-Security fixes will be included in supported releases whenever practical.
-
-Release notes and security advisories will identify affected versions and recommended upgrade or mitigation steps when appropriate.
+Third-party integrations, hosted infrastructure, and external services may have separate security policies.
