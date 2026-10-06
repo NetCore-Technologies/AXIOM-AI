@@ -368,7 +368,7 @@ Small improvements, bug fixes, tests, documentation, and developer tooling are w
 
 # Roadmap
 
-See [`ROADMAP.md`](ROADMAP.md) for the current development plan.
+See [`docs/ROADMAP.md`](ROADMAP.md) for the current development plan.
 
 # Security
 
