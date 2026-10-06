@@ -1,4 +1,7 @@
-import { useMemo, useState } from "react";
+import {
+  useMemo,
+  useState
+} from "react";
 import {
   Activity,
   AlertTriangle,
@@ -17,7 +20,6 @@ import {
   Hammer,
   LayoutDashboard,
   ListFilter,
-  Logs,
   Moon,
   Network,
   Play,
@@ -33,7 +35,7 @@ import {
   TerminalSquare,
   TimerReset,
   Wrench,
-  Zap,
+  Zap
 } from "lucide-react";
 import {
   Area,
@@ -42,7 +44,7 @@ import {
   ResponsiveContainer,
   Tooltip,
   XAxis,
-  YAxis,
+  YAxis
 } from "recharts";
 
 type Page =
