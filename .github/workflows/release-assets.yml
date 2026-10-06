@@ -320,7 +320,7 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME}"
 
-          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-b\.[0-9]+$ ]]; then
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(b|beta)\.[0-9]+$ ]]; then
             RELEASE_FLAG="--prerelease"
             echo "Publishing AXIOM beta: $TAG"
           elif [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then

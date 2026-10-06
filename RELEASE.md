@@ -1,28 +1,71 @@
-# AXIOM v0.1.0-beta.1
+# AXIOM v0.2.0 Beta 1
 
-## First Public Development Beta
+The first unified AXIOM release combining the AXIOM AI engineering platform with the new AXIOM Control Center.
 
-AXIOM is an open-source AI engineering platform for building, evaluating, and deploying AI systems.
+## Highlights
 
-### Included
+### AXIOM Control Center
 
-- AXIOM CLI
-- AI project initialization
-- Local model registry
-- Local model inspection
-- Hugging Face discovery and authentication
-- Dataset inspection
-- Dataset cleaning
+- New React/Vite Control Center
+- Dark glass engineering interface
+- AXIOM onboarding and administrator setup
+- Model management
+- Dataset management
+- Training and evaluation interfaces
+- Runtime interface
+- MCP Inspector
+- Diagnostics and logs
+- Responsive navigation
+- Dark/light theme support
+- Telemetry-focused dashboard
+
+### AXIOM Platform
+
+- Python AXIOM platform and CLI
+- Model registry and inspection
+- Hugging Face model analysis
+- Model download safety checks
+- Dataset inspection and cleaning
 - Hardware detection
 - Hardware-aware training planning
-- Agent integration registry
+- MCP tooling
 - SuperCompress integration
-- MCP server and MCP tools
+- Core platform configuration and runtime foundations
 
-### Status
+### Unified Repository
 
-This is an experimental beta. CLI commands, configuration formats, MCP tools, and APIs may change before AXIOM 1.0.
+AXIOM now brings the Control Center and Python platform together in a single repository:
 
-### Environment
+https://github.com/NetCore-Technologies/AXIOM-AI
 
-AXIOM does not require a committed virtual environment. Create a local environment from pyproject.toml.
+## GitHub Pages
+
+The AXIOM public website and Control Center are deployed through GitHub Pages.
+
+## Downloads
+
+This release provides platform-specific AXIOM executable builds through the GitHub Release assets.
+
+Available packages include:
+
+- Windows x64 portable executable
+- Windows installer script
+- Linux x64 executable
+- Linux AppImage
+- Linux Debian package
+- Linux installer script
+- SHA256 checksums
+
+## Beta Status
+
+AXIOM is still under active development.
+
+The Control Center currently exposes platform areas that are being implemented incrementally. Full training execution, evaluation execution and production runtime serving are still under development.
+
+This beta establishes the unified AXIOM architecture, Control Center and release pipeline.
+
+## Project
+
+**AXIOM — Build AI. Own AI.**
+
+Built by **NetCore Technologies**.
