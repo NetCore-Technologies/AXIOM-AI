@@ -389,3 +389,10 @@ See [`LICENSE`](LICENSE) for the full license text.
 **AXIOM — Build AI. Own AI.**
 
 </p>
+
+
+## Roadmap
+
+AXIOM is actively evolving. See the full project roadmap for upcoming platform work, Control Center development, training, evaluation, runtime, optimization and deployment plans.
+
+**[View the AXIOM Roadmap →](docs/ROADMAP.md)**

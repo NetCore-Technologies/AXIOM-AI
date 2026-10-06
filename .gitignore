@@ -26,3 +26,17 @@ build/
 .DS_Store
 .vscode/
 .idea/
+
+# Frontend build/dependencies
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Python build/dependencies
+.venv/
+__pycache__/
+*.egg-info/
+build/
+
+# Local AXIOM state
+.axiom/

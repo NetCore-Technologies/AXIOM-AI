@@ -367,8 +367,8 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME}"
 
-          if [ -f RELEASE.md ]; then
+          if [ -f docs/releases/RELEASE.md ]; then
             gh release edit "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
-              --notes-file RELEASE.md
+              --notes-file docs/releases/RELEASE.md
           fi
