@@ -1,43 +1,28 @@
+# Node
+node_modules/
+dist/
+
+# TypeScript
+*.tsbuildinfo
+
 # Python
+.venv/
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-
-# Virtual environments
-.venv/
-venv/
-env/
-
-# Packaging
 *.egg-info/
-dist/
 build/
+*.whl
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-
-# AXIOM runtime
+# AXIOM local state
 .axiom/
-outputs/
-experiments/*/checkpoints/
-test-data/*.cleaned.jsonl
+*.log
 
-# Hugging Face
-.huggingface/
-hf_token
+# Environment
 .env
 .env.*
+!.env.example
 
-.mcp/
-mcp-logs/
-mcp.json
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
