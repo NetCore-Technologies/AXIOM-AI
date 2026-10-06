@@ -6,9 +6,21 @@ on:
       - main
     paths:
       - "website/**"
+      - "src/**"
+      - "public/**"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.ts"
+      - "tsconfig*.json"
       - ".github/workflows/deploy-pages.yml"
 
   workflow_dispatch:
+
+  workflow_run:
+    workflows:
+      - AXIOM Release
+    types:
+      - completed
 
 permissions:
   contents: read
@@ -21,23 +33,57 @@ concurrency:
 
 jobs:
   deploy:
+    if: >
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    runs-on: ubuntu-latest
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
 
-    runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: main
 
-      - name: Setup GitHub Pages
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Control Center dependencies
+        run: npm ci
+
+      - name: Lint Control Center
+        run: npm run lint
+
+      - name: Build Control Center
+        run: npm run build
+
+      - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload website
+      - name: Assemble site
+        run: |
+          rm -rf _site
+          mkdir -p _site/app
+
+          cp -R website/. _site/
+          cp -R dist/. _site/app/
+
+          touch _site/.nojekyll
+
+          echo "===== DEPLOYMENT TREE ====="
+          find _site -maxdepth 2 -type f | sort | head -100
+
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: "./website"
+          path: ./_site
 
       - name: Deploy to GitHub Pages
         id: deployment
