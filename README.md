@@ -1,400 +1,174 @@
-# AXIOM AI
+<div align="center">
 
-<p align="center">
+<img src="docs/assets/banner.svg" alt="AXIOM — Build AI. Own AI." width="100%"/>
 
-**Build AI. Own AI.**
+<br/>
 
-An open-source platform for building, fine-tuning, evaluating, and deploying AI models.
+[![Status](https://img.shields.io/badge/status-active%20development-22c55e?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI)
+[![Version](https://img.shields.io/badge/version-v0.2.0--beta.4-0ea5e9?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
+[![License](https://img.shields.io/badge/license-MIT-7c3aed?style=flat-square&labelColor=0f172a)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&labelColor=0f172a&logo=python&logoColor=white)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-475569?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
+[![Stars](https://img.shields.io/github/stars/NetCore-Technologies/AXIOM-AI?style=flat-square&labelColor=0f172a&color=f59e0b)](https://github.com/NetCore-Technologies/AXIOM-AI)
 
-[![Status](https://img.shields.io/badge/status-early%20development-orange)](https://github.com/NetCore-Technologies/AXIOM-AI)
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)](https://www.python.org/)
-[![GitHub](https://img.shields.io/github/stars/NetCore-Technologies/AXIOM-AI?style=social)](https://github.com/NetCore-Technologies/AXIOM-AI)
+<br/>
 
-</p>
+**AXIOM** is an open-source AI engineering platform that brings models, datasets, training, evaluation, runtime and deployment into one focused workspace — local-first, self-hosted, and built for engineers who want to own their AI stack.
+
+<br/>
+
+[**↓ Download**](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest) &nbsp;·&nbsp; [**Website**](https://netcore-technologies.github.io/AXIOM-AI/) &nbsp;·&nbsp; [**Wiki**](https://github.com/NetCore-Technologies/AXIOM-AI/wiki) &nbsp;·&nbsp; [**Roadmap**](https://github.com/NetCore-Technologies/AXIOM-AI/wiki/Roadmap) &nbsp;·&nbsp; [**Contributing**](CONTRIBUTING.md)
+
+</div>
 
 ---
 
-## What is AXIOM?
+## Control Center
 
-**AXIOM** is an open-source AI engineering platform designed to make building your own AI systems simpler, reproducible, and self-hosted.
-
-Instead of stitching together separate tools for models, datasets, training, evaluation, and deployment, AXIOM aims to provide one workflow:
-
-```text
-                AXIOM
-                  │
-        ┌─────────┼─────────┐
-        │         │         │
-      Models    Data      Config
-        │         │         │
-        └─────────┼─────────┘
-                  │
-               Training
-                  │
-               Evaluation
-                  │
-              Optimization
-                  │
-               Deployment
+```
+╔══════════════════════════════════════════════════════════════╗
+║  AXIOM CONTROL CENTER                              READY  ◉  ║
+╠══════════════════════════════════════════════════════════════╣
+║  SYSTEM HEALTH     ████████████████████  OPERATIONAL         ║
+║  AI RUNTIME        ████████████████████  LOCAL ENGINE  LIVE  ║
+║  MODEL REGISTRY    ████████████████████  SYNCED              ║
+║  INFERENCE         ████████████████████  ACTIVE              ║
+╠══════════════════════════════════════════════════════════════╣
+║  ✓ Local workspace  ·  Your models  ·  Your data             ║
+╚══════════════════════════════════════════════════════════════╝
 ```
 
-The long-term goal is simple:
+---
 
-> **Give developers the tools to build AI they can actually own.**
+## Why AXIOM
 
-AXIOM is designed around local hardware and self-hosting first, with cloud infrastructure planned as an optional layer rather than a requirement.
+Modern AI development means juggling a different tool for every stage. AXIOM replaces the entire stack with one coherent engineering workspace.
+
+<br/>
+
+<div align="center">
+
+| | Stage | What AXIOM does |
+|---|---|---|
+| ◎ | **Models** | Inspect metadata, manage a local registry, search Hugging Face |
+| ◇ | **Datasets** | Validate, clean, deduplicate and analyse training data |
+| ⌁ | **Training** | Hardware-aware plans, LoRA/QLoRA configs, fit estimation |
+| ◌ | **Evaluation** | Benchmarks, quality checks and model comparison |
+| ▣ | **Runtime** | Local inference, OpenAI-compatible API, resource monitoring |
+| ⌬ | **Diagnostics** | MCP tooling, system health, request tracing |
+
+</div>
+
+<br/>
+
+> **One project. One configuration. One workflow.**
 
 ---
 
-## Why AXIOM?
-
-Modern AI development often means combining many different tools:
-
-* model repositories
-* dataset utilities
-* training frameworks
-* experiment trackers
-* evaluation tools
-* inference servers
-* deployment systems
-
-AXIOM is being built to make that process feel like one coherent development workflow.
-
-### The vision
-
-```text
-Create
-  ↓
-Configure
-  ↓
-Import data
-  ↓
-Train / Fine-tune
-  ↓
-Evaluate
-  ↓
-Package
-  ↓
-Deploy
-```
-
-One project. One configuration. One workflow.
-
----
-
-## Current status
-
-AXIOM is in **active development** with a working Control Center, full CLI suite, and cross-platform installers available now.
-
-The project currently has a working Python CLI with:
-
-### Project initialization
+## Install
 
 ```bash
-axiom init my-ai
-```
-
-Creates a reproducible AI project structure:
-
-```text
-my-ai/
-├── axiom.yaml
-├── README.md
-├── data/
-│   ├── raw/
-│   └── processed/
-├── models/
-├── experiments/
-├── evaluations/
-└── outputs/
-```
-
-### Model registry
-
-```bash
-axiom model list
-```
-
-```bash
-axiom model add my-model \
-  MySource \
-  --format safetensors \
-  --parameters 7B \
-  --quantization int4
-```
-
-AXIOM can currently maintain a local model registry with basic model metadata.
-
-### Dataset inspection
-
-```bash
-axiom dataset inspect ./train.jsonl
-```
-
-The current inspector can identify:
-
-* total samples
-* valid samples
-* invalid samples
-* empty records
-* duplicate records
-* detected fields
-* estimated token count
-
-Example:
-
-```text
-AXIOM DATASET INSPECTION
-
-Samples:          6
-Valid:            5
-Invalid:          1
-Empty:            0
-Duplicates:       1
-Estimated tokens: 76
-
-Fields:
-instruction, output
-```
-
----
-
-# Architecture
-
-AXIOM is being built as a modular platform.
-
-```text
-axiom/
-├── cli/
-├── core/
-├── models/
-├── datasets/
-├── training/
-├── evaluation/
-├── runtime/
-└── config/
-```
-
-The architecture is intentionally modular so individual systems can evolve without turning AXIOM into one giant monolithic application.
-
----
-
-# Planned capabilities
-
-The roadmap includes:
-
-### Model management
-
-* Hugging Face model discovery
-* local model importing
-* model metadata detection
-* model versioning
-* quantization awareness
-* model packaging
-
-### Dataset engineering
-
-* dataset cleaning
-* validation
-* deduplication
-* dataset statistics
-* token estimation
-* dataset transformations
-* conversational dataset support
-
-### Training
-
-* LoRA
-* QLoRA
-* fine-tuning workflows
-* hardware-aware configuration
-* GPU detection
-* experiment tracking
-* checkpoint management
-
-### Evaluation
-
-* automated benchmarks
-* custom evaluation suites
-* regression testing
-* model comparison
-* quality reports
-
-### Runtime
-
-* local inference
-* model serving
-* OpenAI-compatible APIs
-* resource monitoring
-* deployment profiles
-
-### Deployment
-
-* Docker
-* local GPU systems
-* self-hosted servers
-* cloud GPU environments
-* reproducible deployments
-
----
-
-# CLI vision
-
-The eventual AXIOM workflow should look something like:
-
-```bash
-axiom init my-ai
-
-axiom model add Qwen/...
-
-axiom dataset inspect ./data/train.jsonl
-
-axiom dataset clean ./data/train.jsonl
-
-axiom train
-
-axiom evaluate
-
-axiom serve
-```
-
-The objective is for AXIOM to understand the relationship between each stage rather than treating every command as an isolated tool.
-
----
-
-# Hardware philosophy
-
-AXIOM is being designed with **real-world hardware constraints** in mind.
-
-It should be possible to use AXIOM with:
-
-* consumer GPUs
-* workstation GPUs
-* CPU-only environments for lightweight workloads
-* local servers
-* cloud GPUs
-* future specialized accelerators
-
-AXIOM should detect available hardware and help produce sensible configurations instead of assuming everyone has a large GPU cluster.
-
----
-
-# Open source
-
-AXIOM is open source because AI tooling should not require handing your entire development workflow to a hosted service.
-
-The core project is intended to remain:
-
-* self-hostable
-* inspectable
-* extensible
-* reproducible
-* community-driven
-
-Cloud services may exist in the future, but they will complement the open-source core rather than replace it.
-
----
-
-# Project principles
-
-### Own your models
-
-Use the models you choose, on infrastructure you control.
-
-### Own your data
-
-Your datasets should remain yours.
-
-### Reproducibility first
-
-Training and evaluation should be reproducible from configuration.
-
-### Local-first
-
-Local hardware should be a first-class environment.
-
-### Modular by design
-
-AXIOM should integrate with existing AI ecosystems rather than forcing developers into one stack.
-
----
-
-# Development
-
-Clone the repository:
-
-```bash
+# Clone
 git clone https://github.com/NetCore-Technologies/AXIOM-AI.git
 cd AXIOM-AI
-```
 
-Create a virtual environment:
-
-```bash
+# Set up environment
 python3 -m venv .venv
-source .venv/bin/activate
-```
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
-Install in editable mode:
-
-```bash
+# Install
 pip install -e .
-```
 
-Check AXIOM:
-
-```bash
+# Verify
 axiom version
 ```
 
-Create a project:
+Or grab a pre-built installer below.
+
+---
+
+## Download
+
+<div align="center">
+
+### v0.2.0-beta.4 — Latest
+
+| Platform | Package | Type |
+|---|---|---|
+| **Windows** | [AXIOM-v0.2.0-beta.4-windows-x64.exe](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.4-windows-x64.exe) | Portable |
+| **Windows** | [AXIOM-v0.2.0-beta.4-windows-x64.msi](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.4-windows-x64.msi) | Installer |
+| **Linux** | [AXIOM-v0.2.0-beta.4-linux-x64.AppImage](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.4-linux-x64.AppImage) | Portable |
+| **Linux** | [AXIOM-v0.2.0-beta.4-linux-x64.deb](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.4-linux-x64.deb) | Package |
+
+[View all release assets →](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest)
+
+</div>
+
+---
+
+## CLI
 
 ```bash
+# Start a project
 axiom init my-ai
+axiom status
+axiom doctor
+
+# Models
+axiom model list
+axiom model add Qwen/Qwen2.5-7B-Instruct --format safetensors
+axiom model inspect ./models/my-model
+axiom model search "mistral 7b"
+
+# Datasets
+axiom dataset inspect ./data/train.jsonl
+axiom dataset validate ./data/train.jsonl
+axiom dataset clean ./data/train.jsonl
+axiom dataset stats ./data/train.jsonl
+
+# Project
+axiom project info
+axiom project validate
+axiom config show
+
+# Hugging Face
+axiom hf login
+axiom hf status
+
+# Training (plan generation)
+axiom train
+
+# Runtime
+axiom serve
 ```
 
 ---
 
-# Contributing
+## Architecture
 
-AXIOM is still young, so architecture and APIs may change quickly.
+```
+axiom/
+├── cli/          ← Typer command surface
+├── core/         ← Platform engine
+├── models/       ← Registry, inspection, metadata
+├── datasets/     ← Validation, cleaning, stats
+├── training/     ← Planning, hardware detection, fit estimation
+├── evaluation/   ← Benchmarks, quality, comparison
+├── runtime/      ← Inference, serving, MCP
+└── config/       ← Configuration management
+```
 
-Before contributing major features, please open an issue to discuss the proposed design.
-
-Small improvements, bug fixes, tests, documentation, and developer tooling are welcome.
-
----
-
-# Roadmap
-
-See [`ROADMAP.md`](docs/ROADMAP.md) for the current development plan.
-
-# Security
-
-See [`SECURITY.md`](SECURITY.md) for reporting security vulnerabilities.
+Intentionally modular — each subsystem evolves independently without coupling to the rest.
 
 ---
 
-# License
-
-AXIOM is released under the **MIT License**.
-
-See [`LICENSE`](LICENSE) for the full license text.
-
----
-
-<p align="center">
-
-**AXIOM — Build AI. Own AI.**
-
-</p>
-
-
-<!-- AXIOM_FEATURES_BEGIN -->
 ## Features
 
-### Core Platform
+<!-- AXIOM_FEATURES_BEGIN -->
+<details>
+<summary><strong>Core Platform</strong></summary>
+<br/>
+
 - [x] AXIOM project initialization
 - [x] Modular AI engineering architecture
 - [x] First-boot administrator setup
@@ -404,253 +178,191 @@ See [`LICENSE`](LICENSE) for the full license text.
 - [x] Modern AXIOM control center
 - [x] Light / dark UI support
 
-### CLI
-- [x] axiom version
-- [x] axiom init
-- [x] axiom model list
-- [x] axiom model add
-- [x] axiom model inspect
-- [x] axiom model search
-- [x] axiom dataset inspect
-- [x] axiom dataset clean
-- [x] axiom dataset validate
-- [x] axiom dataset stats
-- [x] axiom project info
-- [x] axiom project validate
-- [x] axiom config show
-- [x] axiom config validate
-- [x] axiom doctor
-- [x] axiom info
-- [x] axiom status
-- [x] Hugging Face authentication
-- [x] SuperCompress
-- [x] Integration registry
-- [x] MCP support
+</details>
 
-### Models
-- [x] Model registry
-- [x] Model inspection
-- [x] Model metadata
-- [x] Model format awareness
-- [x] Parameter-count metadata
-- [x] Quantization metadata
-- [ ] Automated model download manager
-- [ ] Model conversion pipeline
-- [ ] Model benchmark suite
-- [ ] Model compatibility checks
-- [ ] Model version management
+<details>
+<summary><strong>CLI — 21 commands shipping</strong></summary>
+<br/>
 
-### Datasets
-- [x] JSONL inspection
-- [x] Dataset cleaning
-- [x] Validation
-- [x] Duplicate detection
-- [x] Dataset statistics
-- [x] Field detection
-- [x] Token estimation
-- [ ] Dataset versioning
-- [ ] Dataset diffing
-- [ ] Dataset deduplication engine
-- [ ] Dataset sampling
-- [ ] Dataset augmentation
-- [ ] Dataset quality scoring
+- [x] `axiom version` · `axiom init` · `axiom doctor` · `axiom info` · `axiom status`
+- [x] `axiom model list` · `axiom model add` · `axiom model inspect` · `axiom model search`
+- [x] `axiom dataset inspect` · `axiom dataset clean` · `axiom dataset validate` · `axiom dataset stats`
+- [x] `axiom project info` · `axiom project validate`
+- [x] `axiom config show` · `axiom config validate`
+- [x] Hugging Face authentication · SuperCompress · Integration registry · MCP support
 
-### Training
-- [x] Training planning
-- [x] Hardware-aware planning
-- [x] LoRA planning
-- [x] CPU/GPU capability detection
-- [x] Model-fit estimation
-- [ ] Training execution
-- [ ] Training job management
-- [ ] Experiment tracking
-- [ ] Checkpoint management
-- [ ] Training dashboards
-- [ ] Multi-GPU training
-- [ ] Distributed training
-- [ ] Automatic hyperparameter search
-- [ ] Training resume/recovery
+</details>
 
-### Evaluation
+<details>
+<summary><strong>Models</strong></summary>
+<br/>
+
+- [x] Model registry · inspection · metadata · format awareness · parameter count · quantization
+- [ ] Automated download manager · conversion pipeline · benchmark suite · compatibility checks · version management
+
+</details>
+
+<details>
+<summary><strong>Datasets</strong></summary>
+<br/>
+
+- [x] JSONL inspection · cleaning · validation · duplicate detection · statistics · field detection · token estimation
+- [ ] Versioning · diffing · deduplication engine · sampling · augmentation · quality scoring
+
+</details>
+
+<details>
+<summary><strong>Training</strong></summary>
+<br/>
+
+- [x] Training planning · hardware-aware planning · LoRA planning · CPU/GPU detection · model-fit estimation
+- [ ] Training execution · job management · experiment tracking · checkpoints · dashboards · multi-GPU · distributed · hyperparameter search
+
+</details>
+
+<details>
+<summary><strong>Evaluation</strong></summary>
+<br/>
+
 - [x] Evaluation subsystem foundation
-- [ ] Automated evaluation pipelines
-- [ ] Benchmark runner
-- [ ] Dataset-based evaluation
-- [ ] Model comparison
-- [ ] Regression testing
-- [ ] Custom metrics
-- [ ] Evaluation reports
-- [ ] Evaluation dashboards
+- [ ] Automated pipelines · benchmark runner · dataset-based eval · model comparison · regression testing · custom metrics · reports
 
-### Runtime
-- [x] Runtime subsystem foundation
-- [x] MCP foundation
-- [x] Integration registry
-- [ ] Production model serving
-- [ ] Streaming inference
-- [ ] Request batching
-- [ ] Request scheduling
-- [ ] Runtime autoscaling
-- [ ] Runtime health checks
-- [ ] Runtime load testing
-- [ ] Inference optimization
+</details>
 
-### Observability
-- [x] Diagnostics foundation
-- [x] System information
-- [x] CLI health checks
-- [ ] Live telemetry
-- [ ] Request tracing
-- [ ] Token usage tracking
-- [ ] GPU utilization monitoring
-- [ ] Training telemetry
-- [ ] Runtime metrics
-- [ ] Log search and filtering
-- [ ] Performance profiling
-- [ ] Metrics export
+<details>
+<summary><strong>Runtime</strong></summary>
+<br/>
 
-### Security
-- [x] Administrator authentication
-- [x] Session timeout
-- [x] Password management
-- [x] GPG-signed releases
-- [ ] API authentication
-- [ ] Secrets management
-- [ ] Role-based access control
-- [ ] Audit logging
-- [ ] Security diagnostics
-- [ ] Enterprise security controls
+- [x] Runtime foundation · MCP foundation · integration registry
+- [ ] Production serving · streaming inference · request batching · scheduling · autoscaling · health checks · load testing · optimization
 
-### Developer Experience
-- [x] Python package
-- [x] Typer CLI
-- [x] Automated release packaging
-- [x] GitHub Actions release pipeline
-- [x] Documentation Wiki
-- [x] Community documentation
-- [x] Issue templates
-- [x] Pull request templates
-- [ ] Python API documentation
-- [ ] Plugin SDK
-- [ ] CLI shell completion
-- [ ] Developer diagnostics bundle
+</details>
+
+<details>
+<summary><strong>Observability</strong></summary>
+<br/>
+
+- [x] Diagnostics foundation · system information · CLI health checks
+- [ ] Live telemetry · request tracing · token tracking · GPU monitoring · training telemetry · metrics · log search · profiling · export
+
+</details>
+
+<details>
+<summary><strong>Security</strong></summary>
+<br/>
+
+- [x] Administrator authentication · session timeout · password management · GPG-signed releases
+- [ ] API auth · secrets management · RBAC · audit logging · security diagnostics · enterprise controls
+
+</details>
+
+<details>
+<summary><strong>Developer Experience</strong></summary>
+<br/>
+
+- [x] Python package · Typer CLI · release packaging · GitHub Actions pipeline · Wiki · community docs · issue templates · PR templates
+- [ ] Python API docs · plugin SDK · shell completion · diagnostics bundle
+
+</details>
 <!-- AXIOM_FEATURES_END -->
 
+---
+
 ## Roadmap
-
-AXIOM is actively evolving. See the full project roadmap for upcoming platform work, Control Center development, training, evaluation, runtime, optimization and deployment plans.
-
-**[View the AXIOM Roadmap →](docs/ROADMAP.md)**
 
 <!-- AXIOM_ROADMAP_BEGIN -->
-## Roadmap
+<details open>
+<summary><strong>✅ Completed</strong></summary>
+<br/>
 
-### Completed
-- [x] Core AXIOM platform
-- [x] First-boot administrator experience
-- [x] Authentication and session controls
-- [x] Model registry
-- [x] Dataset inspection and cleaning
-- [x] Training-plan generation
-- [x] Hardware capability detection
-- [x] Model-fit estimation
-- [x] Hugging Face integration
-- [x] SuperCompress
-- [x] Integration registry
-- [x] MCP foundation
-- [x] CLI expansion
-- [x] Project validation
-- [x] Configuration validation
-- [x] Diagnostics commands
-- [x] Documentation Wiki
-- [x] Community documentation
-- [x] Release packaging
-- [x] Signed releases
+Core platform · First-boot admin · Authentication · Session controls · Model registry · Dataset inspection & cleaning · Training plan generation · Hardware detection · Model-fit estimation · Hugging Face integration · SuperCompress · Integration registry · MCP foundation · CLI expansion (21 commands) · Project validation · Config validation · Diagnostics · Wiki · Community docs · Release packaging · GPG-signed releases
 
-### Next - AI Engineering
-- [ ] Full training execution
-- [ ] Training job manager
-- [ ] Training queue
-- [ ] Experiment tracking
-- [ ] Checkpoint management
-- [ ] Resume/recovery
-- [ ] Hyperparameter search
-- [ ] Evaluation pipelines
-- [ ] Benchmark runner
-- [ ] Model comparison
-- [ ] Regression testing
-- [ ] Automated evaluation reports
+</details>
 
-### Next - Data
-- [ ] Dataset versioning
-- [ ] Dataset diffing
-- [ ] Dataset deduplication
-- [ ] Dataset quality scoring
-- [ ] Dataset sampling
-- [ ] Dataset augmentation
-- [ ] Dataset lineage
-- [ ] Dataset export/import tooling
+<details>
+<summary><strong>🚧 Next — AI Engineering</strong></summary>
+<br/>
 
-### Next - Models
-- [ ] Model download manager
-- [ ] Model conversion tools
-- [ ] Model compatibility matrix
-- [ ] Model benchmarking
-- [ ] Model version management
-- [ ] Model artifact management
-- [ ] Quantization workflows
+- [ ] Training execution · job manager · queue · experiment tracking · checkpoints · resume/recovery · hyperparameter search
+- [ ] Evaluation pipelines · benchmark runner · model comparison · regression testing · reports
 
-### Next - Runtime
-- [ ] Production model serving
-- [ ] Streaming inference
-- [ ] Request batching
-- [ ] Request scheduling
-- [ ] Runtime autoscaling
-- [ ] Runtime health monitoring
-- [ ] Runtime load testing
-- [ ] Inference optimization
-- [ ] Endpoint management
+</details>
 
-### Next - Observability
-- [ ] Live telemetry
-- [ ] Request tracing
-- [ ] Token accounting
-- [ ] GPU monitoring
-- [ ] Training telemetry
-- [ ] Runtime metrics
-- [ ] Log search
-- [ ] Performance profiling
-- [ ] Metrics export
+<details>
+<summary><strong>🚧 Next — Data & Models</strong></summary>
+<br/>
 
-### Platform Expansion
-- [ ] Plugin SDK
-- [ ] Python API
-- [ ] CLI shell completion
-- [ ] Remote training
-- [ ] Multi-GPU orchestration
-- [ ] Distributed training
-- [ ] Distributed inference
-- [ ] Agent orchestration
-- [ ] Advanced MCP tooling
-- [ ] Hardware-aware optimization
-- [ ] Reproducible environments
-- [ ] Deployment automation
+- [ ] Dataset versioning · diffing · deduplication · quality scoring · sampling · augmentation · lineage
+- [ ] Model download manager · conversion · compatibility matrix · benchmarking · version management · quantization workflows
 
-### Security and Enterprise
-- [ ] API authentication
-- [ ] Secrets management
-- [ ] Role-based access control
-- [ ] Audit logging
-- [ ] Security diagnostics
-- [ ] Enterprise deployment controls
-- [ ] Policy management
+</details>
 
-### Long-Term Vision
-- [ ] Full AI experiment workspace
-- [ ] End-to-end AI lifecycle management
-- [ ] Collaborative AI engineering
-- [ ] Large-scale workload orchestration
-- [ ] Enterprise AI deployment
-- [ ] AXIOM plugin marketplace
-- [ ] Advanced agent platform
+<details>
+<summary><strong>🚧 Next — Runtime & Observability</strong></summary>
+<br/>
+
+- [ ] Production serving · streaming inference · batching · scheduling · autoscaling · health monitoring
+- [ ] Live telemetry · request tracing · GPU monitoring · log search · performance profiling · metrics export
+
+</details>
+
+<details>
+<summary><strong>🔭 Platform Expansion</strong></summary>
+<br/>
+
+- [ ] Plugin SDK · Python API · CLI shell completion · remote training · multi-GPU · distributed training/inference · agent orchestration · advanced MCP · deployment automation
+
+</details>
+
+<details>
+<summary><strong>🌐 Long-Term Vision</strong></summary>
+<br/>
+
+- [ ] Full AI experiment workspace · end-to-end lifecycle management · collaborative AI engineering · enterprise deployment · AXIOM plugin marketplace · advanced agent platform
+
+</details>
 <!-- AXIOM_ROADMAP_END -->
+
+---
+
+## Principles
+
+<div align="center">
+
+| | |
+|---|---|
+| **Own your models** | Use what you choose, on infrastructure you control |
+| **Own your data** | Your datasets stay yours |
+| **Reproducibility first** | Training and evaluation reproducible from config |
+| **Local-first** | Local hardware is a first-class environment |
+| **Modular by design** | Integrates with existing ecosystems, no lock-in |
+
+</div>
+
+---
+
+## Contributing
+
+AXIOM is young — architecture and APIs move fast.
+
+Open an issue before large feature contributions. Bug fixes, tests, docs and tooling improvements are always welcome.
+
+→ [CONTRIBUTING.md](CONTRIBUTING.md) &nbsp;·&nbsp; [Code of Conduct](CODE_OF_CONDUCT.md) &nbsp;·&nbsp; [Security Policy](SECURITY.md)
+
+---
+
+## License
+
+MIT — [LICENSE](LICENSE)
+
+---
+
+<div align="center">
+
+<sub>Built by <a href="https://github.com/manit6752025">@manit6752025</a> and <a href="https://github.com/NetCore-Technologies/AXIOM-AI/graphs/contributors">contributors</a> · <a href="https://netcore-technologies.github.io/AXIOM-AI/">netcore-technologies.github.io/AXIOM-AI</a></sub>
+
+<br/>
+
+<sub><strong>AXIOM — Build AI. Own AI.</strong></sub>
+
+</div>
