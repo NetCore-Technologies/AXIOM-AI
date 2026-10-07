@@ -7,7 +7,7 @@
 An open-source platform for building, fine-tuning, evaluating, and deploying AI models.
 
 [![Status](https://img.shields.io/badge/status-early%20development-orange)](https://github.com/NetCore-Technologies/AXIOM-AI)
-[![License](https://img.shields.io/badge/license-GPL--2.0-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)](https://www.python.org/)
 [![GitHub](https://img.shields.io/github/stars/NetCore-Technologies/AXIOM-AI?style=social)](https://github.com/NetCore-Technologies/AXIOM-AI)
 
