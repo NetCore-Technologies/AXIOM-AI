@@ -85,7 +85,7 @@ One project. One configuration. One workflow.
 
 ## Current status
 
-AXIOM is in **early development**.
+AXIOM is in **active development** with a working Control Center, full CLI suite, and cross-platform installers available now.
 
 The project currently has a working Python CLI with:
 
