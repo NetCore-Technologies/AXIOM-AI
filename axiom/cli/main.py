@@ -44,7 +44,13 @@ app.add_typer(integration_app, name="integration")
 app.add_typer(mcp_app, name="mcp")
 
 train_app = typer.Typer(help="Plan and manage AI training jobs.")
+
 app.add_typer(train_app, name="train")
+
+# Extended AXIOM CLI
+from axiom.cli.extended import register as register_extended_cli
+register_extended_cli(app, model_app, dataset_app)
+
 
 console = Console()
 
