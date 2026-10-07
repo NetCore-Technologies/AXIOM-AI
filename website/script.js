@@ -76,3 +76,59 @@
     });
   }
 })();
+
+/* AXIOM — resolve the newest published GitHub release.
+   Prereleases are included and sorted by publication date. */
+
+(async function loadLatestAxiomRelease() {
+  const API =
+    "https://api.github.com/repos/NetCore-Technologies/AXIOM-AI/releases?per_page=30";
+
+  try {
+    const response = await fetch(API, {
+      headers: {
+        Accept: "application/vnd.github+json"
+      },
+      cache: "no-store"
+    });
+
+    if (!response.ok) return;
+
+    const releases = await response.json();
+
+    const release = releases
+      .filter((item) => !item.draft && item.published_at)
+      .sort(
+        (a, b) =>
+          new Date(b.published_at).getTime() -
+          new Date(a.published_at).getTime()
+      )[0];
+
+    if (!release) return;
+
+    const tag = release.tag_name;
+
+    document.querySelectorAll("[data-axiom-version]").forEach((el) => {
+      el.textContent = tag;
+    });
+
+    document.querySelectorAll("a[data-axiom-release]").forEach((link) => {
+      link.href = release.html_url;
+    });
+
+    document.querySelectorAll("[data-axiom-asset]").forEach((link) => {
+      const suffix = link.getAttribute("data-axiom-asset");
+      if (!suffix) return;
+
+      const asset = release.assets.find(
+        (item) => item.name === `AXIOM-${tag}-${suffix}`
+      );
+
+      if (asset) {
+        link.href = asset.browser_download_url;
+      }
+    });
+  } catch (error) {
+    console.warn("AXIOM release lookup failed:", error);
+  }
+})();
