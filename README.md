@@ -391,8 +391,266 @@ See [`LICENSE`](LICENSE) for the full license text.
 </p>
 
 
+<!-- AXIOM_FEATURES_BEGIN -->
+## Features
+
+### Core Platform
+- [x] AXIOM project initialization
+- [x] Modular AI engineering architecture
+- [x] First-boot administrator setup
+- [x] Local authentication
+- [x] Session timeout protection
+- [x] Password management
+- [x] Modern AXIOM control center
+- [x] Light / dark UI support
+
+### CLI
+- [x] axiom version
+- [x] axiom init
+- [x] axiom model list
+- [x] axiom model add
+- [x] axiom model inspect
+- [x] axiom model search
+- [x] axiom dataset inspect
+- [x] axiom dataset clean
+- [x] axiom dataset validate
+- [x] axiom dataset stats
+- [x] axiom project info
+- [x] axiom project validate
+- [x] axiom config show
+- [x] axiom config validate
+- [x] axiom doctor
+- [x] axiom info
+- [x] axiom status
+- [x] Hugging Face authentication
+- [x] SuperCompress
+- [x] Integration registry
+- [x] MCP support
+
+### Models
+- [x] Model registry
+- [x] Model inspection
+- [x] Model metadata
+- [x] Model format awareness
+- [x] Parameter-count metadata
+- [x] Quantization metadata
+- [ ] Automated model download manager
+- [ ] Model conversion pipeline
+- [ ] Model benchmark suite
+- [ ] Model compatibility checks
+- [ ] Model version management
+
+### Datasets
+- [x] JSONL inspection
+- [x] Dataset cleaning
+- [x] Validation
+- [x] Duplicate detection
+- [x] Dataset statistics
+- [x] Field detection
+- [x] Token estimation
+- [ ] Dataset versioning
+- [ ] Dataset diffing
+- [ ] Dataset deduplication engine
+- [ ] Dataset sampling
+- [ ] Dataset augmentation
+- [ ] Dataset quality scoring
+
+### Training
+- [x] Training planning
+- [x] Hardware-aware planning
+- [x] LoRA planning
+- [x] CPU/GPU capability detection
+- [x] Model-fit estimation
+- [ ] Training execution
+- [ ] Training job management
+- [ ] Experiment tracking
+- [ ] Checkpoint management
+- [ ] Training dashboards
+- [ ] Multi-GPU training
+- [ ] Distributed training
+- [ ] Automatic hyperparameter search
+- [ ] Training resume/recovery
+
+### Evaluation
+- [x] Evaluation subsystem foundation
+- [ ] Automated evaluation pipelines
+- [ ] Benchmark runner
+- [ ] Dataset-based evaluation
+- [ ] Model comparison
+- [ ] Regression testing
+- [ ] Custom metrics
+- [ ] Evaluation reports
+- [ ] Evaluation dashboards
+
+### Runtime
+- [x] Runtime subsystem foundation
+- [x] MCP foundation
+- [x] Integration registry
+- [ ] Production model serving
+- [ ] Streaming inference
+- [ ] Request batching
+- [ ] Request scheduling
+- [ ] Runtime autoscaling
+- [ ] Runtime health checks
+- [ ] Runtime load testing
+- [ ] Inference optimization
+
+### Observability
+- [x] Diagnostics foundation
+- [x] System information
+- [x] CLI health checks
+- [ ] Live telemetry
+- [ ] Request tracing
+- [ ] Token usage tracking
+- [ ] GPU utilization monitoring
+- [ ] Training telemetry
+- [ ] Runtime metrics
+- [ ] Log search and filtering
+- [ ] Performance profiling
+- [ ] Metrics export
+
+### Security
+- [x] Administrator authentication
+- [x] Session timeout
+- [x] Password management
+- [x] GPG-signed releases
+- [ ] API authentication
+- [ ] Secrets management
+- [ ] Role-based access control
+- [ ] Audit logging
+- [ ] Security diagnostics
+- [ ] Enterprise security controls
+
+### Developer Experience
+- [x] Python package
+- [x] Typer CLI
+- [x] Automated release packaging
+- [x] GitHub Actions release pipeline
+- [x] Documentation Wiki
+- [x] Community documentation
+- [x] Issue templates
+- [x] Pull request templates
+- [ ] Python API documentation
+- [ ] Plugin SDK
+- [ ] CLI shell completion
+- [ ] Developer diagnostics bundle
+<!-- AXIOM_FEATURES_END -->
+
 ## Roadmap
 
 AXIOM is actively evolving. See the full project roadmap for upcoming platform work, Control Center development, training, evaluation, runtime, optimization and deployment plans.
 
 **[View the AXIOM Roadmap →](docs/ROADMAP.md)**
+
+<!-- AXIOM_ROADMAP_BEGIN -->
+## Roadmap
+
+### Completed
+- [x] Core AXIOM platform
+- [x] First-boot administrator experience
+- [x] Authentication and session controls
+- [x] Model registry
+- [x] Dataset inspection and cleaning
+- [x] Training-plan generation
+- [x] Hardware capability detection
+- [x] Model-fit estimation
+- [x] Hugging Face integration
+- [x] SuperCompress
+- [x] Integration registry
+- [x] MCP foundation
+- [x] CLI expansion
+- [x] Project validation
+- [x] Configuration validation
+- [x] Diagnostics commands
+- [x] Documentation Wiki
+- [x] Community documentation
+- [x] Release packaging
+- [x] Signed releases
+
+### Next - AI Engineering
+- [ ] Full training execution
+- [ ] Training job manager
+- [ ] Training queue
+- [ ] Experiment tracking
+- [ ] Checkpoint management
+- [ ] Resume/recovery
+- [ ] Hyperparameter search
+- [ ] Evaluation pipelines
+- [ ] Benchmark runner
+- [ ] Model comparison
+- [ ] Regression testing
+- [ ] Automated evaluation reports
+
+### Next - Data
+- [ ] Dataset versioning
+- [ ] Dataset diffing
+- [ ] Dataset deduplication
+- [ ] Dataset quality scoring
+- [ ] Dataset sampling
+- [ ] Dataset augmentation
+- [ ] Dataset lineage
+- [ ] Dataset export/import tooling
+
+### Next - Models
+- [ ] Model download manager
+- [ ] Model conversion tools
+- [ ] Model compatibility matrix
+- [ ] Model benchmarking
+- [ ] Model version management
+- [ ] Model artifact management
+- [ ] Quantization workflows
+
+### Next - Runtime
+- [ ] Production model serving
+- [ ] Streaming inference
+- [ ] Request batching
+- [ ] Request scheduling
+- [ ] Runtime autoscaling
+- [ ] Runtime health monitoring
+- [ ] Runtime load testing
+- [ ] Inference optimization
+- [ ] Endpoint management
+
+### Next - Observability
+- [ ] Live telemetry
+- [ ] Request tracing
+- [ ] Token accounting
+- [ ] GPU monitoring
+- [ ] Training telemetry
+- [ ] Runtime metrics
+- [ ] Log search
+- [ ] Performance profiling
+- [ ] Metrics export
+
+### Platform Expansion
+- [ ] Plugin SDK
+- [ ] Python API
+- [ ] CLI shell completion
+- [ ] Remote training
+- [ ] Multi-GPU orchestration
+- [ ] Distributed training
+- [ ] Distributed inference
+- [ ] Agent orchestration
+- [ ] Advanced MCP tooling
+- [ ] Hardware-aware optimization
+- [ ] Reproducible environments
+- [ ] Deployment automation
+
+### Security and Enterprise
+- [ ] API authentication
+- [ ] Secrets management
+- [ ] Role-based access control
+- [ ] Audit logging
+- [ ] Security diagnostics
+- [ ] Enterprise deployment controls
+- [ ] Policy management
+
+### Long-Term Vision
+- [ ] Full AI experiment workspace
+- [ ] End-to-end AI lifecycle management
+- [ ] Collaborative AI engineering
+- [ ] Large-scale workload orchestration
+- [ ] Enterprise AI deployment
+- [ ] AXIOM plugin marketplace
+- [ ] Advanced agent platform
+<!-- AXIOM_ROADMAP_END -->
