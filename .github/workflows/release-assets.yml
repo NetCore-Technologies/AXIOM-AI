@@ -357,7 +357,7 @@ jobs:
               <MediaTemplate />
 
               <Directory Id="TARGETDIR" Name="SourceDir">
-                <Directory Id="LocalAppDataFolder">
+                <Directory Id="ProgramFiles64Folder">
                   <Directory Id="INSTALLFOLDER" Name="AXIOM">
                     <Component Id="AXIOMExecutable" Guid="*">
                       <File
