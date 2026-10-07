@@ -368,7 +368,7 @@ Small improvements, bug fixes, tests, documentation, and developer tooling are w
 
 # Roadmap
 
-See [`docs/ROADMAP.md`](ROADMAP.md) for the current development plan.
+See [`ROADMAP.md`](docs/ROADMAP.md) for the current development plan.
 
 # Security
 
@@ -378,7 +378,7 @@ See [`SECURITY.md`](SECURITY.md) for reporting security vulnerabilities.
 
 # License
 
-AXIOM is released under the **GNU General Public License v2.0**.
+AXIOM is released under the **MIT License**.
 
 See [`LICENSE`](LICENSE) for the full license text.
 
