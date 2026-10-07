@@ -1,5 +1,4 @@
-import {
-  useMemo,
+import { useEffect,
   useState
 } from "react";
 import {
@@ -82,29 +81,248 @@ const activity = [
   { time: "14:00", requests: 137 },
 ];
 
-const latency = [72,70,68,73,69,67,65,66,62,60,61,58,57,55];
+type AdminRecord = {
+  username: string;
+  passwordHash: string;
+  updatedAt: number;
+};
+
+const ADMIN_KEY = "axiom-admin";
+const SESSION_KEY = "axiom-session";
+
+async function hashPassword(password: string): Promise<string> {
+  const bytes = new TextEncoder().encode(password);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+
+  return Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function readAdmin(): AdminRecord | null {
+  const raw = localStorage.getItem(ADMIN_KEY);
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as AdminRecord;
+  } catch {
+    return null;
+  }
+}
+
+function isAuthenticated(): boolean {
+  return sessionStorage.getItem(SESSION_KEY) === "1";
+}
+
+function getAdministratorName(): string {
+  return readAdmin()?.username || "Administrator";
+}
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+
+  if (hour >= 5 && hour < 12) {
+    return "Good morning";
+  }
+
+  if (hour >= 12 && hour < 18) {
+    return "Good afternoon";
+  }
+
+  return "Good evening";
+}
+
+async function saveAdministrator(
+  username: string,
+  password: string,
+): Promise<void> {
+  const record: AdminRecord = {
+    username: username.trim(),
+    passwordHash: await hashPassword(password),
+    updatedAt: Date.now(),
+  };
+
+  localStorage.setItem(ADMIN_KEY, JSON.stringify(record));
+}
+
+async function verifyAdministrator(
+  username: string,
+  password: string,
+): Promise<boolean> {
+  const admin = readAdmin();
+
+  if (!admin) {
+    return false;
+  }
+
+  const hash = await hashPassword(password);
+
+  return (
+    admin.username === username.trim() &&
+    admin.passwordHash === hash
+  );
+}
 
 function App() {
-  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem("axiom-theme") as Theme) || "dark");
-  const [booted, setBooted] = useState(() => localStorage.getItem("axiom-booted") === "1");
-  const [setupDone, setSetupDone] = useState(() => localStorage.getItem("axiom-setup") === "1");
+  const [theme, setTheme] = useState<Theme>(() =>
+    (localStorage.getItem("axiom-theme") as Theme) || "dark",
+  );
+
+  const [booted, setBooted] = useState(
+    () => localStorage.getItem("axiom-booted") === "1",
+  );
+
+  const [setupDone, setSetupDone] = useState(
+    () =>
+      localStorage.getItem("axiom-setup") === "1" &&
+      Boolean(readAdmin()),
+  );
+
+  const [authenticated, setAuthenticated] =
+    useState(() => isAuthenticated());
+
   const [page, setPage] = useState<Page>("dashboard");
+  const [changePasswordOpen, setChangePasswordOpen] =
+    useState(false);
+
+  /*
+   * AXIOM automatically logs out after 10 minutes without
+   * user activity.
+   */
+  useEffect(() => {
+    if (!authenticated) {
+      return;
+    }
+
+    let timeout: number | undefined;
+
+    const logoutForInactivity = () => {
+      sessionStorage.removeItem(SESSION_KEY);
+      setAuthenticated(false);
+      setChangePasswordOpen(false);
+    };
+
+    const resetTimer = () => {
+      if (timeout !== undefined) {
+        window.clearTimeout(timeout);
+      }
+
+      timeout = window.setTimeout(
+        logoutForInactivity,
+        10 * 60 * 1000,
+      );
+    };
+
+    const activityEvents = [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "touchstart",
+      "scroll",
+      "pointerdown",
+    ];
+
+    activityEvents.forEach((event) => {
+      window.addEventListener(event, resetTimer);
+    });
+
+    resetTimer();
+
+    return () => {
+      if (timeout !== undefined) {
+        window.clearTimeout(timeout);
+      }
+
+      activityEvents.forEach((event) => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
+  }, [authenticated]);
 
   if (!booted) {
-    return <Welcome theme={theme} onStart={() => { localStorage.setItem("axiom-booted", "1"); setBooted(true); }} />;
+    return (
+      <Welcome
+        theme={theme}
+        onStart={() => {
+          localStorage.setItem("axiom-booted", "1");
+          setBooted(true);
+        }}
+      />
+    );
   }
 
   if (!setupDone) {
-    return <Setup theme={theme} onComplete={() => { localStorage.setItem("axiom-setup", "1"); setSetupDone(true); }} />;
+    return (
+      <Setup
+        theme={theme}
+        onComplete={async (username, password) => {
+          await saveAdministrator(username, password);
+
+          localStorage.setItem("axiom-setup", "1");
+
+          /*
+           * Do NOT automatically log them in.
+           * First boot finishes, then AXIOM presents the login
+           * screen so the newly-created administrator signs in.
+           */
+          setSetupDone(true);
+          sessionStorage.removeItem(SESSION_KEY);
+          setAuthenticated(false);
+        }}
+      />
+    );
   }
+
+  if (!authenticated) {
+    return (
+      <LoginScreen
+        theme={theme}
+        onLogin={() => {
+          sessionStorage.setItem(SESSION_KEY, "1");
+          setAuthenticated(true);
+        }}
+      />
+    );
+  }
+
+  const username = getAdministratorName();
+
+  const logout = () => {
+    sessionStorage.removeItem(SESSION_KEY);
+    setAuthenticated(false);
+    setChangePasswordOpen(false);
+  };
 
   return (
     <div className={`app-shell ${theme}`}>
       <Sidebar page={page} setPage={setPage} />
+
       <main className="main-shell">
-        <Topbar theme={theme} setTheme={(t) => { localStorage.setItem("axiom-theme", t); setTheme(t); }} page={page} />
+        <Topbar
+          theme={theme}
+          setTheme={(nextTheme) => {
+            localStorage.setItem("axiom-theme", nextTheme);
+            setTheme(nextTheme);
+          }}
+          page={page}
+          username={username}
+          onLogout={logout}
+          onChangePassword={() =>
+            setChangePasswordOpen(true)
+          }
+        />
+
         <div className="page-wrap">
-          {page === "dashboard" && <Dashboard setPage={setPage} />}
+          {page === "dashboard" && (
+            <Dashboard
+              setPage={setPage}
+              username={username}
+            />
+          )}
+
           {page === "models" && <Models />}
           {page === "datasets" && <Datasets />}
           {page === "training" && <Training />}
@@ -113,93 +331,889 @@ function App() {
           {page === "mcp" && <MCP />}
           {page === "diagnostics" && <Diagnostics />}
           {page === "logs" && <LogsPage />}
-          {page === "settings" && <SettingsPage />}
         </div>
       </main>
+
+      {changePasswordOpen && (
+        <ChangePasswordModal
+          onClose={() => setChangePasswordOpen(false)}
+          onSuccess={() => {
+            sessionStorage.removeItem(SESSION_KEY);
+            setChangePasswordOpen(false);
+            setAuthenticated(false);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function Welcome({ theme, onStart }: { theme: Theme; onStart: () => void }) {
+
+
+
+function Welcome({
+  theme,
+  onStart,
+}: {
+  theme: Theme;
+  onStart: () => void;
+}) {
   return (
     <div className={`onboarding ${theme}`}>
       <div className="ambient ambient-a" />
       <div className="ambient ambient-b" />
-      <section className="onboarding-copy">
+
+      <div className="onboarding-copy">
         <div>
-          <div className="brand-lockup"><div className="brand-mark">A</div><div><b>AXIOM</b><span>AI ENGINEERING PLATFORM</span></div></div>
-          <div className="step-strip"><span className="active">01</span><span>02</span><span>03</span></div>
-        </div>
-        <div className="hero-block">
-          <div className="eyebrow"><Sparkles size={14} /> BUILD AI. OWN AI.</div>
-          <h1>Welcome to<br /><span>AXIOM.</span></h1>
-          <p>Build, inspect, train and operate your AI stack from one local-first engineering control center.</p>
-          <button className="primary-button" onClick={onStart}>Enter AXIOM <ArrowRight size={18} /></button>
-        </div>
-        <div className="principles">
-          <InfoLine icon={ShieldCheck} title="LOCAL-FIRST" text="Your workspace stays under your control." />
-          <InfoLine icon={BrainCircuit} title="AI ENGINEERING" text="Models, data, training and runtime in one flow." />
-          <InfoLine icon={Activity} title="FULL VISIBILITY" text="Inspect requests, logs, metrics and failures." />
-        </div>
-        <div className="tiny-footer">AXIOM • BUILD AI. OWN AI.</div>
-      </section>
-      <section className="onboarding-preview">
-        <div className="preview-window">
-          <div className="preview-bar"><div className="traffic"><i /><i /><i /></div><span>AXIOM / CONTROL CENTER</span><b><span className="pulse" /> LIVE</b></div>
-          <div className="preview-grid">
-            <div className="glass-card highlight"><small>SYSTEM HEALTH</small><strong>98.7<span>%</span></strong><Sparkline values={activity.map((d) => d.requests)} /></div>
-            <div className="glass-card"><small>ACTIVE MODEL</small><b className="hero-small">Qwen 3 • 8B</b><em>READY</em></div>
-            <div className="glass-card"><small>REQUESTS / MIN</small><b className="hero-small">1,284</b><span className="delta">+14.2%</span></div>
-            <div className="glass-card wide"><small>INFERENCE LATENCY</small><Sparkline values={latency} /></div>
+          <div className="brand-lockup">
+            <div className="brand-q">A</div>
+
+            <div>
+              <b>AXIOM</b>
+              <span>AI ENGINEERING PLATFORM</span>
+            </div>
+          </div>
+
+          <div className="step-strip">
+            <span className="active">01</span>
+            <span>02</span>
+            <span>03</span>
           </div>
         </div>
-      </section>
+
+        <section className="hero-block">
+          <div className="eyebrow">
+            FIRST BOOT • AXIOM CONTROL CENTER
+          </div>
+
+          <h1>
+            Build AI.
+            <span> Own AI.</span>
+          </h1>
+
+          <p>
+            Welcome to AXIOM, your local AI engineering workspace
+            for building, training, evaluating, optimizing and
+            deploying AI systems.
+          </p>
+
+          <button
+            type="button"
+            className="hero-button"
+            onClick={onStart}
+          >
+            Begin AXIOM setup
+            <ArrowRight size={18} />
+          </button>
+        </section>
+
+        <div className="tiny-footer">
+          LOCAL • PRIVATE • ENGINEERED FOR AI
+        </div>
+      </div>
+
+      <div className="onboarding-preview">
+        <div className="preview-window">
+          <div className="preview-bar">
+            <div className="traffic">
+              <i />
+              <i />
+              <i />
+            </div>
+
+            <span>AXIOM CONTROL CENTER</span>
+
+            <b>
+              <span className="status-dot live" />
+              READY
+            </b>
+          </div>
+
+          <div className="preview-grid">
+            <div className="glass-card wide">
+              <small>SYSTEM HEALTH</small>
+              <strong>
+                98.7%
+                <span> HEALTHY</span>
+              </strong>
+              <div className="delta">
+                +1.8% from previous check
+              </div>
+            </div>
+
+            <div className="glass-card">
+              <small>AI RUNTIME</small>
+              <strong>READY</strong>
+              <span className="hero-small">
+                Local engine
+              </span>
+            </div>
+
+            <div className="glass-card">
+              <small>MODEL REGISTRY</small>
+              <strong>SYNCED</strong>
+              <span className="hero-small">
+                Local models
+              </span>
+            </div>
+
+            <div className="glass-card wide">
+              <small>INFERENCE ACTIVITY</small>
+
+              <svg
+                className="sparkline"
+                viewBox="0 0 100 42"
+                preserveAspectRatio="none"
+              >
+                <polyline
+                  points="0,34 12,29 23,31 34,20 45,24 56,12 68,17 79,8 90,13 100,4"
+                />
+              </svg>
+            </div>
+          </div>
+
+          <div className="preview-message">
+            <ShieldCheck size={14} />
+            <span>
+              AXIOM runs locally and keeps your engineering
+              workspace under your control.
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-function InfoLine({ icon: Icon, title, text }: { icon: React.ElementType; title: string; text: string }) {
-  return <div className="info-line"><Icon size={16} /><div><b>{title}</b><span>{text}</span></div></div>;
-}
-
-function Setup({ theme, onComplete }: { theme: Theme; onComplete: () => void }) {
+function Setup({
+  theme,
+  onComplete,
+}: {
+  theme: Theme;
+  onComplete: (
+    username: string,
+    password: string,
+  ) => Promise<void>;
+}) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [reveal, setReveal] = useState(false);
-  const req = useMemo(() => ({
-    username: username.length >= 3,
-    length: password.length >= 8,
-    upper: /[A-Z]/.test(password),
-    lower: /[a-z]/.test(password),
-    number: /[0-9]/.test(password),
-    match: password.length > 0 && password === confirm,
-  }), [username, password, confirm]);
-  const canContinue = req.username && req.length && req.upper && req.lower && req.number && req.match;
+  const [created, setCreated] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  return <div className={`onboarding centered ${theme}`}>
-    <div className="setup-panel">
-      <div className="setup-head"><div className="brand-mark">A</div><div><b>AXIOM</b><span>ADMINISTRATOR SETUP</span></div></div>
-      <div className="step-strip compact"><span className="active">01</span><span>02</span><span>03</span></div>
-      <div className="eyebrow">STEP 1 OF 3 • ADMINISTRATOR</div>
-      <h1>Create your <span>AXIOM account.</span></h1>
-      <p>This local administrator account protects access to your AXIOM workspace and control center.</p>
-      <Field label="Username" valid={req.username} hint="3+ character username"><input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="administrator" /></Field>
-      <Field label="Password" valid={req.length && req.upper && req.lower && req.number} action={<button className="show-button" onClick={() => setReveal(!reveal)}>{reveal ? "Hide" : "Show"}</button>}><input type={reveal ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a secure password" autoComplete="new-password" /></Field>
-      <div className="requirements"><Requirement ok={req.length} label="8+ character password" /><Requirement ok={req.upper && req.lower} label="Upper + lowercase" /><Requirement ok={req.number} label="Contains a number" /></div>
-      <Field label="Confirm password" valid={req.match} hint={req.match ? "Passwords match" : "Passwords must match"}><input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Repeat your password" autoComplete="new-password" /></Field>
-      <button className="primary-button full" disabled={!canContinue} onClick={onComplete}>Continue <ArrowRight size={18} /></button>
-      <div className="secure-note"><ShieldCheck size={14} /> Stored locally by the AXIOM installation.</div>
+  const usernameValid = username.trim().length >= 3;
+
+  const lengthValid = password.length >= 8;
+  const upperValid = /[A-Z]/.test(password);
+  const lowerValid = /[a-z]/.test(password);
+  const numberValid = /[0-9]/.test(password);
+
+  const passwordValid =
+    lengthValid &&
+    upperValid &&
+    lowerValid &&
+    numberValid;
+
+  const matchValid =
+    password.length > 0 &&
+    password === confirm;
+
+  const canContinue =
+    usernameValid &&
+    passwordValid &&
+    matchValid &&
+    !saving;
+
+  async function createAccount() {
+    if (!canContinue) {
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      await onComplete(username, password);
+
+      setCreated(true);
+
+      window.setTimeout(() => {
+        /*
+         * App will now render the login screen.
+         */
+      }, 900);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (created) {
+    return (
+      <div className={`onboarding centered ${theme}`}>
+        <div className="setup-success">
+          <div className="setup-success-orb">
+            ✓
+          </div>
+
+          <div className="eyebrow">
+            STEP 3 OF 3 • COMPLETE
+          </div>
+
+          <h1>
+            Administrator <span>created.</span>
+          </h1>
+
+          <p>
+            Your AXIOM workspace is ready.
+            Redirecting to secure sign in...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`onboarding centered ${theme}`}>
+      <div className="setup-panel">
+        <div className="setup-head">
+          <div className="brand-mark">A</div>
+
+          <div>
+            <b>AXIOM</b>
+            <span>ADMINISTRATOR SETUP</span>
+          </div>
+        </div>
+
+        <div className="step-strip compact">
+          <span className="active">01</span>
+          <span className="active">02</span>
+          <span>03</span>
+        </div>
+
+        <div className="eyebrow">
+          STEP 2 OF 3 • ADMINISTRATOR
+        </div>
+
+        <h1>
+          Create your <span>AXIOM account.</span>
+        </h1>
+
+        <p>
+          This local administrator account protects access to
+          your AXIOM workspace and Control Center.
+        </p>
+
+        <Field
+          label="Username"
+          valid={usernameValid}
+          hint={
+            username.length === 0
+              ? "3+ character username"
+              : usernameValid
+                ? "Username ready"
+                : "Use at least 3 characters"
+          }
+        >
+          <input
+            value={username}
+            onChange={(event) => {
+              setUsername(event.target.value);
+            }}
+            placeholder="administrator"
+            autoComplete="username"
+            spellCheck={false}
+          />
+        </Field>
+
+        <Field
+          label="Password"
+          valid={passwordValid}
+          action={
+            <button
+              type="button"
+              className="show-button"
+              onClick={() => {
+                setReveal((value) => !value);
+              }}
+            >
+              {reveal ? "Hide" : "Show"}
+            </button>
+          }
+        >
+          <input
+            type={reveal ? "text" : "password"}
+            value={password}
+            onChange={(event) => {
+              setPassword(event.target.value);
+            }}
+            placeholder="Create a secure password"
+            autoComplete="new-password"
+          />
+        </Field>
+
+        <div className="requirements">
+          <Requirement
+            ok={lengthValid}
+            label="8+ characters"
+          />
+
+          <Requirement
+            ok={upperValid}
+            label="Uppercase letter"
+          />
+
+          <Requirement
+            ok={lowerValid}
+            label="Lowercase letter"
+          />
+
+          <Requirement
+            ok={numberValid}
+            label="Contains a number"
+          />
+        </div>
+
+        <Field
+          label="Confirm password"
+          valid={matchValid}
+          hint={
+            confirm.length === 0
+              ? "Passwords must match"
+              : matchValid
+                ? "Passwords match"
+                : "Passwords do not match"
+          }
+        >
+          <input
+            type="password"
+            value={confirm}
+            onChange={(event) => {
+              setConfirm(event.target.value);
+            }}
+            placeholder="Repeat your password"
+            autoComplete="new-password"
+          />
+        </Field>
+
+        <button
+          type="button"
+          className="primary-button full"
+          disabled={!canContinue}
+          onClick={createAccount}
+        >
+          {saving ? "Creating account..." : "Create Administrator"}
+          <ArrowRight size={18} />
+        </button>
+
+        <div className="secure-note">
+          <ShieldCheck size={14} />
+          Stored locally by the AXIOM installation.
+        </div>
+      </div>
     </div>
-  </div>;
+  );
 }
 
-function Field({ label, valid, hint, action, children }: { label: string; valid: boolean; hint?: string; action?: React.ReactNode; children: React.ReactNode }) {
-  return <div className="field"><label>{label}</label><div className={`input-shell ${valid ? "valid" : ""}`}>{children}{valid && <Check size={17} />}{action}</div>{hint && <small className={valid && label === "Confirm password" ? "valid-text" : ""}>{hint}</small>}</div>;
+function Field({
+  label,
+  valid,
+  hint,
+  action,
+  children,
+}: {
+  label: string;
+  valid: boolean;
+  hint?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="field">
+      <label>{label}</label>
+
+      <div
+        className={`input-shell ${
+          valid ? "field-valid" : ""
+        }`}
+      >
+        {children}
+
+        <span
+          className={`field-valid-light ${
+            valid ? "on" : ""
+          }`}
+          aria-hidden="true"
+        />
+
+        {action}
+      </div>
+
+      {hint && (
+        <small
+          className={
+            valid &&
+            label === "Confirm password"
+              ? "valid-text"
+              : ""
+          }
+        >
+          {hint}
+        </small>
+      )}
+    </div>
+  );
 }
 
-function Requirement({ ok, label }: { ok: boolean; label: string }) {
-  return <div className={`requirement ${ok ? "ok" : ""}`}><span>{ok ? <Check size={11} /> : ""}</span>{label}</div>;
+function Requirement({
+  ok,
+  label,
+}: {
+  ok: boolean;
+  label: string;
+}) {
+  return (
+    <div
+      className={`requirement ${
+        ok ? "ok" : ""
+      }`}
+    >
+      <span className="requirement-light">
+        {ok ? "✓" : ""}
+      </span>
+
+      {label}
+    </div>
+  );
+}
+
+function LoginScreen({
+  theme,
+  onLogin,
+}: {
+  theme: Theme;
+  onLogin: () => void;
+}) {
+  const admin = readAdmin();
+
+  const [username, setUsername] = useState(
+    admin?.username || "",
+  );
+
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [reveal, setReveal] = useState(false);
+
+  async function submit(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    setError("");
+    setLoading(true);
+
+    try {
+      const valid = await verifyAdministrator(
+        username,
+        password,
+      );
+
+      if (!valid) {
+        setError(
+          "Incorrect administrator name or password.",
+        );
+        return;
+      }
+
+      onLogin();
+    } catch {
+      setError(
+        "Unable to authenticate with the local AXIOM account.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className={`login-screen ${theme}`}>
+      <div className="login-atmosphere login-red" />
+      <div className="login-atmosphere login-blue" />
+
+      <form
+        className="login-content"
+        onSubmit={submit}
+      >
+        <div className="login-copy-side">
+          <div className="login-logo-shell">
+            <div className="login-logo">
+              A
+            </div>
+          </div>
+
+          <div className="login-brand-name">
+            AXIOM
+          </div>
+
+          <div className="login-brand-subtitle">
+            AI ENGINEERING PLATFORM
+          </div>
+
+          <div className="login-kicker">
+            SECURE LOCAL CONTROL
+          </div>
+
+          <h1>
+            Welcome <span>back.</span>
+          </h1>
+
+          <p className="login-copy">
+            Sign in to continue to your AXIOM Control Center.
+          </p>
+        </div>
+
+        <div className="login-access-panel">
+          <div className="login-kicker">
+            ADMINISTRATOR ACCESS
+          </div>
+
+          <h2>Sign in</h2>
+
+          <p>
+            Authenticate with the administrator account
+            created during first boot.
+          </p>
+
+          <label className="login-label">
+            Username
+
+            <input
+              className="login-field-input"
+              value={username}
+              onChange={(event) =>
+                setUsername(event.target.value)
+              }
+              autoComplete="username"
+              spellCheck={false}
+              placeholder="Administrator"
+            />
+          </label>
+
+          <label className="login-label">
+            Password
+
+            <div className="login-password-wrap">
+              <input
+                className="login-field-input"
+                type={
+                  reveal ? "text" : "password"
+                }
+                value={password}
+                onChange={(event) =>
+                  setPassword(event.target.value)
+                }
+                autoComplete="current-password"
+                placeholder="Password"
+              />
+
+              <button
+                type="button"
+                className="login-reveal"
+                onClick={() =>
+                  setReveal((value) => !value)
+                }
+              >
+                {reveal ? "HIDE" : "SHOW"}
+              </button>
+            </div>
+          </label>
+
+          {error && (
+            <div className="login-error">
+              {error}
+            </div>
+          )}
+
+          <button
+            className="login-button"
+            type="submit"
+            disabled={
+              loading ||
+              !username.trim() ||
+              !password
+            }
+          >
+            {loading
+              ? "AUTHENTICATING..."
+              : "SIGN IN"}
+          </button>
+
+          <div className="login-security">
+            <ShieldCheck size={14} />
+            Local AXIOM administrator session
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function ChangePasswordModal({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showCurrent, setShowCurrent] =
+    useState(false);
+  const [showNext, setShowNext] =
+    useState(false);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  const lengthValid = next.length >= 8;
+  const upperValid = /[A-Z]/.test(next);
+  const lowerValid = /[a-z]/.test(next);
+  const numberValid = /[0-9]/.test(next);
+
+  const complete =
+    lengthValid &&
+    upperValid &&
+    lowerValid &&
+    numberValid &&
+    next.length > 0 &&
+    next === confirm;
+
+  async function submit(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    setError("");
+    setSaving(true);
+
+    try {
+      const validCurrent =
+        await verifyAdministrator(
+          getAdministratorName(),
+          current,
+        );
+
+      if (!validCurrent) {
+        setError(
+          "Current password is incorrect.",
+        );
+        return;
+      }
+
+      if (!complete) {
+        setError(
+          "The new password does not meet all requirements.",
+        );
+        return;
+      }
+
+      await saveAdministrator(
+        getAdministratorName(),
+        next,
+      );
+
+      setSuccess(true);
+
+      window.setTimeout(() => {
+        onSuccess();
+      }, 1500);
+    } catch {
+      setError(
+        "Unable to change the administrator password.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="password-modal-backdrop">
+      <div className="password-modal">
+        {success ? (
+          <div className="password-success">
+            <div className="password-success-orb">
+              ✓
+            </div>
+
+            <div className="password-success-kicker">
+              SECURITY
+            </div>
+
+            <h2>Password changed.</h2>
+
+            <p>
+              Password updated successfully.
+              Returning to the AXIOM login screen...
+            </p>
+          </div>
+        ) : (
+          <form onSubmit={submit}>
+            <div className="password-modal-header">
+              <div>
+                <span>SECURITY</span>
+                <h2>Change password</h2>
+              </div>
+
+              <button
+                type="button"
+                className="password-modal-close"
+                onClick={onClose}
+              >
+                ×
+              </button>
+            </div>
+
+            <label className="password-modal-label">
+              Current password
+
+              <div className="password-modal-input">
+                <input
+                  type={
+                    showCurrent
+                      ? "text"
+                      : "password"
+                  }
+                  value={current}
+                  onChange={(event) =>
+                    setCurrent(
+                      event.target.value,
+                    )
+                  }
+                  autoComplete="current-password"
+                />
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShowCurrent(
+                      (value) => !value,
+                    )
+                  }
+                >
+                  {showCurrent
+                    ? "HIDE"
+                    : "SHOW"}
+                </button>
+              </div>
+            </label>
+
+            <label className="password-modal-label">
+              New password
+
+              <div className="password-modal-input">
+                <input
+                  type={
+                    showNext
+                      ? "text"
+                      : "password"
+                  }
+                  value={next}
+                  onChange={(event) =>
+                    setNext(
+                      event.target.value,
+                    )
+                  }
+                  autoComplete="new-password"
+                />
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShowNext(
+                      (value) => !value,
+                    )
+                  }
+                >
+                  {showNext
+                    ? "HIDE"
+                    : "SHOW"}
+                </button>
+              </div>
+            </label>
+
+            <div className="password-modal-requirements">
+              <Requirement
+                ok={lengthValid}
+                label="8+ characters"
+              />
+
+              <Requirement
+                ok={upperValid}
+                label="Uppercase letter"
+              />
+
+              <Requirement
+                ok={lowerValid}
+                label="Lowercase letter"
+              />
+
+              <Requirement
+                ok={numberValid}
+                label="Contains a number"
+              />
+            </div>
+
+            <label className="password-modal-label">
+              Confirm new password
+
+              <input
+                className="password-confirm-input"
+                type="password"
+                value={confirm}
+                onChange={(event) =>
+                  setConfirm(
+                    event.target.value,
+                  )
+                }
+                autoComplete="new-password"
+              />
+            </label>
+
+            {confirm.length > 0 && (
+              <div
+                className={
+                  next === confirm
+                    ? "password-match valid"
+                    : "password-match"
+                }
+              >
+                {next === confirm
+                  ? "Passwords match"
+                  : "Passwords do not match"}
+              </div>
+            )}
+
+            {error && (
+              <div className="login-error">
+                {error}
+              </div>
+            )}
+
+            <button
+              className="login-button password-change-button"
+              type="submit"
+              disabled={!complete || saving}
+            >
+              {saving
+                ? "CHANGING PASSWORD..."
+                : "CHANGE PASSWORD"}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function Sidebar({ page, setPage }: { page: Page; setPage: (p: Page) => void }) {
@@ -211,14 +1225,121 @@ function Sidebar({ page, setPage }: { page: Page; setPage: (p: Page) => void }) 
   </aside>;
 }
 
-function Topbar({ theme, setTheme, page }: { theme: Theme; setTheme: (t: Theme) => void; page: Page }) {
-  const title = nav.find((n) => n.id === page)?.label ?? "Control Center";
-  return <header className="topbar"><div className="breadcrumb">AXIOM <span>/</span> {title}</div><div className="top-actions"><div className="search"><Search size={15} /><input placeholder="Search AXIOM..." /></div><button className="icon-button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}</button><div className="profile"><span>A</span><b>Administrator</b></div></div></header>;
+function Topbar({
+  theme,
+  setTheme,
+  page,
+  username,
+  onLogout,
+  onChangePassword,
+}: {
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+  page: Page;
+  username: string;
+  onLogout: () => void;
+  onChangePassword: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const title =
+    nav.find((item) => item.id === page)?.label ??
+    "Control Center";
+
+  return (
+    <header className="topbar">
+      <div className="breadcrumb">
+        AXIOM <span>/</span> {title}
+      </div>
+
+      <div className="top-actions">
+        <div className="search">
+          <Search size={15} />
+          <input placeholder="Search AXIOM..." />
+        </div>
+
+        <button
+          className="icon-button"
+          aria-label="Toggle theme"
+          onClick={() =>
+            setTheme(
+              theme === "dark"
+                ? "light"
+                : "dark",
+            )
+          }
+        >
+          {theme === "dark" ? (
+            <Sun size={17} />
+          ) : (
+            <Moon size={17} />
+          )}
+        </button>
+
+        <div className="profile-menu">
+          <button
+            type="button"
+            className="profile profile-trigger"
+            onClick={() =>
+              setMenuOpen((value) => !value)
+            }
+            aria-expanded={menuOpen}
+          >
+            <span>
+              {username.charAt(0).toUpperCase()}
+            </span>
+
+            <b>{username}</b>
+
+            <ChevronDown
+              size={13}
+              className={
+                menuOpen
+                  ? "profile-chevron-open"
+                  : ""
+              }
+            />
+          </button>
+
+          {menuOpen && (
+            <div className="profile-dropdown">
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onChangePassword();
+                }}
+              >
+                Change password
+              </button>
+
+              <button
+                type="button"
+                className="profile-danger"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onLogout();
+                }}
+              >
+                Logout
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </header>
+  );
 }
 
-function Dashboard({ setPage }: { setPage: (p: Page) => void }) {
+function Dashboard({
+  setPage,
+  username,
+}: {
+  setPage: (p: Page) => void;
+  username: string;
+}) {
   return <>
-    <div className="page-heading"><div><div className="eyebrow">CONTROL CENTER • LOCAL ENGINE</div><h2>Good morning. <span>AXIOM is ready.</span></h2><p>Your AI stack is healthy and waiting for the next build.</p></div><button className="secondary-button" onClick={() => setPage("diagnostics")}><CircleGauge size={16} /> Run diagnostics</button></div>
+    <div className="page-heading"><div><div className="eyebrow">CONTROL CENTER • LOCAL ENGINE</div><h2>{getGreeting()}, {username}. <span>AXIOM is ready.</span></h2><p>Your AI stack is healthy and waiting for the next build.</p></div><button className="secondary-button" onClick={() => setPage("diagnostics")}><CircleGauge size={16} /> Run diagnostics</button></div>
     <div className="metric-grid"><MetricCard icon={Gauge} title="System Health" value="98.7%" delta="+1.8%" /><MetricCard icon={Activity} title="Requests / min" value="1,284" delta="+14.2%" /><MetricCard icon={TimerReset} title="Avg. latency" value="54 ms" delta="-8.4%" /><MetricCard icon={Cpu} title="Runtime load" value="64%" delta="12 GB / 24 GB" /></div>
     <div className="dashboard-grid">
       <Panel title="Inference activity" action="LIVE" wide><div className="chart-legend"><span><i className="dot cyan" /> Requests</span><span><i className="dot muted" /> Baseline</span></div><div className="chart-large"><ResponsiveContainer width="100%" height="100%"><AreaChart data={activity}><defs><linearGradient id="axiomArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#37dfd1" stopOpacity={0.25} /><stop offset="100%" stopColor="#37dfd1" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke="rgba(255,255,255,.05)" vertical={false} /><XAxis dataKey="time" tick={{ fill: "#546a6c", fontSize: 9 }} axisLine={false} tickLine={false} /><YAxis hide domain={[40, 160]} /><Tooltip contentStyle={{ background: "#0b191c", border: "1px solid rgba(100,240,225,.18)", borderRadius: 10, fontSize: 10 }} /><Area type="monotone" dataKey="requests" stroke="#39dfd0" strokeWidth={2.4} fill="url(#axiomArea)" /></AreaChart></ResponsiveContainer></div></Panel>
@@ -245,9 +1366,8 @@ function MCP() { return <FeaturePage kicker="MODEL CONTEXT PROTOCOL" title="MCP 
 function Diagnostics() { return <FeaturePage kicker="OBSERVABILITY" title="Diagnostics" desc="One screen for health checks, bottlenecks, configuration drift and blockers." actions={<button className="primary-button"><Wrench size={16} /> Run full scan</button>}><div className="diagnostic-score"><div><small>OVERALL HEALTH</small><strong>98.7</strong><span>/ 100</span></div><div className="score-ring">98%</div></div><div className="diag-list"><Diagnostic title="Core services" detail="All required AXIOM services are responding." good /><Diagnostic title="Model environment" detail="Qwen metadata is available. Full weights are not present locally." warn /><Diagnostic title="Dataset integrity" detail="1 invalid record and 1 duplicate detected in latest inspection." warn /><Diagnostic title="Hardware fit" detail="CPU development profile is valid for lightweight runs." good /></div></FeaturePage>; }
 function Diagnostic({ title, detail, good, warn }: { title: string; detail: string; good?: boolean; warn?: boolean }) { return <div className="diag-row"><div className={`diag-icon ${warn ? "warn" : ""}`}>{warn ? <AlertTriangle size={16} /> : <Check size={16} />}</div><div><b>{title}</b><span>{detail}</span></div><em>{good ? "PASS" : "REVIEW"}</em></div>; }
 function LogsPage() { return <FeaturePage kicker="EVENT STREAM" title="Logs" desc="Trace what AXIOM is doing, not just whether it is running." actions={<button className="secondary-button"><ListFilter size={16} /> Filter</button>}><Panel title="Live event stream" action="STREAMING"><div className="log-list">{[["14:02:18.342","INFO","runtime.inference","Request completed","182ms • tokens=143"],["14:02:17.901","INFO","mcp.filesystem","tools.list","3 tools exposed"],["14:01:59.221","WARN","dataset.inspect","Invalid sample","row=6"],["13:58:44.018","INFO","evaluation.run","Suite complete","42 checks • 39 pass"],["13:55:22.704","INFO","axiom.core","Health check","all services ready"]].map((r) => <div className="log-row" key={r.join("-")}><span>{r[0]}</span><b className={r[1] === "WARN" ? "warn-text" : ""}>{r[1]}</b><span>{r[2]}</span><span>{r[3]}</span><small>{r[4]}</small></div>)}</div></Panel></FeaturePage>; }
-function SettingsPage() { return <FeaturePage kicker="SYSTEM" title="Settings" desc="Control the local AXIOM installation, runtime and workspace defaults."><Panel title="Workspace"><div className="plan-grid"><Plan label="Workspace" value="Local Workspace" /><Plan label="Deployment" value="Local" /><Plan label="Telemetry" value="Local only" /><Plan label="UI" value="AXIOM Control Center" /></div></Panel></FeaturePage>; }
 function Plan({ label, value }: { label: string; value: string }) { return <div className="plan"><small>{label}</small><b>{value}</b></div>; }
 function DataTable({ rows }: { rows: string[][] }) { return <div className="data-table"><div className="table-head"><span>ITEM</span><span>DETAIL</span><span>VALUE</span><span>STATE</span><span>RESULT</span></div>{rows.map((row, i) => <div className="table-row" key={i}>{row.map((cell, j) => <span className={j === row.length - 1 ? "status-text" : ""} key={j}>{cell}</span>)}</div>)}</div>; }
-function Sparkline({ values }: { values: number[] }) { const max = Math.max(...values); const min = Math.min(...values); const pts = values.map((v, i) => `${(i / Math.max(1, values.length - 1)) * 100},${90 - ((v - min) / Math.max(1, max - min)) * 75}`).join(" "); return <svg className="sparkline" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={pts} /></svg>; }
+
 
 export default App;

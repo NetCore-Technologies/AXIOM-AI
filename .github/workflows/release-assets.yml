@@ -264,6 +264,368 @@ jobs:
           name: linux-release
           path: release/*
 
+  package-release-assets:
+    name: Package normalized release assets
+    needs: [windows, linux, package-release-assets]
+    runs-on: windows-latest
+
+    steps:
+      - name: Download Windows and Linux build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-inputs
+          merge-multiple: true
+
+      - name: Prepare normalized AXIOM assets
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $tag = $env:TAG
+
+          Remove-Item -Recurse -Force normalized -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force wix-build -ErrorAction SilentlyContinue
+
+          New-Item -ItemType Directory -Force normalized | Out-Null
+          New-Item -ItemType Directory -Force wix-build | Out-Null
+
+          $files = Get-ChildItem release-inputs -Recurse -File
+
+          function Find-BestFile {
+            param(
+              [string]$Extension
+            )
+
+            $candidates = @(
+              $files |
+                Where-Object {
+                  $_.Extension -ieq $Extension
+                } |
+                Sort-Object @{
+                  Expression = {
+                    if ($_.Name -match "axiom") { 0 } else { 1 }
+                  }
+                }, Length -Descending
+            )
+
+            if ($candidates.Count -eq 0) {
+              throw "No $Extension asset was found in the build artifacts."
+            }
+
+            return $candidates[0]
+          }
+
+          # ---------------- WINDOWS ----------------
+
+          $exe = Find-BestFile ".exe"
+
+          $exeName = "AXIOM-$tag-windows-x64.exe"
+
+          Copy-Item `
+            $exe.FullName `
+            "normalized/$exeName" `
+            -Force
+
+          # Canonical BAT launcher.
+          $batName = "AXIOM-$tag-windows-x64.bat"
+
+          @"
+          @echo off
+          setlocal
+
+          set "AXIOM_EXE=%~dp0$exeName"
+
+          if not exist "%AXIOM_EXE%" (
+            echo AXIOM executable not found:
+            echo %AXIOM_EXE%
+            exit /b 1
+          )
+
+          start "" "%AXIOM_EXE%" %*
+          endlocal
+          "@ | Set-Content `
+            -Encoding ASCII `
+            "normalized/$batName"
+
+          # Canonical PowerShell installer.
+          $ps1Name = "AXIOM-$tag-windows-x64.ps1"
+
+          @"
+          param(
+            [switch]`$NoStart
+          )
+
+          `$ErrorActionPreference = "Stop"
+
+          `$source = Join-Path `
+            `$PSScriptRoot `
+            "$exeName"
+
+          if (-not (Test-Path `$source)) {
+            throw "AXIOM executable was not found next to this installer."
+          }
+
+          `$installDir = Join-Path `
+            `$env:LOCALAPPDATA `
+            "AXIOM"
+
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path `$installDir | Out-Null
+
+          `$target = Join-Path `
+            `$installDir `
+            "AXIOM.exe"
+
+          Copy-Item `
+            `$source `
+            `$target `
+            -Force
+
+          Write-Host ""
+          Write-Host "AXIOM installed to:"
+          Write-Host `$target
+          Write-Host ""
+
+          if (-not `$NoStart) {
+            Start-Process `$target
+          }
+          "@ | Set-Content `
+            -Encoding UTF8 `
+            "normalized/$ps1Name"
+
+          # ---------------- LINUX ----------------
+
+          $deb = Find-BestFile ".deb"
+
+          $debName = "AXIOM-$tag-linux-x64.deb"
+
+          Copy-Item `
+            $deb.FullName `
+            "normalized/$debName" `
+            -Force
+
+          $appImage = Find-BestFile ".AppImage"
+
+          $appImageName = "AXIOM-$tag-linux-x64.AppImage"
+
+          Copy-Item `
+            $appImage.FullName `
+            "normalized/$appImageName" `
+            -Force
+
+          # Find the raw Linux ELF binary by checking its magic bytes.
+          $elf = $files |
+            Where-Object {
+              $_.Extension -eq "" -and $_.Length -gt 4096
+            } |
+            ForEach-Object {
+              try {
+                $bytes = Get-Content `
+                  $_.FullName `
+                  -Encoding Byte `
+                  -TotalCount 4
+
+                if (
+                  $bytes.Count -eq 4 -and
+                  $bytes[0] -eq 0x7f -and
+                  $bytes[1] -eq 0x45 -and
+                  $bytes[2] -eq 0x4c -and
+                  $bytes[3] -eq 0x46
+                ) {
+                  $_
+                }
+              } catch {
+              }
+            } |
+            Select-Object -First 1
+
+          if (-not $elf) {
+            throw "Could not find a raw Linux ELF executable."
+          }
+
+          $elfName = "AXIOM-$tag-linux-x64.elf"
+
+          Copy-Item `
+            $elf.FullName `
+            "normalized/$elfName" `
+            -Force
+
+          # Canonical Linux installer.
+          $shName = "AXIOM-$tag-linux-x64.sh"
+
+          @"
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          SCRIPT_DIR="`$(cd -- "`$(dirname -- "`${BASH_SOURCE[0]}")" && pwd)"
+          SOURCE="`$SCRIPT_DIR/$elfName"
+          INSTALL_DIR="`$HOME/.local/bin"
+          TARGET="`$INSTALL_DIR/axiom"
+
+          if [[ ! -f "`${SOURCE}" ]]; then
+            echo "AXIOM ELF executable not found next to this installer."
+            exit 1
+          fi
+
+          mkdir -p "`${INSTALL_DIR}"
+          install -m 0755 "`${SOURCE}" "`${TARGET}"
+
+          echo "AXIOM installed to:"
+          echo "  `${TARGET}"
+          echo
+          echo "Run:"
+          echo "  axiom"
+          "@ | Set-Content `
+            -Encoding UTF8 `
+            "normalized/$shName"
+
+          # ---------------- MSI ----------------
+
+          choco install wixtoolset `
+            --version=3.14.1 `
+            -y `
+            --no-progress
+
+          $candle = Get-ChildItem `
+            "C:\Program Files (x86)\WiX Toolset v3.*\bin\candle.exe" `
+            -Recurse |
+            Select-Object -First 1
+
+          $light = Get-ChildItem `
+            "C:\Program Files (x86)\WiX Toolset v3.*\bin\light.exe" `
+            -Recurse |
+            Select-Object -First 1
+
+          if (-not $candle -or -not $light) {
+            throw "WiX Toolset was not found after installation."
+          }
+
+          if ($tag -match '^v(\d+\.\d+\.\d+)(?:-(?:beta|b)\.(\d+))?$') {
+            $baseVersion = $Matches[1]
+            $preNumber = if ($Matches[2]) {
+              [int]$Matches[2]
+            } else {
+              0
+            }
+
+            $msiVersion = "$baseVersion.$preNumber"
+          } else {
+            throw "Unsupported release tag for MSI: $tag"
+          }
+
+          $appExePath = `
+            (Resolve-Path "normalized/$exeName").Path
+
+          @"
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+            <Product
+              Id="*"
+              Name="AXIOM"
+              Language="1033"
+              Version="$msiVersion"
+              Manufacturer="NetCore Technologies"
+              UpgradeCode="{7D9D4EF3-53A3-4CFD-9C75-1C5E8C66A120}">
+
+              <Package
+                InstallerVersion="500"
+                Compressed="yes"
+                InstallScope="perMachine"
+                Platform="x64" />
+
+              <MajorUpgrade
+                DowngradeErrorMessage="A newer version of AXIOM is already installed." />
+
+              <MediaTemplate />
+
+              <Directory Id="TARGETDIR" Name="SourceDir">
+                <Directory Id="ProgramFiles64Folder">
+                  <Directory
+                    Id="INSTALLFOLDER"
+                    Name="AXIOM">
+
+                    <Component
+                      Id="AXIOMExecutable"
+                      Guid="*">
+
+                      <File
+                        Id="AXIOMExe"
+                        Source="$appExePath"
+                        KeyPath="yes"
+                        Checksum="yes" />
+
+                    </Component>
+
+                  </Directory>
+                </Directory>
+              </Directory>
+
+              <Feature
+                Id="AXIOMFeature"
+                Title="AXIOM"
+                Level="1">
+
+                <ComponentRef
+                  Id="AXIOMExecutable" />
+
+              </Feature>
+            </Product>
+          </Wix>
+          "@ | Set-Content `
+            -Encoding UTF8 `
+            "wix-build/Product.wxs"
+
+          Push-Location wix-build
+
+          & $candle.FullName `
+            -arch x64 `
+            -dAppExe="$appExePath" `
+            Product.wxs
+
+          & $light.FullName `
+            AXIOM.wixobj `
+            -o "../normalized/AXIOM-$tag-windows-x64.msi"
+
+          Pop-Location
+
+          # ---------------- VALIDATION ----------------
+
+          $expected = @(
+            "AXIOM-$tag-windows-x64.msi",
+            "AXIOM-$tag-windows-x64.ps1",
+            "AXIOM-$tag-windows-x64.bat",
+            "AXIOM-$tag-windows-x64.exe",
+            "AXIOM-$tag-linux-x64.deb",
+            "AXIOM-$tag-linux-x64.AppImage",
+            "AXIOM-$tag-linux-x64.sh",
+            "AXIOM-$tag-linux-x64.elf"
+          )
+
+          foreach ($name in $expected) {
+            $path = Join-Path "normalized" $name
+
+            if (-not (Test-Path $path)) {
+              throw "Missing release asset: $name"
+            }
+          }
+
+          Write-Host ""
+          Write-Host "Normalized AXIOM release:"
+          Get-ChildItem normalized |
+            Select-Object Name, Length |
+            Format-Table -AutoSize
+
+      - name: Upload normalized release asset bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: normalized/*
+          if-no-files-found: error
+
   publish:
     name: Publish AXIOM Release
     needs:
@@ -372,3 +734,65 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --notes-file docs/releases/RELEASE.md
           fi
+
+      - name: Download normalized release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release-assets
+
+      - name: Publish exact normalized asset set
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          gh release upload \
+            "$TAG" \
+            release-assets/* \
+            --clobber
+
+          desired=(
+            "AXIOM-${TAG}-windows-x64.msi"
+            "AXIOM-${TAG}-windows-x64.ps1"
+            "AXIOM-${TAG}-windows-x64.bat"
+            "AXIOM-${TAG}-windows-x64.exe"
+            "AXIOM-${TAG}-linux-x64.deb"
+            "AXIOM-${TAG}-linux-x64.AppImage"
+            "AXIOM-${TAG}-linux-x64.sh"
+            "AXIOM-${TAG}-linux-x64.elf"
+          )
+
+          mapfile -t existing < <(
+            gh release view "$TAG" \
+              --json assets \
+              --jq '.assets[].name'
+          )
+
+          for asset in "${existing[@]}"; do
+            keep=0
+
+            for wanted in "${desired[@]}"; do
+              if [[ "$asset" == "$wanted" ]]; then
+                keep=1
+                break
+              fi
+            done
+
+            if [[ "$keep" -eq 0 ]]; then
+              echo "Removing old asset: $asset"
+              gh release delete-asset \
+                "$TAG" \
+                "$asset" \
+                --yes
+            fi
+          done
+
+          echo
+          echo "Final AXIOM release assets:"
+          gh release view "$TAG" \
+            --json assets \
+            --jq '.assets[].name' |
+            sort
