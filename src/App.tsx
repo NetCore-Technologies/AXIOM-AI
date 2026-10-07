@@ -661,7 +661,7 @@ function Welcome({
           </h1>
           <p className="lede">
             A local-first workspace for models, datasets, training plans, evaluation,
-            and runtime decisions — kept close to the engineers making them.
+            and runtime decisions, kept close to the engineers making them.
           </p>
           <div className="welcome-actions">
             <button type="button" className="button primary-button" onClick={onStart}>
@@ -793,7 +793,7 @@ function Setup({
             <div className="success-mark"><Check size={26} /></div>
             <p className="eyebrow">STEP 3 OF 3 / COMPLETE</p>
             <h1>Administrator created.</h1>
-            <p className="lede">Your local workspace is ready. Opening secure sign in…</p>
+      <p className="lede">Your local workspace is ready. Opening secure sign in...</p>
           </div>
         ) : (
           <form className="auth-form panel-surface" onSubmit={submit}>
@@ -870,7 +870,7 @@ function Setup({
             {error && <InlineAlert tone="danger">{error}</InlineAlert>}
 
             <button type="submit" className="button primary-button full-width" disabled={!canContinue}>
-              {saving ? "Creating account…" : "Create administrator"}
+              {saving ? "Creating account..." : "Create administrator"}
               <ArrowRight size={17} />
             </button>
             <p className="form-note"><LockKeyhole size={14} /> Credentials are hashed before local storage.</p>
@@ -1012,7 +1012,7 @@ function LoginScreen({
           {error && <InlineAlert tone="danger" role="alert">{error}</InlineAlert>}
 
           <button className="button primary-button full-width" type="submit" disabled={loading || !username.trim() || !password}>
-            {loading ? "Authenticating…" : "Sign in"}
+            {loading ? "Authenticating..." : "Sign in"}
             <ArrowRight size={17} />
           </button>
           <p className="form-note"><ShieldCheck size={14} /> This session is stored in this browser only.</p>
@@ -1179,7 +1179,7 @@ function Topbar({
                     {item.id === page && <Check size={15} />}
                   </button>
                 );
-              }) : <div className="command-empty">No workspace views match “{query}”.</div>}
+              }) : <div className="command-empty">No workspace views match "{query}".</div>}
               <div className="command-hint"><kbd>↑↓</kbd> move <kbd>↵</kbd> open <kbd>esc</kbd> close</div>
             </div>
           )}
@@ -1355,7 +1355,7 @@ function FeaturePage({
 
 function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
   return <FeaturePage page="models" actions={<button type="button" className="button primary-button" onClick={() => onNotify("Model import needs a connected runtime or the local CLI.", "warning")}><Plus size={16} /> Add model</button>}>
-    <div className="info-grid"><InfoCard icon={BrainCircuit} label="Registry" value="Waiting" detail="No endpoint connected" tone="warning" /><InfoCard icon={HardDrive} label="Storage" value="—" detail="Not reported" tone="neutral" /><InfoCard icon={SlidersHorizontal} label="Formats" value="Ready" detail="Metadata supported" tone="success" /></div>
+    <div className="info-grid"><InfoCard icon={BrainCircuit} label="Registry" value="Waiting" detail="No endpoint connected" tone="warning" /><InfoCard icon={HardDrive} label="Storage" value="N/A" detail="Not reported" tone="neutral" /><InfoCard icon={SlidersHorizontal} label="Formats" value="Ready" detail="Metadata supported" tone="success" /></div>
     <Surface title="Model registry" eyebrow="LOCAL INVENTORY" action={<button type="button" className="icon-text-button" onClick={() => onNotify("There is no model refresh endpoint in this frontend contract.", "warning")}><RefreshCcw size={15} /> Refresh</button>}>
       <EmptyState icon={BrainCircuit} title="No model inventory connected" description="The repository currently exposes model management through the AXIOM CLI. This UI does not invent a registry endpoint, so it is waiting for a real connection." action={<CliReference command="axiom model list" />} />
     </Surface>
@@ -1365,7 +1365,7 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
 
 function Datasets({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
   return <FeaturePage page="datasets" actions={<button type="button" className="button primary-button" onClick={() => onNotify("Dataset import needs a connected runtime or the local CLI.", "warning")}><Plus size={16} /> Import dataset</button>}>
-    <div className="info-grid"><InfoCard icon={Database} label="Latest report" value="None" detail="No inspection loaded" tone="neutral" /><InfoCard icon={CircleAlert} label="Validation" value="Pending" detail="No dataset selected" tone="warning" /><InfoCard icon={BarChart3} label="Token estimate" value="—" detail="Waiting for data" tone="neutral" /></div>
+    <div className="info-grid"><InfoCard icon={Database} label="Latest report" value="None" detail="No inspection loaded" tone="neutral" /><InfoCard icon={CircleAlert} label="Validation" value="Pending" detail="No dataset selected" tone="warning" /><InfoCard icon={BarChart3} label="Token estimate" value="N/A" detail="Waiting for data" tone="neutral" /></div>
     <Surface title="Dataset workspace" eyebrow="INSPECTION QUEUE" action={<button type="button" className="icon-text-button" onClick={() => onNotify("There is no dataset listing endpoint in this frontend contract.", "warning")}><RefreshCcw size={15} /> Refresh</button>}>
       <EmptyState icon={Database} title="No dataset report yet" description="Start with a JSONL file and run inspection or validation through the CLI. The UI will stay empty until a real report contract exists." action={<CliReference command="axiom dataset inspect ./data/train.jsonl" />} />
     </Surface>
@@ -1380,14 +1380,14 @@ function Training({ onNotify }: { onNotify: (message: string, tone?: Tone) => vo
       <Surface title="Planning checklist" eyebrow="BEFORE YOU RUN">
         <StepList steps={[{ label: "Choose a base model", detail: "Use an inspected local or Hugging Face model.", state: "pending" }, { label: "Validate the dataset", detail: "Confirm JSONL shape and duplicate behavior.", state: "pending" }, { label: "Estimate hardware fit", detail: "Select LoRA or QLoRA around available memory.", state: "ready" }, { label: "Create a reproducible config", detail: "Keep the plan close to the project axiom.yaml.", state: "ready" }]} />
       </Surface>
-      <Surface title="Plan preview" eyebrow="NO ACTIVE RUN"><EmptyState icon={Hammer} title="No training plan saved" description="AXIOM can generate hardware-aware plans today; execution and job management are not part of the current contract." action={<CliReference command="axiom train" />} /></Surface>
+      <Surface title="Plan preview" eyebrow="NO ACTIVE RUN"><EmptyState icon={Hammer} title="No training plan saved" description="AXIOM can generate hardware-aware plans today; execution and job management are not part of the current contract." action={<CliReference command="axiom train plan 7" />} /></Surface>
     </div>
   </FeaturePage>;
 }
 
 function Evaluation({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
   return <FeaturePage page="evaluation" actions={<button type="button" className="button primary-button" onClick={() => onNotify("Evaluation runners are not exposed by the current repository contract.", "warning")}><Play size={16} /> Run evaluation</button>}>
-    <div className="info-grid"><InfoCard icon={Gauge} label="Latest score" value="—" detail="No report loaded" tone="neutral" /><InfoCard icon={BarChart3} label="Regression" value="—" detail="Needs a baseline" tone="neutral" /><InfoCard icon={TriangleAlert} label="Failures" value="—" detail="No assertions run" tone="neutral" /></div>
+    <div className="info-grid"><InfoCard icon={Gauge} label="Latest score" value="N/A" detail="No report loaded" tone="neutral" /><InfoCard icon={BarChart3} label="Regression" value="N/A" detail="Needs a baseline" tone="neutral" /><InfoCard icon={TriangleAlert} label="Failures" value="N/A" detail="No assertions run" tone="neutral" /></div>
     <Surface title="Quality history" eyebrow="REPORTS"><EmptyState icon={CircleGauge} title="No evaluation history" description="The evaluation subsystem is present as a foundation, but there is no report API for this frontend to read yet." action={<CliReference command="axiom evaluation" disabled />} /></Surface>
     <Callout tone="info" title="Keep quality repeatable">When evaluation is wired in, this surface is ready for baselines, regressions, and blocking checks without changing the surrounding navigation.</Callout>
   </FeaturePage>;
@@ -1395,8 +1395,8 @@ function Evaluation({ onNotify }: { onNotify: (message: string, tone?: Tone) => 
 
 function Runtime({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
   return <FeaturePage page="runtime" actions={<button type="button" className="button secondary-button" onClick={() => onNotify("Runtime deployment needs an exposed serving contract.", "warning")}><RadioTower size={16} /> Connect runtime</button>}>
-    <div className="runtime-banner"><div className="runtime-state-icon"><RadioTower size={20} /></div><div><StatusPill tone="warning">OFFLINE</StatusPill><h2>Waiting for a local engine</h2><p>No frontend endpoint or serving process is defined in this repository. The UI is ready to show runtime state when one exists.</p></div><code>axiom serve</code></div>
-    <div className="info-grid"><InfoCard icon={Activity} label="Requests" value="—" detail="No live feed" tone="neutral" /><InfoCard icon={Cpu} label="Memory" value="—" detail="No telemetry" tone="neutral" /><InfoCard icon={ServerCog} label="API" value="Unbound" detail="Contract required" tone="warning" /></div>
+    <div className="runtime-banner"><div className="runtime-state-icon"><RadioTower size={20} /></div><div><StatusPill tone="warning">OFFLINE</StatusPill><h2>Waiting for a local engine</h2><p>No frontend endpoint or serving process is defined in this repository. The UI is ready to show runtime state when one exists.</p></div><code>axiom mcp serve</code></div>
+    <div className="info-grid"><InfoCard icon={Activity} label="Requests" value="N/A" detail="No live feed" tone="neutral" /><InfoCard icon={Cpu} label="Memory" value="N/A" detail="No telemetry" tone="neutral" /><InfoCard icon={ServerCog} label="API" value="Unbound" detail="Contract required" tone="warning" /></div>
     <Surface title="Request flow" eyebrow="LIVE TELEMETRY"><EmptyState icon={RadioTower} title="No requests to display" description="Request throughput, latency, and model selection will appear here after a real runtime connector is added." action={<button type="button" className="text-button" onClick={() => onNotify("The current UI build has no runtime connector to inspect.", "warning")}>Why is this empty? <ArrowRight size={15} /></button>} /></Surface>
   </FeaturePage>;
 }
@@ -1421,8 +1421,8 @@ function Diagnostics({ onNotify }: { onNotify: (message: string, tone?: Tone) =>
     window.setTimeout(() => setScanState("blocked"), 900);
   };
 
-  return <FeaturePage page="diagnostics" actions={<button type="button" className="button primary-button" onClick={runScan} disabled={scanState === "scanning"}><Wrench size={16} /> {scanState === "scanning" ? "Scanning…" : "Run full scan"}</button>}>
-    <div className="diagnostic-hero"><div><p className="eyebrow">WORKSPACE READINESS</p><strong>{scanState === "blocked" ? "Awaiting CLI check" : scanState === "scanning" ? "Checking surface…" : "Ready to inspect"}</strong><p>{scanState === "blocked" ? "The UI cannot run axiom doctor without a backend bridge." : "A focused view for the checks that keep local AI work predictable."}</p></div><div className={`diagnostic-ring ${scanState}`}><span>{scanState === "scanning" ? "…" : scanState === "blocked" ? "—" : "UI"}</span></div></div>
+  return <FeaturePage page="diagnostics" actions={<button type="button" className="button primary-button" onClick={runScan} disabled={scanState === "scanning"}><Wrench size={16} /> {scanState === "scanning" ? "Scanning..." : "Run full scan"}</button>}>
+    <div className="diagnostic-hero"><div><p className="eyebrow">WORKSPACE READINESS</p><strong>{scanState === "blocked" ? "Awaiting CLI check" : scanState === "scanning" ? "Checking surface..." : "Ready to inspect"}</strong><p>{scanState === "blocked" ? "The UI cannot run axiom doctor without a backend bridge." : "A focused view for the checks that keep local AI work predictable."}</p></div><div className={`diagnostic-ring ${scanState}`}><span>{scanState === "scanning" ? "..." : scanState === "blocked" ? "N/A" : "UI"}</span></div></div>
     <div className="diag-list">
       <DiagnosticRow icon={CircleCheck} title="Local administrator" detail="Authenticated session is active in this browser." state="PASS" tone="success" />
       <DiagnosticRow icon={TriangleAlert} title="Runtime connector" detail="No HTTP or IPC contract is present in the frontend repository." state="REVIEW" tone="warning" />
@@ -1561,7 +1561,7 @@ function ChangePasswordDialog({ onClose, onSuccess }: { onClose: () => void; onS
 
   return <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
     <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="password-dialog-title" aria-describedby="password-dialog-description" onMouseDown={(event) => event.stopPropagation()}>
-      {success ? <div className="dialog-success"><div className="success-mark"><Check size={24} /></div><p className="eyebrow">SECURITY / UPDATED</p><h2>Password changed.</h2><p id="password-dialog-description">Returning to the AXIOM sign in screen…</p></div> : <form onSubmit={submit}>
+      {success ? <div className="dialog-success"><div className="success-mark"><Check size={24} /></div><p className="eyebrow">SECURITY / UPDATED</p><h2>Password changed.</h2><p id="password-dialog-description">Returning to the AXIOM sign in screen...</p></div> : <form onSubmit={submit}>
         <div className="dialog-head"><div><p className="eyebrow">SECURITY / LOCAL ADMINISTRATOR</p><h2 id="password-dialog-title">Change password</h2></div><button ref={closeRef} type="button" className="icon-button" aria-label="Close change password dialog" onClick={onClose}><X size={17} /></button></div>
         <p id="password-dialog-description" className="form-intro">Changing the password ends the current session after the update.</p>
         <Field label="Current password" htmlFor="current-password" action={<button type="button" className="field-action" aria-pressed={showCurrent} onClick={() => setShowCurrent((value) => !value)}>{showCurrent ? "Hide" : "Show"}</button>}><input id="current-password" type={showCurrent ? "text" : "password"} value={current} onChange={(event) => setCurrent(event.target.value)} autoComplete="current-password" /></Field>
@@ -1569,7 +1569,7 @@ function ChangePasswordDialog({ onClose, onSuccess }: { onClose: () => void; onS
         <div className="requirements"><Requirement ok={checks.length} label="8+ characters" /><Requirement ok={checks.upper} label="Uppercase letter" /><Requirement ok={checks.lower} label="Lowercase letter" /><Requirement ok={checks.number} label="Contains a number" /></div>
         <Field label="Confirm new password" htmlFor="confirm-password" hint={confirm.length > 0 ? (next === confirm ? "Passwords match" : "Passwords do not match") : undefined} hintTone={next === confirm && confirm.length > 0 ? "success" : "default"}><input id="confirm-password" type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" /></Field>
         {error && <InlineAlert tone="danger" role="alert">{error}</InlineAlert>}
-        <button type="submit" className="button primary-button full-width" disabled={!complete || saving}>{saving ? "Changing password…" : "Change password"}<ArrowRight size={17} /></button>
+        <button type="submit" className="button primary-button full-width" disabled={!complete || saving}>{saving ? "Changing password..." : "Change password"}<ArrowRight size={17} /></button>
       </form>}
     </section>
   </div>;

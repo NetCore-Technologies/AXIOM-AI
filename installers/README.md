@@ -1,6 +1,6 @@
 # AXIOM Installers
 
-## Linux
+## macOS and Linux
 
 Install the latest AXIOM GitHub release:
 
@@ -8,7 +8,7 @@ Install the latest AXIOM GitHub release:
 curl -fsSL https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.sh | bash
 ```
 
-The installer places AXIOM in `~/.local/share/axiom` and creates `~/.local/bin/axiom`.
+The installer places AXIOM in `~/.local/share/axiom` and creates `~/.local/bin/axiom`. macOS and non-x86 Linux systems install the CLI from the repository in an isolated Python environment.
 
 ## Windows
 
@@ -20,14 +20,6 @@ irm https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/install
 
 The executable is installed under `%LOCALAPPDATA%\\AXIOM`.
 
-## Manual downloads
-
-GitHub Releases provide:
-
-- Windows x64 EXE
-- Windows portable ZIP
-- Linux x64 AppImage
-- Linux x64 DEB
-- Linux standalone binary
+The website intentionally has no binary download links. Use these terminal installers so the CLI is the entry point.
 
 Never store Hugging Face, SuperCompress, or other API credentials in installer files.
