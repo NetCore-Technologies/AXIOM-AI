@@ -185,8 +185,16 @@ jobs:
           Name=AXIOM
           Comment=AI Engineering Platform
           Exec=axiom
+          Icon=axiom
           Terminal=true
           Categories=Development;
+          EOF
+
+          cat > AppDir/axiom.svg <<'EOF'
+          <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+            <rect width="256" height="256" rx="36" fill="#0A0F1E"/>
+            <path d="M128 44L44 212h34l14-30h72l14 30h34L128 44Zm-22 108 22-48 22 48h-44Z" fill="#5B5BFF"/>
+          </svg>
           EOF
 
           curl -fsSL \
