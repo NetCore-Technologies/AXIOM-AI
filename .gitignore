@@ -11,10 +11,14 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 build/
+*.coverage
+.coverage
 *.whl
 
 # AXIOM local state
 .axiom/
+test-results/
+playwright-report/
 *.log
 
 # Environment

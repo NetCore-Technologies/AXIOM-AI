@@ -1,25 +1,28 @@
 import json
+import os
 from pathlib import Path
 
 import typer
-
-from huggingface_hub import HfApi, login, logout, whoami
+from huggingface_hub import HfApi, login, logout, snapshot_download, whoami
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from axiom.core.hardware import detect_hardware, estimate_model_fit
+from axiom.core.integrations import (
+    AgentIntegration,
+    IntegrationRegistry,
+    IntegrationType,
+)
 from axiom.core.project import create_project
 from axiom.datasets.cleaner import clean_jsonl
 from axiom.datasets.inspector import inspect_dataset
-from axiom.models.inspector import inspect_model
 from axiom.models.analysis import analyze_config, disk_info
+from axiom.models.inspector import inspect_model
 from axiom.models.registry import Model, ModelRegistry
-from axiom.runtime.supercompress import compress_context
-
+from axiom.runtime.supercompress import compress_context, redacted_base_url
 from axiom.training.planner import create_training_plan
 from axiom.version import __version__
-from axiom.core.hardware import detect_hardware, estimate_model_fit
-from axiom.core.integrations import AgentIntegration, IntegrationRegistry, IntegrationType
 
 app = typer.Typer(
     name="axiom",
@@ -49,10 +52,16 @@ app.add_typer(train_app, name="train")
 
 # Extended AXIOM CLI
 from axiom.cli.extended import register as register_extended_cli
+
 register_extended_cli(app, model_app, dataset_app)
 
 
 console = Console()
+
+
+def _cli_error(message: str) -> None:
+    console.print(f"[red]Error:[/red] {message}")
+    raise typer.Exit(code=1)
 
 
 @app.command()
@@ -113,16 +122,20 @@ def hf_status():
     """Show Hugging Face authentication status."""
     try:
         user = whoami()
-    except Exception:
-        console.print(
-            Panel.fit(
-                "[yellow]Not authenticated[/yellow]\n\n"
-                "Run:\n"
-                "  axiom hf login",
-                title="AXIOM",
+    except Exception as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        if exc.__class__.__name__ == "LocalTokenNotFoundError" or status_code == 401:
+            console.print(
+                Panel.fit(
+                    "[yellow]Not authenticated[/yellow]\n\n"
+                    "Run:\n"
+                    "  axiom hf login",
+                    title="AXIOM",
+                )
             )
-        )
-        return
+            return
+
+        _cli_error(f"Hugging Face status check failed: {exc}")
 
     name = (
         user.get("name")
@@ -175,16 +188,11 @@ def hf_logout():
 @supercompress_app.command("status")
 def supercompress_status():
     """Show SuperCompress configuration without exposing secrets."""
-    import os
-
     configured = bool(
-        os.getenv("SUPERCOMPRESS_API_KEY")
+        os.getenv("SUPERCOMPRESS_API_KEY", "").strip()
     )
 
-    endpoint = os.getenv(
-        "SUPERCOMPRESS_API_BASE",
-        "https://api.supercompress.dev",
-    )
+    endpoint = redacted_base_url()
 
     key_status = (
         "[green]configured[/green]"
@@ -242,9 +250,8 @@ def supercompress_compress(
             ccr=ccr,
         )
 
-    except (OSError, RuntimeError) as exc:
-        console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=1)
+    except (OSError, RuntimeError, UnicodeError, ValueError) as exc:
+        _cli_error(str(exc))
 
     savings = (
         f"{result.savings_pct:.1f}%"
@@ -775,12 +782,8 @@ def model_analyze(repo_id: str):
         name = getattr(item, "rfilename", "") or ""
         size = getattr(item, "size", None)
 
-        if size is not None and (
-            name.endswith(".safetensors")
-            or name.endswith(".gguf")
-            or name.endswith(".bin")
-            or name.endswith(".pt")
-            or name.endswith(".pth")
+        if size is not None and name.endswith(
+            (".safetensors", ".gguf", ".bin", ".pt", ".pth")
         ):
             total_size += int(size)
 
@@ -851,7 +854,6 @@ def model_pull(
 
     for item in (getattr(info, "siblings", None) or []):
         size = getattr(item, "size", None)
-        name = getattr(item, "rfilename", "") or ""
 
         if size is not None:
             total_size += int(size)
@@ -1034,13 +1036,13 @@ def dataset_clean(
     )
 
 
-if __name__ == "__main__":
-    app()
-
-
 @mcp_app.command("serve")
 def mcp_serve():
     """Run the AXIOM MCP server over stdio."""
     from axiom.mcp.server import mcp
 
     mcp.run()
+
+
+if __name__ == "__main__":
+    app()

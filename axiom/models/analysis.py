@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import json
 import shutil
 from dataclasses import dataclass
-from pathlib import Path
 
 
 @dataclass
@@ -23,7 +21,7 @@ class ModelAnalysis:
 def _find_number(config: dict, keys: tuple[str, ...]) -> int | None:
     for key in keys:
         value = config.get(key)
-        if isinstance(value, int):
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
             return value
     return None
 
@@ -38,7 +36,7 @@ def _estimate_parameters(config: dict) -> tuple[int | None, str]:
     for key in direct_keys:
         value = config.get(key)
 
-        if isinstance(value, int) and value > 0:
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
             return value, "model metadata"
 
     hidden = config.get("hidden_size")
@@ -47,7 +45,9 @@ def _estimate_parameters(config: dict) -> tuple[int | None, str]:
     intermediate = config.get("intermediate_size")
 
     if all(
-        isinstance(value, int) and value > 0
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value > 0
         for value in (hidden, layers, vocab, intermediate)
     ):
         estimate = int(
@@ -69,6 +69,18 @@ def analyze_config(
     files: list[str],
     weight_size_bytes: int | None = None,
 ) -> ModelAnalysis:
+    if not isinstance(config, dict):
+        raise ValueError("Model config must be a JSON object.")
+
+    if (
+        weight_size_bytes is not None
+        and (
+            isinstance(weight_size_bytes, bool)
+            or not isinstance(weight_size_bytes, int)
+            or weight_size_bytes < 0
+        )
+    ):
+        raise ValueError("Weight size must be a non-negative integer.")
 
     architectures = config.get("architectures")
 
@@ -113,9 +125,11 @@ def analyze_config(
         if precision == "Unknown":
             precision = "quantized / GGUF"
 
-    elif any(name.lower().endswith(".safetensors") for name in files):
-        if precision == "Unknown":
-            precision = "safetensors"
+    elif (
+        precision == "Unknown"
+        and any(name.lower().endswith(".safetensors") for name in files)
+    ):
+        precision = "safetensors"
 
     weight_size_gb = (
         round(weight_size_bytes / (1024 ** 3), 2)

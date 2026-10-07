@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from axiom.core.hardware import HardwareInfo
@@ -53,8 +54,15 @@ def create_training_plan(
     method: str = "auto",
 ) -> TrainingPlan:
 
-    if parameter_billions <= 0:
-        raise ValueError("Model parameter count must be greater than zero.")
+    if (
+        isinstance(parameter_billions, bool)
+        or not isinstance(parameter_billions, (int, float))
+        or not math.isfinite(parameter_billions)
+        or parameter_billions <= 0
+    ):
+        raise ValueError(
+            "Model parameter count must be a finite number greater than zero."
+        )
 
     if method not in {"auto", "qlora", "lora", "full"}:
         raise ValueError(
@@ -62,6 +70,17 @@ def create_training_plan(
         )
 
     vram = hardware.vram_gb
+
+    if (
+        vram is not None
+        and (
+            isinstance(vram, bool)
+            or not isinstance(vram, (int, float))
+            or not math.isfinite(vram)
+            or vram < 0
+        )
+    ):
+        raise ValueError("Hardware VRAM must be a finite number of GB.")
 
     if vram is None:
         return TrainingPlan(

@@ -1,6 +1,8 @@
-from dataclasses import dataclass, asdict
-from pathlib import Path
 import json
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+from axiom.core.storage import atomic_write_text, file_lock
 
 
 @dataclass
@@ -11,6 +13,12 @@ class Model:
     parameters: str | None = None
     quantization: str | None = None
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("Model name cannot be empty.")
+        if not isinstance(self.source, str) or not self.source.strip():
+            raise ValueError("Model source cannot be empty.")
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -18,30 +26,84 @@ class Model:
 class ModelRegistry:
     """Local AXIOM model registry."""
 
-    def __init__(self, root: Path | None = None):
-        self.root = root or Path(".axiom")
-        self.root.mkdir(parents=True, exist_ok=True)
+    def __init__(
+        self,
+        root: Path | None = None,
+        *,
+        create: bool = True,
+    ):
+        self.root = Path(root) if root is not None else Path(".axiom")
         self.registry_file = self.root / "models.json"
+        self.lock_file = self.root / ".models.lock"
 
+        if create:
+            self.root.mkdir(parents=True, exist_ok=True)
+            with file_lock(self.lock_file):
+                if not self.registry_file.exists():
+                    atomic_write_text(self.registry_file, "[]\n")
+
+    def _read(self) -> list[Model]:
         if not self.registry_file.exists():
-            self.registry_file.write_text("[]", encoding="utf-8")
+            return []
+        if not self.registry_file.is_file():
+            raise ValueError(
+                f"Invalid model registry: expected a file at "
+                f"{self.registry_file}"
+            )
+
+        try:
+            data = json.loads(
+                self.registry_file.read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"Invalid model registry: {self.registry_file}"
+            ) from exc
+
+        if not isinstance(data, list):
+            raise ValueError(
+                f"Invalid model registry: expected a JSON array in "
+                f"{self.registry_file}"
+            )
+
+        models: list[Model] = []
+        for index, item in enumerate(data):
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"Invalid model registry entry at index {index}."
+                )
+
+            try:
+                models.append(Model(**item))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid model registry entry at index {index}."
+                ) from exc
+
+        return models
 
     def list(self) -> list[Model]:
-        data = json.loads(self.registry_file.read_text(encoding="utf-8"))
-        return [Model(**item) for item in data]
+        return self._read()
 
     def add(self, model: Model) -> None:
-        models = self.list()
+        if not isinstance(model, Model):
+            raise TypeError("model must be a Model instance.")
 
-        if any(existing.name == model.name for existing in models):
-            raise ValueError(f"Model already exists: {model.name}")
+        self.root.mkdir(parents=True, exist_ok=True)
+        with file_lock(self.lock_file):
+            models = self._read()
 
-        models.append(model)
+            if any(existing.name == model.name for existing in models):
+                raise ValueError(f"Model already exists: {model.name}")
 
-        self.registry_file.write_text(
-            json.dumps(
-                [model.to_dict() for model in models],
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
+            models.append(model)
+
+            atomic_write_text(
+                self.registry_file,
+                json.dumps(
+                    [item.to_dict() for item in models],
+                    indent=2,
+                    ensure_ascii=False,
+                )
+                + "\n",
+            )

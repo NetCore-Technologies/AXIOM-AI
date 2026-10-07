@@ -30,6 +30,10 @@ class DatasetInspection:
         self.estimated_tokens = estimated_tokens
 
 
+def _reject_non_json_constant(value: str) -> None:
+    raise ValueError(f"Non-standard JSON constant: {value}")
+
+
 def _estimate_tokens(value: Any) -> int:
     """Cheap token estimate for first-pass dataset analysis."""
     text = json.dumps(value, ensure_ascii=False)
@@ -55,16 +59,22 @@ def inspect_jsonl(path: Path) -> DatasetInspection:
                 continue
 
             try:
-                item = json.loads(line)
-            except json.JSONDecodeError:
+                item = json.loads(
+                    line,
+                    parse_constant=_reject_non_json_constant,
+                )
+            except (json.JSONDecodeError, ValueError):
+                invalid += 1
+                continue
+
+            if not isinstance(item, dict):
                 invalid += 1
                 continue
 
             valid += 1
             token_estimate += _estimate_tokens(item)
 
-            if isinstance(item, dict):
-                field_counter.update(item.keys())
+            field_counter.update(item.keys())
 
             fingerprints.update([json.dumps(item, sort_keys=True, ensure_ascii=False)])
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import platform
 import shutil
@@ -75,8 +76,26 @@ def estimate_model_fit(
     parameter_billions: float,
     hardware: HardwareInfo,
 ) -> str:
+    if (
+        isinstance(parameter_billions, bool)
+        or not isinstance(parameter_billions, (int, float))
+        or not math.isfinite(parameter_billions)
+        or parameter_billions <= 0
+    ):
+        raise ValueError(
+            "Model parameter count must be a finite number greater than zero."
+        )
+
     if hardware.vram_gb is None:
         return "⚠ GPU unavailable / unknown"
+
+    if (
+        isinstance(hardware.vram_gb, bool)
+        or not isinstance(hardware.vram_gb, (int, float))
+        or not math.isfinite(hardware.vram_gb)
+        or hardware.vram_gb < 0
+    ):
+        raise ValueError("Hardware VRAM must be a finite number of GB.")
 
     fp16_gb = parameter_billions * 2 * 1.2
     q4_gb = parameter_billions * 0.5 * 1.2

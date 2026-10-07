@@ -26,7 +26,7 @@ class ModelInspection:
 def _estimate_parameters(config: dict, weight_size_bytes: int) -> int | None:
     for key in ("num_parameters", "parameter_count", "n_parameters"):
         value = config.get(key)
-        if isinstance(value, int):
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
             return value
 
     hidden = config.get("hidden_size")
@@ -34,8 +34,17 @@ def _estimate_parameters(config: dict, weight_size_bytes: int) -> int | None:
     vocab = config.get("vocab_size")
     intermediate = config.get("intermediate_size")
 
-    if all(isinstance(v, int) for v in (hidden, layers, vocab)):
-        if isinstance(intermediate, int):
+    if all(
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value > 0
+        for value in (hidden, layers, vocab)
+    ):
+        if (
+            isinstance(intermediate, int)
+            and not isinstance(intermediate, bool)
+            and intermediate > 0
+        ):
             return int(
                 layers
                 * (
@@ -53,9 +62,13 @@ def _estimate_parameters(config: dict, weight_size_bytes: int) -> int | None:
 
 def _detect_capabilities(config: dict) -> list[str]:
     model_type = str(config.get("model_type", "")).lower()
+    raw_architectures = config.get("architectures", [])
+    architectures_value = (
+        raw_architectures if isinstance(raw_architectures, list) else []
+    )
     architectures = [
         str(item).lower()
-        for item in config.get("architectures", [])
+        for item in architectures_value
         if isinstance(item, str)
     ]
 
@@ -102,8 +115,11 @@ def inspect_model(path: str) -> ModelInspection:
     if config_path.is_file():
         try:
             config = json.loads(config_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ValueError(f"Invalid config.json: {exc}") from exc
+
+        if not isinstance(config, dict):
+            raise ValueError("Invalid config.json: expected a JSON object.")
 
     files = [
         file
@@ -171,7 +187,7 @@ def inspect_model(path: str) -> ModelInspection:
 
     estimated_vram_gb = None
 
-    if parameter_count:
+    if parameter_count is not None and parameter_count > 0:
         estimated_vram_gb = round(
             parameter_count * 2 * 1.2 / (1024 ** 3),
             2,

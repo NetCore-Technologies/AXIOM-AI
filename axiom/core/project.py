@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 DEFAULT_CONFIG = """\
 project:
@@ -27,8 +27,26 @@ deployment:
 
 
 def create_project(name: str, directory: Path | None = None) -> Path:
-    if not name.strip():
+    if not isinstance(name, str) or not name.strip():
         raise ValueError("Project name cannot be empty.")
+
+    if name != name.strip():
+        raise ValueError("Project name cannot start or end with whitespace.")
+
+    if (
+        name in {".", ".."}
+        or any(ord(character) < 32 for character in name)
+        or any(character in name for character in '/\\\x00<>:"|?*')
+    ):
+        raise ValueError(
+            "Project name must be a single safe directory name."
+        )
+
+    windows_name = PureWindowsPath(name)
+    if windows_name.anchor or name.rstrip(" .") != name:
+        raise ValueError(
+            "Project name must be a single safe directory name."
+        )
 
     root = (directory or Path.cwd()) / name
 

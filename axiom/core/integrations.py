@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-import json
+
+from axiom.core.storage import atomic_write_text, file_lock
 
 
 class IntegrationType(str, Enum):
@@ -31,71 +33,148 @@ class AgentIntegration:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "AgentIntegration":
+    def from_dict(cls, data: dict) -> AgentIntegration:
+        if not isinstance(data, dict):
+            raise ValueError("Integration entry must be a JSON object.")
+
+        try:
+            name = data["name"]
+            integration_type = IntegrationType(data["type"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Integration entry is missing valid name/type.") from exc
+
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Integration name cannot be empty.")
+
+        command = data.get("command")
+        url = data.get("url")
+        description = data.get("description", "")
+
+        if command is not None and not isinstance(command, str):
+            raise ValueError("Integration command must be a string or null.")
+        if url is not None and not isinstance(url, str):
+            raise ValueError("Integration URL must be a string or null.")
+        if not isinstance(description, str):
+            raise ValueError("Integration description must be a string.")
+
         return cls(
-            name=data["name"],
-            type=IntegrationType(data["type"]),
-            command=data.get("command"),
-            url=data.get("url"),
-            description=data.get("description", ""),
+            name=name,
+            type=integration_type,
+            command=command,
+            url=url,
+            description=description,
         )
 
 
 class IntegrationRegistry:
     """Local registry for external AI-agent integrations."""
 
-    def __init__(self, root: Path | None = None):
-        self.root = root or Path(".axiom")
-        self.root.mkdir(parents=True, exist_ok=True)
-
+    def __init__(
+        self,
+        root: Path | None = None,
+        *,
+        create: bool = True,
+    ):
+        self.root = Path(root) if root is not None else Path(".axiom")
         self.path = self.root / "integrations.json"
+        self.lock_file = self.root / ".integrations.lock"
 
+        if not create:
+            return
+
+        self.root.mkdir(parents=True, exist_ok=True)
+        with file_lock(self.lock_file):
+            if not self.path.exists():
+                atomic_write_text(self.path, "[]\n")
+
+    def _read(self) -> list[AgentIntegration]:
         if not self.path.exists():
-            self.path.write_text("[]", encoding="utf-8")
-
-    def list(self) -> list[AgentIntegration]:
-        data = json.loads(self.path.read_text(encoding="utf-8"))
-        return [AgentIntegration.from_dict(item) for item in data]
-
-    def add(self, integration: AgentIntegration) -> None:
-        integrations = self.list()
-
-        if any(
-            item.name.lower() == integration.name.lower()
-            for item in integrations
-        ):
+            return []
+        if not self.path.is_file():
             raise ValueError(
-                f"Integration already exists: {integration.name}"
+                f"Invalid integrations registry: expected a file at {self.path}"
             )
 
-        integrations.append(integration)
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"Invalid integrations registry: {self.path}"
+            ) from exc
 
-        self.path.write_text(
-            json.dumps(
-                [item.to_dict() for item in integrations],
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
+        if not isinstance(data, list):
+            raise ValueError(
+                f"Invalid integrations registry: expected a JSON array in "
+                f"{self.path}"
+            )
+
+        integrations: list[AgentIntegration] = []
+        for index, item in enumerate(data):
+            try:
+                integrations.append(AgentIntegration.from_dict(item))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid integration registry entry at index {index}."
+                ) from exc
+
+        return integrations
+
+    def list(self) -> list[AgentIntegration]:
+        return self._read()
+
+    def add(self, integration: AgentIntegration) -> None:
+        if not isinstance(integration, AgentIntegration):
+            raise TypeError("integration must be an AgentIntegration instance.")
+
+        self.root.mkdir(parents=True, exist_ok=True)
+        with file_lock(self.lock_file):
+            integrations = self._read()
+
+            if any(
+                item.name.lower() == integration.name.lower()
+                for item in integrations
+            ):
+                raise ValueError(
+                    f"Integration already exists: {integration.name}"
+                )
+
+            integrations.append(integration)
+
+            atomic_write_text(
+                self.path,
+                json.dumps(
+                    [item.to_dict() for item in integrations],
+                    indent=2,
+                    ensure_ascii=False,
+                )
+                + "\n",
+            )
 
     def remove(self, name: str) -> bool:
-        integrations = self.list()
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Integration name cannot be empty.")
 
-        remaining = [
-            item
-            for item in integrations
-            if item.name.lower() != name.lower()
-        ]
+        self.root.mkdir(parents=True, exist_ok=True)
+        with file_lock(self.lock_file):
+            integrations = self._read()
 
-        if len(remaining) == len(integrations):
-            return False
+            remaining = [
+                item
+                for item in integrations
+                if item.name.lower() != name.lower()
+            ]
 
-        self.path.write_text(
-            json.dumps(
-                [item.to_dict() for item in remaining],
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
+            if len(remaining) == len(integrations):
+                return False
 
-        return True
+            atomic_write_text(
+                self.path,
+                json.dumps(
+                    [item.to_dict() for item in remaining],
+                    indent=2,
+                    ensure_ascii=False,
+                )
+                + "\n",
+            )
+
+            return True

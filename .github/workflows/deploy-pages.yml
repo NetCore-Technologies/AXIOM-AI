@@ -12,6 +12,8 @@ on:
       - "package-lock.json"
       - "vite.config.ts"
       - "tsconfig*.json"
+      - "playwright.config.ts"
+      - "e2e/**"
       - ".github/workflows/deploy-pages.yml"
 
   workflow_dispatch:
@@ -63,6 +65,12 @@ jobs:
 
       - name: Build Control Center
         run: npm run build
+
+      - name: Install Chromium for browser checks
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Control Center end-to-end tests
+        run: npm run e2e
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

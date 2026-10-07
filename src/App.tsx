@@ -1,50 +1,51 @@
-import { useEffect,
-  useState
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   Activity,
-  AlertTriangle,
   ArrowRight,
+  ArrowUpRight,
   BarChart3,
   BrainCircuit,
   Check,
   ChevronDown,
+  ChevronRight,
+  CircleAlert,
+  CircleCheck,
   CircleGauge,
+  Clock3,
+  Command,
   Cpu,
   Database,
-  FlaskConical,
-  FolderKanban,
+  FileCode2,
   Gauge,
-  HardDrive,
   Hammer,
+  HardDrive,
+  KeyRound,
   LayoutDashboard,
   ListFilter,
+  LockKeyhole,
+  Menu,
   Moon,
   Network,
+  PanelLeftClose,
   Play,
   Plus,
   RadioTower,
-  Rocket,
+  RefreshCcw,
   Search,
   ServerCog,
   Settings,
   ShieldCheck,
-  Sparkles,
+  SlidersHorizontal,
   Sun,
   TerminalSquare,
   TimerReset,
+  TriangleAlert,
   Wrench,
-  Zap
+  X,
+  Zap,
 } from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis
-} from "recharts";
 
 type Page =
   | "dashboard"
@@ -59,44 +60,262 @@ type Page =
   | "settings";
 
 type Theme = "dark" | "light";
+type Tone = "success" | "warning" | "danger" | "neutral" | "info";
 
-const nav: Array<{ id: Page; label: string; icon: React.ElementType; section?: string }> = [
-  { id: "dashboard", label: "Control Center", icon: LayoutDashboard, section: "WORKSPACE" },
-  { id: "models", label: "Models", icon: BrainCircuit },
-  { id: "datasets", label: "Datasets", icon: Database },
-  { id: "training", label: "Training", icon: Hammer },
-  { id: "evaluation", label: "Evaluation", icon: FlaskConical },
-  { id: "runtime", label: "Runtime", icon: RadioTower, section: "OPERATIONS" },
-  { id: "mcp", label: "MCP Inspector", icon: Network },
-  { id: "diagnostics", label: "Diagnostics", icon: Wrench },
-  { id: "logs", label: "Logs", icon: TerminalSquare },
-  { id: "settings", label: "Settings", icon: Settings, section: "SYSTEM" },
+type NavItem = {
+  id: Page;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+  section?: string;
+};
+
+type Notice = {
+  message: string;
+  tone: Tone;
+};
+
+const navItems: NavItem[] = [
+  {
+    id: "dashboard",
+    label: "Control center",
+    description: "Workspace overview",
+    icon: LayoutDashboard,
+    section: "WORKSPACE",
+  },
+  {
+    id: "models",
+    label: "Models",
+    description: "Registry and metadata",
+    icon: BrainCircuit,
+  },
+  {
+    id: "datasets",
+    label: "Datasets",
+    description: "Inspect and validate data",
+    icon: Database,
+  },
+  {
+    id: "training",
+    label: "Training",
+    description: "Hardware-aware plans",
+    icon: Hammer,
+  },
+  {
+    id: "evaluation",
+    label: "Evaluation",
+    description: "Quality gates and reports",
+    icon: CircleGauge,
+  },
+  {
+    id: "runtime",
+    label: "Runtime",
+    description: "Local serving and requests",
+    icon: RadioTower,
+    section: "OPERATIONS",
+  },
+  {
+    id: "mcp",
+    label: "MCP inspector",
+    description: "Tools and resources",
+    icon: Network,
+  },
+  {
+    id: "diagnostics",
+    label: "Diagnostics",
+    description: "Health and configuration",
+    icon: Wrench,
+  },
+  {
+    id: "logs",
+    label: "Logs",
+    description: "Runtime event stream",
+    icon: TerminalSquare,
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    description: "Workspace and security",
+    icon: Settings,
+    section: "SYSTEM",
+  },
 ];
 
-const activity = [
-  { time: "12:00", requests: 71 }, { time: "12:10", requests: 82 }, { time: "12:20", requests: 74 },
-  { time: "12:30", requests: 97 }, { time: "12:40", requests: 88 }, { time: "12:50", requests: 111 },
-  { time: "13:00", requests: 104 }, { time: "13:10", requests: 123 }, { time: "13:20", requests: 118 },
-  { time: "13:30", requests: 134 }, { time: "13:40", requests: 126 }, { time: "13:50", requests: 143 },
-  { time: "14:00", requests: 137 },
+const pageMeta: Record<
+  Page,
+  { label: string; kicker: string; description: string }
+> = {
+  dashboard: {
+    label: "Control center",
+    kicker: "CONTROL CENTER / LOCAL WORKSPACE",
+    description: "A quiet place to see what is ready, what needs attention, and what is still disconnected.",
+  },
+  models: {
+    label: "Models",
+    kicker: "MODEL REGISTRY",
+    description: "Inspect model metadata and keep local model decisions close to the rest of your stack.",
+  },
+  datasets: {
+    label: "Datasets",
+    kicker: "DATA ENGINEERING",
+    description: "Validate, clean, and understand the data that feeds your experiments.",
+  },
+  training: {
+    label: "Training",
+    kicker: "MODEL OPTIMIZATION",
+    description: "Shape a reproducible training plan around the hardware you actually have.",
+  },
+  evaluation: {
+    label: "Evaluation",
+    kicker: "QUALITY GATES",
+    description: "Make model quality visible with repeatable checks instead of optimistic guesses.",
+  },
+  runtime: {
+    label: "Runtime",
+    kicker: "LOCAL RUNTIME",
+    description: "See serving readiness and request flow once the local runtime is connected.",
+  },
+  mcp: {
+    label: "MCP inspector",
+    kicker: "MODEL CONTEXT PROTOCOL",
+    description: "Inspect tools, resources, prompts, and schemas without losing the protocol context.",
+  },
+  diagnostics: {
+    label: "Diagnostics",
+    kicker: "OBSERVABILITY",
+    description: "Find configuration drift and local blockers before they become confusing failures.",
+  },
+  logs: {
+    label: "Logs",
+    kicker: "EVENT STREAM",
+    description: "Trace what the workspace is doing, not just whether it appears to be running.",
+  },
+  settings: {
+    label: "Settings",
+    kicker: "SYSTEM / PREFERENCES",
+    description: "Tune the local interface and protect the administrator session.",
+  },
+};
+
+const platformModules: Array<{
+  page: Page;
+  title: string;
+  description: string;
+  state: string;
+  tone: Tone;
+  icon: LucideIcon;
+}> = [
+  {
+    page: "models",
+    title: "Models",
+    description: "Metadata, formats, parameters, quantization",
+    state: "CLI surface",
+    tone: "neutral",
+    icon: BrainCircuit,
+  },
+  {
+    page: "datasets",
+    title: "Datasets",
+    description: "JSONL inspection, validation, cleaning",
+    state: "CLI surface",
+    tone: "neutral",
+    icon: Database,
+  },
+  {
+    page: "training",
+    title: "Training",
+    description: "Hardware-aware planning and fit estimates",
+    state: "Plan only",
+    tone: "warning",
+    icon: Hammer,
+  },
+  {
+    page: "runtime",
+    title: "Runtime",
+    description: "Local inference and serving foundation",
+    state: "Not connected",
+    tone: "warning",
+    icon: RadioTower,
+  },
 ];
+
+const activityBars = [38, 50, 46, 64, 58, 72, 68, 80, 74, 88, 82, 92, 86, 96, 90, 100];
 
 type AdminRecord = {
   username: string;
   passwordHash: string;
   updatedAt: number;
+  salt?: string;
+  iterations?: number;
 };
 
 const ADMIN_KEY = "axiom-admin";
 const SESSION_KEY = "axiom-session";
+const THEME_KEY = "axiom-theme";
 
-async function hashPassword(password: string): Promise<string> {
+const PASSWORD_ITERATIONS = 120_000;
+
+function encodeBase64(bytes: Uint8Array): string {
+  let binary = "";
+
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary);
+}
+
+function decodeBase64(value: string): Uint8Array {
+  return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+}
+
+async function hashLegacyPassword(password: string): Promise<string> {
   const bytes = new TextEncoder().encode(password);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
 
   return Array.from(new Uint8Array(digest))
     .map((value) => value.toString(16).padStart(2, "0"))
     .join("");
+}
+
+async function hashPassword(
+  password: string,
+  salt: Uint8Array,
+  iterations: number,
+): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+  const digest = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: new Uint8Array(salt).buffer as ArrayBuffer,
+      iterations,
+      hash: "SHA-256",
+    },
+    key,
+    256,
+  );
+
+  return encodeBase64(new Uint8Array(digest));
+}
+
+function equalSecrets(left: string, right: string): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  let difference = 0;
+
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+
+  return difference === 0;
 }
 
 function readAdmin(): AdminRecord | null {
@@ -107,10 +326,25 @@ function readAdmin(): AdminRecord | null {
   }
 
   try {
-    return JSON.parse(raw) as AdminRecord;
+    const value: unknown = JSON.parse(raw);
+
+    if (
+      !value ||
+      typeof value !== "object" ||
+      typeof (value as Partial<AdminRecord>).username !== "string" ||
+      typeof (value as Partial<AdminRecord>).passwordHash !== "string"
+    ) {
+      return null;
+    }
+
+    return value as AdminRecord;
   } catch {
     return null;
   }
+}
+
+function getStoredTheme(): Theme {
+  return localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark";
 }
 
 function isAuthenticated(): boolean {
@@ -139,10 +373,13 @@ async function saveAdministrator(
   username: string,
   password: string,
 ): Promise<void> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
   const record: AdminRecord = {
     username: username.trim(),
-    passwordHash: await hashPassword(password),
+    passwordHash: await hashPassword(password, salt, PASSWORD_ITERATIONS),
     updatedAt: Date.now(),
+    salt: encodeBase64(salt),
+    iterations: PASSWORD_ITERATIONS,
   };
 
   localStorage.setItem(ADMIN_KEY, JSON.stringify(record));
@@ -158,64 +395,79 @@ async function verifyAdministrator(
     return false;
   }
 
-  const hash = await hashPassword(password);
+  let hash: string;
 
-  return (
-    admin.username === username.trim() &&
-    admin.passwordHash === hash
-  );
+  if (
+    typeof admin.salt === "string" &&
+    typeof admin.iterations === "number" &&
+    Number.isInteger(admin.iterations) &&
+    admin.iterations >= 100_000
+  ) {
+    try {
+      hash = await hashPassword(
+        password,
+        decodeBase64(admin.salt),
+        admin.iterations,
+      );
+    } catch {
+      return false;
+    }
+  } else {
+    // Read legacy SHA-256 records so existing local installations can
+    // authenticate once and upgrade through the password-change flow.
+    hash = await hashLegacyPassword(password);
+  }
+
+  return admin.username === username.trim() && equalSecrets(admin.passwordHash, hash);
 }
 
 function App() {
-  const [theme, setTheme] = useState<Theme>(() =>
-    (localStorage.getItem("axiom-theme") as Theme) || "dark",
-  );
-
+  const [theme, setTheme] = useState<Theme>(getStoredTheme);
   const [booted, setBooted] = useState(
     () => localStorage.getItem("axiom-booted") === "1",
   );
-
   const [setupDone, setSetupDone] = useState(
-    () =>
-      localStorage.getItem("axiom-setup") === "1" &&
-      Boolean(readAdmin()),
+    () => localStorage.getItem("axiom-setup") === "1" && Boolean(readAdmin()),
   );
-
-  const [authenticated, setAuthenticated] =
-    useState(() => isAuthenticated());
-
+  const [authenticated, setAuthenticated] = useState(isAuthenticated);
   const [page, setPage] = useState<Page>("dashboard");
-  const [changePasswordOpen, setChangePasswordOpen] =
-    useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
 
-  /*
-   * AXIOM automatically logs out after 10 minutes without
-   * user activity.
-   */
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+  }, [theme]);
+
+  useEffect(() => {
+    if (!notice) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setNotice(null), 4200);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
   useEffect(() => {
     if (!authenticated) {
       return;
     }
 
     let timeout: number | undefined;
-
     const logoutForInactivity = () => {
       sessionStorage.removeItem(SESSION_KEY);
       setAuthenticated(false);
       setChangePasswordOpen(false);
+      setNotice({ message: "Your session expired after 10 minutes of inactivity.", tone: "warning" });
     };
-
     const resetTimer = () => {
       if (timeout !== undefined) {
         window.clearTimeout(timeout);
       }
 
-      timeout = window.setTimeout(
-        logoutForInactivity,
-        10 * 60 * 1000,
-      );
+      timeout = window.setTimeout(logoutForInactivity, 10 * 60 * 1000);
     };
-
     const activityEvents = [
       "mousemove",
       "mousedown",
@@ -225,10 +477,7 @@ function App() {
       "pointerdown",
     ];
 
-    activityEvents.forEach((event) => {
-      window.addEventListener(event, resetTimer);
-    });
-
+    activityEvents.forEach((event) => window.addEventListener(event, resetTimer));
     resetTimer();
 
     return () => {
@@ -236,16 +485,29 @@ function App() {
         window.clearTimeout(timeout);
       }
 
-      activityEvents.forEach((event) => {
-        window.removeEventListener(event, resetTimer);
-      });
+      activityEvents.forEach((event) => window.removeEventListener(event, resetTimer));
     };
   }, [authenticated]);
+
+  const setAndPersistTheme = (nextTheme: Theme) => {
+    localStorage.setItem(THEME_KEY, nextTheme);
+    setTheme(nextTheme);
+  };
+
+  const notify = (message: string, tone: Tone = "info") => {
+    setNotice({ message, tone });
+  };
+
+  const navigate = (nextPage: Page) => {
+    setPage(nextPage);
+    setMobileNavOpen(false);
+  };
 
   if (!booted) {
     return (
       <Welcome
         theme={theme}
+        setTheme={setAndPersistTheme}
         onStart={() => {
           localStorage.setItem("axiom-booted", "1");
           setBooted(true);
@@ -258,19 +520,16 @@ function App() {
     return (
       <Setup
         theme={theme}
+        setTheme={setAndPersistTheme}
         onComplete={async (username, password) => {
           await saveAdministrator(username, password);
-
           localStorage.setItem("axiom-setup", "1");
-
-          /*
-           * Do NOT automatically log them in.
-           * First boot finishes, then AXIOM presents the login
-           * screen so the newly-created administrator signs in.
-           */
-          setSetupDone(true);
           sessionStorage.removeItem(SESSION_KEY);
-          setAuthenticated(false);
+
+          window.setTimeout(() => {
+            setSetupDone(true);
+            setAuthenticated(false);
+          }, 850);
         }}
       />
     );
@@ -280,6 +539,7 @@ function App() {
     return (
       <LoginScreen
         theme={theme}
+        setTheme={setAndPersistTheme}
         onLogin={() => {
           sessionStorage.setItem(SESSION_KEY, "1");
           setAuthenticated(true);
@@ -289,7 +549,6 @@ function App() {
   }
 
   const username = getAdministratorName();
-
   const logout = () => {
     sessionStorage.removeItem(SESSION_KEY);
     setAuthenticated(false);
@@ -298,202 +557,194 @@ function App() {
 
   return (
     <div className={`app-shell ${theme}`}>
-      <Sidebar page={page} setPage={setPage} />
+      <Sidebar
+        page={page}
+        setPage={navigate}
+        mobileOpen={mobileNavOpen}
+        closeMobile={() => setMobileNavOpen(false)}
+      />
+      {mobileNavOpen && (
+        <button
+          type="button"
+          className="mobile-scrim"
+          aria-label="Close navigation"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
 
-      <main className="main-shell">
+      <div className="main-shell">
         <Topbar
           theme={theme}
-          setTheme={(nextTheme) => {
-            localStorage.setItem("axiom-theme", nextTheme);
-            setTheme(nextTheme);
-          }}
+          setTheme={setAndPersistTheme}
           page={page}
           username={username}
+          onOpenNavigation={() => setMobileNavOpen(true)}
           onLogout={logout}
-          onChangePassword={() =>
-            setChangePasswordOpen(true)
-          }
+          onChangePassword={() => setChangePasswordOpen(true)}
+          navigate={navigate}
         />
 
-        <div className="page-wrap">
-          {page === "dashboard" && (
-            <Dashboard
-              setPage={setPage}
-              username={username}
-            />
-          )}
-
-          {page === "models" && <Models />}
-          {page === "datasets" && <Datasets />}
-          {page === "training" && <Training />}
-          {page === "evaluation" && <Evaluation />}
-          {page === "runtime" && <Runtime />}
-          {page === "mcp" && <MCP />}
-          {page === "diagnostics" && <Diagnostics />}
-          {page === "logs" && <LogsPage />}
-        </div>
-      </main>
+        <main id="main-content" className="page-wrap" tabIndex={-1}>
+          <WorkspacePage
+            page={page}
+            username={username}
+            theme={theme}
+            setTheme={setAndPersistTheme}
+            setPage={navigate}
+            onNotify={notify}
+            onChangePassword={() => setChangePasswordOpen(true)}
+          />
+        </main>
+      </div>
 
       {changePasswordOpen && (
-        <ChangePasswordModal
+        <ChangePasswordDialog
           onClose={() => setChangePasswordOpen(false)}
           onSuccess={() => {
             sessionStorage.removeItem(SESSION_KEY);
             setChangePasswordOpen(false);
             setAuthenticated(false);
+            setNotice({ message: "Password changed. Sign in again to continue.", tone: "success" });
           }}
         />
       )}
+
+      {notice && <NoticeToast notice={notice} onDismiss={() => setNotice(null)} />}
     </div>
   );
 }
 
+function AxiomMark({ small = false }: { small?: boolean }) {
+  return <span className={`axiom-mark ${small ? "small" : ""}`}>A</span>;
+}
 
+function ThemeToggle({ theme, setTheme }: { theme: Theme; setTheme: (theme: Theme) => void }) {
+  const nextTheme = theme === "dark" ? "light" : "dark";
 
+  return (
+    <button
+      type="button"
+      className="icon-button"
+      aria-label={`Switch to ${nextTheme} theme`}
+      title={`Switch to ${nextTheme} theme`}
+      onClick={() => setTheme(nextTheme)}
+    >
+      {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+    </button>
+  );
+}
 
 function Welcome({
   theme,
+  setTheme,
   onStart,
 }: {
   theme: Theme;
+  setTheme: (theme: Theme) => void;
   onStart: () => void;
 }) {
   return (
-    <div className={`onboarding ${theme}`}>
-      <div className="ambient ambient-a" />
-      <div className="ambient ambient-b" />
-
-      <div className="onboarding-copy">
-        <div>
-          <div className="brand-lockup">
-            <div className="brand-q">A</div>
-
-            <div>
-              <b>AXIOM</b>
-              <span>AI ENGINEERING PLATFORM</span>
-            </div>
-          </div>
-
-          <div className="step-strip">
-            <span className="active">01</span>
-            <span>02</span>
-            <span>03</span>
-          </div>
-        </div>
-
-        <section className="hero-block">
-          <div className="eyebrow">
-            FIRST BOOT • AXIOM CONTROL CENTER
-          </div>
-
-          <h1>
-            Build AI.
-            <span> Own AI.</span>
-          </h1>
-
-          <p>
-            Welcome to AXIOM, your local AI engineering workspace
-            for building, training, evaluating, optimizing and
-            deploying AI systems.
-          </p>
-
-          <button
-            type="button"
-            className="hero-button"
-            onClick={onStart}
-          >
-            Begin AXIOM setup
-            <ArrowRight size={18} />
-          </button>
-        </section>
-
-        <div className="tiny-footer">
-          LOCAL • PRIVATE • ENGINEERED FOR AI
-        </div>
+    <div className={`auth-layout ${theme}`}>
+      <div className="auth-topline">
+        <BrandLockup />
+        <ThemeToggle theme={theme} setTheme={setTheme} />
       </div>
 
-      <div className="onboarding-preview">
-        <div className="preview-window">
-          <div className="preview-bar">
-            <div className="traffic">
-              <i />
-              <i />
-              <i />
-            </div>
-
-            <span>AXIOM CONTROL CENTER</span>
-
-            <b>
-              <span className="status-dot live" />
-              READY
-            </b>
-          </div>
-
-          <div className="preview-grid">
-            <div className="glass-card wide">
-              <small>SYSTEM HEALTH</small>
-              <strong>
-                98.7%
-                <span> HEALTHY</span>
-              </strong>
-              <div className="delta">
-                +1.8% from previous check
-              </div>
-            </div>
-
-            <div className="glass-card">
-              <small>AI RUNTIME</small>
-              <strong>READY</strong>
-              <span className="hero-small">
-                Local engine
-              </span>
-            </div>
-
-            <div className="glass-card">
-              <small>MODEL REGISTRY</small>
-              <strong>SYNCED</strong>
-              <span className="hero-small">
-                Local models
-              </span>
-            </div>
-
-            <div className="glass-card wide">
-              <small>INFERENCE ACTIVITY</small>
-
-              <svg
-                className="sparkline"
-                viewBox="0 0 100 42"
-                preserveAspectRatio="none"
-              >
-                <polyline
-                  points="0,34 12,29 23,31 34,20 45,24 56,12 68,17 79,8 90,13 100,4"
-                />
-              </svg>
-            </div>
-          </div>
-
-          <div className="preview-message">
-            <ShieldCheck size={14} />
-            <span>
-              AXIOM runs locally and keeps your engineering
-              workspace under your control.
+      <div className="welcome-grid">
+        <section className="welcome-copy" aria-labelledby="welcome-title">
+          <StepRail current={1} />
+          <p className="eyebrow">FIRST BOOT / AXIOM CONTROL CENTER</p>
+          <h1 id="welcome-title">
+            Build AI.
+            <br />
+            <span>Own AI.</span>
+          </h1>
+          <p className="lede">
+            A local-first workspace for models, datasets, training plans, evaluation,
+            and runtime decisions — kept close to the engineers making them.
+          </p>
+          <div className="welcome-actions">
+            <button type="button" className="button primary-button" onClick={onStart}>
+              Begin setup <ArrowRight size={17} />
+            </button>
+            <span className="quiet-note">
+              <ShieldCheck size={15} /> Stored locally on this installation
             </span>
           </div>
-        </div>
+        </section>
+
+        <section className="preview-frame" aria-label="AXIOM workspace preview">
+          <div className="preview-header">
+            <div className="window-controls" aria-hidden="true"><i /><i /><i /></div>
+            <span>AXIOM / CONTROL CENTER</span>
+            <StatusPill tone="success">LOCAL</StatusPill>
+          </div>
+          <div className="preview-body">
+            <div className="preview-sidebar">
+              <AxiomMark small />
+              <span className="preview-line active" />
+              <span className="preview-line" />
+              <span className="preview-line" />
+              <span className="preview-line short" />
+            </div>
+            <div className="preview-content">
+              <div className="preview-kicker">CONTROL CENTER / LOCAL WORKSPACE</div>
+              <div className="preview-title">Everything important, in view.</div>
+              <div className="preview-status-row">
+                <div><span>Workspace</span><b>Ready for setup</b></div>
+                <div><span>Runtime</span><b>Not connected</b></div>
+              </div>
+              <div className="preview-bars" aria-hidden="true">
+                {activityBars.slice(0, 10).map((height, index) => (
+                  <i key={index} style={{ height: `${height}%` }} />
+                ))}
+              </div>
+              <div className="preview-footer"><span className="status-dot" /> Local, private, inspectable</div>
+            </div>
+          </div>
+        </section>
       </div>
+
+      <div className="auth-footer">
+        <span>AXIOM / 0.2.0-beta.5</span>
+        <span>LOCAL · PRIVATE · ENGINEERED FOR AI</span>
+      </div>
+    </div>
+  );
+}
+
+function BrandLockup() {
+  return (
+    <div className="brand-lockup">
+      <AxiomMark />
+      <div>
+        <b>AXIOM</b>
+        <span>AI ENGINEERING PLATFORM</span>
+      </div>
+    </div>
+  );
+}
+
+function StepRail({ current }: { current: 1 | 2 | 3 }) {
+  return (
+    <div className="step-rail" aria-label={`Setup step ${current} of 3`}>
+      {[1, 2, 3].map((step) => (
+        <span key={step} className={step <= current ? "active" : ""}>
+          0{step}
+        </span>
+      ))}
     </div>
   );
 }
 
 function Setup({
   theme,
+  setTheme,
   onComplete,
 }: {
   theme: Theme;
-  onComplete: (
-    username: string,
-    password: string,
-  ) => Promise<void>;
+  setTheme: (theme: Theme) => void;
+  onComplete: (username: string, password: string) => Promise<void>;
 }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -501,728 +752,330 @@ function Setup({
   const [reveal, setReveal] = useState(false);
   const [created, setCreated] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
+  const passwordChecks = getPasswordChecks(password);
   const usernameValid = username.trim().length >= 3;
+  const passwordsMatch = password.length > 0 && password === confirm;
+  const passwordValid = Object.values(passwordChecks).every(Boolean);
+  const canContinue = usernameValid && passwordValid && passwordsMatch && !saving;
 
-  const lengthValid = password.length >= 8;
-  const upperValid = /[A-Z]/.test(password);
-  const lowerValid = /[a-z]/.test(password);
-  const numberValid = /[0-9]/.test(password);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
 
-  const passwordValid =
-    lengthValid &&
-    upperValid &&
-    lowerValid &&
-    numberValid;
-
-  const matchValid =
-    password.length > 0 &&
-    password === confirm;
-
-  const canContinue =
-    usernameValid &&
-    passwordValid &&
-    matchValid &&
-    !saving;
-
-  async function createAccount() {
     if (!canContinue) {
       return;
     }
 
     setSaving(true);
+    setError("");
 
     try {
       await onComplete(username, password);
-
       setCreated(true);
-
-      window.setTimeout(() => {
-        /*
-         * App will now render the login screen.
-         */
-      }, 900);
+    } catch {
+      setError("Unable to save the local administrator. Try again.");
     } finally {
       setSaving(false);
     }
   }
 
-  if (created) {
-    return (
-      <div className={`onboarding centered ${theme}`}>
-        <div className="setup-success">
-          <div className="setup-success-orb">
-            ✓
-          </div>
-
-          <div className="eyebrow">
-            STEP 3 OF 3 • COMPLETE
-          </div>
-
-          <h1>
-            Administrator <span>created.</span>
-          </h1>
-
-          <p>
-            Your AXIOM workspace is ready.
-            Redirecting to secure sign in...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className={`onboarding centered ${theme}`}>
-      <div className="setup-panel">
-        <div className="setup-head">
-          <div className="brand-mark">A</div>
-
-          <div>
-            <b>AXIOM</b>
-            <span>ADMINISTRATOR SETUP</span>
-          </div>
-        </div>
-
-        <div className="step-strip compact">
-          <span className="active">01</span>
-          <span className="active">02</span>
-          <span>03</span>
-        </div>
-
-        <div className="eyebrow">
-          STEP 2 OF 3 • ADMINISTRATOR
-        </div>
-
-        <h1>
-          Create your <span>AXIOM account.</span>
-        </h1>
-
-        <p>
-          This local administrator account protects access to
-          your AXIOM workspace and Control Center.
-        </p>
-
-        <Field
-          label="Username"
-          valid={usernameValid}
-          hint={
-            username.length === 0
-              ? "3+ character username"
-              : usernameValid
-                ? "Username ready"
-                : "Use at least 3 characters"
-          }
-        >
-          <input
-            value={username}
-            onChange={(event) => {
-              setUsername(event.target.value);
-            }}
-            placeholder="administrator"
-            autoComplete="username"
-            spellCheck={false}
-          />
-        </Field>
-
-        <Field
-          label="Password"
-          valid={passwordValid}
-          action={
-            <button
-              type="button"
-              className="show-button"
-              onClick={() => {
-                setReveal((value) => !value);
-              }}
-            >
-              {reveal ? "Hide" : "Show"}
-            </button>
-          }
-        >
-          <input
-            type={reveal ? "text" : "password"}
-            value={password}
-            onChange={(event) => {
-              setPassword(event.target.value);
-            }}
-            placeholder="Create a secure password"
-            autoComplete="new-password"
-          />
-        </Field>
-
-        <div className="requirements">
-          <Requirement
-            ok={lengthValid}
-            label="8+ characters"
-          />
-
-          <Requirement
-            ok={upperValid}
-            label="Uppercase letter"
-          />
-
-          <Requirement
-            ok={lowerValid}
-            label="Lowercase letter"
-          />
-
-          <Requirement
-            ok={numberValid}
-            label="Contains a number"
-          />
-        </div>
-
-        <Field
-          label="Confirm password"
-          valid={matchValid}
-          hint={
-            confirm.length === 0
-              ? "Passwords must match"
-              : matchValid
-                ? "Passwords match"
-                : "Passwords do not match"
-          }
-        >
-          <input
-            type="password"
-            value={confirm}
-            onChange={(event) => {
-              setConfirm(event.target.value);
-            }}
-            placeholder="Repeat your password"
-            autoComplete="new-password"
-          />
-        </Field>
-
-        <button
-          type="button"
-          className="primary-button full"
-          disabled={!canContinue}
-          onClick={createAccount}
-        >
-          {saving ? "Creating account..." : "Create Administrator"}
-          <ArrowRight size={18} />
-        </button>
-
-        <div className="secure-note">
-          <ShieldCheck size={14} />
-          Stored locally by the AXIOM installation.
-        </div>
+    <div className={`auth-layout centered ${theme}`}>
+      <div className="auth-topline">
+        <BrandLockup />
+        <ThemeToggle theme={theme} setTheme={setTheme} />
       </div>
+
+      <div className="setup-shell">
+        {created ? (
+          <div className="success-state">
+            <div className="success-mark"><Check size={26} /></div>
+            <p className="eyebrow">STEP 3 OF 3 / COMPLETE</p>
+            <h1>Administrator created.</h1>
+            <p className="lede">Your local workspace is ready. Opening secure sign in…</p>
+          </div>
+        ) : (
+          <form className="auth-form panel-surface" onSubmit={submit}>
+            <div className="form-topline">
+              <StepRail current={2} />
+              <StatusPill tone="neutral">LOCAL ONLY</StatusPill>
+            </div>
+            <p className="eyebrow">STEP 2 OF 3 / ADMINISTRATOR</p>
+            <h1>Create your administrator.</h1>
+            <p className="form-intro">This account protects access to the AXIOM Control Center on this installation.</p>
+
+            <Field label="Username" htmlFor="setup-username" hint={usernameValid ? "Username is ready" : "Use at least 3 characters"}>
+              <input
+                id="setup-username"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder="administrator"
+                autoComplete="username"
+                spellCheck={false}
+                autoFocus
+                aria-invalid={username.length > 0 && !usernameValid}
+              />
+            </Field>
+
+            <Field
+              label="Password"
+              htmlFor="setup-password"
+              hint="Use a password you do not reuse elsewhere."
+              action={
+                <button
+                  type="button"
+                  className="field-action"
+                  aria-pressed={reveal}
+                  onClick={() => setReveal((value) => !value)}
+                >
+                  {reveal ? "Hide" : "Show"}
+                </button>
+              }
+            >
+              <input
+                id="setup-password"
+                type={reveal ? "text" : "password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Create a secure password"
+                autoComplete="new-password"
+              />
+            </Field>
+
+            <div className="requirements" aria-label="Password requirements">
+              <Requirement ok={passwordChecks.length} label="8+ characters" />
+              <Requirement ok={passwordChecks.upper} label="Uppercase letter" />
+              <Requirement ok={passwordChecks.lower} label="Lowercase letter" />
+              <Requirement ok={passwordChecks.number} label="Contains a number" />
+            </div>
+
+            <Field
+              label="Confirm password"
+              htmlFor="setup-confirm"
+              hint={confirm.length === 0 ? "Passwords must match" : passwordsMatch ? "Passwords match" : "Passwords do not match"}
+              hintTone={passwordsMatch ? "success" : "default"}
+            >
+              <input
+                id="setup-confirm"
+                type="password"
+                value={confirm}
+                onChange={(event) => setConfirm(event.target.value)}
+                placeholder="Repeat your password"
+                autoComplete="new-password"
+                aria-invalid={confirm.length > 0 && !passwordsMatch}
+              />
+            </Field>
+
+            {error && <InlineAlert tone="danger">{error}</InlineAlert>}
+
+            <button type="submit" className="button primary-button full-width" disabled={!canContinue}>
+              {saving ? "Creating account…" : "Create administrator"}
+              <ArrowRight size={17} />
+            </button>
+            <p className="form-note"><LockKeyhole size={14} /> Credentials are hashed before local storage.</p>
+          </form>
+        )}
+      </div>
+
+      <div className="auth-footer"><span>AXIOM / FIRST BOOT</span><span>YOUR WORKSPACE STAYS LOCAL</span></div>
     </div>
   );
+}
+
+function getPasswordChecks(password: string) {
+  return {
+    length: password.length >= 8,
+    upper: /[A-Z]/.test(password),
+    lower: /[a-z]/.test(password),
+    number: /[0-9]/.test(password),
+  };
 }
 
 function Field({
   label,
-  valid,
+  htmlFor,
   hint,
+  hintTone = "default",
   action,
   children,
 }: {
   label: string;
-  valid: boolean;
+  htmlFor: string;
   hint?: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
+  hintTone?: "default" | "success";
+  action?: ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="field">
-      <label>{label}</label>
-
-      <div
-        className={`input-shell ${
-          valid ? "field-valid" : ""
-        }`}
-      >
-        {children}
-
-        <span
-          className={`field-valid-light ${
-            valid ? "on" : ""
-          }`}
-          aria-hidden="true"
-        />
-
-        {action}
-      </div>
-
-      {hint && (
-        <small
-          className={
-            valid &&
-            label === "Confirm password"
-              ? "valid-text"
-              : ""
-          }
-        >
-          {hint}
-        </small>
-      )}
+      <div className="field-label-row"><label htmlFor={htmlFor}>{label}</label>{action}</div>
+      <div className="input-shell">{children}</div>
+      {hint && <small className={hintTone === "success" ? "success-text" : ""}>{hint}</small>}
     </div>
   );
 }
 
-function Requirement({
-  ok,
-  label,
-}: {
-  ok: boolean;
-  label: string;
-}) {
-  return (
-    <div
-      className={`requirement ${
-        ok ? "ok" : ""
-      }`}
-    >
-      <span className="requirement-light">
-        {ok ? "✓" : ""}
-      </span>
-
-      {label}
-    </div>
-  );
+function Requirement({ ok, label }: { ok: boolean; label: string }) {
+  return <span className={`requirement ${ok ? "ok" : ""}`}><i>{ok ? <Check size={11} /> : null}</i>{label}</span>;
 }
 
 function LoginScreen({
   theme,
+  setTheme,
   onLogin,
 }: {
   theme: Theme;
+  setTheme: (theme: Theme) => void;
   onLogin: () => void;
 }) {
   const admin = readAdmin();
-
-  const [username, setUsername] = useState(
-    admin?.username || "",
-  );
-
+  const [username, setUsername] = useState(admin?.username || "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [reveal, setReveal] = useState(false);
 
-  async function submit(
-    event: React.FormEvent<HTMLFormElement>,
-  ) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
     setError("");
     setLoading(true);
 
     try {
-      const valid = await verifyAdministrator(
-        username,
-        password,
-      );
+      const valid = await verifyAdministrator(username, password);
 
       if (!valid) {
-        setError(
-          "Incorrect administrator name or password.",
-        );
+        setError("Incorrect administrator name or password.");
         return;
       }
 
       onLogin();
     } catch {
-      setError(
-        "Unable to authenticate with the local AXIOM account.",
-      );
+      setError("Unable to authenticate with the local AXIOM account.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className={`login-screen ${theme}`}>
-      <div className="login-atmosphere login-red" />
-      <div className="login-atmosphere login-blue" />
-
-      <form
-        className="login-content"
-        onSubmit={submit}
-      >
-        <div className="login-copy-side">
-          <div className="login-logo-shell">
-            <div className="login-logo">
-              A
-            </div>
+    <div className={`auth-layout login-layout ${theme}`}>
+      <div className="auth-topline"><BrandLockup /><ThemeToggle theme={theme} setTheme={setTheme} /></div>
+      <div className="login-shell">
+        <section className="login-context">
+          <p className="eyebrow">SECURE LOCAL CONTROL</p>
+          <h1>Welcome back.</h1>
+          <p className="lede">Continue to the workspace that keeps your models, data, and decisions close to home.</p>
+          <div className="login-facts">
+            <div><ShieldCheck size={16} /><span>Local administrator session</span></div>
+            <div><HardDrive size={16} /><span>No cloud account required</span></div>
+            <div><Clock3 size={16} /><span>10-minute inactivity timeout</span></div>
           </div>
+        </section>
 
-          <div className="login-brand-name">
-            AXIOM
-          </div>
-
-          <div className="login-brand-subtitle">
-            AI ENGINEERING PLATFORM
-          </div>
-
-          <div className="login-kicker">
-            SECURE LOCAL CONTROL
-          </div>
-
-          <h1>
-            Welcome <span>back.</span>
-          </h1>
-
-          <p className="login-copy">
-            Sign in to continue to your AXIOM Control Center.
-          </p>
-        </div>
-
-        <div className="login-access-panel">
-          <div className="login-kicker">
-            ADMINISTRATOR ACCESS
-          </div>
-
+        <form className="login-form panel-surface" onSubmit={submit}>
+          <div className="form-icon"><KeyRound size={18} /></div>
+          <p className="eyebrow">ADMINISTRATOR ACCESS</p>
           <h2>Sign in</h2>
+          <p className="form-intro">Use the administrator created during first boot.</p>
 
-          <p>
-            Authenticate with the administrator account
-            created during first boot.
-          </p>
-
-          <label className="login-label">
-            Username
-
+          <Field label="Username" htmlFor="login-username">
             <input
-              className="login-field-input"
+              id="login-username"
               value={username}
-              onChange={(event) =>
-                setUsername(event.target.value)
-              }
+              onChange={(event) => setUsername(event.target.value)}
               autoComplete="username"
               spellCheck={false}
               placeholder="Administrator"
+              autoFocus
             />
-          </label>
+          </Field>
 
-          <label className="login-label">
-            Password
-
-            <div className="login-password-wrap">
-              <input
-                className="login-field-input"
-                type={
-                  reveal ? "text" : "password"
-                }
-                value={password}
-                onChange={(event) =>
-                  setPassword(event.target.value)
-                }
-                autoComplete="current-password"
-                placeholder="Password"
-              />
-
-              <button
-                type="button"
-                className="login-reveal"
-                onClick={() =>
-                  setReveal((value) => !value)
-                }
-              >
-                {reveal ? "HIDE" : "SHOW"}
+          <Field
+            label="Password"
+            htmlFor="login-password"
+            action={
+              <button type="button" className="field-action" aria-pressed={reveal} onClick={() => setReveal((value) => !value)}>
+                {reveal ? "Hide" : "Show"}
               </button>
-            </div>
-          </label>
-
-          {error && (
-            <div className="login-error">
-              {error}
-            </div>
-          )}
-
-          <button
-            className="login-button"
-            type="submit"
-            disabled={
-              loading ||
-              !username.trim() ||
-              !password
             }
           >
-            {loading
-              ? "AUTHENTICATING..."
-              : "SIGN IN"}
-          </button>
+            <input
+              id="login-password"
+              type={reveal ? "text" : "password"}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              placeholder="Password"
+            />
+          </Field>
 
-          <div className="login-security">
-            <ShieldCheck size={14} />
-            Local AXIOM administrator session
-          </div>
-        </div>
-      </form>
+          {error && <InlineAlert tone="danger" role="alert">{error}</InlineAlert>}
+
+          <button className="button primary-button full-width" type="submit" disabled={loading || !username.trim() || !password}>
+            {loading ? "Authenticating…" : "Sign in"}
+            <ArrowRight size={17} />
+          </button>
+          <p className="form-note"><ShieldCheck size={14} /> This session is stored in this browser only.</p>
+        </form>
+      </div>
+      <div className="auth-footer"><span>AXIOM / CONTROL CENTER</span><span>LOCAL · PRIVATE · INSPECTABLE</span></div>
     </div>
   );
 }
 
-function ChangePasswordModal({
-  onClose,
-  onSuccess,
+function Sidebar({
+  page,
+  setPage,
+  mobileOpen,
+  closeMobile,
 }: {
-  onClose: () => void;
-  onSuccess: () => void;
+  page: Page;
+  setPage: (page: Page) => void;
+  mobileOpen: boolean;
+  closeMobile: () => void;
 }) {
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [showCurrent, setShowCurrent] =
-    useState(false);
-  const [showNext, setShowNext] =
-    useState(false);
-  const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [success, setSuccess] = useState(false);
-
-  const lengthValid = next.length >= 8;
-  const upperValid = /[A-Z]/.test(next);
-  const lowerValid = /[a-z]/.test(next);
-  const numberValid = /[0-9]/.test(next);
-
-  const complete =
-    lengthValid &&
-    upperValid &&
-    lowerValid &&
-    numberValid &&
-    next.length > 0 &&
-    next === confirm;
-
-  async function submit(
-    event: React.FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-
-    setError("");
-    setSaving(true);
-
-    try {
-      const validCurrent =
-        await verifyAdministrator(
-          getAdministratorName(),
-          current,
-        );
-
-      if (!validCurrent) {
-        setError(
-          "Current password is incorrect.",
-        );
-        return;
-      }
-
-      if (!complete) {
-        setError(
-          "The new password does not meet all requirements.",
-        );
-        return;
-      }
-
-      await saveAdministrator(
-        getAdministratorName(),
-        next,
-      );
-
-      setSuccess(true);
-
-      window.setTimeout(() => {
-        onSuccess();
-      }, 1500);
-    } catch {
-      setError(
-        "Unable to change the administrator password.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
-    <div className="password-modal-backdrop">
-      <div className="password-modal">
-        {success ? (
-          <div className="password-success">
-            <div className="password-success-orb">
-              ✓
-            </div>
+    <aside className={`sidebar ${mobileOpen ? "is-open" : ""}`} aria-label="Primary navigation">
+      <div className="sidebar-head">
+        <BrandLockup />
+        <button type="button" className="icon-button sidebar-close" aria-label="Close navigation" onClick={closeMobile}>
+          <PanelLeftClose size={17} />
+        </button>
+      </div>
 
-            <div className="password-success-kicker">
-              SECURITY
-            </div>
+      <div className="workspace-switcher">
+        <span className="workspace-avatar">A</span>
+        <span><b>Local workspace</b><small>Development</small></span>
+        <ChevronDown size={15} aria-hidden="true" />
+      </div>
 
-            <h2>Password changed.</h2>
-
-            <p>
-              Password updated successfully.
-              Returning to the AXIOM login screen...
-            </p>
-          </div>
-        ) : (
-          <form onSubmit={submit}>
-            <div className="password-modal-header">
-              <div>
-                <span>SECURITY</span>
-                <h2>Change password</h2>
-              </div>
-
+      <nav className="sidebar-nav">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <div key={item.id}>
+              {item.section && <div className="nav-section">{item.section}</div>}
               <button
                 type="button"
-                className="password-modal-close"
-                onClick={onClose}
+                className={`nav-item ${page === item.id ? "active" : ""}`}
+                aria-current={page === item.id ? "page" : undefined}
+                onClick={() => setPage(item.id)}
               >
-                ×
+                <Icon size={17} strokeWidth={1.8} />
+                <span>{item.label}</span>
+                {item.id === "diagnostics" && <StatusPill tone="warning">2</StatusPill>}
               </button>
             </div>
+          );
+        })}
+      </nav>
 
-            <label className="password-modal-label">
-              Current password
-
-              <div className="password-modal-input">
-                <input
-                  type={
-                    showCurrent
-                      ? "text"
-                      : "password"
-                  }
-                  value={current}
-                  onChange={(event) =>
-                    setCurrent(
-                      event.target.value,
-                    )
-                  }
-                  autoComplete="current-password"
-                />
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setShowCurrent(
-                      (value) => !value,
-                    )
-                  }
-                >
-                  {showCurrent
-                    ? "HIDE"
-                    : "SHOW"}
-                </button>
-              </div>
-            </label>
-
-            <label className="password-modal-label">
-              New password
-
-              <div className="password-modal-input">
-                <input
-                  type={
-                    showNext
-                      ? "text"
-                      : "password"
-                  }
-                  value={next}
-                  onChange={(event) =>
-                    setNext(
-                      event.target.value,
-                    )
-                  }
-                  autoComplete="new-password"
-                />
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setShowNext(
-                      (value) => !value,
-                    )
-                  }
-                >
-                  {showNext
-                    ? "HIDE"
-                    : "SHOW"}
-                </button>
-              </div>
-            </label>
-
-            <div className="password-modal-requirements">
-              <Requirement
-                ok={lengthValid}
-                label="8+ characters"
-              />
-
-              <Requirement
-                ok={upperValid}
-                label="Uppercase letter"
-              />
-
-              <Requirement
-                ok={lowerValid}
-                label="Lowercase letter"
-              />
-
-              <Requirement
-                ok={numberValid}
-                label="Contains a number"
-              />
-            </div>
-
-            <label className="password-modal-label">
-              Confirm new password
-
-              <input
-                className="password-confirm-input"
-                type="password"
-                value={confirm}
-                onChange={(event) =>
-                  setConfirm(
-                    event.target.value,
-                  )
-                }
-                autoComplete="new-password"
-              />
-            </label>
-
-            {confirm.length > 0 && (
-              <div
-                className={
-                  next === confirm
-                    ? "password-match valid"
-                    : "password-match"
-                }
-              >
-                {next === confirm
-                  ? "Passwords match"
-                  : "Passwords do not match"}
-              </div>
-            )}
-
-            {error && (
-              <div className="login-error">
-                {error}
-              </div>
-            )}
-
-            <button
-              className="login-button password-change-button"
-              type="submit"
-              disabled={!complete || saving}
-            >
-              {saving
-                ? "CHANGING PASSWORD..."
-                : "CHANGE PASSWORD"}
-            </button>
-          </form>
-        )}
+      <div className="sidebar-bottom">
+        <div className="core-status"><span><i className="status-dot" /> UI shell</span><b>READY</b></div>
+        <p>AXIOM / BUILD AI. OWN AI.</p>
       </div>
-    </div>
+    </aside>
   );
-}
-
-function Sidebar({ page, setPage }: { page: Page; setPage: (p: Page) => void }) {
-  return <aside className="sidebar">
-    <div className="sidebar-brand"><div className="brand-mark small">A</div><div><b>AXIOM</b><span>CONTROL CENTER</span></div></div>
-    <div className="workspace-card"><div className="avatar">A</div><div><b>Local Workspace</b><span>Development</span></div><ChevronDown size={14} /></div>
-    <nav>{nav.map((item) => <div key={item.id}>{item.section && <div className="nav-section">{item.section}</div>}<button onClick={() => setPage(item.id)} className={`nav-item ${page === item.id ? "active" : ""}`}><item.icon size={17} /><span>{item.label}</span>{item.id === "diagnostics" && <em>2</em>}</button></div>)}</nav>
-    <div className="sidebar-bottom"><div className="core-state"><span><i className="pulse" /> AXIOM CORE</span><b>ONLINE</b></div><small>AXIOM • BUILD AI. OWN AI.</small></div>
-  </aside>;
 }
 
 function Topbar({
@@ -1230,99 +1083,119 @@ function Topbar({
   setTheme,
   page,
   username,
+  onOpenNavigation,
   onLogout,
   onChangePassword,
+  navigate,
 }: {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   page: Page;
   username: string;
+  onOpenNavigation: () => void;
   onLogout: () => void;
   onChangePassword: () => void;
+  navigate: (page: Page) => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const meta = pageMeta[page];
+  const results = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return navItems.slice(0, 5);
+    return navItems.filter((item) => `${item.label} ${item.description}`.toLowerCase().includes(normalized));
+  }, [query]);
 
-  const title =
-    nav.find((item) => item.id === page)?.label ??
-    "Control Center";
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchRef.current?.focus();
+        setSearchOpen(true);
+      }
+
+      if (event.key === "Escape") {
+        setSearchOpen(false);
+        setProfileOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <header className="topbar">
-      <div className="breadcrumb">
-        AXIOM <span>/</span> {title}
+      <div className="topbar-context">
+        <button type="button" className="mobile-menu-button icon-button" aria-label="Open navigation" onClick={onOpenNavigation}>
+          <Menu size={18} />
+        </button>
+        <span className="breadcrumb-root">AXIOM</span><ChevronRight size={14} /><span>{meta.label}</span>
       </div>
 
-      <div className="top-actions">
-        <div className="search">
-          <Search size={15} />
-          <input placeholder="Search AXIOM..." />
-        </div>
-
-        <button
-          className="icon-button"
-          aria-label="Toggle theme"
-          onClick={() =>
-            setTheme(
-              theme === "dark"
-                ? "light"
-                : "dark",
-            )
-          }
-        >
-          {theme === "dark" ? (
-            <Sun size={17} />
-          ) : (
-            <Moon size={17} />
-          )}
-        </button>
-
-        <div className="profile-menu">
-          <button
-            type="button"
-            className="profile profile-trigger"
-            onClick={() =>
-              setMenuOpen((value) => !value)
-            }
-            aria-expanded={menuOpen}
-          >
-            <span>
-              {username.charAt(0).toUpperCase()}
-            </span>
-
-            <b>{username}</b>
-
-            <ChevronDown
-              size={13}
-              className={
-                menuOpen
-                  ? "profile-chevron-open"
-                  : ""
+      <div className="topbar-actions">
+        <div className="command-search">
+          <Search size={16} />
+          <input
+            ref={searchRef}
+            value={query}
+            placeholder="Jump to a workspace view"
+            aria-label="Search workspace views"
+            aria-expanded={searchOpen}
+            aria-controls="workspace-search-results"
+            onFocus={() => setSearchOpen(true)}
+            onChange={(event) => { setQuery(event.target.value); setSearchOpen(true); }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setSearchOpen(false);
+                (event.target as HTMLInputElement).blur();
               }
-            />
+              if (event.key === "Enter" && results[0]) {
+                navigate(results[0].id);
+                setSearchOpen(false);
+                setQuery("");
+              }
+            }}
+          />
+          <kbd><Command size={11} /> K</kbd>
+          {searchOpen && (
+            <div id="workspace-search-results" className="command-menu" role="listbox" aria-label="Workspace views">
+              <div className="command-menu-label">NAVIGATE</div>
+              {results.length > 0 ? results.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={item.id === page}
+                    key={item.id}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => { navigate(item.id); setSearchOpen(false); setQuery(""); }}
+                  >
+                    <Icon size={16} />
+                    <span><b>{item.label}</b><small>{item.description}</small></span>
+                    {item.id === page && <Check size={15} />}
+                  </button>
+                );
+              }) : <div className="command-empty">No workspace views match “{query}”.</div>}
+              <div className="command-hint"><kbd>↑↓</kbd> move <kbd>↵</kbd> open <kbd>esc</kbd> close</div>
+            </div>
+          )}
+        </div>
+        <ThemeToggle theme={theme} setTheme={setTheme} />
+        <div className="profile-menu">
+          <button type="button" className="profile-trigger" aria-expanded={profileOpen} onClick={() => setProfileOpen((value) => !value)}>
+            <span className="profile-avatar">{username.charAt(0).toUpperCase()}</span>
+            <span className="profile-name">{username}</span>
+            <ChevronDown size={14} />
           </button>
-
-          {menuOpen && (
-            <div className="profile-dropdown">
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  onChangePassword();
-                }}
-              >
-                Change password
-              </button>
-
-              <button
-                type="button"
-                className="profile-danger"
-                onClick={() => {
-                  setMenuOpen(false);
-                  onLogout();
-                }}
-              >
-                Logout
-              </button>
+          {profileOpen && (
+            <div className="profile-dropdown" role="menu">
+              <div className="profile-dropdown-head"><small>SIGNED IN AS</small><b>{username}</b></div>
+              <button type="button" role="menuitem" onClick={() => { setProfileOpen(false); onChangePassword(); }}><KeyRound size={15} /> Change password</button>
+              <button type="button" role="menuitem" className="danger-action" onClick={() => { setProfileOpen(false); onLogout(); }}><ArrowUpRight size={15} /> Sign out</button>
             </div>
           )}
         </div>
@@ -1331,43 +1204,379 @@ function Topbar({
   );
 }
 
-function Dashboard({
-  setPage,
+function WorkspacePage({
+  page,
   username,
+  theme,
+  setTheme,
+  setPage,
+  onNotify,
+  onChangePassword,
 }: {
-  setPage: (p: Page) => void;
+  page: Page;
   username: string;
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+  setPage: (page: Page) => void;
+  onNotify: (message: string, tone?: Tone) => void;
+  onChangePassword: () => void;
 }) {
-  return <>
-    <div className="page-heading"><div><div className="eyebrow">CONTROL CENTER • LOCAL ENGINE</div><h2>{getGreeting()}, {username}. <span>AXIOM is ready.</span></h2><p>Your AI stack is healthy and waiting for the next build.</p></div><button className="secondary-button" onClick={() => setPage("diagnostics")}><CircleGauge size={16} /> Run diagnostics</button></div>
-    <div className="metric-grid"><MetricCard icon={Gauge} title="System Health" value="98.7%" delta="+1.8%" /><MetricCard icon={Activity} title="Requests / min" value="1,284" delta="+14.2%" /><MetricCard icon={TimerReset} title="Avg. latency" value="54 ms" delta="-8.4%" /><MetricCard icon={Cpu} title="Runtime load" value="64%" delta="12 GB / 24 GB" /></div>
-    <div className="dashboard-grid">
-      <Panel title="Inference activity" action="LIVE" wide><div className="chart-legend"><span><i className="dot cyan" /> Requests</span><span><i className="dot muted" /> Baseline</span></div><div className="chart-large"><ResponsiveContainer width="100%" height="100%"><AreaChart data={activity}><defs><linearGradient id="axiomArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#37dfd1" stopOpacity={0.25} /><stop offset="100%" stopColor="#37dfd1" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke="rgba(255,255,255,.05)" vertical={false} /><XAxis dataKey="time" tick={{ fill: "#546a6c", fontSize: 9 }} axisLine={false} tickLine={false} /><YAxis hide domain={[40, 160]} /><Tooltip contentStyle={{ background: "#0b191c", border: "1px solid rgba(100,240,225,.18)", borderRadius: 10, fontSize: 10 }} /><Area type="monotone" dataKey="requests" stroke="#39dfd0" strokeWidth={2.4} fill="url(#axiomArea)" /></AreaChart></ResponsiveContainer></div></Panel>
-      <Panel title="Runtime health" action="ALL SYSTEMS"><div className="health-list"><HealthRow icon={ServerCog} label="AXIOM Core" value="Operational" /><HealthRow icon={BrainCircuit} label="Inference Engine" value="Ready" /><HealthRow icon={FolderKanban} label="Model Registry" value="Synced" /><HealthRow icon={Network} label="MCP Gateway" value="3 / 3 online" /></div></Panel>
-      <Panel title="Recent activity" action="VIEW LOGS"><TimelineItem time="14:02:18" title="Qwen 3 evaluation completed" detail="42 / 42 checks passed" good /><TimelineItem time="13:58:44" title="MCP request completed" detail="tools.list • 182 ms" /><TimelineItem time="13:51:09" title="Dataset validation" detail="train.jsonl • 5 valid / 1 invalid" warn /><TimelineItem time="13:40:31" title="Runtime health check" detail="No blocking issues" good /></Panel>
-      <Panel title="AI stack" action="MANAGE"><div className="stack-grid"><StackCard icon={BrainCircuit} title="Qwen 3 • 8B" sub="Local model" state="READY" /><StackCard icon={Database} title="train.jsonl" sub="4 clean samples" state="CLEAN" /><StackCard icon={Zap} title="LoRA profile" sub="rank 8 • seq 1024" state="READY" /><StackCard icon={Cpu} title="CPU runtime" sub="Development mode" state="ACTIVE" /></div></Panel>
-    </div>
-  </>;
+  switch (page) {
+    case "dashboard":
+      return <Dashboard username={username} setPage={setPage} onNotify={onNotify} />;
+    case "models":
+      return <Models onNotify={onNotify} />;
+    case "datasets":
+      return <Datasets onNotify={onNotify} />;
+    case "training":
+      return <Training onNotify={onNotify} />;
+    case "evaluation":
+      return <Evaluation onNotify={onNotify} />;
+    case "runtime":
+      return <Runtime onNotify={onNotify} />;
+    case "mcp":
+      return <MCP onNotify={onNotify} />;
+    case "diagnostics":
+      return <Diagnostics onNotify={onNotify} />;
+    case "logs":
+      return <LogsPage onNotify={onNotify} />;
+    case "settings":
+      return <SettingsPage theme={theme} setTheme={setTheme} onChangePassword={onChangePassword} onNotify={onNotify} />;
+  }
 }
 
-function MetricCard({ icon: Icon, title, value, delta }: { icon: React.ElementType; title: string; value: string; delta: string }) { return <div className="metric-card"><div className="metric-icon"><Icon size={17} /></div><small>{title}</small><strong>{value}</strong><span>{delta}</span></div>; }
-function Panel({ title, action, children, wide = false }: { title: string; action?: string; children: React.ReactNode; wide?: boolean }) { return <section className={`panel ${wide ? "wide-panel" : ""}`}><div className="panel-head"><h3>{title}</h3>{action && <button>{action}</button>}</div>{children}</section>; }
-function HealthRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) { return <div className="health-row"><div className="health-icon"><Icon size={15} /></div><div><b>{label}</b><span>{value}</span></div><i className="pulse" /></div>; }
-function TimelineItem({ time, title, detail, good, warn }: { time: string; title: string; detail: string; good?: boolean; warn?: boolean }) { return <div className="timeline"><i className={warn ? "warn-pin" : good ? "good-pin" : "pin"} /><div><small>{time}</small><b>{title}</b><span>{detail}</span></div></div>; }
-function StackCard({ icon: Icon, title, sub, state }: { icon: React.ElementType; title: string; sub: string; state: string }) { return <div className="stack-card"><div className="stack-icon"><Icon size={15} /></div><div><b>{title}</b><span>{sub}</span></div><em>{state}</em></div>; }
-function FeaturePage({ kicker, title, desc, actions, children }: { kicker: string; title: string; desc: string; actions?: React.ReactNode; children: React.ReactNode }) { return <><div className="page-heading"><div><div className="eyebrow">{kicker}</div><h2>{title}</h2><p>{desc}</p></div>{actions}</div>{children}</>; }
-function InfoCard({ icon: Icon, label, value, detail }: { icon: React.ElementType; label: string; value: string; detail: string }) { return <div className="info-card"><div><span>{label}</span><Icon size={16} /></div><b>{value}</b><small>{detail}</small></div>; }
-function Models() { return <FeaturePage kicker="MODEL REGISTRY" title="Models" desc="Manage local models, metadata, versions, quantization and serving profiles." actions={<button className="primary-button"><Plus size={16} /> Add model</button>}><div className="info-grid"><InfoCard icon={BrainCircuit} label="Registered models" value="3" detail="1 ready • 2 metadata-only" /><InfoCard icon={HardDrive} label="Storage" value="18.4 GB" detail="62% of model volume" /><InfoCard icon={Sparkles} label="Active" value="Qwen 3 • 8B" detail="Transformers / local runtime" /></div><Panel title="Registry" action="REFRESH"><DataTable rows={[["Qwen 3 • 8B","safetensors","8B","FP16","READY"],["Qwen 3 • 8B Base","safetensors","8B","INT4","METADATA"],["Development model","transformers","0.14B","FP16","READY"]]} /></Panel></FeaturePage>; }
-function Datasets() { return <FeaturePage kicker="DATA ENGINEERING" title="Datasets" desc="Inspect, clean, validate and trace the data feeding your models." actions={<button className="primary-button"><Plus size={16} /> Import dataset</button>}><div className="info-grid"><InfoCard icon={Check} label="Clean samples" value="4" detail="Latest validation" /><InfoCard icon={AlertTriangle} label="Invalid" value="1" detail="Needs attention" /><InfoCard icon={BarChart3} label="Est. tokens" value="76" detail="Current training set" /></div><Panel title="Latest inspection" action="OPEN REPORT"><DataTable rows={[["Total samples","6","","","INFO"],["Valid","5","","","PASS"],["Invalid","1","","","WARN"],["Duplicates","1","","","WARN"],["Detected fields","instruction, output","","","PASS"]]} /></Panel></FeaturePage>; }
-function Training() { return <FeaturePage kicker="MODEL OPTIMIZATION" title="Training" desc="Build reproducible fine-tuning runs with hardware-aware configurations." actions={<button className="primary-button"><Play size={16} /> New run</button>}><div className="info-grid"><InfoCard icon={Zap} label="Recommended" value="LoRA" detail="Rank 8 • batch 1 • grad 16" /><InfoCard icon={BarChart3} label="Sequence length" value="1024" detail="CPU development profile" /><InfoCard icon={Cpu} label="Hardware" value="CPU" detail="No GPU detected" /></div><Panel title="Training plan" action="EDIT"><div className="plan-grid"><Plan label="Base model" value="Qwen 3 • 8B" /><Plan label="Dataset" value="train.cleaned.jsonl" /><Plan label="Method" value="LoRA" /><Plan label="Epochs" value="1" /><Plan label="Batch" value="1 × 16 accumulation" /><Plan label="Deployment" value="Local" /></div></Panel></FeaturePage>; }
-function Evaluation() { return <FeaturePage kicker="QUALITY GATES" title="Evaluation" desc="Turn model quality into a repeatable engineering signal." actions={<button className="primary-button"><Play size={16} /> Run evaluation</button>}><div className="info-grid"><InfoCard icon={Gauge} label="Latest score" value="94.2" detail="42 assertions • 39 pass" /><InfoCard icon={BarChart3} label="Regression delta" value="+3.6" detail="Against previous run" /><InfoCard icon={AlertTriangle} label="Failures" value="3" detail="2 warning • 1 blocking" /></div><Panel title="Quality trend"><div className="chart-large"><ResponsiveContainer width="100%" height="100%"><AreaChart data={[65,68,72,70,74,78,77,81,80,85,83,87,89,86,90,91,92,94,93,94,95].map((score, i) => ({ i, score }))}><CartesianGrid stroke="rgba(255,255,255,.05)" vertical={false} /><XAxis dataKey="i" hide /><YAxis hide domain={[55,100]} /><Area type="monotone" dataKey="score" stroke="#39dfd0" fill="rgba(57,223,208,.08)" strokeWidth={2.3} /></AreaChart></ResponsiveContainer></div></Panel></FeaturePage>; }
-function Runtime() { return <FeaturePage kicker="LOCAL RUNTIME" title="Runtime" desc="Inspect model serving, resource usage, request flow and deployment state." actions={<button className="secondary-button"><Rocket size={16} /> Deploy profile</button>}><div className="info-grid"><InfoCard icon={RadioTower} label="Status" value="READY" detail="Local inference enabled" /><InfoCard icon={Activity} label="Requests" value="1,284" detail="This minute" /><InfoCard icon={Cpu} label="Memory" value="12 / 24 GB" detail="50% allocated" /></div><Panel title="Request throughput" action="LAST 30 MIN"><div className="chart-large"><ResponsiveContainer width="100%" height="100%"><AreaChart data={activity}><CartesianGrid stroke="rgba(255,255,255,.05)" vertical={false} /><XAxis dataKey="time" tick={{ fill: "#546a6c", fontSize: 9 }} axisLine={false} tickLine={false} /><YAxis hide /><Area type="monotone" dataKey="requests" stroke="#39dfd0" fill="rgba(57,223,208,.08)" strokeWidth={2.3} /></AreaChart></ResponsiveContainer></div></Panel></FeaturePage>; }
-function MCP() { return <FeaturePage kicker="MODEL CONTEXT PROTOCOL" title="MCP Inspector" desc="Inspect tools, resources, prompts, schemas and live execution requests." actions={<button className="primary-button"><Plus size={16} /> Add server</button>}><div className="mcp-layout"><div className="mcp-servers">{["filesystem","local-runtime","developer-tools"].map((name, i) => <button className={`server-row ${i === 0 ? "active" : ""}`} key={name}><div className="server-icon"><Network size={15} /></div><div><b>{name}</b><span>{i === 1 ? "Runtime" : "stdio"} • {i + 1} tools</span></div><i className="pulse" /></button>)}</div><Panel title="filesystem • tools" action="CONNECTED"><DataTable rows={[["read_file","valid","182 ms","","200"],["write_file","valid","203 ms","","200"],["list_directory","valid","92 ms","","200"],["search_files","valid","118 ms","","204"]]} /></Panel></div></FeaturePage>; }
-function Diagnostics() { return <FeaturePage kicker="OBSERVABILITY" title="Diagnostics" desc="One screen for health checks, bottlenecks, configuration drift and blockers." actions={<button className="primary-button"><Wrench size={16} /> Run full scan</button>}><div className="diagnostic-score"><div><small>OVERALL HEALTH</small><strong>98.7</strong><span>/ 100</span></div><div className="score-ring">98%</div></div><div className="diag-list"><Diagnostic title="Core services" detail="All required AXIOM services are responding." good /><Diagnostic title="Model environment" detail="Qwen metadata is available. Full weights are not present locally." warn /><Diagnostic title="Dataset integrity" detail="1 invalid record and 1 duplicate detected in latest inspection." warn /><Diagnostic title="Hardware fit" detail="CPU development profile is valid for lightweight runs." good /></div></FeaturePage>; }
-function Diagnostic({ title, detail, good, warn }: { title: string; detail: string; good?: boolean; warn?: boolean }) { return <div className="diag-row"><div className={`diag-icon ${warn ? "warn" : ""}`}>{warn ? <AlertTriangle size={16} /> : <Check size={16} />}</div><div><b>{title}</b><span>{detail}</span></div><em>{good ? "PASS" : "REVIEW"}</em></div>; }
-function LogsPage() { return <FeaturePage kicker="EVENT STREAM" title="Logs" desc="Trace what AXIOM is doing, not just whether it is running." actions={<button className="secondary-button"><ListFilter size={16} /> Filter</button>}><Panel title="Live event stream" action="STREAMING"><div className="log-list">{[["14:02:18.342","INFO","runtime.inference","Request completed","182ms • tokens=143"],["14:02:17.901","INFO","mcp.filesystem","tools.list","3 tools exposed"],["14:01:59.221","WARN","dataset.inspect","Invalid sample","row=6"],["13:58:44.018","INFO","evaluation.run","Suite complete","42 checks • 39 pass"],["13:55:22.704","INFO","axiom.core","Health check","all services ready"]].map((r) => <div className="log-row" key={r.join("-")}><span>{r[0]}</span><b className={r[1] === "WARN" ? "warn-text" : ""}>{r[1]}</b><span>{r[2]}</span><span>{r[3]}</span><small>{r[4]}</small></div>)}</div></Panel></FeaturePage>; }
-function Plan({ label, value }: { label: string; value: string }) { return <div className="plan"><small>{label}</small><b>{value}</b></div>; }
-function DataTable({ rows }: { rows: string[][] }) { return <div className="data-table"><div className="table-head"><span>ITEM</span><span>DETAIL</span><span>VALUE</span><span>STATE</span><span>RESULT</span></div>{rows.map((row, i) => <div className="table-row" key={i}>{row.map((cell, j) => <span className={j === row.length - 1 ? "status-text" : ""} key={j}>{cell}</span>)}</div>)}</div>; }
+function PageHeader({
+  page,
+  title,
+  description,
+  actions,
+}: {
+  page: Page;
+  title: ReactNode;
+  description: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="page-header">
+      <div>
+        <p className="eyebrow">{pageMeta[page].kicker}</p>
+        <h1>{title}</h1>
+        <p className="page-description">{description}</p>
+      </div>
+      {actions && <div className="page-actions">{actions}</div>}
+    </div>
+  );
+}
 
+function Dashboard({
+  username,
+  setPage,
+  onNotify,
+}: {
+  username: string;
+  setPage: (page: Page) => void;
+  onNotify: (message: string, tone?: Tone) => void;
+}) {
+  return (
+    <>
+      <PageHeader
+        page="dashboard"
+        title={<>{getGreeting()}, {username}.</>}
+        description="The interface is ready. Connect the local engine when you want live model, dataset, and runtime state here."
+        actions={<button type="button" className="button secondary-button" onClick={() => setPage("diagnostics")}><CircleGauge size={16} /> Run diagnostics</button>}
+      />
+
+      <section className="status-strip" aria-label="Workspace status">
+        <div className="status-strip-item primary"><StatusPill tone="success">READY</StatusPill><div><b>Local workspace</b><span>Control Center loaded</span></div></div>
+        <div className="status-strip-item"><StatusPill tone="warning">WAITING</StatusPill><div><b>Runtime connection</b><span>No frontend API contract found</span></div></div>
+        <div className="status-strip-item"><StatusPill tone="neutral">LOCAL</StatusPill><div><b>Session security</b><span>Administrator session active</span></div></div>
+      </section>
+
+      <div className="summary-grid">
+        <SummaryCard icon={BrainCircuit} label="Model registry" value="Not connected" detail="CLI available" tone="warning" />
+        <SummaryCard icon={Database} label="Dataset state" value="No report" detail="Import through CLI" tone="neutral" />
+        <SummaryCard icon={Activity} label="Active runs" value="0" detail="No jobs queued" tone="neutral" />
+        <SummaryCard icon={RadioTower} label="Inference" value="Offline" detail="Runtime not attached" tone="warning" />
+      </div>
+
+      <div className="dashboard-grid">
+        <Surface className="activity-surface" title="Workspace activity" eyebrow="SESSION SIGNAL" action={<StatusPill tone="neutral">NO LIVE FEED</StatusPill>}>
+          <div className="activity-empty">
+            <div className="activity-visual" aria-hidden="true">
+              <div className="activity-grid-lines" />
+              <div className="activity-bars">{activityBars.map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}</div>
+            </div>
+            <div className="empty-copy"><h3>Waiting for a connected runtime</h3><p>This panel will show request volume and latency after a runtime endpoint is available.</p><button type="button" className="text-button" onClick={() => setPage("runtime")}>Open runtime <ArrowRight size={15} /></button></div>
+          </div>
+        </Surface>
+
+        <Surface title="Next useful step" eyebrow="ORIENTATION">
+          <div className="next-step">
+            <div className="next-step-number">01</div>
+            <div><h3>Inspect your environment</h3><p>Run the local CLI doctor before wiring models or data into a training plan.</p><button type="button" className="button small-button primary-button" onClick={() => setPage("diagnostics")}><Wrench size={15} /> Open diagnostics</button></div>
+          </div>
+          <div className="surface-divider" />
+          <div className="inline-meta"><span><TerminalSquare size={14} /> Suggested command</span><code>axiom doctor</code></div>
+        </Surface>
+
+        <Surface className="module-surface" title="Platform map" eyebrow="WHAT AXIOM OWNS" action={<button type="button" className="text-button" onClick={() => onNotify("Module details are available in the workspace navigation.")}>View all <ArrowRight size={15} /></button>}>
+          <div className="module-list">{platformModules.map((module) => <ModuleRow key={module.page} module={module} onClick={() => setPage(module.page)} />)}</div>
+        </Surface>
+
+        <Surface title="Recent activity" eyebrow="EVENTS">
+          <EmptyState icon={Clock3} title="No events in this session" description="When the runtime and CLI reports are connected, validation and inference events will appear here." action={<button type="button" className="text-button" onClick={() => setPage("logs")}>Open logs <ArrowRight size={15} /></button>} />
+        </Surface>
+      </div>
+    </>
+  );
+}
+
+function SummaryCard({ icon: Icon, label, value, detail, tone }: { icon: LucideIcon; label: string; value: string; detail: string; tone: Tone }) {
+  return <div className="summary-card"><div className="summary-card-head"><span>{label}</span><Icon size={17} /></div><strong>{value}</strong><div><StatusPill tone={tone}>{detail}</StatusPill></div></div>;
+}
+
+function ModuleRow({ module, onClick }: { module: (typeof platformModules)[number]; onClick: () => void }) {
+  const Icon = module.icon;
+  return <button type="button" className="module-row" onClick={onClick}><span className="module-icon"><Icon size={17} /></span><span className="module-copy"><b>{module.title}</b><small>{module.description}</small></span><StatusPill tone={module.tone}>{module.state}</StatusPill><ChevronRight size={15} /></button>;
+}
+
+function FeaturePage({
+  page,
+  children,
+  actions,
+}: {
+  page: Exclude<Page, "dashboard">;
+  children: ReactNode;
+  actions?: ReactNode;
+}) {
+  const meta = pageMeta[page];
+  return <><PageHeader page={page} title={meta.label} description={meta.description} actions={actions} />{children}</>;
+}
+
+function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
+  return <FeaturePage page="models" actions={<button type="button" className="button primary-button" onClick={() => onNotify("Model import needs a connected runtime or the local CLI.", "warning")}><Plus size={16} /> Add model</button>}>
+    <div className="info-grid"><InfoCard icon={BrainCircuit} label="Registry" value="Waiting" detail="No endpoint connected" tone="warning" /><InfoCard icon={HardDrive} label="Storage" value="—" detail="Not reported" tone="neutral" /><InfoCard icon={SlidersHorizontal} label="Formats" value="Ready" detail="Metadata supported" tone="success" /></div>
+    <Surface title="Model registry" eyebrow="LOCAL INVENTORY" action={<button type="button" className="icon-text-button" onClick={() => onNotify("There is no model refresh endpoint in this frontend contract.", "warning")}><RefreshCcw size={15} /> Refresh</button>}>
+      <EmptyState icon={BrainCircuit} title="No model inventory connected" description="The repository currently exposes model management through the AXIOM CLI. This UI does not invent a registry endpoint, so it is waiting for a real connection." action={<CliReference command="axiom model list" />} />
+    </Surface>
+    <ContractNote command="axiom model list" />
+  </FeaturePage>;
+}
+
+function Datasets({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
+  return <FeaturePage page="datasets" actions={<button type="button" className="button primary-button" onClick={() => onNotify("Dataset import needs a connected runtime or the local CLI.", "warning")}><Plus size={16} /> Import dataset</button>}>
+    <div className="info-grid"><InfoCard icon={Database} label="Latest report" value="None" detail="No inspection loaded" tone="neutral" /><InfoCard icon={CircleAlert} label="Validation" value="Pending" detail="No dataset selected" tone="warning" /><InfoCard icon={BarChart3} label="Token estimate" value="—" detail="Waiting for data" tone="neutral" /></div>
+    <Surface title="Dataset workspace" eyebrow="INSPECTION QUEUE" action={<button type="button" className="icon-text-button" onClick={() => onNotify("There is no dataset listing endpoint in this frontend contract.", "warning")}><RefreshCcw size={15} /> Refresh</button>}>
+      <EmptyState icon={Database} title="No dataset report yet" description="Start with a JSONL file and run inspection or validation through the CLI. The UI will stay empty until a real report contract exists." action={<CliReference command="axiom dataset inspect ./data/train.jsonl" />} />
+    </Surface>
+    <ContractNote command="axiom dataset validate ./data/train.jsonl" />
+  </FeaturePage>;
+}
+
+function Training({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
+  return <FeaturePage page="training" actions={<button type="button" className="button primary-button" onClick={() => onNotify("Training execution is not exposed by the current repository contract.", "warning")}><Play size={16} /> New plan</button>}>
+    <div className="info-grid"><InfoCard icon={Zap} label="Method" value="LoRA" detail="Recommended starting point" tone="success" /><InfoCard icon={Cpu} label="Hardware" value="Unknown" detail="Run axiom system info" tone="warning" /><InfoCard icon={TimerReset} label="Execution" value="Not available" detail="Planning only today" tone="neutral" /></div>
+    <div className="two-column-grid">
+      <Surface title="Planning checklist" eyebrow="BEFORE YOU RUN">
+        <StepList steps={[{ label: "Choose a base model", detail: "Use an inspected local or Hugging Face model.", state: "pending" }, { label: "Validate the dataset", detail: "Confirm JSONL shape and duplicate behavior.", state: "pending" }, { label: "Estimate hardware fit", detail: "Select LoRA or QLoRA around available memory.", state: "ready" }, { label: "Create a reproducible config", detail: "Keep the plan close to the project axiom.yaml.", state: "ready" }]} />
+      </Surface>
+      <Surface title="Plan preview" eyebrow="NO ACTIVE RUN"><EmptyState icon={Hammer} title="No training plan saved" description="AXIOM can generate hardware-aware plans today; execution and job management are not part of the current contract." action={<CliReference command="axiom train" />} /></Surface>
+    </div>
+  </FeaturePage>;
+}
+
+function Evaluation({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
+  return <FeaturePage page="evaluation" actions={<button type="button" className="button primary-button" onClick={() => onNotify("Evaluation runners are not exposed by the current repository contract.", "warning")}><Play size={16} /> Run evaluation</button>}>
+    <div className="info-grid"><InfoCard icon={Gauge} label="Latest score" value="—" detail="No report loaded" tone="neutral" /><InfoCard icon={BarChart3} label="Regression" value="—" detail="Needs a baseline" tone="neutral" /><InfoCard icon={TriangleAlert} label="Failures" value="—" detail="No assertions run" tone="neutral" /></div>
+    <Surface title="Quality history" eyebrow="REPORTS"><EmptyState icon={CircleGauge} title="No evaluation history" description="The evaluation subsystem is present as a foundation, but there is no report API for this frontend to read yet." action={<CliReference command="axiom evaluation" disabled />} /></Surface>
+    <Callout tone="info" title="Keep quality repeatable">When evaluation is wired in, this surface is ready for baselines, regressions, and blocking checks without changing the surrounding navigation.</Callout>
+  </FeaturePage>;
+}
+
+function Runtime({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
+  return <FeaturePage page="runtime" actions={<button type="button" className="button secondary-button" onClick={() => onNotify("Runtime deployment needs an exposed serving contract.", "warning")}><RadioTower size={16} /> Connect runtime</button>}>
+    <div className="runtime-banner"><div className="runtime-state-icon"><RadioTower size={20} /></div><div><StatusPill tone="warning">OFFLINE</StatusPill><h2>Waiting for a local engine</h2><p>No frontend endpoint or serving process is defined in this repository. The UI is ready to show runtime state when one exists.</p></div><code>axiom serve</code></div>
+    <div className="info-grid"><InfoCard icon={Activity} label="Requests" value="—" detail="No live feed" tone="neutral" /><InfoCard icon={Cpu} label="Memory" value="—" detail="No telemetry" tone="neutral" /><InfoCard icon={ServerCog} label="API" value="Unbound" detail="Contract required" tone="warning" /></div>
+    <Surface title="Request flow" eyebrow="LIVE TELEMETRY"><EmptyState icon={RadioTower} title="No requests to display" description="Request throughput, latency, and model selection will appear here after a real runtime connector is added." action={<button type="button" className="text-button" onClick={() => onNotify("The current UI build has no runtime connector to inspect.", "warning")}>Why is this empty? <ArrowRight size={15} /></button>} /></Surface>
+  </FeaturePage>;
+}
+
+function MCP({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
+  const servers = ["filesystem", "local-runtime", "developer-tools"];
+  return <FeaturePage page="mcp" actions={<button type="button" className="button primary-button" onClick={() => onNotify("MCP server discovery needs a connected gateway.", "warning")}><Plus size={16} /> Add server</button>}>
+    <div className="mcp-layout">
+      <Surface title="Servers" eyebrow="GATEWAY INVENTORY">
+        <div className="server-list">{servers.map((server) => <button type="button" className="server-row" key={server} onClick={() => onNotify(`${server} is a design-time placeholder until the MCP gateway is connected.`, "warning")}><span className="server-icon"><Network size={16} /></span><span><b>{server}</b><small>Waiting for gateway</small></span><StatusPill tone="neutral">OFFLINE</StatusPill></button>)}</div>
+      </Surface>
+      <Surface title="Inspector" eyebrow="TOOLS / RESOURCES"><EmptyState icon={Network} title="Select a connected server" description="Tool schemas, resources, prompts, and execution traces will appear here when the MCP gateway reports them." action={<button type="button" className="text-button" onClick={() => onNotify("No MCP gateway endpoint is available in the current frontend contract.", "warning")}>Check contract <ArrowRight size={15} /></button>} /></Surface>
+    </div>
+  </FeaturePage>;
+}
+
+function Diagnostics({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
+  const [scanState, setScanState] = useState<"idle" | "scanning" | "blocked">("idle");
+
+  const runScan = () => {
+    setScanState("scanning");
+    window.setTimeout(() => setScanState("blocked"), 900);
+  };
+
+  return <FeaturePage page="diagnostics" actions={<button type="button" className="button primary-button" onClick={runScan} disabled={scanState === "scanning"}><Wrench size={16} /> {scanState === "scanning" ? "Scanning…" : "Run full scan"}</button>}>
+    <div className="diagnostic-hero"><div><p className="eyebrow">WORKSPACE READINESS</p><strong>{scanState === "blocked" ? "Awaiting CLI check" : scanState === "scanning" ? "Checking surface…" : "Ready to inspect"}</strong><p>{scanState === "blocked" ? "The UI cannot run axiom doctor without a backend bridge." : "A focused view for the checks that keep local AI work predictable."}</p></div><div className={`diagnostic-ring ${scanState}`}><span>{scanState === "scanning" ? "…" : scanState === "blocked" ? "—" : "UI"}</span></div></div>
+    <div className="diag-list">
+      <DiagnosticRow icon={CircleCheck} title="Local administrator" detail="Authenticated session is active in this browser." state="PASS" tone="success" />
+      <DiagnosticRow icon={TriangleAlert} title="Runtime connector" detail="No HTTP or IPC contract is present in the frontend repository." state="REVIEW" tone="warning" />
+      <DiagnosticRow icon={TriangleAlert} title="Model registry" detail="Use axiom model list until a real read contract is available." state="REVIEW" tone="warning" />
+      <DiagnosticRow icon={CircleCheck} title="Session timeout" detail="Automatic logout is enabled after 10 minutes of inactivity." state="PASS" tone="success" />
+    </div>
+    {scanState === "blocked" && <Callout tone="warning" title="CLI boundary">Run <code>axiom doctor</code> in the project environment for a real system check. This frontend does not fabricate a health result.</Callout>}
+    {scanState === "idle" && <button type="button" className="text-button" onClick={() => onNotify("The scan will stay honest: without a bridge, it reports the contract boundary.")}>What does this check? <ArrowRight size={15} /></button>}
+  </FeaturePage>;
+}
+
+function LogsPage({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
+  return <FeaturePage page="logs" actions={<button type="button" className="button secondary-button" onClick={() => onNotify("There are no events to filter in this session.")}><ListFilter size={16} /> Filter</button>}>
+    <Surface title="Event stream" eyebrow="LIVE / LOCAL" action={<StatusPill tone="neutral">EMPTY</StatusPill>}><EmptyState icon={TerminalSquare} title="No events recorded" description="The log view is intentionally empty until a runtime, MCP gateway, or CLI report sends events to it." action={<button type="button" className="text-button" onClick={() => onNotify("Log ingestion is not connected in this frontend-only build.", "warning")}>About the boundary <ArrowRight size={15} /></button>} /></Surface>
+    <div className="log-contract"><span><FileCode2 size={15} /> Expected event sources</span><code>runtime · mcp · evaluation · axiom.core</code></div>
+  </FeaturePage>;
+}
+
+function SettingsPage({
+  theme,
+  setTheme,
+  onChangePassword,
+  onNotify,
+}: {
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+  onChangePassword: () => void;
+  onNotify: (message: string, tone?: Tone) => void;
+}) {
+  return <FeaturePage page="settings">
+    <div className="settings-grid">
+      <Surface title="Appearance" eyebrow="INTERFACE">
+        <div className="setting-row"><div><b>Theme</b><span>Choose how AXIOM appears on this device.</span></div><div className="segmented-control" role="group" aria-label="Theme"><button type="button" className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")}><Moon size={15} /> Dark</button><button type="button" className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")}><Sun size={15} /> Light</button></div></div>
+        <div className="surface-divider" />
+        <div className="setting-row"><div><b>Command search</b><span>Use the keyboard shortcut to jump between workspace views.</span></div><kbd className="shortcut-key"><Command size={12} /> K</kbd></div>
+      </Surface>
+      <Surface title="Security" eyebrow="LOCAL ADMINISTRATOR">
+        <div className="setting-row"><div><b>Administrator password</b><span>Changing it ends the current session and returns to sign in.</span></div><button type="button" className="button secondary-button" onClick={onChangePassword}><KeyRound size={15} /> Change password</button></div>
+        <div className="surface-divider" />
+        <div className="setting-row"><div><b>Session timeout</b><span>Automatic sign out after inactivity.</span></div><StatusPill tone="neutral">10 MINUTES</StatusPill></div>
+      </Surface>
+      <Surface title="Integration boundary" eyebrow="HONEST STATE">
+        <Callout tone="info" title="No frontend API contract is defined">The UI keeps the workspace surfaces ready without claiming live model, dataset, runtime, or log data that the repository does not currently expose.</Callout>
+        <button type="button" className="text-button" onClick={() => onNotify("No shared API files were changed in this UI rewrite.")}>Review integration note <ArrowRight size={15} /></button>
+      </Surface>
+    </div>
+  </FeaturePage>;
+}
+
+function Surface({ title, eyebrow, action, children, className = "" }: { title: string; eyebrow?: string; action?: ReactNode; children: ReactNode; className?: string }) {
+  return <section className={`surface ${className}`}><div className="surface-head"><div>{eyebrow && <p className="surface-eyebrow">{eyebrow}</p>}<h2>{title}</h2></div>{action && <div className="surface-action">{action}</div>}</div>{children}</section>;
+}
+
+function InfoCard({ icon: Icon, label, value, detail, tone }: { icon: LucideIcon; label: string; value: string; detail: string; tone: Tone }) {
+  return <div className="info-card"><div className="info-card-head"><span>{label}</span><Icon size={17} /></div><strong>{value}</strong><StatusPill tone={tone}>{detail}</StatusPill></div>;
+}
+
+function EmptyState({ icon: Icon, title, description, action }: { icon: LucideIcon; title: string; description: string; action?: ReactNode }) {
+  return <div className="empty-state"><div className="empty-icon"><Icon size={20} /></div><h3>{title}</h3><p>{description}</p>{action && <div className="empty-action">{action}</div>}</div>;
+}
+
+function StatusPill({ tone, children }: { tone: Tone; children: ReactNode }) {
+  return <span className={`status-pill ${tone}`}><i />{children}</span>;
+}
+
+function InlineAlert({ tone, children, role = "status" }: { tone: Tone; children: ReactNode; role?: "status" | "alert" }) {
+  return <div className={`inline-alert ${tone}`} role={role}><CircleAlert size={15} />{children}</div>;
+}
+
+function Callout({ tone, title, children }: { tone: Tone; title: string; children: ReactNode }) {
+  return <div className={`callout ${tone}`}><div className="callout-icon">{tone === "warning" ? <TriangleAlert size={16} /> : <CircleAlert size={16} />}</div><div><b>{title}</b><p>{children}</p></div></div>;
+}
+
+function CliReference({ command, disabled = false }: { command: string; disabled?: boolean }) {
+  return <button type="button" className="cli-reference" disabled={disabled} onClick={() => navigator.clipboard?.writeText(command)}><TerminalSquare size={15} /><code>{command}</code><span>{disabled ? "Unavailable" : "Copy"}</span></button>;
+}
+
+function ContractNote({ command }: { command: string }) {
+  return <div className="contract-note"><span><FileCode2 size={15} /> Current integration path</span><code>{command}</code><small>CLI contract found in this repository; no frontend HTTP endpoint was found.</small></div>;
+}
+
+function StepList({ steps }: { steps: Array<{ label: string; detail: string; state: "ready" | "pending" }> }) {
+  return <div className="step-list">{steps.map((step, index) => <div className="step-list-row" key={step.label}><span className={`step-number ${step.state}`}>{step.state === "ready" ? <Check size={13} /> : String(index + 1).padStart(2, "0")}</span><div><b>{step.label}</b><small>{step.detail}</small></div><StatusPill tone={step.state === "ready" ? "success" : "neutral"}>{step.state === "ready" ? "READY" : "PENDING"}</StatusPill></div>)}</div>;
+}
+
+function DiagnosticRow({ icon: Icon, title, detail, state, tone }: { icon: LucideIcon; title: string; detail: string; state: string; tone: Tone }) {
+  return <div className="diagnostic-row"><span className={`diagnostic-icon ${tone}`}><Icon size={16} /></span><div><b>{title}</b><span>{detail}</span></div><StatusPill tone={tone}>{state}</StatusPill></div>;
+}
+
+function ChangePasswordDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNext, setShowNext] = useState(false);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const checks = getPasswordChecks(next);
+  const complete = Object.values(checks).every(Boolean) && next.length > 0 && next === confirm;
+
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !saving) onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose, saving]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setSaving(true);
+
+    try {
+      const validCurrent = await verifyAdministrator(getAdministratorName(), current);
+      if (!validCurrent) {
+        setError("Current password is incorrect.");
+        return;
+      }
+      if (!complete) {
+        setError("The new password does not meet all requirements.");
+        return;
+      }
+      await saveAdministrator(getAdministratorName(), next);
+      setSuccess(true);
+      window.setTimeout(onSuccess, 1300);
+    } catch {
+      setError("Unable to change the administrator password.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
+    <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="password-dialog-title" aria-describedby="password-dialog-description" onMouseDown={(event) => event.stopPropagation()}>
+      {success ? <div className="dialog-success"><div className="success-mark"><Check size={24} /></div><p className="eyebrow">SECURITY / UPDATED</p><h2>Password changed.</h2><p id="password-dialog-description">Returning to the AXIOM sign in screen…</p></div> : <form onSubmit={submit}>
+        <div className="dialog-head"><div><p className="eyebrow">SECURITY / LOCAL ADMINISTRATOR</p><h2 id="password-dialog-title">Change password</h2></div><button ref={closeRef} type="button" className="icon-button" aria-label="Close change password dialog" onClick={onClose}><X size={17} /></button></div>
+        <p id="password-dialog-description" className="form-intro">Changing the password ends the current session after the update.</p>
+        <Field label="Current password" htmlFor="current-password" action={<button type="button" className="field-action" aria-pressed={showCurrent} onClick={() => setShowCurrent((value) => !value)}>{showCurrent ? "Hide" : "Show"}</button>}><input id="current-password" type={showCurrent ? "text" : "password"} value={current} onChange={(event) => setCurrent(event.target.value)} autoComplete="current-password" /></Field>
+        <Field label="New password" htmlFor="new-password" action={<button type="button" className="field-action" aria-pressed={showNext} onClick={() => setShowNext((value) => !value)}>{showNext ? "Hide" : "Show"}</button>}><input id="new-password" type={showNext ? "text" : "password"} value={next} onChange={(event) => setNext(event.target.value)} autoComplete="new-password" /></Field>
+        <div className="requirements"><Requirement ok={checks.length} label="8+ characters" /><Requirement ok={checks.upper} label="Uppercase letter" /><Requirement ok={checks.lower} label="Lowercase letter" /><Requirement ok={checks.number} label="Contains a number" /></div>
+        <Field label="Confirm new password" htmlFor="confirm-password" hint={confirm.length > 0 ? (next === confirm ? "Passwords match" : "Passwords do not match") : undefined} hintTone={next === confirm && confirm.length > 0 ? "success" : "default"}><input id="confirm-password" type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" /></Field>
+        {error && <InlineAlert tone="danger" role="alert">{error}</InlineAlert>}
+        <button type="submit" className="button primary-button full-width" disabled={!complete || saving}>{saving ? "Changing password…" : "Change password"}<ArrowRight size={17} /></button>
+      </form>}
+    </section>
+  </div>;
+}
+
+function NoticeToast({ notice, onDismiss }: { notice: Notice; onDismiss: () => void }) {
+  return <div className={`notice-toast ${notice.tone}`} role="status"><span className="notice-icon">{notice.tone === "success" ? <CircleCheck size={16} /> : notice.tone === "warning" ? <TriangleAlert size={16} /> : <CircleAlert size={16} />}</span><span>{notice.message}</span><button type="button" className="toast-close" aria-label="Dismiss notification" onClick={onDismiss}><X size={15} /></button></div>;
+}
 
 export default App;

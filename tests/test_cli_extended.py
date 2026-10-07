@@ -71,3 +71,35 @@ def test_project_validate(tmp_path: Path, monkeypatch):
     )
 
     assert result.exit_code == 0
+
+
+def test_module_entrypoint_registers_mcp_command():
+    result = runner.invoke(app, ["mcp", "--help"])
+    assert result.exit_code == 0
+    assert "serve" in result.stdout
+
+
+def test_config_validate_rejects_invalid_yaml(tmp_path: Path):
+    config = tmp_path / "axiom.yaml"
+    config.write_text("project: [", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["config", "validate", "--path", str(config)],
+    )
+
+    assert result.exit_code == 1
+    assert "invalid axiom.yaml" in result.stdout
+
+
+def test_config_validate_accepts_yaml_mapping(tmp_path: Path):
+    config = tmp_path / "axiom.yaml"
+    config.write_text("project:\n  name: demo\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["config", "validate", "--path", str(config)],
+    )
+
+    assert result.exit_code == 0
+    assert "valid YAML" in result.stdout

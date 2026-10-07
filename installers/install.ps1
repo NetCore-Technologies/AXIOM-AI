@@ -20,8 +20,7 @@ if (-not $Release) {
 }
 
 $Tag = $Release.tag_name
-$Version = $Tag.TrimStart("v")
-$Url = "https://github.com/$Repo/releases/download/$Tag/AXIOM-$Version-windows-x64.exe"
+$Url = "https://github.com/$Repo/releases/download/$Tag/AXIOM-$Tag-windows-x64.exe"
 
 Write-Host "Release: $Tag"
 Write-Host "Downloading AXIOM..."

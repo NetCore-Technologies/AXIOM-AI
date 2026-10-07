@@ -11,11 +11,14 @@ import sys
 from pathlib import Path
 
 import typer
+import yaml
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-AXIOM_VERSION = "0.2.0-beta.4"
+from axiom.version import __version__
+
+AXIOM_VERSION = __version__
 console = Console()
 
 
@@ -424,12 +427,25 @@ def register(app, model_app, dataset_app) -> None:
             )
             raise typer.Exit(code=1)
 
-        if not config.read_text(encoding="utf-8").strip():
+        try:
+            contents = config.read_text(encoding="utf-8")
+            parsed = yaml.safe_load(contents)
+        except (OSError, UnicodeError, yaml.YAMLError) as exc:
+            console.print(f"[red]Error:[/red] invalid axiom.yaml: {exc}")
+            raise typer.Exit(code=1)
+
+        if not contents.strip():
             console.print(
                 "[red]Error:[/red] axiom.yaml is empty"
             )
             raise typer.Exit(code=1)
 
+        if not isinstance(parsed, dict):
+            console.print(
+                "[red]Error:[/red] axiom.yaml must contain a mapping"
+            )
+            raise typer.Exit(code=1)
+
         console.print(
-            "[green]✓ axiom.yaml is readable and non-empty.[/green]"
+            "[green]✓ axiom.yaml is valid YAML and contains a mapping.[/green]"
         )

@@ -27,8 +27,7 @@ if [ -z "$TAG" ]; then
   exit 1
 fi
 
-VERSION="${TAG#v}"
-ASSET="AXIOM-${VERSION}-linux-x64"
+ASSET="AXIOM-${TAG}-linux-x64.elf"
 URL="https://github.com/$REPO/releases/download/$TAG/$ASSET"
 
 echo "Release: $TAG"

@@ -5,7 +5,7 @@
 <br/>
 
 [![Status](https://img.shields.io/badge/status-active%20development-22c55e?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI)
-[![Version](https://img.shields.io/badge/version-v0.2.0--beta.4-0ea5e9?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
+[![Version](https://img.shields.io/badge/version-v0.2.0--beta.5-0ea5e9?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
 [![License](https://img.shields.io/badge/license-MIT-7c3aed?style=flat-square&labelColor=0f172a)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&labelColor=0f172a&logo=python&logoColor=white)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-475569?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
@@ -54,7 +54,7 @@ Modern AI development means juggling a different tool for every stage. AXIOM rep
 | ◇ | **Datasets** | Validate, clean, deduplicate and analyse training data |
 | ⌁ | **Training** | Hardware-aware plans, LoRA/QLoRA configs, fit estimation |
 | ◌ | **Evaluation** | Benchmarks, quality checks and model comparison |
-| ▣ | **Runtime** | Local inference, OpenAI-compatible API, resource monitoring |
+| ▣ | **Runtime** | Runtime foundations, MCP tooling and resource planning |
 | ⌬ | **Diagnostics** | MCP tooling, system health, request tracing |
 
 </div>
@@ -91,14 +91,14 @@ Or grab a pre-built installer below.
 
 <div align="center">
 
-### v0.2.0-beta.4 — Latest
+### v0.2.0-beta.5 — Latest
 
 | Platform | Package | Type |
 |---|---|---|
-| **Windows** | [AXIOM-v0.2.0-beta.4-windows-x64.exe](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.4-windows-x64.exe) | Portable |
-| **Windows** | [AXIOM-v0.2.0-beta.4-windows-x64.msi](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.4-windows-x64.msi) | Installer |
-| **Linux** | [AXIOM-v0.2.0-beta.4-linux-x64.AppImage](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.4-linux-x64.AppImage) | Portable |
-| **Linux** | [AXIOM-v0.2.0-beta.4-linux-x64.deb](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.4-linux-x64.deb) | Package |
+| **Windows** | [AXIOM-v0.2.0-beta.5-windows-x64.exe](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.5-windows-x64.exe) | Portable |
+| **Windows** | [AXIOM-v0.2.0-beta.5-windows-x64.msi](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.5-windows-x64.msi) | Installer |
+| **Linux** | [AXIOM-v0.2.0-beta.5-linux-x64.AppImage](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.5-linux-x64.AppImage) | Portable |
+| **Linux** | [AXIOM-v0.2.0-beta.5-linux-x64.deb](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.5-linux-x64.deb) | Package |
 
 [View all release assets →](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest)
 
@@ -116,7 +116,7 @@ axiom doctor
 
 # Models
 axiom model list
-axiom model add Qwen/Qwen2.5-7B-Instruct --format safetensors
+axiom model add my-model local --format safetensors
 axiom model inspect ./models/my-model
 axiom model search "mistral 7b"
 
@@ -136,10 +136,10 @@ axiom hf login
 axiom hf status
 
 # Training (plan generation)
-axiom train
+axiom train plan 7
 
 # Runtime
-axiom serve
+axiom mcp serve
 ```
 
 ---
@@ -154,11 +154,16 @@ axiom/
 ├── datasets/     ← Validation, cleaning, stats
 ├── training/     ← Planning, hardware detection, fit estimation
 ├── evaluation/   ← Benchmarks, quality, comparison
-├── runtime/      ← Inference, serving, MCP
+├── runtime/      ← Provider integrations and runtime foundations
+├── mcp/          ← Stdio MCP server and tools
 └── config/       ← Configuration management
 ```
 
 Intentionally modular — each subsystem evolves independently without coupling to the rest.
+
+### Current backend boundary
+
+AXIOM currently exposes its local backend through the Python CLI and a stdio MCP server (`axiom mcp serve`). This repository does not contain an HTTP service, database, CORS/auth middleware, or hosted API deployment. The Control Center therefore reports disconnected states until a real API contract is added; it does not invent live model, dataset, or runtime data.
 
 ---
 

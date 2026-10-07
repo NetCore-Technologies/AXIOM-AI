@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from mcp.server import MCPServer
@@ -10,10 +11,9 @@ from axiom.datasets.cleaner import clean_jsonl
 from axiom.datasets.inspector import inspect_dataset
 from axiom.models.inspector import inspect_model
 from axiom.models.registry import ModelRegistry
-from axiom.runtime.supercompress import compress_context
+from axiom.runtime.supercompress import compress_context, redacted_base_url
 from axiom.training.planner import create_training_plan
 from axiom.version import __version__
-
 
 mcp = MCPServer(
     f"AXIOM v{__version__}",
@@ -49,7 +49,7 @@ def axiom_info() -> dict:
 @mcp.tool()
 def axiom_model_list() -> list[dict]:
     """List models registered with AXIOM."""
-    registry = ModelRegistry()
+    registry = ModelRegistry(create=False)
 
     return [
         model.to_dict()
@@ -60,6 +60,9 @@ def axiom_model_list() -> list[dict]:
 @mcp.tool()
 def axiom_model_info(path: str) -> dict:
     """Inspect a local AI model directory."""
+    if not isinstance(path, str) or not path.strip():
+        raise ValueError("Model path cannot be empty.")
+
     result = inspect_model(path)
 
     return {
@@ -83,6 +86,9 @@ def axiom_model_info(path: str) -> dict:
 @mcp.tool()
 def axiom_dataset_inspect(path: str) -> dict:
     """Inspect an AXIOM-supported dataset."""
+    if not isinstance(path, str) or not path.strip():
+        raise ValueError("Dataset path cannot be empty.")
+
     result = inspect_dataset(path)
 
     return {
@@ -104,10 +110,17 @@ def axiom_dataset_clean(
     output: str | None = None,
 ) -> dict:
     """Clean a JSONL dataset without modifying the original."""
+    if not isinstance(path, str) or not path.strip():
+        raise ValueError("Dataset path cannot be empty.")
+    if output is not None and (not isinstance(output, str) or not output.strip()):
+        raise ValueError("Output path cannot be empty.")
+
     source = Path(path)
 
     if not source.is_file():
         raise ValueError(f"Dataset not found: {source}")
+    if source.suffix.lower() != ".jsonl":
+        raise ValueError("Cleaning currently supports .jsonl files.")
 
     destination = (
         Path(output)
@@ -154,12 +167,15 @@ def axiom_training_plan(
     method: str = "auto",
 ) -> dict:
     """Generate a hardware-aware training plan."""
+    if not isinstance(method, str) or not method.strip():
+        raise ValueError("Training method cannot be empty.")
+
     hardware = detect_hardware()
 
     plan = create_training_plan(
         parameter_billions=parameters_billions,
         hardware=hardware,
-        method=method.lower(),
+        method=method.strip().lower(),
     )
 
     return {
@@ -179,16 +195,12 @@ def axiom_training_plan(
 @mcp.tool()
 def axiom_supercompress_status() -> dict:
     """Check whether SuperCompress is configured."""
-    import os
 
     return {
         "configured": bool(
             os.getenv("SUPERCOMPRESS_API_KEY")
         ),
-        "endpoint": os.getenv(
-            "SUPERCOMPRESS_API_BASE",
-            "https://api.supercompress.dev",
-        ),
+        "endpoint": redacted_base_url(),
     }
 
 
