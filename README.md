@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/banner.svg" alt="AXIOM — Build AI. Own AI." width="100%"/>
+<img src="docs/assets/banner.svg" alt="AXIOM. Build AI. Own AI." width="100%"/>
 
 <br/>
 
@@ -13,11 +13,11 @@
 
 <br/>
 
-**AXIOM** is an open-source AI engineering platform that brings models, datasets, training, evaluation, runtime and deployment into one focused workspace — local-first, self-hosted, and built for engineers who want to own their AI stack.
+**AXIOM** is an open-source AI engineering platform that brings models, datasets, training, evaluation, runtime and deployment into one focused workspace. It is local-first, self-hosted, and built for engineers who want to own their AI stack.
 
 <br/>
 
-[**↓ Download**](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest) &nbsp;·&nbsp; [**Website**](https://netcore-technologies.github.io/AXIOM-AI/) &nbsp;·&nbsp; [**Wiki**](https://github.com/NetCore-Technologies/AXIOM-AI/wiki) &nbsp;·&nbsp; [**Roadmap**](https://github.com/NetCore-Technologies/AXIOM-AI/wiki/Roadmap) &nbsp;·&nbsp; [**Contributing**](CONTRIBUTING.md)
+[**Install from terminal**](#install-from-the-terminal) &nbsp;·&nbsp; [**Website**](https://netcore-technologies.github.io/AXIOM-AI/) &nbsp;·&nbsp; [**Wiki**](https://github.com/NetCore-Technologies/AXIOM-AI/wiki) &nbsp;·&nbsp; [**Roadmap**](https://github.com/NetCore-Technologies/AXIOM-AI/wiki/Roadmap) &nbsp;·&nbsp; [**Contributing**](CONTRIBUTING.md)
 
 </div>
 
@@ -65,44 +65,24 @@ Modern AI development means juggling a different tool for every stage. AXIOM rep
 
 ---
 
-## Install
+## Install from the terminal
 
 ```bash
-# Clone
-git clone https://github.com/NetCore-Technologies/AXIOM-AI.git
-cd AXIOM-AI
-
-# Set up environment
-python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-
-# Install
-pip install -e .
+# macOS and Linux
+curl -fsSL https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.sh | bash
 
 # Verify
 axiom version
 ```
 
-Or grab a pre-built installer below.
+### Windows PowerShell
 
----
+```powershell
+irm https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.ps1 | iex
+axiom version
+```
 
-## Download
-
-<div align="center">
-
-### v0.2.0-beta.5 — Latest
-
-| Platform | Package | Type |
-|---|---|---|
-| **Windows** | [AXIOM-v0.2.0-beta.5-windows-x64.exe](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.5-windows-x64.exe) | Portable |
-| **Windows** | [AXIOM-v0.2.0-beta.5-windows-x64.msi](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.5-windows-x64.msi) | Installer |
-| **Linux** | [AXIOM-v0.2.0-beta.5-linux-x64.AppImage](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.5-linux-x64.AppImage) | Portable |
-| **Linux** | [AXIOM-v0.2.0-beta.5-linux-x64.deb](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.5-linux-x64.deb) | Package |
-
-[View all release assets →](https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest)
-
-</div>
+AXIOM is intentionally installed and used from the terminal. The website does not expose binary download links.
 
 ---
 
@@ -159,7 +139,7 @@ axiom/
 └── config/       ← Configuration management
 ```
 
-Intentionally modular — each subsystem evolves independently without coupling to the rest.
+Intentionally modular. Each subsystem evolves independently without coupling to the rest.
 
 ### Current backend boundary
 
@@ -186,7 +166,7 @@ AXIOM currently exposes its local backend through the Python CLI and a stdio MCP
 </details>
 
 <details>
-<summary><strong>CLI — 21 commands shipping</strong></summary>
+<summary><strong>CLI. 21 commands shipping</strong></summary>
 <br/>
 
 - [x] `axiom version` · `axiom init` · `axiom doctor` · `axiom info` · `axiom status`
@@ -285,7 +265,7 @@ Core platform · First-boot admin · Authentication · Session controls · Model
 </details>
 
 <details>
-<summary><strong>🚧 Next — AI Engineering</strong></summary>
+<summary><strong>Next. AI Engineering</strong></summary>
 <br/>
 
 - [ ] Training execution · job manager · queue · experiment tracking · checkpoints · resume/recovery · hyperparameter search
@@ -294,7 +274,7 @@ Core platform · First-boot admin · Authentication · Session controls · Model
 </details>
 
 <details>
-<summary><strong>🚧 Next — Data & Models</strong></summary>
+<summary><strong>Next. Data and Models</strong></summary>
 <br/>
 
 - [ ] Dataset versioning · diffing · deduplication · quality scoring · sampling · augmentation · lineage
@@ -303,7 +283,7 @@ Core platform · First-boot admin · Authentication · Session controls · Model
 </details>
 
 <details>
-<summary><strong>🚧 Next — Runtime & Observability</strong></summary>
+<summary><strong>Next. Runtime and Observability</strong></summary>
 <br/>
 
 - [ ] Production serving · streaming inference · batching · scheduling · autoscaling · health monitoring
@@ -348,7 +328,7 @@ Core platform · First-boot admin · Authentication · Session controls · Model
 
 ## Contributing
 
-AXIOM is young — architecture and APIs move fast.
+AXIOM is young. Architecture and APIs move fast.
 
 Open an issue before large feature contributions. Bug fixes, tests, docs and tooling improvements are always welcome.
 
@@ -358,7 +338,7 @@ Open an issue before large feature contributions. Bug fixes, tests, docs and too
 
 ## License
 
-MIT — [LICENSE](LICENSE)
+MIT. [LICENSE](LICENSE)
 
 ---
 
@@ -368,6 +348,6 @@ MIT — [LICENSE](LICENSE)
 
 <br/>
 
-<sub><strong>AXIOM — Build AI. Own AI.</strong></sub>
+<sub><strong>AXIOM. Build AI. Own AI.</strong></sub>
 
 </div>

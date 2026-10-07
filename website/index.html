@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#04050a">
   <meta
     name="description"
-    content="AXIOM — Build AI. Own AI. An open-source AI engineering platform from NetCore Technologies."
+    content="AXIOM. Build AI. Own AI. An open-source AI engineering platform from NetCore Technologies."
   >
-  <title>AXIOM — Build AI. Own AI.</title>
+  <title>AXIOM. Build AI. Own AI.</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -34,7 +34,7 @@
     <nav class="nav">
       <a href="#platform">Platform</a>
       <a href="#workflow">Workflow</a>
-      <a href="#download">Download</a>
+      <a href="#install">Install</a>
       <a href="./app/">Control Center ↗</a>
       <a href="https://github.com/NetCore-Technologies/AXIOM-AI" target="_blank" rel="noopener">GitHub ↗</a>
     </nav>
@@ -59,7 +59,7 @@
 
         <div class="hero-actions">
           <a class="btn btn-primary" href="./app/">Open Control Center <span>↗</span></a>
-          <a class="btn btn-secondary" href="#download">Download AXIOM <span>↓</span></a>
+          <a class="btn btn-secondary" href="#install">Install from terminal <span>↘</span></a>
         </div>
 
         <div class="hero-meta">
@@ -187,9 +187,8 @@
         <div class="eyebrow">DESIGNED FOR ENGINEERS</div>
         <h2>Local-first without feeling local.</h2>
         <p>
-          AXIOM is built around a polished desktop-grade Control Center:
-          dark glass surfaces, strong information hierarchy, subtle motion
-          and a visual system that stays out of your way.
+          AXIOM is built around a focused Control Center with clear hierarchy,
+          fast local feedback and a visual system that stays out of your way.
         </p>
 
         <div class="bullet-stack">
@@ -246,69 +245,16 @@
       </div>
     </section>
 
-    <section class="download-section" id="download">
-      <div class="download-panel reveal">
-        <div class="eyebrow">AXIOM RELEASE</div>
-        <h2>Get the latest build.</h2>
-        <p>
-          Download the current AXIOM release for your platform.
-          All release binaries and installers are published through GitHub.
-        </p>
-
-        <div class="release-badge">
-          <span data-axiom-version>v0.2.0-beta.5</span>
-          <small>Latest beta</small>
-        </div>
-
-        <div class="download-grid">
-          <a
-            class="download-card"
-            href="https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.5-windows-x64.exe" data-axiom-asset="windows-x64.exe"
-          >
-            <span class="download-os">WINDOWS</span>
-            <strong>.EXE</strong>
-            <small>Portable executable</small>
-            <span class="download-arrow">↓</span>
-          </a>
-
-          <a
-            class="download-card"
-            href="https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.5-windows-x64.msi" data-axiom-asset="windows-x64.msi"
-          >
-            <span class="download-os">WINDOWS</span>
-            <strong>.MSI</strong>
-            <small>Installer package</small>
-            <span class="download-arrow">↓</span>
-          </a>
-
-          <a
-            class="download-card"
-            href="https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.5-linux-x64.AppImage" data-axiom-asset="linux-x64.AppImage"
-          >
-            <span class="download-os">LINUX</span>
-            <strong>.APPIMAGE</strong>
-            <small>Portable desktop build</small>
-            <span class="download-arrow">↓</span>
-          </a>
-
-          <a
-            class="download-card"
-            href="https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest/download/AXIOM-v0.2.0-beta.5-linux-x64.deb" data-axiom-asset="linux-x64.deb"
-          >
-            <span class="download-os">LINUX</span>
-            <strong>.DEB</strong>
-            <small>Debian package</small>
-            <span class="download-arrow">↓</span>
-          </a>
-        </div>
-
-        <div class="download-secondary">
-          <a href="https://github.com/NetCore-Technologies/AXIOM-AI/releases/latest" data-axiom-release target="_blank" rel="noopener">
-            View all release assets ↗
-          </a>
-          <span>Windows: .exe .msi .ps1 .bat</span>
-          <span>Linux: .deb .AppImage .sh .elf</span>
-        </div>
+    <section class="install-section" id="install">
+      <div class="install-panel reveal">
+        <div class="eyebrow">TERMINAL ONLY</div>
+        <h2>Install AXIOM where you work.</h2>
+        <p>AXIOM is operated from the terminal. The installer detects your platform and puts the <code>axiom</code> command on your path.</p>
+        <div class="terminal-label">macOS and Linux</div>
+        <div class="terminal-command"><span>$</span><code>curl -fsSL https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.sh | bash</code></div>
+        <div class="terminal-label">Windows PowerShell</div>
+        <div class="terminal-command"><span>&gt;</span><code>irm https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.ps1 | iex</code></div>
+        <p class="install-after">Verify the installation with <code>axiom version</code>.</p>
       </div>
     </section>
   </main>
@@ -321,7 +267,7 @@
 
     <div class="footer-links">
       <a href="https://github.com/NetCore-Technologies/AXIOM-AI" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/NetCore-Technologies/AXIOM-AI/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="#install">Install</a>
       <a href="https://github.com/NetCore-Technologies/AXIOM-AI/tree/main/docs" target="_blank" rel="noopener">Docs</a>
       <a href="https://github.com/NetCore-Technologies/AXIOM-AI/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
     </div>
