@@ -379,7 +379,7 @@ jobs:
 
           Push-Location (Get-Location)
           & $candle.FullName -arch x64 wix.wxs
-          & $light.FullName AXIOM.wixobj -o "out/AXIOM-$env:TAG-windows-x64.msi"
+          & $light.FullName wix.wixobj -o "out/AXIOM-$env:TAG-windows-x64.msi"
           Pop-Location
 
       - name: Upload Windows packages
