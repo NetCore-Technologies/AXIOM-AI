@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from axiom.api.server_optimizer_routes import register_optimizer_routes
@@ -7,12 +8,27 @@ from axiom.api.server_optimizer_routes import register_optimizer_routes
 
 def create_app() -> Any:
     from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel
 
     from axiom.api.optimization import plan_optimization
     from axiom.api.policy_audit import audit_model
 
     app = FastAPI(title="AXIOM API", version="0.2.0-beta.5")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            origin.strip()
+            for origin in os.environ.get(
+                "AXIOM_CORS_ORIGINS",
+                "http://localhost:4173,http://127.0.0.1:4173,http://localhost:5173,http://127.0.0.1:5173",
+            ).split(",")
+            if origin.strip()
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     register_optimizer_routes(app)
 

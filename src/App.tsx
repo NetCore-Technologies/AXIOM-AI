@@ -1,6 +1,4 @@
-import AxiomQuantizer from "./components/AxiomQuantizer";
 import AxiomOptimizer from "./components/AxiomOptimizer";
-import AxiomBeta5Features from "./components/AxiomBeta5Features";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -51,6 +49,7 @@ Activity,
   Zap,
 } from "lucide-react";
 
+const API_BASE = import.meta.env.VITE_AXIOM_API_URL || "";
 
 function equalSecrets(a: string, b: string): boolean {
   const left = new TextEncoder().encode(a);
@@ -481,6 +480,7 @@ function App() {
   const [username, setUsername] = useState("Administrator");
 
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
 
@@ -615,12 +615,14 @@ function App() {
   };
 
   return (
-    <div className={`app-shell ${theme}`}>
+    <div className={`app-shell ${theme} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <Sidebar
         page={page}
         setPage={navigate}
         mobileOpen={mobileNavOpen}
         closeMobile={() => setMobileNavOpen(false)}
+        collapsed={sidebarCollapsed}
+        toggleCollapsed={() => setSidebarCollapsed((value) => !value)}
       />
       {mobileNavOpen && (
         <button
@@ -644,13 +646,7 @@ function App() {
         />
 
         <main id="main-content" className="page-wrap" tabIndex={-1}>
-<AxiomQuantizer />
-
-<AxiomOptimizer />
-
-<AxiomBeta5Features />
-
-<WorkspacePage
+          <WorkspacePage
             page={page}
             username={username}
             theme={theme}
@@ -1092,16 +1088,29 @@ function Sidebar({
   setPage,
   mobileOpen,
   closeMobile,
+  collapsed,
+  toggleCollapsed,
 }: {
   page: Page;
   setPage: (page: Page) => void;
   mobileOpen: boolean;
   closeMobile: () => void;
+  collapsed: boolean;
+  toggleCollapsed: () => void;
 }) {
   return (
     <aside className={`sidebar ${mobileOpen ? "is-open" : ""}`} aria-label="Primary navigation">
       <div className="sidebar-head">
-        <BrandLockup />
+        <button
+          type="button"
+          className="brand-button"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          onClick={toggleCollapsed}
+        >
+          <AxiomMark />
+          <span className="brand-button-copy"><b>AXIOM</b><small>AI ENGINEERING PLATFORM</small></span>
+        </button>
         <button type="button" className="icon-button sidebar-close" aria-label="Close navigation" onClick={closeMobile}>
           <PanelLeftClose size={17} />
         </button>
@@ -1343,6 +1352,27 @@ function Dashboard({
   setPage: (page: Page) => void;
   onNotify: (message: string, tone?: Tone) => void;
 }) {
+  const [apiStatus, setApiStatus] = useState<"checking" | "online" | "offline">("checking");
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${API_BASE}/api/health`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Health check failed");
+        return response.json() as Promise<{ status?: string }>;
+      })
+      .then((data) => {
+        if (active) setApiStatus(data.status === "ok" ? "online" : "offline");
+      })
+      .catch(() => {
+        if (active) setApiStatus("offline");
+      });
+    return () => { active = false; };
+  }, []);
+
+  const apiLabel = apiStatus === "online" ? "Backend connected" : apiStatus === "checking" ? "Checking backend..." : "Backend unavailable";
+  const apiTone: Tone = apiStatus === "online" ? "success" : apiStatus === "checking" ? "neutral" : "warning";
+
   return (
     <>
       <PageHeader
@@ -1354,7 +1384,7 @@ function Dashboard({
 
       <section className="status-strip" aria-label="Workspace status">
         <div className="status-strip-item primary"><StatusPill tone="success">READY</StatusPill><div><b>Local workspace</b><span>Control Center loaded</span></div></div>
-        <div className="status-strip-item"><StatusPill tone="warning">WAITING</StatusPill><div><b>Runtime connection</b><span>No frontend API contract found</span></div></div>
+        <div className="status-strip-item"><StatusPill tone={apiTone}>{apiStatus === "online" ? "ONLINE" : apiStatus === "checking" ? "CHECKING" : "OFFLINE"}</StatusPill><div><b>AXIOM backend</b><span>{apiLabel}</span></div></div>
         <div className="status-strip-item"><StatusPill tone="neutral">LOCAL</StatusPill><div><b>Session security</b><span>Administrator session active</span></div></div>
       </section>
 
@@ -1481,21 +1511,36 @@ function MCP({ onNotify }: { onNotify: (message: string, tone?: Tone) => void })
 
 function Diagnostics({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
   const [scanState, setScanState] = useState<"idle" | "scanning" | "blocked">("idle");
+  const [health, setHealth] = useState<{ status: "checking" | "online" | "offline"; hardware?: { cpu_name?: string; ram_gb?: number | null; gpu_name?: string } }>({ status: "checking" });
 
-  const runScan = () => {
+  const runScan = async () => {
     setScanState("scanning");
-    window.setTimeout(() => setScanState("blocked"), 900);
+    try {
+      const [healthResponse, hardwareResponse] = await Promise.all([
+        fetch(`${API_BASE}/api/health`),
+        fetch(`${API_BASE}/api/optimization/hardware`),
+      ]);
+      if (!healthResponse.ok || !hardwareResponse.ok) throw new Error("Backend check failed");
+      const healthData = await healthResponse.json() as { status?: string };
+      const hardware = await hardwareResponse.json() as { cpu_name?: string; ram_gb?: number | null; gpu_name?: string };
+      setHealth({ status: healthData.status === "ok" ? "online" : "offline", hardware });
+      setScanState("idle");
+    } catch {
+      setHealth({ status: "offline" });
+      setScanState("blocked");
+      onNotify("The AXIOM backend could not be reached. Start the API server and scan again.", "warning");
+    }
   };
 
   return <FeaturePage page="diagnostics" actions={<button type="button" className="button primary-button" onClick={runScan} disabled={scanState === "scanning"}><Wrench size={16} /> {scanState === "scanning" ? "Scanning..." : "Run full scan"}</button>}>
-    <div className="diagnostic-hero"><div><p className="eyebrow">WORKSPACE READINESS</p><strong>{scanState === "blocked" ? "Awaiting CLI check" : scanState === "scanning" ? "Checking surface..." : "Ready to inspect"}</strong><p>{scanState === "blocked" ? "The UI cannot run axiom doctor without a backend bridge." : "A focused view for the checks that keep local AI work predictable."}</p></div><div className={`diagnostic-ring ${scanState}`}><span>{scanState === "scanning" ? "..." : scanState === "blocked" ? "N/A" : "UI"}</span></div></div>
+    <div className="diagnostic-hero"><div><p className="eyebrow">WORKSPACE READINESS</p><strong>{scanState === "blocked" ? "Backend unavailable" : scanState === "scanning" ? "Checking backend..." : health.status === "online" ? "Backend connected" : "Ready to inspect"}</strong><p>{health.hardware ? `${health.hardware.cpu_name || "CPU"} · ${health.hardware.ram_gb ?? "Unknown"} GB RAM · ${health.hardware.gpu_name || "GPU unavailable"}` : "Check the API, hardware, and local session before running model workflows."}</p></div><div className={`diagnostic-ring ${scanState}`}><span>{scanState === "scanning" ? "..." : health.status === "online" ? "OK" : "N/A"}</span></div></div>
     <div className="diag-list">
       <DiagnosticRow icon={CircleCheck} title="Local administrator" detail="Authenticated session is active in this browser." state="PASS" tone="success" />
-      <DiagnosticRow icon={TriangleAlert} title="Runtime connector" detail="No HTTP or IPC contract is present in the frontend repository." state="REVIEW" tone="warning" />
+      <DiagnosticRow icon={health.status === "online" ? CircleCheck : TriangleAlert} title="AXIOM backend" detail={health.status === "online" ? "Health and hardware endpoints responded successfully." : "Run a scan to check the FastAPI backend."} state={health.status === "online" ? "PASS" : "REVIEW"} tone={health.status === "online" ? "success" : "warning"} />
       <DiagnosticRow icon={TriangleAlert} title="Model registry" detail="Use axiom model list until a real read contract is available." state="REVIEW" tone="warning" />
       <DiagnosticRow icon={CircleCheck} title="Session timeout" detail="Automatic logout is enabled after 10 minutes of inactivity." state="PASS" tone="success" />
     </div>
-    {scanState === "blocked" && <Callout tone="warning" title="CLI boundary">Run <code>axiom doctor</code> in the project environment for a real system check. This frontend does not fabricate a health result.</Callout>}
+    {scanState === "blocked" && <Callout tone="warning" title="Backend connection failed">Start the AXIOM API and verify <code>/api/health</code> before retrying the scan.</Callout>}
     {scanState === "idle" && <button type="button" className="text-button" onClick={() => onNotify("The scan will stay honest: without a bridge, it reports the contract boundary.")}>What does this check? <ArrowRight size={15} /></button>}
   </FeaturePage>;
 }
@@ -1531,8 +1576,8 @@ function SettingsPage({
         <div className="setting-row"><div><b>Session timeout</b><span>Automatic sign out after inactivity.</span></div><StatusPill tone="neutral">10 MINUTES</StatusPill></div>
       </Surface>
       <Surface title="Integration boundary" eyebrow="HONEST STATE">
-        <Callout tone="info" title="No frontend API contract is defined">The UI keeps the workspace surfaces ready without claiming live model, dataset, runtime, or log data that the repository does not currently expose.</Callout>
-        <button type="button" className="text-button" onClick={() => onNotify("No shared API files were changed in this UI rewrite.")}>Review integration note <ArrowRight size={15} /></button>
+        <Callout tone="info" title="Backend connection is available">Health, hardware, optimization, and policy-audit requests use the AXIOM FastAPI contract. Model inventory, datasets, runtime, and logs still require their dedicated endpoints.</Callout>
+        <button type="button" className="text-button" onClick={() => onNotify("The dashboard and diagnostics pages use the live backend health and hardware endpoints.")}>Review integration note <ArrowRight size={15} /></button>
       </Surface>
     </div>
   </FeaturePage>;

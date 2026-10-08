@@ -64,12 +64,19 @@ code, kbd { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
   --shadow: 0 14px 32px rgba(42, 37, 28, .09);
 }
 
-.app-shell { min-height: 100vh; display: grid; grid-template-columns: 238px minmax(0, 1fr); background: var(--bg); color: var(--ink); }
+.app-shell { min-height: 100vh; display: grid; grid-template-columns: 238px minmax(0, 1fr); background: var(--bg); color: var(--ink); transition: grid-template-columns .2s ease; }
+.app-shell.sidebar-collapsed { grid-template-columns: 76px minmax(0, 1fr); }
 .main-shell { min-width: 0; }
 .sidebar { min-height: 100vh; position: sticky; top: 0; z-index: 20; display: flex; flex-direction: column; padding: 25px 16px 18px; border-right: 1px solid var(--line); background: var(--bg-deep); }
 .sidebar-head, .auth-topline, .topbar, .topbar-context, .topbar-actions, .page-header, .page-actions, .surface-head, .surface-action, .field-label-row, .form-topline, .welcome-actions, .status-strip-item, .summary-card-head, .info-card-head, .setting-row, .dialog-head, .inline-meta, .log-contract, .contract-note, .core-status, .profile-trigger, .workspace-switcher, .server-row, .module-row, .diagnostic-row, .runtime-banner, .preview-header, .preview-status-row, .preview-footer, .step-list-row, .callout, .button, .text-button, .icon-text-button, .cli-reference { display: flex; align-items: center; }
 .sidebar-head { justify-content: space-between; padding: 0 6px 28px; }
 .brand-lockup { display: flex; align-items: center; gap: 10px; min-width: max-content; }
+.brand-button { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; }
+.brand-button-copy { min-width: 0; }
+.brand-button-copy b, .brand-button-copy small { display: block; }
+.brand-button-copy b { color: var(--ink-strong); font-size: 15px; font-weight: 780; letter-spacing: .16em; line-height: 1; }
+.brand-button-copy small { margin-top: 5px; color: var(--faint); font-size: 8px; font-weight: 650; letter-spacing: .12em; line-height: 1; white-space: nowrap; }
+.brand-button:hover .axiom-mark { background: var(--accent); color: var(--accent-ink); }
 .brand-lockup b { display: block; color: var(--ink-strong); font-size: 15px; font-weight: 780; letter-spacing: .16em; line-height: 1; }
 .brand-lockup span { display: block; margin-top: 5px; color: var(--faint); font-size: 8px; font-weight: 650; letter-spacing: .12em; line-height: 1; }
 .axiom-mark { width: 30px; height: 30px; display: grid; flex: 0 0 auto; place-items: center; border: 1px solid var(--accent); border-radius: 50%; color: var(--accent); font-size: 15px; font-weight: 800; letter-spacing: -.08em; }
@@ -374,8 +381,23 @@ code, kbd { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .toast-close:hover { color: var(--ink); }
 .mobile-scrim { display: none; }
 
+.sidebar-collapsed .sidebar-head { justify-content: center; padding-inline: 0; }
+.sidebar-collapsed .brand-button-copy,
+.sidebar-collapsed .workspace-switcher > span:nth-child(2),
+.sidebar-collapsed .workspace-switcher > svg,
+.sidebar-collapsed .nav-section,
+.sidebar-collapsed .nav-item > span,
+.sidebar-collapsed .nav-item .status-pill,
+.sidebar-collapsed .core-status b,
+.sidebar-collapsed .sidebar-bottom > p { display: none; }
+.sidebar-collapsed .workspace-switcher { justify-content: center; }
+.sidebar-collapsed .nav-item { justify-content: center; padding-inline: 0; }
+.sidebar-collapsed .nav-item.active::before { display: none; }
+.sidebar-collapsed .core-status { justify-content: center; }
+
 @media (max-width: 1080px) {
   .app-shell { grid-template-columns: 220px minmax(0, 1fr); }
+  .app-shell.sidebar-collapsed { grid-template-columns: 76px minmax(0, 1fr); }
   .topbar { padding: 0 27px; }
   .page-wrap { padding: 40px 27px 65px; }
   .welcome-grid { gap: 55px; }
@@ -386,9 +408,20 @@ code, kbd { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 
 @media (max-width: 780px) {
   .app-shell { display: block; }
+  .app-shell.sidebar-collapsed { display: block; }
   .sidebar { position: fixed; inset: 0 auto 0 0; width: min(290px, 86vw); transform: translateX(-102%); transition: transform .2s ease; box-shadow: 18px 0 40px rgba(0, 0, 0, .24); }
   .sidebar.is-open { transform: translateX(0); }
   .sidebar-close, .mobile-menu-button { display: inline-grid; }
+  .sidebar-collapsed .brand-button-copy,
+  .sidebar-collapsed .workspace-switcher > span:nth-child(2),
+  .sidebar-collapsed .workspace-switcher > svg,
+  .sidebar-collapsed .nav-section,
+  .sidebar-collapsed .nav-item > span,
+  .sidebar-collapsed .nav-item .status-pill,
+  .sidebar-collapsed .core-status b,
+  .sidebar-collapsed .sidebar-bottom > p { display: block; }
+  .sidebar-collapsed .workspace-switcher { justify-content: initial; }
+  .sidebar-collapsed .nav-item { justify-content: initial; padding-inline: 8px; }
   .mobile-scrim { position: fixed; inset: 0; z-index: 15; display: block; border: 0; background: rgba(0, 0, 0, .45); }
   .topbar { position: sticky; top: 0; z-index: 10; min-height: 62px; padding: 0 18px; }
   .topbar-context { gap: 6px; }

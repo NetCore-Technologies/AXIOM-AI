@@ -29,7 +29,7 @@ test.describe("AXIOM Control Center", () => {
     await page.getByRole("button", { name: "Sign in" }).click();
 
     await expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening), operator\./ })).toBeVisible();
-    await expect(page.getByText("No frontend API contract found")).toBeVisible();
+    await expect(page.getByText("AXIOM backend")).toBeVisible();
 
     await page.getByRole("button", { name: /Models/ }).first().click();
     await expect(page.getByRole("heading", { name: "Models" })).toBeVisible();
