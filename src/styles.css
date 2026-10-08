@@ -143,6 +143,7 @@ code, kbd { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .profile-dropdown .danger-action:hover { color: var(--danger); }
 
 .page-wrap { max-width: 1400px; margin: 0 auto; padding: 53px 42px 78px; }
+.sidebar-collapsed .page-wrap { max-width: none; width: 100%; }
 .page-header { justify-content: space-between; align-items: flex-end; gap: 28px; margin-bottom: 34px; }
 .page-header h1 { margin: 10px 0 11px; color: var(--ink-strong); font-size: clamp(28px, 3vw, 42px); font-weight: 680; letter-spacing: -.055em; line-height: 1; }
 .page-description { max-width: 650px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
@@ -435,6 +436,7 @@ code, kbd { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
   .command-menu { top: calc(100% + 14px); right: -49px; width: min(330px, calc(100vw - 30px)); }
   .profile-name { display: none; }
   .page-wrap { padding: 31px 17px 55px; }
+  .sidebar-collapsed .page-wrap { width: auto; }
   .page-header { align-items: flex-start; flex-direction: column; gap: 18px; margin-bottom: 25px; }
   .page-actions { justify-content: flex-start; }
   .page-header h1 { font-size: 30px; }
@@ -872,10 +874,12 @@ code, kbd { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 
 /* AXIOM Agent Optimizer */
 .axiom-optimizer {
+  width: 100%;
   margin: 24px 0;
 }
 
 .axiom-optimizer-card {
+  width: 100%;
   border: 1px solid rgba(255,255,255,.10);
   background: rgba(13,14,21,.80);
   backdrop-filter: blur(18px);

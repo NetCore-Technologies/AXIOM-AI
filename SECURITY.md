@@ -98,3 +98,15 @@ Beta.5 hardens model-path handling against path traversal/path injection and rem
 Beta.5 includes hardening for untrusted model path handling and administrator browser storage.
 
 Security issues should be reported privately through GitHub's repository security process.
+
+## Runtime bundle path advisory — 2026-10-08
+
+The CodeQL path-expression findings reported in the model policy, optimizer,
+and model-path surfaces were reviewed on 2026-10-08. The confirmed runtime
+bundle issues were source-symlink disclosure and destination-symlink
+redirection in `create_runtime_bundle`. They were patched on 2026-10-08 by
+validating every resolved source and destination child, rejecting symlinks,
+and keeping runtime-profile writes below the trusted output root.
+
+See the complete incident timeline, impact, patch, and regression coverage in
+[SECURITY-ADVISORY-2026-10.md](SECURITY-ADVISORY-2026-10.md).

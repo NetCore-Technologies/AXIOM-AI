@@ -34,6 +34,14 @@ test.describe("AXIOM Control Center", () => {
     await page.getByRole("button", { name: /Models/ }).first().click();
     await expect(page.getByRole("heading", { name: "Models" })).toBeVisible();
     await expect(page.getByRole("button", { name: /axiom model list/ })).toBeVisible();
+
+    await page.getByRole("button", { name: "Agent Optimizer" }).click();
+    await expect(page.getByRole("heading", { name: "Make a large model fit your device" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "OPTIMIZE MODEL" })).toBeDisabled();
+
+    await page.getByRole("button", { name: "Collapse sidebar" }).click();
+    await expect(page.locator(".app-shell")).toHaveClass(/sidebar-collapsed/);
+    await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
   });
 
   test("rejects invalid credentials without leaving the login screen", async ({ page }) => {
