@@ -32,3 +32,15 @@
 - Broaden model format and accelerator coverage
 - Continue security/code-quality hardening
 - Improve optimizer telemetry and diagnostics
+
+## v0.2.0-beta.5
+
+AXIOM beta.5 adds the optimizer/quantization workflow, hardware-aware model planning, hardened model filesystem boundaries, safer administrator verifier storage, and improved CI/E2E validation. See [the beta.5 release notes](docs/releases/v0.2.0-beta.5.md).
+
+### Beta.5 — released
+
+- Optimizer and quantization lab workflow
+- Agent-oriented model planning
+- Filesystem/path security hardening
+- Administrator storage hardening
+- CI/E2E reliability improvements
