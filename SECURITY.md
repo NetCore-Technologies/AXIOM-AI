@@ -92,3 +92,9 @@ Beta.5 fixes the reported model-path injection risks and administrator clear-tex
 ## Beta.5 security fixes
 
 Beta.5 hardens model-path handling against path traversal/path injection and removes administrator verifier material from clear-text browser storage. Report security problems through the repository security policy rather than public issue disclosure when sensitive exploitation details are involved.
+
+## v0.2.0-beta.5 security update
+
+Beta.5 includes hardening for untrusted model path handling and administrator browser storage.
+
+Security issues should be reported privately through GitHub's repository security process.
