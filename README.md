@@ -42,8 +42,8 @@ The useful path is terminal-first and local:
 - Run the AXIOM MCP server over stdio for model, dataset, hardware,
   training-plan, and optional SuperCompress tools.
 - Start the dependency-free local daemon on a free loopback port and inspect
-  its `/health`, `/api/actions`, `/api/hardware`, `/api/tools`, and `/api/info`
-  endpoints.
+  its `/health`, `/api/info`, `/api/summary`, `/api/actions`, `/api/hardware`,
+  and `/api/tools` endpoints.
 
 AXIOM stores project configuration in `axiom.yaml` and local registry state in
 `.axiom`. Core inspection and planning commands do not require a hosted AXIOM
@@ -97,6 +97,7 @@ axiom --help
 # Prints the commands, then starts the local daemon. Press Ctrl-C when done.
 axiom
 axiom guide
+axiom summary
 
 # 2. Create and validate a project
 axiom init my-ai
@@ -189,6 +190,7 @@ The session uses the host's native helper and releases it on exit.
 axiom version                         Show the installed version
 axiom init <name>                     Create a local project scaffold
 axiom guide                           Explain the current project state
+axiom summary                         Show project, machine, tools, and next action
 axiom check                           Check standard project paths
 axiom status                          Show local config and Git status
 axiom info                            Show the local Python environment
@@ -281,9 +283,10 @@ axiom daemon
 
 The daemon binds to `127.0.0.1` and asks the operating system for a free port
 when no port is supplied. It exposes `GET /`, `GET /health`, `GET /api/info`,
-`GET /api/actions`, `GET /api/hardware`, and `GET /api/tools`; it is not a
-hosted AXIOM service or a general inference server. Use `--allow-network` only
-when you intentionally need a non-loopback bind.
+`GET /api/summary`, `GET /api/actions`, `GET /api/hardware`, and
+`GET /api/tools`; it is not a hosted AXIOM service or a general inference
+server. Use `--allow-network` only when you intentionally need a non-loopback
+bind.
 
 ## Principles
 

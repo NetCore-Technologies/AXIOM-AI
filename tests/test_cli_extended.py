@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -23,6 +24,18 @@ def test_status():
     result = runner.invoke(app, ["status"])
     assert result.exit_code == 0
     assert "Working tree" in result.stdout
+
+
+def test_summary_json_describes_the_current_directory(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["summary", "--json"])
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["project"]["detected"] is False
+    assert payload["recommended"]["command"] == "axiom init my-ai"
+    assert payload["hardware"]["cpu_cores"] >= 1
 
 
 def test_validate_dataset(tmp_path: Path):

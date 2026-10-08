@@ -75,6 +75,24 @@ def test_daemon_exposes_local_actions_hardware_and_tool_presence(daemon_server):
     assert any(tool["id"] == "codex" for tool in tools["tools"])
 
 
+def test_daemon_summary_recommends_a_safe_next_command(
+    daemon_server,
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "axiom.yaml").write_text("project:\n  name: local\n", encoding="utf-8")
+
+    host, port = daemon_server.server_address[:2]
+    status, payload = get_json(host, port, "/api/summary")
+
+    assert status == 200
+    assert payload["project"]["detected"] is True
+    assert "README.md" in payload["project"]["missing_paths"]
+    assert payload["recommended"]["command"] == "axiom config validate"
+    assert payload["tools"]["total"] >= payload["tools"]["available"]
+
+
 def test_daemon_returns_a_small_not_found_payload(daemon_server):
     host, port = daemon_server.server_address[:2]
 

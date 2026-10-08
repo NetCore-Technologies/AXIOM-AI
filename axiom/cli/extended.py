@@ -16,6 +16,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from axiom.daemon import local_summary
 from axiom.version import __version__
 
 AXIOM_VERSION = __version__
@@ -191,6 +192,41 @@ def register(app, model_app, dataset_app) -> None:
         table.add_row("Working tree", "modified" if dirty else "clean")
 
         console.print(table)
+
+    @app.command("summary")
+    def summary(
+        json_output: bool = typer.Option(
+            False,
+            "--json",
+            help="Print a stable machine-readable local snapshot.",
+        ),
+    ) -> None:
+        """Summarize the current project, machine, tools, and next command."""
+
+        payload = local_summary()
+        if json_output:
+            typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+            return
+
+        project = payload["project"]
+        hardware = payload["hardware"]
+        tools = payload["tools"]
+        console.print(
+            Panel.fit(
+                f"Directory: {payload['working_directory']}\n"
+                f"Project: {'detected' if project['detected'] else 'not detected'}\n"
+                f"Missing paths: {', '.join(project['missing_paths']) or 'none'}\n\n"
+                f"System: {hardware['os_name']} / {hardware['architecture']}\n"
+                f"CPU: {hardware['cpu_cores']} cores, RAM: {hardware['ram_gb']:.2f} GB\n"
+                f"GPU: {hardware['gpu_name'] or 'not detected'}\n\n"
+                f"Tools on PATH: {tools['available']} of {tools['total']}",
+                title="AXIOM SUMMARY",
+            )
+        )
+        console.print(
+            f"Next: [cyan]{payload['recommended']['command']}[/cyan]\n"
+            f"{payload['recommended']['reason']}"
+        )
 
     @app.command("guide")
     def guide() -> None:

@@ -24,11 +24,24 @@ from axiom.tools.catalog import TOOL_CATALOG
 from axiom.version import __version__
 
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+PROJECT_PATHS: tuple[str, ...] = (
+    "axiom.yaml",
+    "README.md",
+    "data",
+    "models",
+    "experiments",
+    "evaluations",
+    "outputs",
+)
 
 LOCAL_ACTIONS: tuple[dict[str, str], ...] = (
     {
         "command": "axiom guide",
         "description": "Explain the current project and choose a useful next command.",
+    },
+    {
+        "command": "axiom summary",
+        "description": "Print the current project, machine, tools, and recommendation.",
     },
     {
         "command": "axiom model inspect ./models/my-model",
@@ -109,6 +122,50 @@ def _tool_snapshot() -> list[dict[str, Any]]:
     return snapshot
 
 
+def local_summary(cwd: Path | None = None) -> dict[str, Any]:
+    """Build a local, read-only snapshot for the CLI and daemon."""
+
+    root = Path.cwd() if cwd is None else cwd
+    config_path = root / "axiom.yaml"
+    missing = [path for path in PROJECT_PATHS if not (root / path).exists()]
+    tools = _tool_snapshot()
+    available_tools = [tool["name"] for tool in tools if tool["available"]]
+
+    if not config_path.is_file():
+        recommended = {
+            "command": "axiom init my-ai",
+            "reason": "No axiom.yaml was found in the current directory.",
+        }
+    elif missing:
+        recommended = {
+            "command": "axiom config validate",
+            "reason": f"The project is missing: {', '.join(missing)}.",
+        }
+    else:
+        recommended = {
+            "command": "axiom model list",
+            "reason": "The standard project paths are present.",
+        }
+
+    return {
+        "name": "AXIOM",
+        "version": __version__,
+        "working_directory": str(root),
+        "project": {
+            "detected": config_path.is_file(),
+            "config": str(config_path),
+            "missing_paths": missing,
+        },
+        "recommended": recommended,
+        "hardware": asdict(detect_hardware()),
+        "tools": {
+            "available": len(available_tools),
+            "total": len(tools),
+            "names": available_tools,
+        },
+    }
+
+
 class _DaemonServer(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
@@ -144,6 +201,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     "message": "AXIOM is a local boundary for model, dataset, hardware, and tool checks.",
                     "health": "/health",
                     "info": "/api/info",
+                    "summary": "/api/summary",
                     "actions": "/api/actions",
                     "hardware": "/api/hardware",
                     "tools": "/api/tools",
@@ -181,12 +239,17 @@ class _RequestHandler(BaseHTTPRequestHandler):
                     ],
                     "endpoints": {
                         "health": "/health",
+                        "summary": "/api/summary",
                         "actions": "/api/actions",
                         "hardware": "/api/hardware",
                         "tools": "/api/tools",
                     },
                 },
             )
+            return
+
+        if path == "/api/summary":
+            self._send_json(HTTPStatus.OK, local_summary())
             return
 
         if path == "/api/actions":
@@ -215,7 +278,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             {
                 "error": "not_found",
                 "path": path,
-                "hint": "Try /health, /api/info, /api/actions, /api/hardware, or /api/tools.",
+                "hint": "Try /health, /api/info, /api/summary, /api/actions, /api/hardware, or /api/tools.",
             },
         )
 
@@ -225,6 +288,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             "/",
             "/health",
             "/api/info",
+            "/api/summary",
             "/api/actions",
             "/api/hardware",
             "/api/tools",
@@ -304,8 +368,10 @@ def serve_in_thread(
 
 
 __all__ = [
+    "LOCAL_ACTIONS",
     "LOOPBACK_HOSTS",
     "daemon_url",
+    "local_summary",
     "run_daemon",
     "serve_in_thread",
     "start_daemon",
