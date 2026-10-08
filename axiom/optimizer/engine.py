@@ -54,7 +54,7 @@ def detect_hardware() -> dict[str, Any]:
             kb = int(Path("/proc/meminfo").read_text().split("MemTotal:")[1].split()[0])
             hw["ram_gb"] = round(kb / 1024 / 1024, 2)
     except Exception:
-        pass
+        __import__("logging").getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
 
     nvidia = shutil.which("nvidia-smi")
     if nvidia:
@@ -67,7 +67,7 @@ def detect_hardware() -> dict[str, Any]:
             try:
                 hw["gpu_vram_gb"] = round(float(vram.splitlines()[0].strip()) / 1024, 2)
             except ValueError:
-                pass
+                __import__("logging").getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
 
     if not hw["gpu"] and shutil.which("rocminfo"):
         hw["gpu_backend"] = "rocm"

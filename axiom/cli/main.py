@@ -1,5 +1,6 @@
-from axiom.optimizer.cli import main as optimizer_main
+from axiom.cli.optimizer import optimizer_app
 from axiom.cli.ai_features import ai_app
+from axiom.optimizer.cli import main as optimizer_main
 import json
 import os
 from pathlib import Path
@@ -1049,3 +1050,5 @@ def mcp_serve():
 
 if __name__ == "__main__":
     app()
+
+app.add_typer(optimizer_app, name="optimize")

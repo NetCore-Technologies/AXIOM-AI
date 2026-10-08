@@ -1,0 +1,217 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+import json
+import os
+import shutil
+from typing import Any
+
+from axiom.optimizer.agent_profiles import AgentProfile
+from axiom.optimizer.system import SystemInfo
+
+
+@dataclass(frozen=True)
+class ModelInfo:
+    source: str
+    local_path: str
+    parameter_billions: float
+    estimated_fp16_gb: float
+    files: int
+    weights: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "source": self.source,
+            "local_path": self.local_path,
+            "parameter_billions": round(self.parameter_billions, 3),
+            "estimated_fp16_gb": round(self.estimated_fp16_gb, 2),
+            "files": self.files,
+            "weights": self.weights,
+        }
+
+
+RUNTIME_KEEP_NAMES = {
+    "config.json",
+    "generation_config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "preprocessor_config.json",
+    "processor_config.json",
+    "chat_template.json",
+    "added_tokens.json",
+    "merges.txt",
+    "vocab.json",
+    "spiece.model",
+    "tokenizer.model",
+}
+
+RUNTIME_EXTENSIONS = {
+    ".safetensors",
+    ".bin",
+    ".gguf",
+    ".json",
+    ".model",
+    ".txt",
+}
+
+
+def _config(path: Path) -> dict[str, Any]:
+    for name in ("config.json", "model_config.json"):
+        cfg = path / name
+        if cfg.exists():
+            try:
+                value = json.loads(cfg.read_text(encoding="utf-8"))
+                if isinstance(value, dict):
+                    return value
+            except (OSError, ValueError):
+                import logging as _axiom_logging; _axiom_logging.getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
+    return {}
+
+
+def inspect_model(source: str) -> ModelInfo:
+    path = Path(source)
+
+    if not path.exists():
+        return ModelInfo(
+            source=source,
+            local_path="",
+            parameter_billions=0.0,
+            estimated_fp16_gb=0.0,
+            files=0,
+            weights=[],
+        )
+
+    root = path if path.is_dir() else path.parent
+    cfg = _config(root)
+
+    params = cfg.get("num_parameters")
+    if params is None:
+        hidden = int(cfg.get("hidden_size") or 4096)
+        layers = int(cfg.get("num_hidden_layers") or 32)
+        params_b = max(
+            1.0,
+            hidden * hidden * layers * 12 / 1_000_000_000,
+        )
+    else:
+        params_b = float(params) / 1_000_000_000
+
+    weights = [
+        str(p.relative_to(root))
+        for p in root.rglob("*")
+        if p.is_file() and p.suffix.lower() in {".safetensors", ".bin", ".gguf"}
+    ]
+
+    count = sum(1 for p in root.rglob("*") if p.is_file())
+
+    return ModelInfo(
+        source=source,
+        local_path=str(root),
+        parameter_billions=params_b,
+        estimated_fp16_gb=params_b * 2.0,
+        files=count,
+        weights=weights,
+    )
+
+
+def choose_quantization(
+    model: ModelInfo,
+    system: SystemInfo,
+    profile: AgentProfile,
+) -> str:
+    usable = system.vram_gb if system.gpu_available else system.ram_gb * 0.55
+
+    if usable <= 0:
+        return profile.preferred_quantization
+
+    # Conservative memory budget.
+    if model.estimated_fp16_gb <= usable * 0.75:
+        return "int8"
+
+    if model.estimated_fp16_gb <= usable * 1.35:
+        return "int4"
+
+    return "int4"
+
+
+def create_runtime_bundle(
+    source: str,
+    destination: str,
+) -> dict[str, Any]:
+    src = Path(source)
+    dst = Path(destination)
+
+    if not src.exists():
+        raise FileNotFoundError(source)
+
+    dst.mkdir(parents=True, exist_ok=True)
+
+    root = src if src.is_dir() else src.parent
+
+    copied: list[str] = []
+    skipped: list[str] = []
+
+    for item in root.rglob("*"):
+        if not item.is_file():
+            continue
+
+        rel = item.relative_to(root)
+        name = item.name.lower()
+        suffix = item.suffix.lower()
+
+        # Keep inference-critical files and model weights.
+        keep = (
+            name in RUNTIME_KEEP_NAMES
+            or suffix in {".safetensors", ".bin", ".gguf"}
+        )
+
+        # Drop obvious repository-only material such as docs/training/
+        # source/test files from the runtime bundle.
+        if not keep:
+            skipped.append(str(rel))
+            continue
+
+        target = dst / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(item, target)
+        copied.append(str(rel))
+
+    return {
+        "source": str(root),
+        "destination": str(dst),
+        "copied": copied,
+        "skipped_non_runtime": skipped,
+    }
+
+
+def write_runtime_profile(
+    bundle: str,
+    profile: AgentProfile,
+    quantization: str,
+    system: SystemInfo,
+) -> Path:
+    path = Path(bundle) / "axiom-runtime.json"
+
+    data = {
+        "agent_profile": profile.key,
+        "agent_profile_number": profile.number,
+        "agent_name": profile.name,
+        "context_tokens": profile.context_tokens,
+        "temperature": profile.temperature,
+        "quantization_target": quantization,
+        "system": system.to_dict(),
+        "target_tokens_per_second": 10.0,
+        "throughput_status": "benchmark_required",
+        "note": (
+            "AXIOM will only report 10 tok/s as achieved after a real "
+            "benchmark confirms it on this device."
+        ),
+    }
+
+    path.write_text(
+        json.dumps(data, indent=2),
+        encoding="utf-8",
+    )
+
+    return path

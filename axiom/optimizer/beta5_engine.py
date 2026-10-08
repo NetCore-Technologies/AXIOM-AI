@@ -32,7 +32,7 @@ def detect_hardware() -> HardwareProfile:
         size = os.sysconf("SC_PAGE_SIZE")
         ram_gb = pages * size / (1024 ** 3)
     except (AttributeError, OSError, ValueError):
-        pass
+        __import__("logging").getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
     return HardwareProfile(
         cpu=platform.processor() or platform.machine(),
         ram_gb=round(ram_gb, 2),

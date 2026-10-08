@@ -1,10 +1,13 @@
+import AxiomQuantizer from "./components/AxiomQuantizer";
+import AxiomOptimizer from "./components/AxiomOptimizer";
 import AxiomBeta5Features from "./components/AxiomBeta5Features";
-import Beta5Optimizer from "./components/Beta5Optimizer";
+import AgentOptimizer from "./components/AgentOptimizer";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
-  Activity,
+
+Activity,
   ArrowRight,
   ArrowUpRight,
   BarChart3,
@@ -48,6 +51,25 @@ import {
   X,
   Zap,
 } from "lucide-react";
+
+
+function equalSecrets(a: string, b: string): boolean {
+  const left = new TextEncoder().encode(a);
+  const right = new TextEncoder().encode(b);
+
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  let diff = 0;
+
+  for (let i = 0; i < left.length; i += 1) {
+    diff |= left[i] ^ right[i];
+  }
+
+  return diff === 0;
+}
+
 
 type Page =
   | "dashboard"
@@ -335,7 +357,7 @@ async function decryptVerifier(password: string, record: StoredAdminRecord): Pro
     const decrypted = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv: new Uint8Array(decodeBase64(record.iv)) },
       key,
-      decodeBase64(record.ciphertext),
+      decodeBase64(record.ciphertext) as unknown as BufferSource,
     );
 
     return equalSecrets(new TextDecoder().decode(decrypted), ADMIN_VERIFIER);
@@ -382,8 +404,13 @@ function isAuthenticated(): boolean {
 }
 
 function getAdministratorName(): string {
-  return readAdmin()?.username || "Administrator";
+  return getAdministratorName();
 }
+
+async function currentAdministrator(): Promise<string> {
+  return getAdministratorName();
+}
+
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -446,10 +473,11 @@ function App() {
     () => localStorage.getItem("axiom-booted") === "1",
   );
   const [setupDone, setSetupDone] = useState(
-    () => localStorage.getItem("axiom-setup") === "1" && Boolean(readAdmin()),
+    () => localStorage.getItem("axiom-setup") === "1" && Boolean(localStorage.getItem(ADMIN_KEY)),
   );
   const [authenticated, setAuthenticated] = useState(isAuthenticated);
   const [page, setPage] = useState<Page>("dashboard");
+  const [username, setUsername] = useState("Administrator");
 
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
@@ -544,6 +572,7 @@ function App() {
         onComplete={async (username, password) => {
           await saveAdministrator(username, password);
           localStorage.setItem("axiom-setup", "1");
+          setUsername(username.trim());
           sessionStorage.removeItem(SESSION_KEY);
 
           window.setTimeout(() => {
@@ -568,7 +597,7 @@ function App() {
     );
   }
 
-  const username = getAdministratorName();
+  useEffect(() => { if (!authenticated) return; currentAdministrator().then(setUsername).catch(() => setUsername("Administrator")); }, [authenticated]);
   const logout = () => {
     sessionStorage.removeItem(SESSION_KEY);
     setAuthenticated(false);
@@ -605,9 +634,13 @@ function App() {
         />
 
         <main id="main-content" className="page-wrap" tabIndex={-1}>
+<AxiomQuantizer />
+
+<AxiomOptimizer />
+
 <AxiomBeta5Features />
 
-          <WorkspacePage
+<WorkspacePage
             page={page}
             username={username}
             theme={theme}
@@ -951,8 +984,7 @@ function LoginScreen({
   setTheme: (theme: Theme) => void;
   onLogin: () => void;
 }) {
-  const admin = readAdmin();
-  const [username, setUsername] = useState(admin?.username || "");
+  const [username, setUsername] = useState(getAdministratorName() === "Administrator" ? "" : getAdministratorName());
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1245,7 +1277,7 @@ function WorkspacePage({
 }) {
   switch (page) {
     case "optimizer":
-      return <Beta5Optimizer />;
+      return <AxiomOptimizer />;
     case "dashboard":
       return <Dashboard username={username} setPage={setPage} onNotify={onNotify} />;
     case "models":
@@ -1266,6 +1298,8 @@ function WorkspacePage({
       return <LogsPage onNotify={onNotify} />;
     case "settings":
       return <SettingsPage theme={theme} setTheme={setTheme} onChangePassword={onChangePassword} onNotify={onNotify} />;
+    case "optimizer":
+      return <AgentOptimizer />;
   }
 }
 

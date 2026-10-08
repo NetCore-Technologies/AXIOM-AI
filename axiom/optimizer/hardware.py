@@ -22,7 +22,7 @@ def detect_hardware() -> HardwareProfile:
         size = os.sysconf("SC_PAGE_SIZE")
         ram_gb = round((pages * size) / (1024**3), 2)
     except (AttributeError, OSError, ValueError):
-        pass
+        __import__("logging").getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
     gpu = None
     if shutil.which("nvidia-smi"):
         gpu = "NVIDIA"

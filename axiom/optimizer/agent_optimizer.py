@@ -29,7 +29,7 @@ def detect_system() -> dict:
         page_size = int(__import__("os").sysconf("SC_PAGE_SIZE"))
         memory_gb = pages * page_size / (1024**3)
     except Exception:
-        pass
+        __import__("logging").getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
     return {
         "platform": platform.platform(),
         "cpu": platform.processor() or platform.machine(),

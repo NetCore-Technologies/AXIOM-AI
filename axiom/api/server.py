@@ -1,9 +1,7 @@
-"""Optional AXIOM API server."""
-
 from __future__ import annotations
 
+from axiom.api.server_optimizer_routes import register_optimizer_routes
 from typing import Any
-
 
 def create_app() -> Any:
     from fastapi import FastAPI
@@ -12,10 +10,9 @@ def create_app() -> Any:
     from axiom.api.optimization import plan_optimization
     from axiom.api.policy_audit import audit_model
 
-    app = FastAPI(
-        title="AXIOM API",
-        version="0.2.0-beta.5",
-    )
+    app = FastAPI(title="AXIOM API", version="0.2.0-beta.5")
+
+    register_optimizer_routes(app)
 
     class OptimizeRequest(BaseModel):
         model: str
@@ -51,6 +48,4 @@ def create_app() -> Any:
     def policy_audit(req: AuditRequest) -> dict[str, Any]:
         return audit_model(req.model_path)
 
-    from axiom.api.ai_routes import router as axiom_ai_router
-    app.include_router(axiom_ai_router)
     return app

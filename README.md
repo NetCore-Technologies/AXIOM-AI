@@ -254,31 +254,113 @@ AXIOM currently exposes its local backend through the Python CLI and a stdio MCP
 ---
 
 <!-- AXIOM_BETA5_FEATURES_BEGIN -->
-## Beta.5 Features
+## ⚡ Beta.5 Features
 
-### AI Model Optimizer
+### 🤖 Agent Model Optimizer
 - [x] Agent-type questionnaire
-- [x] Primary use-case selection
+- [x] Use-case selection
 - [x] Privacy preference
 - [x] Latency preference
 - [x] Target tokens/sec
-- [x] Hardware-aware planning
+- [x] Hardware-aware model planning
 - [x] Quantization recommendation
 - [x] Memory-fit estimation
 - [x] Hugging Face model discovery
 - [ ] Real device benchmark engine
 - [ ] Automatic quantization/export
-- [ ] Benchmark, tune, re-run loop
+- [ ] Benchmark → tune → re-run loop
 
-### Model Policy Audit
-- [x] Visible safety/policy indicator inspection
-- [x] Configuration inspection
-- [x] Audit-only workflow
+### 🤗 Hugging Face
+- [x] Model search
+- [x] Model metadata lookup foundation
+- [ ] One-click model import
+- [ ] Local model cache management
+- [ ] Compatibility scoring
+- [ ] Artifact verification
+
+### 🔐 Model Policy Audit
+- [x] Policy/safety indicator inspection
+- [x] Config inspection
+- [x] Read-only audit workflow
 - [ ] Expanded policy metadata analysis
 - [ ] Model lineage reporting
 
-> AXIOM does not remove or bypass model safety controls. Beta.5 provides transparent policy auditing instead.
+> AXIOM does not remove or bypass model safety controls. The policy feature is an audit and transparency tool.
 <!-- AXIOM_BETA5_FEATURES_END -->
+
+<!-- AXIOM_AGENT_OPTIMIZER_BEGIN -->
+## 🤖 Agent Model Optimizer
+
+AXIOM can analyze a large Hugging Face or local model and create a
+device-aware runtime configuration for a specific agent workload.
+
+### 8 optimization profiles
+
+1. Coding Agent
+2. Reasoning Agent
+3. Research Agent
+4. General Assistant
+5. Automation Agent
+6. Math Agent
+7. Writing Agent
+8. Multilingual Agent
+
+The optimizer:
+
+- analyzes the model
+- inspects CPU/RAM/GPU/VRAM
+- chooses a quantization target
+- creates a minimal runtime bundle
+- keeps inference-critical configuration/tokenizer files
+- retains model weights
+- removes non-runtime repository artifacts
+- configures agent-specific context/temperature settings
+- uses a 10 tok/s target by default
+- requires a real benchmark before claiming 10 tok/s achieved
+
+### CLI
+
+```bash
+axiom optimize profiles
+
+axiom optimize run   --model Qwen/Qwen3-8B   --profile 1   --target-tps 10
+```
+
+> AXIOM does not delete arbitrary model knowledge from weights. Removing
+> learned capabilities safely requires a model-conversion, distillation,
+> pruning, or retraining workflow rather than file deletion.
+<!-- AXIOM_AGENT_OPTIMIZER_END -->
+
+<!-- AXIOM_BETA5_QUANTIZER_BEGIN -->
+## ⚡ Beta.5 Quantization Lab
+
+AXIOM beta.5 adds a questionnaire-driven model optimization workflow.
+
+### Agent profiles
+
+1. Coding Agent
+2. Reasoning Agent
+3. Research Agent
+4. General Assistant
+5. Automation Agent
+6. Math Agent
+7. Writing Agent
+8. Multilingual Agent
+
+### Workflow
+
+1. Select the agent workload.
+2. Select a Hugging Face or local model.
+3. Choose a throughput target, with 10 tok/s as the default.
+4. Inspect the target system's CPU, RAM, GPU, VRAM, and disk.
+5. Estimate the model's memory footprint.
+6. Select a quantization target.
+7. Build a runtime-focused bundle.
+8. Benchmark locally where a supported runtime is available.
+
+AXIOM does not claim 10 tok/s until real hardware benchmarking verifies it.
+
+<!-- AXIOM_BETA5_QUANTIZER_END -->
 
 ## Roadmap
 
@@ -354,19 +436,21 @@ Core platform · First-boot admin · Authentication · Session controls · Model
 ---
 
 <!-- AXIOM_BETA5_ROADMAP_BEGIN -->
-## Expanded Roadmap
+## 🗺️ Expanded Roadmap
 
 ### Agent & Model Optimization
-- [x] Agent questionnaire
+- [x] Questionnaire-driven planning
 - [x] Hugging Face discovery
 - [x] Hardware-aware planning
 - [x] Quantization recommendation
-- [ ] Real device benchmark engine
+- [ ] Real per-device benchmark engine
 - [ ] Automatic quantization/export
+- [ ] Optimize → benchmark → retune loop
 - [ ] Per-device performance profiles
 - [ ] Benchmark history
 - [ ] Performance regression detection
-- [ ] Automatic optimize, benchmark, retune
+- [ ] Model compatibility scoring
+- [ ] Model lineage
 
 ### Training
 - [ ] Training execution
@@ -376,7 +460,7 @@ Core platform · First-boot admin · Authentication · Session controls · Model
 - [ ] Checkpoint management
 - [ ] Resume/recovery
 - [ ] Hyperparameter search
-- [ ] Multi-GPU training
+- [ ] Multi-GPU orchestration
 - [ ] Distributed training
 
 ### Evaluation
@@ -384,12 +468,12 @@ Core platform · First-boot admin · Authentication · Session controls · Model
 - [ ] Benchmark runner
 - [ ] Model comparison
 - [ ] Regression testing
-- [ ] Custom evaluation metrics
+- [ ] Custom metrics
 - [ ] Evaluation reports
 - [ ] Evaluation dashboard
 
 ### Runtime
-- [ ] Production model serving
+- [ ] Production serving
 - [ ] Streaming inference
 - [ ] Request batching
 - [ ] Request scheduling
@@ -405,16 +489,7 @@ Core platform · First-boot admin · Authentication · Session controls · Model
 - [ ] Request tracing
 - [ ] Performance profiling
 - [ ] Benchmark dashboards
-- [ ] Telemetry export
-
-### Hugging Face
-- [x] Authentication
-- [x] Model discovery
-- [ ] One-click model import
-- [ ] Model metadata browser
-- [ ] Compatibility scoring
-- [ ] Artifact verification
-- [ ] Local cache manager
+- [ ] Metrics export
 
 ### GUI
 - [x] Agent Model Optimizer
@@ -427,25 +502,13 @@ Core platform · First-boot admin · Authentication · Session controls · Model
 - [ ] Runtime control center
 
 ### Security
-- [x] Browser credential persistence cleanup
+- [x] Browser credential storage cleanup
 - [x] Model Policy Audit
-- [x] GPG-signed release assets
 - [ ] API authentication
 - [ ] Secrets manager
 - [ ] Role-based access control
 - [ ] Audit logging
 - [ ] Security health dashboard
-
-### Developer Platform
-- [ ] Python API
-- [ ] Plugin SDK
-- [ ] CLI shell completion
-- [ ] Remote training
-- [ ] Distributed inference
-- [ ] Advanced MCP tooling
-- [ ] Agent orchestration
-- [ ] Reproducible environments
-- [ ] Deployment automation
 <!-- AXIOM_BETA5_ROADMAP_END -->
 
 ## Contributing
