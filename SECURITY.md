@@ -86,3 +86,9 @@ Third-party integrations, hosted infrastructure, and external services may have 
 ## Beta.5 security hardening
 
 Beta.5 fixes the reported model-path injection risks and administrator clear-text browser-storage issue. Report new vulnerabilities privately through GitHub security reporting. The public release record is in `docs/releases/v0.2.0-beta.5.md`.
+
+<!-- AXIOM-BETA5-RELEASE -->
+
+## Beta.5 security fixes
+
+Beta.5 hardens model-path handling against path traversal/path injection and removes administrator verifier material from clear-text browser storage. Report security problems through the repository security policy rather than public issue disclosure when sensitive exploitation details are involved.

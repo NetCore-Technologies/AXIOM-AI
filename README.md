@@ -540,3 +540,9 @@ MIT. [LICENSE](LICENSE)
 ## v0.2.0-beta.5
 
 Beta.5 adds the agent/model optimizer, quantization lab, hardware-aware planning, trusted model-path security, secure administrator storage, and expanded E2E validation. See `docs/releases/v0.2.0-beta.5.md`.
+
+<!-- AXIOM-BETA5-RELEASE -->
+
+## Beta.5
+
+AXIOM beta.5 adds the Agent/Model Optimizer and Quantization Lab, strengthens local filesystem boundaries around model analysis and optimization, hardens administrator credential verification storage, and expands end-to-end release validation.
