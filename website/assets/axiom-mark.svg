@@ -1,8 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
-  <title id="title">AXIOM mark</title>
-  <desc id="desc">A geometric black A crossed by a coffee-colored orbit and a single satellite point.</desc>
-  <rect width="96" height="96" rx="22" fill="#dec2aa"/>
-  <path d="M19 72 35.5 22h11L63 72H51.2l-3.4-11.4H33.9L30.5 72H19Zm18.2-21.6h7.3L40.9 37.8l-3.7 12.6Z" fill="#171310"/>
-  <path d="M15 52.5c5.3-16.8 21.3-27.6 38.8-24.9 17.2 2.7 28.8 15.6 27.3 30.9-0.7 7-4.1 12.9-9.1 17.3" fill="none" stroke="#99684e" stroke-linecap="round" stroke-width="3.4"/>
-  <circle cx="81.5" cy="58.7" r="3.8" fill="#171310"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">AXIOM Saturn mark</title>
+  <desc id="desc">A geometric cream A wrapped by the coffee-colored rings of Saturn.</desc>
+  <rect width="128" height="128" rx="28" fill="#171310"/>
+
+  <!-- The rear half of the ring sits behind the A. -->
+  <ellipse cx="64" cy="64" rx="55" ry="24" fill="none" stroke="#99684e" stroke-width="8" transform="rotate(-18 64 64)"/>
+
+  <!-- A solid, high-contrast A remains readable at favicon size. -->
+  <path d="M29 101 48.5 27h23L91 101H76.5l-4.1-16.5H47.6L43.5 101H29Zm22.4-29h15.2L59 42.7 51.4 72Z" fill="#dec2aa" fill-rule="evenodd"/>
+
+  <!-- The lower arc crosses the A to make the orbital depth unmistakable. -->
+  <path d="M12 76c18 24 48 34 76 27 13-3 23-10 28-19" fill="none" stroke="#c69b7d" stroke-linecap="round" stroke-width="8"/>
+  <path d="M12 76c18 24 48 34 76 27 13-3 23-10 28-19" fill="none" stroke="#99684e" stroke-linecap="round" stroke-width="2"/>
 </svg>
