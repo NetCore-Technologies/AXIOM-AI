@@ -236,3 +236,7 @@ Deployment becomes release engineering.
 ---
 
 This roadmap is intentionally ambitious. Features may be reordered as implementation and community feedback shape the project.
+
+## v0.2.0-beta.5 — Released
+
+Optimizer, quantization, security hardening, and E2E validation are included in beta.5.

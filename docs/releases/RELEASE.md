@@ -72,3 +72,7 @@ This beta establishes the unified AXIOM architecture, Control Center and release
 **AXIOM — Build AI. Own AI.**
 
 Built by **NetCore Technologies**.
+
+## v0.2.0-beta.5
+
+Beta.5 is the optimizer, quantization, and security-hardening beta release.
