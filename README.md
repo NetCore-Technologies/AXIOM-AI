@@ -82,7 +82,7 @@ irm https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/install
 axiom version
 ```
 
-AXIOM is intentionally installed and used from the terminal. The website does not expose binary download links.
+AXIOM is intentionally installed and used from the terminal. The Control Center is a local workspace and does not expose binary download links.
 
 ---
 
@@ -143,7 +143,15 @@ Intentionally modular. Each subsystem evolves independently without coupling to 
 
 ### Current backend boundary
 
-AXIOM currently exposes its local backend through the Python CLI and a stdio MCP server (`axiom mcp serve`). This repository does not contain an HTTP service, database, CORS/auth middleware, or hosted API deployment. The Control Center therefore reports disconnected states until a real API contract is added; it does not invent live model, dataset, or runtime data.
+AXIOM exposes a local FastAPI backend through `axiom.api.server:create_app`. The Control Center uses the HTTP contract for health checks, hardware inspection, optimizer profiles and plans, model optimization, and read-only model policy audits. Set `VITE_AXIOM_API_URL` when the API is served on a different origin; local Vite origins are allowed by default. Model, dataset, training, evaluation, runtime, MCP, and log inventory pages remain explicit placeholders until their dedicated API contracts are implemented.
+
+Start the API with an ASGI server from the repository environment:
+
+```bash
+uvicorn axiom.api.server:create_app --factory --host 127.0.0.1 --port 8000
+```
+
+The frontend can then be started with `VITE_AXIOM_API_URL=http://127.0.0.1:8000 npm run dev`.
 
 ---
 
@@ -492,13 +500,18 @@ Core platform · First-boot admin · Authentication · Session controls · Model
 - [ ] Metrics export
 
 ### GUI
+- [x] Routed Control Center workspace pages
+- [x] Responsive sidebar navigation
+- [x] Collapsible AXIOM logo sidebar control
+- [x] Light/dark theme support
+- [x] Backend health and hardware checks
 - [x] Agent Model Optimizer
 - [x] Agent questionnaire
 - [x] Model Policy Audit
 - [ ] Interactive hardware profiler
 - [ ] Live benchmark panel
-- [ ] Training workspace
-- [ ] Evaluation workspace
+- [ ] Training workspace execution
+- [ ] Evaluation workspace executionuation workspace
 - [ ] Runtime control center
 
 ### Security

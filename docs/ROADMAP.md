@@ -23,7 +23,7 @@ AXIOM is under active development. The roadmap is directional and may change as 
 
 ## Phase 1 — Data Engineering
 
-**Status: Next**
+**Status: In progress**
 
 * [ ] Dataset cleaning
 * [ ] Invalid record detection
@@ -144,6 +144,8 @@ axiom serve
 
 A web interface for the complete AXIOM workflow.
 
+**Status: In progress**
+
 ```text
 Dashboard
    │
@@ -157,13 +159,16 @@ Dashboard
 
 Planned capabilities:
 
-* visual project management
-* dataset browser
-* training controls
-* experiment graphs
-* model comparison
-* deployment management
-* hardware monitoring
+* [x] visual project navigation and responsive workspace shell
+* [x] collapsible sidebar and light/dark themes
+* [x] backend health and hardware diagnostics
+* [x] agent optimizer and policy-audit surfaces
+* [ ] dataset browser
+* [ ] training controls
+* [ ] experiment graphs
+* [ ] model comparison
+* [ ] deployment management
+* [ ] live hardware monitoring
 
 ---
 

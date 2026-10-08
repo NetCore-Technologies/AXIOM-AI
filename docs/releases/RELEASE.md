@@ -18,6 +18,9 @@ The first unified AXIOM release combining the AXIOM AI engineering platform with
 - Responsive navigation
 - Dark/light theme support
 - Telemetry-focused dashboard
+- Routed workspace pages with a collapsible AXIOM sidebar
+- Local FastAPI health and hardware integration
+- Agent optimizer and read-only policy-audit API integration
 
 ### AXIOM Platform
 
@@ -60,7 +63,7 @@ Available packages include:
 
 AXIOM is still under active development.
 
-The Control Center currently exposes platform areas that are being implemented incrementally. Full training execution, evaluation execution and production runtime serving are still under development.
+The Control Center exposes platform areas incrementally. Health, hardware inspection, optimization planning, and read-only policy auditing are connected to the local API. Full model inventory, dataset management, training execution, evaluation execution, and production runtime serving are still under development.
 
 This beta establishes the unified AXIOM architecture, Control Center and release pipeline.
 
