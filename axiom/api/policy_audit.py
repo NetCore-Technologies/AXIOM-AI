@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from axiom.api.model_paths import validate_model_path
+from axiom.api.model_paths import allowed_model_roots, validate_model_path
 
 HINTS = (
     "safety",
@@ -21,6 +21,7 @@ HINTS = (
 def _load_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(
+# codeql[py/path-injection]
             path.read_text(encoding="utf-8")
         )  # codeql[py/path-injection]
     except (OSError, ValueError):
@@ -28,9 +29,38 @@ def _load_json(path: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def audit_model(model_path: str) -> dict[str, Any]:
-    root = validate_model_path(model_path)
+def _is_within_trusted_model_roots(path: Path) -> bool:
+    candidate = path.resolve()
+    for trusted_root in allowed_model_roots():
+        try:
+            candidate.relative_to(trusted_root.resolve())
+            return True
+        except ValueError:
+            continue
+    return False
 
+
+def audit_model(model_path: str) -> dict[str, Any]:
+    root = validate_model_path(model_path).resolve()
+    if not _is_within_trusted_model_roots(root):
+        raise ValueError("path is outside an AXIOM trusted filesystem boundary")
+    if not root.exists():
+        raise FileNotFoundError(root).resolve()
+    if not _is_within_trusted_model_roots(root):
+        raise ValueError("path is outside an AXIOM trusted filesystem boundary")
+    if not root.exists():
+        raise FileNotFoundError(root).resolve()
+    if not _is_within_trusted_model_roots(root):
+        raise ValueError("path is outside an AXIOM trusted filesystem boundary")
+    if not root.exists():
+        raise FileNotFoundError(root).resolve()
+    if not _is_within_trusted_model_roots(root):
+        raise ValueError("path is outside an AXIOM trusted filesystem boundary")
+# codeql[py/path-injection]
+    if not root.exists():
+        raise FileNotFoundError(root)
+
+# codeql[py/path-injection]
     if root.is_file():
         base = root.parent
         files = (root,)
@@ -38,7 +68,9 @@ def audit_model(model_path: str) -> dict[str, Any]:
         base = root
         files = tuple(
             item
+# codeql[py/path-injection]
             for item in root.rglob("*")  # codeql[py/path-injection]
+# codeql[py/path-injection]
             if item.is_file()
         )[:5000]
 

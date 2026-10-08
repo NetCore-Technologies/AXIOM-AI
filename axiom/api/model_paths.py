@@ -1,52 +1,50 @@
-"""Trusted filesystem boundaries for model inspection and optimization."""
+"""Trusted filesystem boundaries for model-related operations."""
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 _MODEL_ROOT_NAMES = ("models", ".axiom/models")
 _OUTPUT_ROOT_NAMES = ("optimized", ".axiom/optimized")
-
 
 def _trusted_roots(names: Iterable[str]) -> tuple[Path, ...]:
     base = Path.cwd().resolve()
     return tuple((base / name).resolve() for name in names)
 
+def allowed_model_roots() -> tuple[Path, ...]:
+    return _trusted_roots(_MODEL_ROOT_NAMES)
 
-def _validated(candidate: str | os.PathLike[str], roots: Iterable[Path]) -> Path:
-    raw = os.fspath(candidate)
-    if "\x00" in raw:
-        raise ValueError("path contains a NUL byte")
-    # The input is normalized and then constrained to a fixed trusted root.
-    resolved = Path(os.path.realpath(os.path.abspath(raw)))  # codeql[py/path-injection]
+def allowed_output_roots() -> tuple[Path, ...]:
+    return _trusted_roots(_OUTPUT_ROOT_NAMES)
+
+def _within(candidate: Path, roots: Iterable[Path]) -> bool:
+    candidate = candidate.resolve()
     for root in roots:
-        trusted = Path(os.path.realpath(os.fspath(root)))  # codeql[py/path-injection]
         try:
-            resolved.relative_to(trusted)
-            return resolved
+            candidate.relative_to(root.resolve())
+            return True
         except ValueError:
-            continue
-    raise ValueError("path is outside an AXIOM trusted filesystem boundary")
+            pass
+    return False
 
+def validate_model_path(value: str | os.PathLike[str]) -> Path:
+    candidate = Path(value).resolve()
+    if not _within(candidate, allowed_model_roots()):
+        raise ValueError("model path is outside an AXIOM trusted model root")
+    return candidate
 
-def validate_model_path(candidate: str | os.PathLike[str]) -> Path:
-    """Return a resolved model path confined to an approved model root."""
-    return _validated(candidate, _trusted_roots(_MODEL_ROOT_NAMES))
+def validate_output_path(value: str | os.PathLike[str]) -> Path:
+    candidate = Path(value).resolve()
+    if not _within(candidate, allowed_output_roots()):
+        raise ValueError("output path is outside an AXIOM trusted output root")
+    return candidate
 
-
-def validate_output_path(candidate: str | os.PathLike[str]) -> Path:
-    """Return a resolved output path confined to an approved optimization root."""
-    return _validated(candidate, _trusted_roots(_OUTPUT_ROOT_NAMES))
-
-
-def validate_child_path(root: str | os.PathLike[str], child: str | os.PathLike[str]) -> Path:
-    """Return a child path that remains below an already-trusted root."""
-    trusted_root = Path(os.path.realpath(os.path.abspath(os.fspath(root))))
-    candidate = trusted_root / os.fspath(child)
-    resolved = Path(os.path.realpath(os.path.abspath(os.fspath(candidate))))  # codeql[py/path-injection]
+def validate_child_path(root: Path, child: str | os.PathLike[str]) -> Path:
+    root = root.resolve()
+    candidate = (root / child).resolve()
     try:
-        resolved.relative_to(trusted_root)
+        candidate.relative_to(root)
     except ValueError as exc:
-        raise ValueError("child path escapes its trusted root") from exc
-    return resolved
+        raise ValueError("child path escapes the trusted root") from exc
+    return candidate

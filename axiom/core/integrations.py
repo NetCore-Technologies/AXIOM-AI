@@ -101,7 +101,7 @@ class IntegrationRegistry:
             raise ValueError(f"Invalid integrations registry: {self.path}") from exc
 
         if not isinstance(data, list):
-            raise ValueError(
+            raise ValueError(  # noqa: TRY004
                 f"Invalid integrations registry: expected a JSON array in {self.path}"
             )
 

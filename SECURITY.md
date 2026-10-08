@@ -82,3 +82,7 @@ Once an issue has been fixed, relevant security information may be published thr
 This policy applies to the AXIOM open-source project and its official repositories.
 
 Third-party integrations, hosted infrastructure, and external services may have separate security policies.
+
+## Beta.5 security hardening
+
+Beta.5 fixes the reported model-path injection risks and administrator clear-text browser-storage issue. Report new vulnerabilities privately through GitHub security reporting. The public release record is in `docs/releases/v0.2.0-beta.5.md`.

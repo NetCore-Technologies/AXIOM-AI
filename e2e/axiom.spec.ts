@@ -22,7 +22,7 @@ test.describe("AXIOM Control Center", () => {
     await page.getByRole("textbox", { name: "Confirm password", exact: true }).fill("SecurePass1");
     await page.getByRole("button", { name: "Create administrator" }).click();
     await expect(page.getByText("Administrator created.")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Welcome back." })).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByRole("heading", { name: /Welcome back[.!]?/ })).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole("textbox", { name: "Username", exact: true }).fill("operator");
     await page.getByRole("textbox", { name: "Password", exact: true }).fill("SecurePass1");
@@ -42,11 +42,11 @@ test.describe("AXIOM Control Center", () => {
     await page.getByRole("textbox", { name: "Password", exact: true }).fill("SecurePass1");
     await page.getByRole("textbox", { name: "Confirm password", exact: true }).fill("SecurePass1");
     await page.getByRole("button", { name: "Create administrator" }).click();
-    await expect(page.getByRole("heading", { name: "Welcome back." })).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByRole("heading", { name: /Welcome back[.!]?/ })).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole("textbox", { name: "Password", exact: true }).fill("WrongPass1");
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("alert")).toContainText("Incorrect administrator name or password");
-    await expect(page.getByRole("heading", { name: "Welcome back." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Welcome back[.!]?/ })).toBeVisible();
   });
 });

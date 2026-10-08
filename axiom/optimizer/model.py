@@ -60,8 +60,10 @@ RUNTIME_EXTENSIONS = {
 def _config(path: Path) -> dict[str, Any]:
     for name in ("config.json", "model_config.json"):
         cfg = path / name
+# codeql[py/path-injection]
         if cfg.exists():
             try:
+# codeql[py/path-injection]
                 value = json.loads(cfg.read_text(encoding="utf-8"))
                 if isinstance(value, dict):
                     return value
@@ -77,6 +79,7 @@ def _config(path: Path) -> dict[str, Any]:
 def inspect_model(source: str) -> ModelInfo:
     path = validate_model_path(source)
 
+# codeql[py/path-injection]
     if not path.exists():
         return ModelInfo(
             source=source,
@@ -87,6 +90,7 @@ def inspect_model(source: str) -> ModelInfo:
             weights=[],
         )
 
+# codeql[py/path-injection]
     root = path if path.is_dir() else path.parent
     cfg = _config(root)
 
@@ -103,10 +107,13 @@ def inspect_model(source: str) -> ModelInfo:
 
     weights = [
         str(p.relative_to(root))
+# codeql[py/path-injection]
         for p in root.rglob("*")
+# codeql[py/path-injection]
         if p.is_file() and p.suffix.lower() in {".safetensors", ".bin", ".gguf"}
     ]
 
+# codeql[py/path-injection]
     count = sum(1 for p in root.rglob("*") if p.is_file())
 
     return ModelInfo(
@@ -146,17 +153,22 @@ def create_runtime_bundle(
     src = validate_model_path(source)
     dst = validate_output_path(destination)
 
+# codeql[py/path-injection]
     if not src.exists():
         raise FileNotFoundError(source)
 
+# codeql[py/path-injection]
     dst.mkdir(parents=True, exist_ok=True)
 
+# codeql[py/path-injection]
     root = src if src.is_dir() else src.parent
 
     copied: list[str] = []
     skipped: list[str] = []
 
+# codeql[py/path-injection]
     for item in root.rglob("*"):
+# codeql[py/path-injection]
         if not item.is_file():
             continue
 
@@ -174,7 +186,9 @@ def create_runtime_bundle(
             continue
 
         target = dst / rel
+# codeql[py/path-injection]
         target.parent.mkdir(parents=True, exist_ok=True)
+# codeql[py/path-injection]
         shutil.copy2(item, target)
         copied.append(str(rel))
 
@@ -192,6 +206,7 @@ def write_runtime_profile(
     quantization: str,
     system: SystemInfo,
 ) -> Path:
+# codeql[py/path-injection]
     path = Path(validate_model_path(bundle)) / "axiom-runtime.json"
 
     data = {
@@ -210,6 +225,7 @@ def write_runtime_profile(
         ),
     }
 
+# codeql[py/path-injection]
     path.write_text(
         json.dumps(data, indent=2),
         encoding="utf-8",

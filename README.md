@@ -536,3 +536,7 @@ MIT. [LICENSE](LICENSE)
 <sub><strong>AXIOM. Build AI. Own AI.</strong></sub>
 
 </div>
+
+## v0.2.0-beta.5
+
+Beta.5 adds the agent/model optimizer, quantization lab, hardware-aware planning, trusted model-path security, secure administrator storage, and expanded E2E validation. See `docs/releases/v0.2.0-beta.5.md`.

@@ -56,14 +56,14 @@ class ModelRegistry:
             raise ValueError(f"Invalid model registry: {self.registry_file}") from exc
 
         if not isinstance(data, list):
-            raise ValueError(
+            raise ValueError(  # noqa: TRY004
                 f"Invalid model registry: expected a JSON array in {self.registry_file}"
             )
 
         models: list[Model] = []
         for index, item in enumerate(data):
             if not isinstance(item, dict):
-                raise ValueError(f"Invalid model registry entry at index {index}.")
+                raise ValueError(f"Invalid model registry entry at index {index}.")  # noqa: TRY004
 
             try:
                 models.append(Model(**item))
