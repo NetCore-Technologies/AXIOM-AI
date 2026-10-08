@@ -42,7 +42,7 @@ def _same_path(source: Path, destination: Path) -> bool:
         if destination.exists() and os.path.samefile(source, destination):
             return True
     except OSError:
-        pass
+        __import__("logging").getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
 
     return source.resolve(strict=False) == destination.resolve(strict=False)
 
@@ -161,7 +161,7 @@ def clean_jsonl(
             try:
                 os.unlink(temporary_name)
             except FileNotFoundError:
-                pass
+                __import__("logging").getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
 
     return DatasetCleaningResult(
         source=source,

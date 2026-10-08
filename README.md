@@ -253,6 +253,33 @@ AXIOM currently exposes its local backend through the Python CLI and a stdio MCP
 
 ---
 
+<!-- AXIOM_BETA5_FEATURES_BEGIN -->
+## Beta.5 Features
+
+### AI Model Optimizer
+- [x] Agent-type questionnaire
+- [x] Primary use-case selection
+- [x] Privacy preference
+- [x] Latency preference
+- [x] Target tokens/sec
+- [x] Hardware-aware planning
+- [x] Quantization recommendation
+- [x] Memory-fit estimation
+- [x] Hugging Face model discovery
+- [ ] Real device benchmark engine
+- [ ] Automatic quantization/export
+- [ ] Benchmark, tune, re-run loop
+
+### Model Policy Audit
+- [x] Visible safety/policy indicator inspection
+- [x] Configuration inspection
+- [x] Audit-only workflow
+- [ ] Expanded policy metadata analysis
+- [ ] Model lineage reporting
+
+> AXIOM does not remove or bypass model safety controls. Beta.5 provides transparent policy auditing instead.
+<!-- AXIOM_BETA5_FEATURES_END -->
+
 ## Roadmap
 
 <!-- AXIOM_ROADMAP_BEGIN -->
@@ -325,6 +352,101 @@ Core platform · First-boot admin · Authentication · Session controls · Model
 </div>
 
 ---
+
+<!-- AXIOM_BETA5_ROADMAP_BEGIN -->
+## Expanded Roadmap
+
+### Agent & Model Optimization
+- [x] Agent questionnaire
+- [x] Hugging Face discovery
+- [x] Hardware-aware planning
+- [x] Quantization recommendation
+- [ ] Real device benchmark engine
+- [ ] Automatic quantization/export
+- [ ] Per-device performance profiles
+- [ ] Benchmark history
+- [ ] Performance regression detection
+- [ ] Automatic optimize, benchmark, retune
+
+### Training
+- [ ] Training execution
+- [ ] Training job manager
+- [ ] Training queue
+- [ ] Experiment tracking
+- [ ] Checkpoint management
+- [ ] Resume/recovery
+- [ ] Hyperparameter search
+- [ ] Multi-GPU training
+- [ ] Distributed training
+
+### Evaluation
+- [ ] Evaluation pipelines
+- [ ] Benchmark runner
+- [ ] Model comparison
+- [ ] Regression testing
+- [ ] Custom evaluation metrics
+- [ ] Evaluation reports
+- [ ] Evaluation dashboard
+
+### Runtime
+- [ ] Production model serving
+- [ ] Streaming inference
+- [ ] Request batching
+- [ ] Request scheduling
+- [ ] Runtime autoscaling
+- [ ] Endpoint management
+- [ ] Runtime load testing
+- [ ] Inference optimization
+
+### Observability
+- [ ] Token throughput telemetry
+- [ ] Latency telemetry
+- [ ] CPU/RAM/GPU monitoring
+- [ ] Request tracing
+- [ ] Performance profiling
+- [ ] Benchmark dashboards
+- [ ] Telemetry export
+
+### Hugging Face
+- [x] Authentication
+- [x] Model discovery
+- [ ] One-click model import
+- [ ] Model metadata browser
+- [ ] Compatibility scoring
+- [ ] Artifact verification
+- [ ] Local cache manager
+
+### GUI
+- [x] Agent Model Optimizer
+- [x] Agent questionnaire
+- [x] Model Policy Audit
+- [ ] Interactive hardware profiler
+- [ ] Live benchmark panel
+- [ ] Training workspace
+- [ ] Evaluation workspace
+- [ ] Runtime control center
+
+### Security
+- [x] Browser credential persistence cleanup
+- [x] Model Policy Audit
+- [x] GPG-signed release assets
+- [ ] API authentication
+- [ ] Secrets manager
+- [ ] Role-based access control
+- [ ] Audit logging
+- [ ] Security health dashboard
+
+### Developer Platform
+- [ ] Python API
+- [ ] Plugin SDK
+- [ ] CLI shell completion
+- [ ] Remote training
+- [ ] Distributed inference
+- [ ] Advanced MCP tooling
+- [ ] Agent orchestration
+- [ ] Reproducible environments
+- [ ] Deployment automation
+<!-- AXIOM_BETA5_ROADMAP_END -->
 
 ## Contributing
 

@@ -1,5 +1,4 @@
 import AxiomBeta5Features from "./components/AxiomBeta5Features";
-import Beta5Optimizer from "./components/Beta5Optimizer";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -59,8 +58,7 @@ type Page =
   | "mcp"
   | "diagnostics"
   | "logs"
-  | "settings"
-  | "optimizer";
+  | "settings";
 
 type Theme = "dark" | "light";
 type Tone = "success" | "warning" | "danger" | "neutral" | "info";
@@ -78,14 +76,7 @@ type Notice = {
   tone: Tone;
 };
 
-const navItems: NavItem[] = [  {
-    id: "optimizer",
-    label: "Agent Optimizer",
-    description: "Interactive hardware-aware optimization",
-    icon: Zap,
-    section: "OPTIMIZATION",
-  },
-
+const navItems: NavItem[] = [
   {
     id: "dashboard",
     label: "Control center",
@@ -155,11 +146,6 @@ const pageMeta: Record<
   Page,
   { label: string; kicker: string; description: string }
 > = {
-  optimizer: {
-    label: "Agent Optimizer",
-    kicker: "BETA 5 / MODEL OPTIMIZATION",
-    description: "Interactive questionnaire, hardware detection and quantization planning.",
-  },
   dashboard: {
     label: "Control center",
     kicker: "CONTROL CENTER / LOCAL WORKSPACE",
@@ -437,7 +423,6 @@ async function verifyAdministrator(
 }
 
 function App() {
-
   const [theme, setTheme] = useState<Theme>(getStoredTheme);
   const [booted, setBooted] = useState(
     () => localStorage.getItem("axiom-booted") === "1",
@@ -447,8 +432,6 @@ function App() {
   );
   const [authenticated, setAuthenticated] = useState(isAuthenticated);
   const [page, setPage] = useState<Page>("dashboard");
-
-  if (page === "optimizer") return <Beta5Optimizer />;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);

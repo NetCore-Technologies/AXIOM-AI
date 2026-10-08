@@ -437,6 +437,7 @@ async function verifyAdministrator(
 }
 
 function App() {
+  if (page === "optimizer") return <Beta5Optimizer />;
 
   const [theme, setTheme] = useState<Theme>(getStoredTheme);
   const [booted, setBooted] = useState(
@@ -447,8 +448,6 @@ function App() {
   );
   const [authenticated, setAuthenticated] = useState(isAuthenticated);
   const [page, setPage] = useState<Page>("dashboard");
-
-  if (page === "optimizer") return <Beta5Optimizer />;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);

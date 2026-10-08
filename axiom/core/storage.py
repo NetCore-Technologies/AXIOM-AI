@@ -100,4 +100,4 @@ def atomic_write_text(path: Path, content: str) -> None:
             try:
                 os.unlink(temporary_name)
             except FileNotFoundError:
-                pass
+                __import__("logging").getLogger(__name__).debug("intentionally ignored exception", exc_info=True)

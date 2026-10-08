@@ -1,3 +1,5 @@
+from axiom.optimizer.cli import main as optimizer_main
+from axiom.cli.ai_features import ai_app
 import json
 import os
 from pathlib import Path
@@ -46,6 +48,7 @@ app.add_typer(supercompress_app, name="supercompress")
 app.add_typer(integration_app, name="integration")
 app.add_typer(mcp_app, name="mcp")
 
+app.add_typer(ai_app, name="ai")
 train_app = typer.Typer(help="Plan and manage AI training jobs.")
 
 app.add_typer(train_app, name="train")
