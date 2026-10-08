@@ -21,6 +21,16 @@ from axiom.version import __version__
 AXIOM_VERSION = __version__
 console = Console()
 
+PROJECT_PATHS = (
+    "axiom.yaml",
+    "README.md",
+    "data",
+    "models",
+    "experiments",
+    "evaluations",
+    "outputs",
+)
+
 
 def package_version() -> str:
     try:
@@ -55,11 +65,55 @@ def human_size(size: int) -> str:
     return f"{size} B"
 
 
+def project_detected(root: Path) -> bool:
+    """Return whether the current directory has an AXIOM config file."""
+    return (root / "axiom.yaml").is_file()
+
+
+def missing_project_paths(root: Path) -> list[str]:
+    """Return standard project paths that are absent from ``root``."""
+    return [
+        path
+        for path in PROJECT_PATHS
+        if not (root / path).exists()
+    ]
+
+
+def next_commands(root: Path) -> tuple[str, ...]:
+    """Choose safe, local next commands for the current directory state."""
+    if not project_detected(root):
+        return (
+            "axiom init my-ai",
+            "cd my-ai",
+            "axiom guide",
+        )
+
+    if missing_project_paths(root):
+        return (
+            "axiom config validate",
+            "axiom project validate",
+            "axiom status",
+        )
+
+    return (
+        "axiom config validate",
+        "axiom status",
+        "axiom model list",
+    )
+
+
+def print_next_commands(commands: tuple[str, ...]) -> None:
+    console.print("Next commands:")
+
+    for index, command in enumerate(commands, start=1):
+        console.print(f"  {index}. [cyan]{command}[/cyan]")
+
+
 def register(app, model_app, dataset_app) -> None:
 
     @app.command("doctor")
     def doctor() -> None:
-        """Check common AXIOM development requirements."""
+        """Inspect common local tools and AXIOM package metadata."""
         typer.echo(f"AXIOM Doctor — {AXIOM_VERSION}")
         typer.echo("")
 
@@ -92,7 +146,7 @@ def register(app, model_app, dataset_app) -> None:
 
     @app.command("info")
     def info() -> None:
-        """Show AXIOM and environment information."""
+        """Show local AXIOM and Python environment information."""
         cwd = Path.cwd()
 
         console.print(
@@ -113,7 +167,7 @@ def register(app, model_app, dataset_app) -> None:
 
     @app.command("status")
     def status() -> None:
-        """Show AXIOM project and Git status."""
+        """Show local AXIOM config and Git working-tree information."""
         cwd = Path.cwd()
         dirty = bool(git_output("status", "--porcelain"))
 
@@ -138,11 +192,78 @@ def register(app, model_app, dataset_app) -> None:
 
         console.print(table)
 
+    @app.command("guide")
+    def guide() -> None:
+        """Explain AXIOM and suggest the next local commands."""
+        root = Path.cwd()
+        detected = project_detected(root)
+
+        if detected:
+            missing = missing_project_paths(root)
+            project_line = "detected (axiom.yaml found)"
+            structure_line = (
+                "standard project paths are present"
+                if not missing
+                else f"missing: {', '.join(missing)}"
+            )
+        else:
+            project_line = "not detected (axiom.yaml is missing)"
+            structure_line = "create a project with the commands below"
+
+        console.print(
+            Panel.fit(
+                "[bold cyan]AXIOM GUIDE[/bold cyan]\n\n"
+                "AXIOM is a local-first command-line tool for organizing AI "
+                "model and dataset work. It can inspect local files, check "
+                "project structure, keep local model metadata, and make "
+                "hardware-aware training-plan estimates. Some commands can "
+                "use external services; this guide only checks the current "
+                "directory.\n\n"
+                f"Current directory: {root}\n"
+                f"AXIOM project: {project_line}\n"
+                f"Project structure: {structure_line}",
+                title="AXIOM",
+            )
+        )
+        print_next_commands(next_commands(root))
+
+    @app.command("check")
+    def check() -> None:
+        """Quickly check for a local AXIOM project and its standard paths."""
+        root = Path.cwd()
+
+        if not project_detected(root):
+            console.print(
+                f"[yellow]No AXIOM project detected:[/yellow] {root}"
+            )
+            console.print("Next: [cyan]axiom init my-ai[/cyan]")
+            return
+
+        missing = missing_project_paths(root)
+        console.print(
+            f"[green]✓ AXIOM project detected:[/green] {root}"
+        )
+
+        if missing:
+            console.print(
+                "[yellow]Missing standard paths:[/yellow] "
+                f"{', '.join(missing)}"
+            )
+        else:
+            console.print(
+                "[green]✓ Standard project paths are present.[/green]"
+            )
+
+        console.print("Next: [cyan]axiom config validate[/cyan]")
+
     @model_app.command("inspect")
     def model_inspect(
-        path: str = typer.Argument(..., help="Local model file or directory"),
+        path: str = typer.Argument(
+            ...,
+            help="Local model file or directory to summarize",
+        ),
     ) -> None:
-        """Inspect a local model path."""
+        """Summarize a local model file or directory."""
         target = Path(path)
 
         if not target.exists():
@@ -176,14 +297,17 @@ def register(app, model_app, dataset_app) -> None:
 
     @model_app.command("search")
     def model_search(
-        query: str = typer.Argument(..., help="Search text"),
+        query: str = typer.Argument(
+            ...,
+            help="Text to match in local model paths",
+        ),
         path: str = typer.Option(
             "models",
             "--path",
-            help="Local models directory",
+            help="Directory to search for matching local model paths",
         ),
     ) -> None:
-        """Search local model files and directories."""
+        """Search local model paths by name."""
         root = Path(path)
 
         if not root.exists():
@@ -214,9 +338,12 @@ def register(app, model_app, dataset_app) -> None:
 
     @dataset_app.command("validate")
     def dataset_validate(
-        path: str = typer.Argument(..., help="JSONL dataset"),
+        path: str = typer.Argument(
+            ...,
+            help="Local JSONL dataset file",
+        ),
     ) -> None:
-        """Validate JSONL records and detect duplicates."""
+        """Check JSONL records and report duplicate objects."""
         dataset = Path(path)
 
         if not dataset.is_file():
@@ -276,9 +403,12 @@ def register(app, model_app, dataset_app) -> None:
 
     @dataset_app.command("stats")
     def dataset_stats(
-        path: str = typer.Argument(..., help="JSONL dataset"),
+        path: str = typer.Argument(
+            ...,
+            help="Local JSONL dataset file",
+        ),
     ) -> None:
-        """Show basic JSONL dataset statistics."""
+        """Show local JSONL counts and a rough token estimate."""
         dataset = Path(path)
 
         if not dataset.is_file():
@@ -314,12 +444,14 @@ def register(app, model_app, dataset_app) -> None:
             )
         )
 
-    project_app = typer.Typer(help="Inspect and validate AXIOM projects.")
+    project_app = typer.Typer(
+        help="Inspect and validate the current local AXIOM project."
+    )
     app.add_typer(project_app, name="project")
 
     @project_app.command("info")
     def project_info() -> None:
-        """Show current AXIOM project information."""
+        """Show local project markers in the current directory."""
         root = Path.cwd()
 
         console.print(
@@ -336,7 +468,7 @@ def register(app, model_app, dataset_app) -> None:
 
     @project_app.command("validate")
     def project_validate() -> None:
-        """Validate the standard AXIOM project structure."""
+        """Check expected AXIOM project paths in the current directory."""
         root = Path.cwd()
 
         required = [
@@ -361,7 +493,9 @@ def register(app, model_app, dataset_app) -> None:
 
         console.print("[green]✓ AXIOM project structure is valid.[/green]")
 
-    config_app = typer.Typer(help="Inspect AXIOM project configuration.")
+    config_app = typer.Typer(
+        help="Inspect local AXIOM project configuration."
+    )
     app.add_typer(config_app, name="config")
 
     @config_app.command("show")
@@ -369,9 +503,10 @@ def register(app, model_app, dataset_app) -> None:
         path: str = typer.Option(
             "axiom.yaml",
             "--path",
+            help="Path to a local axiom.yaml file",
         ),
     ) -> None:
-        """Print the AXIOM project configuration."""
+        """Print a local axiom.yaml file."""
         config = Path(path)
 
         if not config.is_file():
@@ -385,9 +520,10 @@ def register(app, model_app, dataset_app) -> None:
         path: str = typer.Option(
             "axiom.yaml",
             "--path",
+            help="Path to a local axiom.yaml file",
         ),
     ) -> None:
-        """Validate that axiom.yaml exists and is readable."""
+        """Validate a local axiom.yaml as a non-empty YAML mapping."""
         config = Path(path)
 
         if not config.is_file():
