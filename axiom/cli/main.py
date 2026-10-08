@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from pathlib import Path
 
 import typer
@@ -25,10 +26,12 @@ from axiom.models.registry import Model, ModelRegistry
 from axiom.runtime.supercompress import compress_context, redacted_base_url
 from axiom.training.planner import create_training_plan
 from axiom.version import __version__
+from axiom.cli.startup import show_startup, suppress_for_arguments
 
 app = typer.Typer(
     name="axiom",
     help="Build, train, evaluate, and deploy AI models.",
+    invoke_without_command=True,
 )
 
 model_app = typer.Typer(help="Manage AI models.")
@@ -60,6 +63,29 @@ register_extended_cli(app, model_app, dataset_app)
 
 
 console = Console()
+
+
+@app.callback()
+def cli_callback(
+    ctx: typer.Context,
+    no_banner: bool = typer.Option(
+        False,
+        "--no-banner",
+        help="Skip the interactive startup banner.",
+        is_eager=True,
+    ),
+) -> None:
+    """Prepare the interactive command-line experience."""
+
+    if (
+        no_banner
+        or ctx.resilient_parsing
+        or ctx.invoked_subcommand == "mcp"
+        or suppress_for_arguments(sys.argv[1:])
+    ):
+        return
+
+    show_startup(include_next_steps=ctx.invoked_subcommand is None)
 
 
 def _cli_error(message: str) -> None:
