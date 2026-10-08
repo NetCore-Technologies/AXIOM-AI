@@ -1,26 +1,33 @@
 from __future__ import annotations
 
-def _quant(vram_mb, preference):
-    if vram_mb is None:
-        return "int4" if preference == "speed" else "int8"
-    if vram_mb < 6000:
-        return "int4"
-    if vram_mb < 10000:
-        return "int4" if preference != "quality" else "int8"
-    if vram_mb < 16000:
-        return "int8" if preference == "quality" else "int4"
-    return "bf16" if preference == "quality" else "int8"
+from dataclasses import dataclass
 
-def build_plan(model, answers, hardware):
-    q = _quant(hardware.get("vram_mb"), answers["preference"])
-    return {
-        "model": model,
-        "agent_type": answers["agent_type"],
-        "preference": answers["preference"],
-        "target_tps": answers["target_tps"],
-        "context": answers["context"],
-        "hardware": hardware,
-        "quantization": q,
-        "status": "ready_for_benchmark",
-        "note": "Target throughput must be verified by an actual device benchmark.",
-    }
+from .hardware import HardwareProfile
+
+
+@dataclass(frozen=True)
+class OptimizationPlan:
+    quantization: str
+    context_length: int
+    target_tps: float | None
+    benchmark_required: bool = True
+
+
+def recommend_plan(*, parameter_count_b: float, hardware: HardwareProfile,
+                   priority: str = "balanced", target_tps: float | None = None,
+                   context_length: int = 8192) -> OptimizationPlan:
+    # Conservative inference-memory planning. Actual throughput is only established by benchmark.
+    if parameter_count_b >= 20:
+        quant = "Q4_K_M"
+    elif parameter_count_b >= 8:
+        quant = "Q4_K_M"
+    elif parameter_count_b >= 3:
+        quant = "Q5_K_M" if priority == "quality" else "Q4_K_M"
+    else:
+        quant = "Q8_0" if priority == "quality" else "Q4_K_M"
+    if priority == "speed":
+        quant = "Q4_K_M"
+        context_length = min(context_length, 8192)
+    elif priority == "quality":
+        context_length = min(context_length, 16384)
+    return OptimizationPlan(quant, max(512, context_length), target_tps, True)

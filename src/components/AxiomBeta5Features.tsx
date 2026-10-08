@@ -24,7 +24,7 @@ type Audit = {
   scope: string;
 };
 
-const API_BASE = (import.meta as any).env?.VITE_AXIOM_API_URL || "";
+const API_BASE = (import.meta as unknown).env?.VITE_AXIOM_API_URL || "";
 
 export default function AxiomBeta5Features() {
   const [model, setModel] = useState("");

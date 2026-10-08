@@ -221,6 +221,14 @@ const platformModules: Array<{
   icon: LucideIcon;
 }> = [
   {
+    page: "optimizer",
+    title: "Agent Optimizer",
+    description: "Questionnaire-driven model sizing, quantization and benchmark planning",
+    state: "Beta 5",
+    tone: "success",
+    icon: Zap,
+  },
+  {
     page: "models",
     title: "Models",
     description: "Metadata, formats, parameters, quantization",
@@ -256,19 +264,22 @@ const platformModules: Array<{
 
 const activityBars = [38, 50, 46, 64, 58, 72, 68, 80, 74, 88, 82, 92, 86, 96, 90, 100];
 
-type AdminRecord = {
+type StoredAdminRecord = {
+  version: 1;
   username: string;
-  passwordHash: string;
+  salt: string;
+  iv: string;
+  ciphertext: string;
   updatedAt: number;
-  salt?: string;
-  iterations?: number;
 };
 
-const ADMIN_KEY = "axiom-admin";
+const ADMIN_KEY = "axiom-admin-v2";
+const LEGACY_ADMIN_KEY = "axiom-admin";
 const SESSION_KEY = "axiom-session";
 const THEME_KEY = "axiom-theme";
 
 const PASSWORD_ITERATIONS = 120_000;
+const ADMIN_VERIFIER = "AXIOM-ADMIN-VERIFIER-V1";
 
 function encodeBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -284,59 +295,60 @@ function decodeBase64(value: string): Uint8Array {
   return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
 }
 
-async function hashLegacyPassword(password: string): Promise<string> {
-  const bytes = new TextEncoder().encode(password);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-
-  return Array.from(new Uint8Array(digest))
-    .map((value) => value.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function hashPassword(
-  password: string,
-  salt: Uint8Array,
-  iterations: number,
-): Promise<string> {
-  const key = await crypto.subtle.importKey(
+async function derivePasswordKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+  const baseKey = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(password),
     "PBKDF2",
     false,
-    ["deriveBits"],
+    ["deriveKey"],
   );
-  const digest = await crypto.subtle.deriveBits(
+
+  return crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
       salt: new Uint8Array(salt).buffer as ArrayBuffer,
-      iterations,
+      iterations: PASSWORD_ITERATIONS,
       hash: "SHA-256",
     },
+    baseKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
+async function encryptVerifier(password: string, salt: Uint8Array, iv: Uint8Array): Promise<string> {
+  const key = await derivePasswordKey(password, salt);
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: new Uint8Array(iv) },
     key,
-    256,
+    new TextEncoder().encode(ADMIN_VERIFIER),
   );
 
-  return encodeBase64(new Uint8Array(digest));
+  return encodeBase64(new Uint8Array(encrypted));
 }
 
-function equalSecrets(left: string, right: string): boolean {
-  if (left.length !== right.length) {
+async function decryptVerifier(password: string, record: StoredAdminRecord): Promise<boolean> {
+  try {
+    const key = await derivePasswordKey(password, decodeBase64(record.salt));
+    const decrypted = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: new Uint8Array(decodeBase64(record.iv)) },
+      key,
+      decodeBase64(record.ciphertext),
+    );
+
+    return equalSecrets(new TextDecoder().decode(decrypted), ADMIN_VERIFIER);
+  } catch {
     return false;
   }
-
-  let difference = 0;
-
-  for (let index = 0; index < left.length; index += 1) {
-    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  }
-
-  return difference === 0;
 }
 
-function readAdmin(): AdminRecord | null {
+function readAdmin(): StoredAdminRecord | null {
   const raw = localStorage.getItem(ADMIN_KEY);
 
   if (!raw) {
+    localStorage.removeItem(LEGACY_ADMIN_KEY);
     return null;
   }
 
@@ -346,13 +358,16 @@ function readAdmin(): AdminRecord | null {
     if (
       !value ||
       typeof value !== "object" ||
-      typeof (value as Partial<AdminRecord>).username !== "string" ||
-      typeof (value as Partial<AdminRecord>).passwordHash !== "string"
+      (value as Partial<StoredAdminRecord>).version !== 1 ||
+      typeof (value as Partial<StoredAdminRecord>).username !== "string" ||
+      typeof (value as Partial<StoredAdminRecord>).salt !== "string" ||
+      typeof (value as Partial<StoredAdminRecord>).iv !== "string" ||
+      typeof (value as Partial<StoredAdminRecord>).ciphertext !== "string"
     ) {
       return null;
     }
 
-    return value as AdminRecord;
+    return value as StoredAdminRecord;
   } catch {
     return null;
   }
@@ -388,16 +403,27 @@ async function saveAdministrator(
   username: string,
   password: string,
 ): Promise<void> {
+  const normalizedUsername = username.trim();
+
+  if (normalizedUsername.length < 3 || password.length === 0) {
+    throw new Error("Invalid administrator credentials.");
+  }
+
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const record: AdminRecord = {
-    username: username.trim(),
-    passwordHash: await hashPassword(password, salt, PASSWORD_ITERATIONS),
-    updatedAt: Date.now(),
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await encryptVerifier(password, salt, iv);
+
+  const record: StoredAdminRecord = {
+    version: 1,
+    username: normalizedUsername,
     salt: encodeBase64(salt),
-    iterations: PASSWORD_ITERATIONS,
+    iv: encodeBase64(iv),
+    ciphertext,
+    updatedAt: Date.now(),
   };
 
   localStorage.setItem(ADMIN_KEY, JSON.stringify(record));
+  localStorage.removeItem(LEGACY_ADMIN_KEY);
 }
 
 async function verifyAdministrator(
@@ -406,34 +432,11 @@ async function verifyAdministrator(
 ): Promise<boolean> {
   const admin = readAdmin();
 
-  if (!admin) {
+  if (!admin || admin.username !== username.trim()) {
     return false;
   }
 
-  let hash: string;
-
-  if (
-    typeof admin.salt === "string" &&
-    typeof admin.iterations === "number" &&
-    Number.isInteger(admin.iterations) &&
-    admin.iterations >= 100_000
-  ) {
-    try {
-      hash = await hashPassword(
-        password,
-        decodeBase64(admin.salt),
-        admin.iterations,
-      );
-    } catch {
-      return false;
-    }
-  } else {
-    // Read legacy SHA-256 records so existing local installations can
-    // authenticate once and upgrade through the password-change flow.
-    hash = await hashLegacyPassword(password);
-  }
-
-  return admin.username === username.trim() && equalSecrets(admin.passwordHash, hash);
+  return decryptVerifier(password, admin);
 }
 
 function App() {
@@ -448,7 +451,6 @@ function App() {
   const [authenticated, setAuthenticated] = useState(isAuthenticated);
   const [page, setPage] = useState<Page>("dashboard");
 
-  if (page === "optimizer") return <Beta5Optimizer />;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -893,7 +895,7 @@ function Setup({
               {saving ? "Creating account..." : "Create administrator"}
               <ArrowRight size={17} />
             </button>
-            <p className="form-note"><LockKeyhole size={14} /> Credentials are hashed before local storage.</p>
+            <p className="form-note"><LockKeyhole size={14} /> Passwords are never stored in clear text. Only an encrypted verifier is persisted.</p>
           </form>
         )}
       </div>
@@ -1035,7 +1037,7 @@ function LoginScreen({
             {loading ? "Authenticating..." : "Sign in"}
             <ArrowRight size={17} />
           </button>
-          <p className="form-note"><ShieldCheck size={14} /> This session is stored in this browser only.</p>
+          <p className="form-note"><ShieldCheck size={14} /> The active session stays in this browser; credentials are not stored in clear text.</p>
         </form>
       </div>
       <div className="auth-footer"><span>AXIOM / CONTROL CENTER</span><span>LOCAL · PRIVATE · INSPECTABLE</span></div>
@@ -1242,6 +1244,8 @@ function WorkspacePage({
   onChangePassword: () => void;
 }) {
   switch (page) {
+    case "optimizer":
+      return <Beta5Optimizer />;
     case "dashboard":
       return <Dashboard username={username} setPage={setPage} onNotify={onNotify} />;
     case "models":

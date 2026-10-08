@@ -1,9 +1,18 @@
+
+
+from __future__ import annotations
+def _safe_model_path(user_path: str, base_dir: Path) -> Path:
+    """Resolve a user-supplied model path beneath the configured model directory."""
+    base = base_dir.expanduser().resolve()
+    candidate = (base / user_path).resolve()
+    if candidate != base and base not in candidate.parents:
+        raise ValueError("Model path escapes the configured model directory")
+    return candidate
 """Safe, transparent model policy/safety audit.
 
 This module intentionally does not remove or bypass safety controls.
 """
 
-from __future__ import annotations
 
 import json
 from pathlib import Path
@@ -23,6 +32,16 @@ HINTS = (
 CONFIG_NAMES = {"config.json", "generation_config.json", "tokenizer_config.json"}
 
 
+
+
+def _safe_path(user_path: str, base_dir: Path) -> Path:
+    """Resolve a user supplied path beneath a trusted base directory."""
+    base = base_dir.expanduser().resolve()
+    candidate = (base / user_path).resolve()
+    if candidate != base and base not in candidate.parents:
+        raise ValueError("Path escapes the allowed directory")
+    return candidate
+
 def _load_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -32,7 +51,7 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def audit_model(model_path: str) -> dict[str, Any]:
-    root = Path(model_path)
+    root = _safe_path(model_path, Path("models"))
 
     if not root.exists():
         raise FileNotFoundError(model_path)

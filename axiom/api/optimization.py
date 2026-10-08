@@ -1,6 +1,15 @@
-"""Hardware-aware model optimization planner."""
+
 
 from __future__ import annotations
+def _safe_model_path(user_path: str, base_dir: Path) -> Path:
+    """Resolve a user-supplied model path beneath the configured model directory."""
+    base = base_dir.expanduser().resolve()
+    candidate = (base / user_path).resolve()
+    if candidate != base and base not in candidate.parents:
+        raise ValueError("Model path escapes the configured model directory")
+    return candidate
+"""Hardware-aware model optimization planner."""
+
 
 import json
 import logging
@@ -11,7 +20,16 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
+
+
+def _safe_path(user_path: str, base_dir: Path) -> Path:
+    """Resolve a user supplied path beneath a trusted base directory."""
+    base = base_dir.expanduser().resolve()
+    candidate = (base / user_path).resolve()
+    if candidate != base and base not in candidate.parents:
+        raise ValueError("Path escapes the allowed directory")
+    return candidate
+
 class OptimizationPlan:
     model: str
     agent_type: str
@@ -40,7 +58,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _load_config(model: str) -> dict[str, Any]:
-    root = Path(model)
+    root = _safe_path(model, Path("models"))
     candidates: list[Path] = []
 
     if root.is_dir():
@@ -61,7 +79,7 @@ def _load_config(model: str) -> dict[str, Any]:
             from huggingface_hub import hf_hub_download
 
             downloaded = hf_hub_download(repo_id=model, filename="config.json")
-            cfg = _read_json(Path(downloaded))
+            cfg = _read_json(_safe_path(downloaded), Path("models"))
         except Exception:
             log.debug("could not fetch config.json for %s", model, exc_info=True)
 
@@ -73,7 +91,7 @@ def _load_config(model: str) -> dict[str, Any]:
 
 
 def _ram_gb() -> float:
-    path = Path("/proc/meminfo")
+    path = _safe_path("/proc/meminfo", Path("models"))
     if not path.exists():
         return 0.0
 
