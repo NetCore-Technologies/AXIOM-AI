@@ -497,42 +497,42 @@ TOOL_CATALOG: tuple[ToolSpec, ...] = (
                 platform="macos",
                 command="npm install @openrouter/sdk",
                 install_kind="sdk",
-                source_url="https://openrouter.ai/docs/quickstart",
+                source_url="https://openrouter.ai/docs/client-sdks/overview",
                 notes="Official TypeScript SDK candidate.",
             ),
             InstallCandidate(
                 platform="linux",
                 command="npm install @openrouter/sdk",
                 install_kind="sdk",
-                source_url="https://openrouter.ai/docs/quickstart",
+                source_url="https://openrouter.ai/docs/client-sdks/overview",
                 notes="Official TypeScript SDK candidate.",
             ),
             InstallCandidate(
                 platform="windows",
                 command="npm install @openrouter/sdk",
                 install_kind="sdk",
-                source_url="https://openrouter.ai/docs/quickstart",
+                source_url="https://openrouter.ai/docs/client-sdks/overview",
                 notes="Official TypeScript SDK candidate.",
             ),
             InstallCandidate(
                 platform="macos",
                 command="pip install openrouter",
                 install_kind="sdk",
-                source_url="https://openrouter.ai/docs/quickstart",
+                source_url="https://openrouter.ai/docs/client-sdks/overview",
                 notes="Official Python SDK candidate.",
             ),
             InstallCandidate(
                 platform="linux",
                 command="pip install openrouter",
                 install_kind="sdk",
-                source_url="https://openrouter.ai/docs/quickstart",
+                source_url="https://openrouter.ai/docs/client-sdks/overview",
                 notes="Official Python SDK candidate.",
             ),
             InstallCandidate(
                 platform="windows",
                 command="pip install openrouter",
                 install_kind="sdk",
-                source_url="https://openrouter.ai/docs/quickstart",
+                source_url="https://openrouter.ai/docs/client-sdks/overview",
                 notes="Official Python SDK candidate.",
             ),
         ),
@@ -541,20 +541,41 @@ TOOL_CATALOG: tuple[ToolSpec, ...] = (
     ToolSpec(
         id="zai-glm",
         name="z.ai GLM",
-        kind="api",
-        executable_names=(),
-        purpose="Access Z.AI's GLM models through its HTTP API, official SDK, OpenAI-compatible clients, or supported coding plans.",
+        kind="cli-and-api",
+        executable_names=("zai-cli",),
+        purpose="Access Z.AI's GLM models through its official terminal toolkit, HTTP API, SDK, OpenAI-compatible clients, or supported coding plans.",
         auth_notes=(
             "Create a Z.AI API key or use a Z.AI GLM Coding Plan account. The official quick start passes "
-            "the key to the SDK/client and does not prescribe a single environment-variable name; keep it in secure storage."
+            "the key to the SDK/client; the official CLI also supports ZAI_API_KEY and region selection. Keep the value in secure storage."
         ),
-        api_key_env_vars=(),
+        api_key_env_vars=("ZAI_API_KEY", "ZAI_REGION"),
         homepage_url="https://z.ai/",
-        source_url="https://docs.z.ai/guides/overview/quick-start",
+        source_url="https://github.com/zai-org/zai-cli",
         supported_platforms=ALL_PLATFORMS,
         install_candidates=(
             InstallCandidate(
                 platform="macos",
+                command="npm install -g @z_ai/zai-cli",
+                install_kind="package",
+                source_url="https://www.npmjs.com/package/@z_ai/zai-cli",
+                notes="Official Z.ai terminal toolkit; requires Node.js 18 or later.",
+            ),
+            InstallCandidate(
+                platform="linux",
+                command="npm install -g @z_ai/zai-cli",
+                install_kind="package",
+                source_url="https://www.npmjs.com/package/@z_ai/zai-cli",
+                notes="Official Z.ai terminal toolkit; requires Node.js 18 or later.",
+            ),
+            InstallCandidate(
+                platform="windows",
+                command="npm install -g @z_ai/zai-cli",
+                install_kind="package",
+                source_url="https://www.npmjs.com/package/@z_ai/zai-cli",
+                notes="Official Z.ai terminal toolkit; requires Node.js 18 or later.",
+            ),
+            InstallCandidate(
+                platform="macos",
                 command="pip install zai-sdk",
                 install_kind="sdk",
                 source_url="https://docs.z.ai/guides/overview/quick-start",
@@ -596,7 +617,7 @@ TOOL_CATALOG: tuple[ToolSpec, ...] = (
                 notes="Official OpenAI-compatible JavaScript client path; configure Z.AI's base URL separately.",
             ),
         ),
-        notes="z.ai GLM is cataloged as an API/provider surface; no standalone first-party executable is claimed here.",
+        notes="The official CLI and provider API are separate access surfaces; no key value is stored here.",
     ),
 )
 
@@ -612,6 +633,7 @@ KEEP_AWAKE_CAPABILITY = CapabilitySpec(
     command="axiom session --keep-awake",
     reference_url="https://github.com/krishhgg/Insomnia",
     supported_platforms=ALL_PLATFORMS,
+    reference_supported_platforms=("macos",),
     notes=(
         "Future AXIOM capability only: the command is not implemented by this catalog. "
         "The referenced krishhgg/Insomnia app is macOS-only; its app is not claimed to run on Linux or Windows. "

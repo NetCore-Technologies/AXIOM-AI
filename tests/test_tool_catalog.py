@@ -37,7 +37,9 @@ def test_catalog_contains_requested_tools_with_unique_ids():
 
 
 def test_cli_executable_names_are_present_and_globally_unique():
-    cli_tools = [tool for tool in TOOL_CATALOG if tool.kind == "cli"]
+    cli_tools = [
+        tool for tool in TOOL_CATALOG if tool.kind in ("cli", "cli-and-api")
+    ]
     executable_names = [
         executable
         for tool in cli_tools
@@ -48,8 +50,30 @@ def test_cli_executable_names_are_present_and_globally_unique():
     assert all(executable_names)
     assert len(executable_names) == len(set(executable_names))
     assert all(executable == executable.strip() for executable in executable_names)
-    assert all(tool.executable_names for tool in TOOL_CATALOG if tool.kind == "cli")
+    assert all(
+        tool.executable_names
+        for tool in TOOL_CATALOG
+        if tool.kind in ("cli", "cli-and-api")
+    )
     assert all(not tool.executable_names for tool in TOOL_CATALOG if tool.kind == "api")
+
+
+def test_current_first_party_executable_and_auth_names_are_not_stale():
+    by_id = {tool.id: tool for tool in TOOL_CATALOG}
+
+    assert by_id["cursor-agent"].executable_names == ("agent",)
+    assert by_id["openrouter"].executable_names == ("openrouter",)
+    assert by_id["zai-glm"].executable_names == ("zai-cli",)
+    assert "GEMINI_API_KEY" in by_id["antigravity-cli"].api_key_env_vars
+    assert "ZAI_API_KEY" in by_id["zai-glm"].api_key_env_vars
+    assert any(
+        "@openrouter/cli" in candidate.command
+        for candidate in by_id["openrouter"].install_candidates
+    )
+    assert any(
+        "@z_ai/zai-cli" in candidate.command
+        for candidate in by_id["zai-glm"].install_candidates
+    )
 
 
 def test_every_tool_has_supported_platforms_and_a_candidate_per_platform():
@@ -106,3 +130,4 @@ def test_keep_awake_capability_is_future_axiom_session_and_not_a_portability_cla
     assert "Future AXIOM capability" in KEEP_AWAKE_CAPABILITY.notes
     assert "macOS-only" in KEEP_AWAKE_CAPABILITY.notes
     assert "not claimed to run on Linux or Windows" in KEEP_AWAKE_CAPABILITY.notes
+    assert KEEP_AWAKE_CAPABILITY.reference_supported_platforms == ("macos",)
