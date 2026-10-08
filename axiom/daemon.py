@@ -1,15 +1,17 @@
 """Small, local-only HTTP daemon for the AXIOM CLI.
 
 The daemon is intentionally dependency-free. It gives local scripts and future
-integrations a stable health/info boundary without turning AXIOM into a hosted
-service.
+integrations a stable health, local-context, and tool-discovery boundary without
+turning AXIOM into a hosted service.
 """
 
 from __future__ import annotations
 
 import ipaddress
 import json
+import shutil
 import sys
+from dataclasses import asdict
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,9 +19,38 @@ from threading import Thread
 from typing import Any, TextIO
 from urllib.parse import urlsplit
 
+from axiom.core.hardware import detect_hardware
+from axiom.tools.catalog import TOOL_CATALOG
 from axiom.version import __version__
 
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+LOCAL_ACTIONS: tuple[dict[str, str], ...] = (
+    {
+        "command": "axiom guide",
+        "description": "Explain the current project and choose a useful next command.",
+    },
+    {
+        "command": "axiom model inspect ./models/my-model",
+        "description": "Inspect a local model directory before choosing a runtime.",
+    },
+    {
+        "command": "axiom dataset validate ./data/train.jsonl",
+        "description": "Find malformed records and duplicates in JSONL training data.",
+    },
+    {
+        "command": "axiom system info",
+        "description": "Read the local operating system, CPU, memory, GPU, and VRAM.",
+    },
+    {
+        "command": "axiom train plan 7 --method qlora",
+        "description": "Create a conservative hardware-aware starting plan; no training starts.",
+    },
+    {
+        "command": "axiom tools doctor",
+        "description": "Check which common developer tools are available on PATH.",
+    },
+)
 
 
 def validate_bind_host(host: str, *, allow_network: bool = False) -> str:
@@ -54,6 +85,30 @@ def _json_bytes(payload: dict[str, Any]) -> bytes:
     return (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8")
 
 
+def _tool_snapshot() -> list[dict[str, Any]]:
+    """Return executable presence without reading credentials or running tools."""
+
+    snapshot: list[dict[str, Any]] = []
+    for spec in TOOL_CATALOG:
+        executable = None
+        for name in spec.executable_names:
+            executable = shutil.which(name)
+            if executable:
+                break
+        snapshot.append(
+            {
+                "id": spec.id,
+                "name": spec.name,
+                "kind": spec.kind,
+                "available": executable is not None,
+                "executable": executable,
+                "supported_platforms": list(spec.supported_platforms),
+                "api_key_env_vars": list(spec.api_key_env_vars),
+            }
+        )
+    return snapshot
+
+
 class _DaemonServer(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
@@ -86,9 +141,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 {
                     "name": "AXIOM",
                     "service": "local-daemon",
-                    "message": "AXIOM is ready for local model, dataset, and hardware workflows.",
+                    "message": "AXIOM is a local boundary for model, dataset, hardware, and tool checks.",
                     "health": "/health",
                     "info": "/api/info",
+                    "actions": "/api/actions",
+                    "hardware": "/api/hardware",
+                    "tools": "/api/tools",
                 },
             )
             return
@@ -118,19 +176,59 @@ class _RequestHandler(BaseHTTPRequestHandler):
                         "dataset-validation",
                         "hardware-detection",
                         "training-plans",
+                        "action-suggestions",
+                        "tool-discovery",
                     ],
+                    "endpoints": {
+                        "health": "/health",
+                        "actions": "/api/actions",
+                        "hardware": "/api/hardware",
+                        "tools": "/api/tools",
+                    },
                 },
+            )
+            return
+
+        if path == "/api/actions":
+            self._send_json(
+                HTTPStatus.OK,
+                {"name": "AXIOM", "actions": list(LOCAL_ACTIONS)},
+            )
+            return
+
+        if path == "/api/hardware":
+            self._send_json(
+                HTTPStatus.OK,
+                {"name": "AXIOM", "hardware": asdict(detect_hardware())},
+            )
+            return
+
+        if path == "/api/tools":
+            self._send_json(
+                HTTPStatus.OK,
+                {"name": "AXIOM", "tools": _tool_snapshot()},
             )
             return
 
         self._send_json(
             HTTPStatus.NOT_FOUND,
-            {"error": "not_found", "path": path, "hint": "Try /health or /api/info."},
+            {
+                "error": "not_found",
+                "path": path,
+                "hint": "Try /health, /api/info, /api/actions, /api/hardware, or /api/tools.",
+            },
         )
 
     def do_HEAD(self) -> None:  # noqa: N802 - stdlib handler API
         path = urlsplit(self.path).path.rstrip("/") or "/"
-        if path in {"/", "/health", "/api/info"}:
+        if path in {
+            "/",
+            "/health",
+            "/api/info",
+            "/api/actions",
+            "/api/hardware",
+            "/api/tools",
+        }:
             self.send_response(HTTPStatus.OK)
         else:
             self.send_response(HTTPStatus.NOT_FOUND)

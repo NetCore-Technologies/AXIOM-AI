@@ -1,16 +1,11 @@
 :root {
-  --hero: #0b0b0a;
+  --workflow-bg: #dec2aa;
   --ink: #171310;
-  --cream: #f3e7dc;
+  --muted: rgba(23, 19, 16, 0.68);
+  --line: rgba(23, 19, 16, 0.22);
+  --line-strong: rgba(23, 19, 16, 0.42);
   --coffee: #99684e;
-  --coffee-deep: #5d3d31;
-  --coffee-light: #d7b297;
-  --coffee-cream: #dec2aa;
-  --accent: #d6a88b;
-  --muted-light: rgba(243, 231, 220, 0.7);
-  --muted-dark: rgba(23, 19, 16, 0.68);
-  --line-light: rgba(243, 231, 220, 0.26);
-  --line-dark: rgba(23, 19, 16, 0.2);
+  --coffee-soft: #c69b7d;
   --max-width: 1320px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -28,8 +23,8 @@ body {
   min-width: 320px;
   margin: 0;
   overflow-x: hidden;
-  background: var(--hero);
-  color: var(--cream);
+  background: var(--workflow-bg);
+  color: var(--ink);
   font-family: "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-weight: 400;
   -webkit-font-smoothing: antialiased;
@@ -37,7 +32,7 @@ body {
 }
 
 ::selection {
-  background: var(--accent);
+  background: var(--coffee-soft);
   color: var(--ink);
 }
 
@@ -47,7 +42,7 @@ a {
 
 a:focus-visible,
 button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ink);
   outline-offset: 5px;
 }
 
@@ -108,26 +103,19 @@ a {
   flex: 0 0 auto;
   align-items: center;
   gap: 10px;
-  color: var(--cream);
+  color: var(--ink);
   text-decoration: none;
 }
 
 .brand-mark {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border: 1px solid currentColor;
-  border-radius: 50%;
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.72rem;
-  font-weight: 500;
-  line-height: 1;
+  display: block;
+  width: 30px;
+  height: 30px;
 }
 
 .brand-name {
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.16em;
 }
 
@@ -141,9 +129,9 @@ a {
 .site-nav a,
 .header-action,
 .site-footer a {
-  color: var(--muted-light);
+  color: var(--ink);
   font-size: 0.72rem;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.02em;
   text-decoration: none;
   transition: color 180ms ease, transform 180ms ease;
@@ -151,7 +139,7 @@ a {
 
 .site-nav a:hover,
 .site-footer a:hover {
-  color: var(--cream);
+  color: var(--ink);
   transform: translateY(-1px);
 }
 
@@ -161,15 +149,13 @@ a {
   gap: 10px;
   min-height: 38px;
   padding: 0 15px;
-  border: 1px solid var(--line-light);
-  color: var(--cream);
-  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
+  border: 1px solid var(--line-strong);
+  transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease;
 }
 
 .header-action:hover {
-  border-color: var(--cream);
-  background: var(--cream);
-  color: var(--ink);
+  border-color: var(--ink);
+  background: rgba(23, 19, 16, 0.08);
   transform: translateY(-1px);
 }
 
@@ -181,7 +167,7 @@ a {
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--cream);
+  color: var(--ink);
   font: inherit;
   font-size: 0.72rem;
   cursor: pointer;
@@ -202,11 +188,11 @@ a {
 .hero {
   position: relative;
   display: flex;
-  min-height: min(920px, 100svh);
+  min-height: min(900px, 100svh);
   align-items: center;
   overflow: hidden;
-  border-bottom: 1px solid rgba(243, 231, 220, 0.15);
-  background: var(--hero);
+  border-bottom: 1px solid var(--line);
+  background: var(--workflow-bg);
 }
 
 .hero-inner {
@@ -225,30 +211,6 @@ a {
   max-width: 600px;
 }
 
-.eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 25px;
-  color: var(--accent);
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.65rem;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  line-height: 1.5;
-  text-transform: uppercase;
-}
-
-.eyebrow-mark {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 0 4px rgba(214, 168, 139, 0.15);
-}
-
 h1,
 h2,
 h3,
@@ -265,7 +227,7 @@ h3 {
 h1 {
   max-width: 700px;
   margin-bottom: 28px;
-  color: var(--cream);
+  color: var(--ink);
   font-size: clamp(3.35rem, 6vw, 6.9rem);
   letter-spacing: -0.075em;
   line-height: 0.95;
@@ -273,14 +235,14 @@ h1 {
 
 h1 em {
   display: block;
-  color: var(--accent);
+  color: var(--ink);
   font-style: normal;
 }
 
 .hero-lead {
-  max-width: 510px;
+  max-width: 530px;
   margin-bottom: 34px;
-  color: var(--muted-light);
+  color: var(--muted);
   font-size: clamp(1rem, 1.35vw, 1.18rem);
   letter-spacing: -0.02em;
   line-height: 1.55;
@@ -299,47 +261,56 @@ h1 em {
   gap: 16px;
   min-height: 48px;
   padding: 0 18px;
-  border: 1px solid transparent;
+  border: 1px solid var(--ink);
+  color: var(--ink);
   font-size: 0.78rem;
   font-weight: 600;
   text-decoration: none;
-  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
-}
-
-.button:hover {
-  transform: translateY(-2px);
+  transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease;
 }
 
 .button-primary {
-  background: var(--cream);
-  color: var(--ink);
-}
-
-.button-primary:hover {
-  background: var(--accent);
+  background: var(--coffee-soft);
 }
 
 .button-secondary {
-  border-color: var(--line-light);
-  color: var(--cream);
+  background: transparent;
 }
 
-.button-secondary:hover {
-  border-color: var(--cream);
-  background: var(--cream);
+.button:hover {
+  border-color: var(--coffee);
+  background: rgba(153, 104, 78, 0.15);
+  transform: translateY(-2px);
+}
+
+.hero-terminal {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px 16px;
+  max-width: 510px;
+  margin-top: 42px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.hero-terminal-line {
+  display: flex;
+  gap: 10px;
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.hero-terminal-line span {
   color: var(--ink);
 }
 
-.hero-note {
-  max-width: 370px;
-  margin: 42px 0 0;
-  padding-top: 14px;
-  border-top: 1px solid var(--line-light);
-  color: rgba(243, 231, 220, 0.48);
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.64rem;
-  letter-spacing: 0.035em;
-  line-height: 1.6;
+.hero-terminal p {
+  max-width: 330px;
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
 }
 
 .hero-visual {
@@ -353,9 +324,8 @@ h1 em {
   position: relative;
   aspect-ratio: 986 / 614;
   overflow: hidden;
-  border: 1px solid rgba(243, 231, 220, 0.32);
+  border: 1px solid var(--ink);
   background: #050505;
-  transform: rotate(1.1deg);
 }
 
 .image-frame::before,
@@ -364,7 +334,7 @@ h1 em {
   z-index: 1;
   width: 17px;
   height: 17px;
-  border-color: var(--accent);
+  border-color: var(--coffee-soft);
   content: "";
   pointer-events: none;
 }
@@ -397,190 +367,15 @@ h1 em {
   transform: scale(1.035);
 }
 
-.image-label {
-  position: absolute;
-  z-index: 2;
-  color: var(--cream);
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.58rem;
-  letter-spacing: 0.08em;
-  line-height: 1;
-  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.9);
-}
-
-.image-label-top {
-  top: 24px;
-  right: 26px;
-}
-
-.image-label-bottom {
-  bottom: 24px;
-  left: 26px;
-  color: var(--accent);
-}
-
-figcaption {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 14px;
-  padding-top: 14px;
-  color: rgba(243, 231, 220, 0.54);
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.6rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-figcaption span:first-child,
-figcaption span:last-child {
-  color: var(--accent);
-}
-
-.scroll-cue {
-  position: absolute;
-  bottom: 28px;
-  left: max(24px, calc((100% - var(--max-width)) / 2));
-  display: inline-flex;
-  align-items: center;
-  gap: 13px;
-  color: rgba(243, 231, 220, 0.5);
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.6rem;
-  letter-spacing: 0.03em;
-  text-decoration: none;
-}
-
-.scroll-line {
-  display: block;
-  width: 44px;
-  height: 1px;
-  background: var(--accent);
-  transform-origin: left center;
-  transition: transform 200ms ease;
-}
-
-.scroll-cue:hover .scroll-line {
-  transform: scaleX(1.35);
-}
-
 .band {
   padding: clamp(92px, 11vw, 170px) 0;
-}
-
-.band-coffee {
-  background: var(--coffee);
-  color: var(--cream);
-}
-
-.band-light {
-  background: var(--coffee-cream);
+  background: var(--workflow-bg);
   color: var(--ink);
-}
-
-.band-deep {
-  background: var(--coffee-deep);
-  color: var(--cream);
 }
 
 .section-inner {
   width: min(var(--max-width), calc(100% - 48px));
   margin: 0 auto;
-}
-
-.section-intro {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.58fr);
-  align-items: end;
-  gap: 80px;
-  margin-bottom: clamp(62px, 8vw, 106px);
-}
-
-.band .eyebrow {
-  color: var(--coffee-light);
-}
-
-.band-light .eyebrow {
-  color: var(--coffee-deep);
-}
-
-.section-intro h2,
-.workflow-intro h2,
-.install-copy h2 {
-  max-width: 760px;
-  margin-bottom: 0;
-  font-size: clamp(2.8rem, 5vw, 5.65rem);
-  letter-spacing: -0.07em;
-  line-height: 0.98;
-}
-
-.section-intro > p:last-child,
-.workflow-intro > p,
-.install-copy > p {
-  max-width: 430px;
-  margin-bottom: 0;
-  color: var(--muted-light);
-  font-size: 1.02rem;
-  letter-spacing: -0.02em;
-  line-height: 1.55;
-}
-
-.band-light .section-intro > p:last-child,
-.band-light .workflow-intro > p {
-  color: var(--muted-dark);
-}
-
-.capability-list {
-  border-top: 1px solid var(--line-light);
-}
-
-.capability-row {
-  display: grid;
-  grid-template-columns: 80px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 22px;
-  min-height: 132px;
-  padding: 26px 18px 26px 0;
-  border-bottom: 1px solid var(--line-light);
-  transition: background-color 180ms ease, padding 180ms ease;
-}
-
-.capability-row:hover {
-  padding-right: 24px;
-  padding-left: 14px;
-  background: rgba(243, 231, 220, 0.07);
-}
-
-.capability-index,
-.step-index {
-  color: var(--coffee-light);
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.68rem;
-  letter-spacing: 0.04em;
-}
-
-.capability-row h3 {
-  margin-bottom: 8px;
-  font-size: clamp(1.35rem, 2vw, 1.8rem);
-  letter-spacing: -0.04em;
-}
-
-.capability-row p {
-  max-width: 580px;
-  margin-bottom: 0;
-  color: var(--muted-light);
-  font-size: 0.94rem;
-  line-height: 1.5;
-}
-
-.row-arrow {
-  align-self: start;
-  color: var(--coffee-light);
-  font-size: 1.25rem;
-  transition: transform 180ms ease;
-}
-
-.capability-row:hover .row-arrow {
-  transform: translate(3px, -3px);
 }
 
 .workflow-layout,
@@ -597,7 +392,21 @@ figcaption span:last-child {
 
 .workflow-intro h2,
 .install-copy h2 {
+  max-width: 760px;
   margin-bottom: 28px;
+  font-size: clamp(2.8rem, 5vw, 5.65rem);
+  letter-spacing: -0.07em;
+  line-height: 0.98;
+}
+
+.workflow-intro > p,
+.install-copy > p {
+  max-width: 430px;
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 1.02rem;
+  letter-spacing: -0.02em;
+  line-height: 1.55;
 }
 
 .text-link {
@@ -616,17 +425,14 @@ figcaption span:last-child {
 
 .text-link:hover {
   gap: 18px;
-}
-
-.text-link-light {
-  color: var(--cream);
+  color: var(--ink);
 }
 
 .workflow-steps {
   margin: 0;
   padding: 0;
   list-style: none;
-  border-top: 1px solid var(--line-dark);
+  border-top: 1px solid var(--line);
 }
 
 .workflow-steps li {
@@ -634,51 +440,63 @@ figcaption span:last-child {
   grid-template-columns: 66px minmax(0, 1fr);
   gap: 24px;
   padding: 30px 0 34px;
-  border-bottom: 1px solid var(--line-dark);
+  border-bottom: 1px solid var(--line);
+  transition: padding 180ms ease, border-color 180ms ease;
 }
 
-.band-light .step-index {
-  color: var(--coffee-deep);
+.workflow-steps li:hover {
+  padding-left: 12px;
+  border-color: var(--coffee);
 }
 
-.step-label {
-  margin-bottom: 10px;
-  color: var(--coffee-deep);
+.step-index {
+  color: var(--ink);
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.62rem;
-  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
 }
 
 .workflow-steps h3 {
-  margin-bottom: 9px;
+  margin-bottom: 11px;
   font-size: clamp(1.75rem, 3vw, 2.45rem);
   letter-spacing: -0.06em;
 }
 
-.workflow-steps li p:last-child {
+.step-command {
+  display: inline-block;
+  max-width: 100%;
+  margin-bottom: 12px;
+  overflow-x: auto;
+  color: var(--ink);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.workflow-steps li p {
   max-width: 460px;
   margin-bottom: 0;
-  color: var(--muted-dark);
+  color: var(--muted);
   font-size: 0.95rem;
   line-height: 1.5;
 }
 
-.install-copy h2 {
-  color: var(--cream);
-}
-
-.install-copy > p {
-  color: var(--muted-light);
+.install-copy h2 code {
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76em;
+  letter-spacing: -0.08em;
 }
 
 .install-tip {
+  margin-top: 24px !important;
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.75rem;
-  line-height: 1.7;
+  font-size: 0.75rem !important;
+  line-height: 1.7 !important;
 }
 
 .install-tip code {
-  color: var(--cream);
+  color: var(--ink);
 }
 
 .install-commands {
@@ -687,11 +505,11 @@ figcaption span:last-child {
 
 .command-block {
   padding: 18px 0 20px;
-  border-top: 1px solid var(--line-light);
+  border-top: 1px solid var(--line);
 }
 
 .command-block:last-of-type {
-  border-bottom: 1px solid var(--line-light);
+  border-bottom: 1px solid var(--line);
 }
 
 .command-heading {
@@ -700,7 +518,7 @@ figcaption span:last-child {
   justify-content: space-between;
   gap: 18px;
   margin-bottom: 14px;
-  color: var(--coffee-light);
+  color: var(--ink);
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.65rem;
   letter-spacing: 0.06em;
@@ -709,35 +527,35 @@ figcaption span:last-child {
 
 .copy-button {
   padding: 5px 9px;
-  border: 1px solid var(--line-light);
+  border: 1px solid var(--line-strong);
   background: transparent;
-  color: var(--cream);
+  color: var(--ink);
   font: inherit;
   font-size: 0.6rem;
   letter-spacing: 0.03em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+  transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease;
 }
 
 .copy-button:hover {
-  border-color: var(--cream);
-  background: var(--cream);
-  color: var(--ink);
+  border-color: var(--ink);
+  background: rgba(23, 19, 16, 0.08);
+  transform: translateY(-1px);
 }
 
 pre {
   margin: 0;
   overflow-x: auto;
-  border: 1px solid rgba(243, 231, 220, 0.15);
-  background: #3c2921;
+  border: 1px solid var(--line-strong);
+  background: var(--coffee-soft);
 }
 
 pre code {
   display: block;
   min-width: max-content;
   padding: 18px 20px;
-  color: var(--cream);
+  color: var(--ink);
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.76rem;
   line-height: 1.6;
@@ -746,14 +564,14 @@ pre code {
 .copy-status {
   min-height: 20px;
   margin: 12px 0 0;
-  color: var(--coffee-light);
+  color: var(--ink);
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.62rem;
 }
 
 .site-footer {
-  border-top: 1px solid rgba(243, 231, 220, 0.15);
-  background: var(--hero);
+  border-top: 1px solid var(--line);
+  background: var(--workflow-bg);
 }
 
 .footer-inner {
@@ -768,7 +586,7 @@ pre code {
 
 .footer-inner p {
   margin: 0 auto 0 0;
-  color: rgba(243, 231, 220, 0.45);
+  color: var(--muted);
   font-size: 0.72rem;
 }
 
@@ -814,19 +632,10 @@ html.js [data-reveal].is-visible {
     justify-self: start;
   }
 
-  .section-intro,
   .workflow-layout,
   .install-layout {
     grid-template-columns: 1fr;
     gap: 50px;
-  }
-
-  .section-intro {
-    margin-bottom: 64px;
-  }
-
-  .section-intro > p:last-child {
-    max-width: 560px;
   }
 }
 
@@ -857,8 +666,8 @@ html.js [data-reveal].is-visible {
     gap: 0;
     margin: 0;
     padding: 8px;
-    border: 1px solid var(--line-light);
-    background: #161310;
+    border: 1px solid var(--line-strong);
+    background: var(--workflow-bg);
   }
 
   .site-header.menu-open .site-nav {
@@ -871,7 +680,7 @@ html.js [data-reveal].is-visible {
   }
 
   .site-nav a:hover {
-    background: rgba(243, 231, 220, 0.08);
+    background: rgba(23, 19, 16, 0.08);
     transform: none;
   }
 
@@ -906,54 +715,28 @@ html.js [data-reveal].is-visible {
     justify-content: space-between;
   }
 
-  .image-frame {
-    transform: none;
-  }
-
-  figcaption {
-    grid-template-columns: auto 1fr;
-  }
-
-  figcaption span:last-child {
-    display: none;
-  }
-
-  .scroll-cue {
-    right: 20px;
-    bottom: 22px;
-    left: auto;
+  .hero-terminal {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .band {
     padding: 90px 0;
   }
 
-  .section-intro h2,
   .workflow-intro h2,
   .install-copy h2 {
     font-size: clamp(2.8rem, 14vw, 4.6rem);
-  }
-
-  .capability-row {
-    grid-template-columns: 44px minmax(0, 1fr) auto;
-    gap: 12px;
-    padding: 24px 0;
-  }
-
-  .capability-row:hover {
-    padding-right: 0;
-    padding-left: 0;
-    background: transparent;
-  }
-
-  .capability-row p {
-    font-size: 0.88rem;
   }
 
   .workflow-steps li {
     grid-template-columns: 44px minmax(0, 1fr);
     gap: 12px;
     padding: 25px 0 28px;
+  }
+
+  .workflow-steps li:hover {
+    padding-left: 0;
   }
 
   .footer-inner {

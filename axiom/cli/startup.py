@@ -20,9 +20,9 @@ from rich.text import Text
 
 NO_BANNER_ENV = "AXIOM_NO_BANNER"
 
-COFFEE = "#6F4E37"
-CREAM = "#F7E8C9"
-AMBER = "#D69A3A"
+COFFEE = "#99684E"
+CREAM = "#DEC2AA"
+AMBER = "#171310"
 
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 _SESSION_ENV_VARS = (
@@ -194,20 +194,20 @@ def render_startup(stream: TextIO, *, include_next_steps: bool = False) -> None:
     console.print(Text("  AXIOM", style=f"bold {AMBER}"))
     console.print(
         Text(
-            "Inspect models, validate datasets, and plan AI work around your hardware.",
+            "Inspect models, validate data, and plan local AI work around your machine.",
             style=CREAM,
         )
     )
     console.print()
     console.print(
         Text("Start here: ", style=f"bold {AMBER}")
-        + Text("axiom init my-project", style=f"bold {CREAM}")
+        + Text("axiom guide", style=f"bold {CREAM}")
     )
 
     if include_next_steps:
         console.print(Text("Next steps:", style=f"bold {AMBER}"))
         console.print(Text("  axiom --help", style=CREAM))
-        console.print(Text("  cd my-project && axiom model list", style=CREAM))
+        console.print(Text("  axiom model inspect ./models/my-model", style=CREAM))
 
     console.print()
 

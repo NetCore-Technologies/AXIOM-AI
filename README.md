@@ -9,13 +9,15 @@
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-475569?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
 [![Stars](https://img.shields.io/github/stars/NetCore-Technologies/AXIOM-AI?style=flat-square&labelColor=0f172a&color=f59e0b)](https://github.com/NetCore-Technologies/AXIOM-AI)
 
-**AXIOM** is a local-first CLI and loopback daemon for inspecting models,
-checking datasets, and planning hardware-fit training.
+**AXIOM** is a local-first CLI and loopback daemon that helps you understand AI
+work before you run it: inspect the model, validate the data, read the machine,
+and choose the next command.
 
 It keeps project files and local model metadata on your machine. The terminal
-is the product: `axiom` explains the next step, while `axiom daemon` exposes a
-small local HTTP boundary on an available port for scripts and integrations.
-It does not execute training or serve model inference yet.
+is the product. Running bare `axiom` prints the useful command list and starts a
+local daemon on a free loopback port. `axiom daemon` starts only that daemon for
+scripts and integrations. AXIOM does not execute training or serve model
+inference yet.
 
 [**Install from the terminal**](#install) ·
 [**Website**](https://netcore-technologies.github.io/AXIOM-AI/) ·
@@ -40,7 +42,8 @@ The useful path is terminal-first and local:
 - Run the AXIOM MCP server over stdio for model, dataset, hardware,
   training-plan, and optional SuperCompress tools.
 - Start the dependency-free local daemon on a free loopback port and inspect
-  its `/health` and `/api/info` endpoints.
+  its `/health`, `/api/actions`, `/api/hardware`, `/api/tools`, and `/api/info`
+  endpoints.
 
 AXIOM stores project configuration in `axiom.yaml` and local registry state in
 `.axiom`. Core inspection and planning commands do not require a hosted AXIOM
@@ -85,15 +88,13 @@ The Windows installer downloads the latest non-draft release to
 ## First five minutes
 
 Run these from a terminal. `axiom --help` prints the complete command list.
-
-The current CLI guidance update also provides the bare `axiom` welcome and
-`axiom guide`. On a beta.5 binary before that update, skip those two lines and
-continue with `axiom init`.
+Bare `axiom` is the interactive entry point: it prints the most useful
+commands, starts the local daemon, and stays open until you press Ctrl-C.
 
 ```bash
 # 1. Learn the local workflow
 axiom --help
-# Current CLI guidance build:
+# Prints the commands, then starts the local daemon. Press Ctrl-C when done.
 axiom
 axiom guide
 
@@ -121,7 +122,7 @@ axiom system info
 axiom train plan 7 --method qlora
 ```
 
-When a script or integration needs a local HTTP boundary, run this in a
+When a script or integration needs only the local HTTP boundary, run this in a
 separate terminal. It prints a URL such as `http://127.0.0.1:53142`; stop it
 with Ctrl-C:
 
@@ -138,7 +139,9 @@ input untouched.
 fit values are conservative planning estimates, not measured runtime usage,
 and the command does not start training.
 
-`axiom guide` and the bare `axiom` welcome are local-only CLI conveniences.
+The daemon is loopback-only by default. Its JSON routes expose actionable
+commands, detected hardware, and executable presence without reading API-key
+values or sending project files anywhere.
 
 ## MCP tools
 
@@ -277,10 +280,10 @@ axiom daemon
 ```
 
 The daemon binds to `127.0.0.1` and asks the operating system for a free port
-when no port is supplied. It exposes only `GET /`, `GET /health`, and
-`GET /api/info`; it is not a hosted AXIOM service or a general inference
-server. Use `--allow-network` only when you intentionally need a non-loopback
-bind.
+when no port is supplied. It exposes `GET /`, `GET /health`, `GET /api/info`,
+`GET /api/actions`, `GET /api/hardware`, and `GET /api/tools`; it is not a
+hosted AXIOM service or a general inference server. Use `--allow-network` only
+when you intentionally need a non-loopback bind.
 
 ## Principles
 

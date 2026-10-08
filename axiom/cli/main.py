@@ -20,7 +20,7 @@ from axiom.core.integrations import (
 from axiom.core.project import create_project
 from axiom.datasets.cleaner import clean_jsonl
 from axiom.datasets.inspector import inspect_dataset
-from axiom.daemon import run_daemon
+from axiom.daemon import LOCAL_ACTIONS, run_daemon
 from axiom.models.analysis import analyze_config, disk_info
 from axiom.models.inspector import inspect_model
 from axiom.models.registry import Model, ModelRegistry
@@ -83,19 +83,55 @@ def cli_callback(
     """Prepare the interactive command-line experience."""
 
     if (
-        no_banner
-        or ctx.resilient_parsing
+        ctx.resilient_parsing
         or ctx.invoked_subcommand == "mcp"
         or suppress_for_arguments(sys.argv[1:])
     ):
         return
 
-    show_startup(include_next_steps=ctx.invoked_subcommand is None)
+    if ctx.invoked_subcommand is None:
+        _run_default_session(show_banner=not no_banner)
+        return
+
+    if no_banner:
+        return
+
+    show_startup(include_next_steps=False)
 
 
 def _cli_error(message: str) -> None:
     console.print(f"[red]Error:[/red] {message}")
     raise typer.Exit(code=1)
+
+
+def _run_default_session(*, show_banner: bool = True) -> None:
+    """Make bare ``axiom`` the clear, useful entry point for a terminal."""
+
+    if show_banner:
+        show_startup(include_next_steps=False)
+
+    console.print(
+        Panel.fit(
+            "AXIOM inspects models, validates datasets, reads your hardware, "
+            "and suggests the next local step.\n"
+            "The daemon below exposes the same local context as JSON.",
+            title="AXIOM — start here",
+        )
+    )
+
+    table = Table(title="Useful commands", show_header=False, pad_edge=False)
+    table.add_column("Command", style="bold cyan", no_wrap=True)
+    table.add_column("What it does")
+    for action in LOCAL_ACTIONS:
+        table.add_row(action["command"], action["description"])
+    table.add_row("axiom daemon", "Run only the loopback daemon on a free port.")
+    console.print(table)
+    console.print("\nLocal daemon: Ctrl-C stops it. Network access stays disabled by default.\n")
+
+    try:
+        run_daemon()
+    except (OSError, ValueError) as exc:
+        _cli_error(str(exc))
 
 
 @app.command()
