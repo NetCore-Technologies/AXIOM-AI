@@ -2,277 +2,226 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#04050a">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0b0a">
   <meta
     name="description"
-    content="AXIOM. Build AI. Own AI. An open-source AI engineering platform from NetCore Technologies."
+    content="AXIOM is a local-first AI engineering workflow for inspecting models, validating datasets, and planning training around your hardware."
   >
-  <title>AXIOM. Build AI. Own AI.</title>
+  <title>AXIOM — Make better model decisions before you train.</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  
+  <link
+    href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  >
   <link rel="stylesheet" href="./styles.css">
 </head>
 
 <body>
-  <div class="noise"></div>
-  <div class="aurora aurora-red"></div>
-  <div class="aurora aurora-blue"></div>
-  <div class="aurora aurora-purple"></div>
+  <div class="transition-curtain" aria-hidden="true"></div>
 
   <header class="site-header">
-    <a class="brand" href="#">
-      <span class="brand-mark">A</span>
-      <span class="brand-copy">
-        <strong>AXIOM</strong>
-        <small>AI ENGINEERING PLATFORM</small>
-      </span>
-    </a>
+    <div class="header-inner">
+      <a class="brand" href="#top" data-transition-link aria-label="AXIOM home">
+        <span class="brand-mark" aria-hidden="true">A</span>
+        <span class="brand-name">AXIOM</span>
+      </a>
 
-    <nav class="nav">
-      <a href="#platform">Platform</a>
-      <a href="#workflow">Workflow</a>
-      <a href="#install">Install</a>
-      <a href="./app/">Control Center ↗</a>
-      <a href="https://github.com/NetCore-Technologies/AXIOM-AI" target="_blank" rel="noopener">GitHub ↗</a>
-    </nav>
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-menu">
+        <span>Menu</span>
+        <span class="menu-icon" aria-hidden="true"><i></i><i></i></span>
+      </button>
 
-    <a class="header-cta" href="./app/">Open Control Center ↗</a>
+      <nav class="site-nav" id="site-menu" aria-label="Primary navigation">
+        <a href="#capabilities" data-transition-link>What it does</a>
+        <a href="#workflow" data-transition-link>Workflow</a>
+        <a href="#install" data-transition-link>Install</a>
+        <a href="https://github.com/NetCore-Technologies/AXIOM-AI" target="_blank" rel="noopener">GitHub <span aria-hidden="true">↗</span></a>
+      </nav>
+
+      <a class="header-action" href="#install" data-transition-link>Download the CLI <span aria-hidden="true">↓</span></a>
+    </div>
   </header>
 
   <main>
-    <section class="hero" id="platform">
-      <div class="hero-copy reveal">
-        <div class="eyebrow"><span class="pulse-dot"></span> OPEN SOURCE • LOCAL-FIRST • ENGINEERED FOR AI</div>
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <div class="hero-inner">
+        <div class="hero-copy" data-reveal>
+          <p class="eyebrow"><span class="eyebrow-mark" aria-hidden="true"></span> LOCAL AI ENGINEERING / OPEN SOURCE</p>
+          <h1 id="hero-title">Make better model decisions <em>before you train.</em></h1>
+          <p class="hero-lead">
+            AXIOM inspects models, validates datasets, and plans training around your local hardware. The workflow stays on your machine.
+          </p>
 
-        <h1>
-          Build AI.
-          <span>Own AI.</span>
-        </h1>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#install" data-transition-link>Download the CLI <span aria-hidden="true">↓</span></a>
+            <a class="button button-secondary" href="https://github.com/NetCore-Technologies/AXIOM-AI" target="_blank" rel="noopener">Browse the source <span aria-hidden="true">↗</span></a>
+          </div>
 
-        <p class="hero-lead">
-          AXIOM brings models, datasets, training, evaluation, runtime,
-          diagnostics and deployment into one focused engineering workspace.
-        </p>
-
-        <div class="hero-actions">
-          <a class="btn btn-primary" href="./app/">Open Control Center <span>↗</span></a>
-          <a class="btn btn-secondary" href="#install">Install from terminal <span>↘</span></a>
+          <p class="hero-note">Model → dataset → hardware → a plan you can run.</p>
         </div>
 
-        <div class="hero-meta">
-          <span>NetCore Technologies</span>
-          <span>•</span>
-          <span>AXIOM CONTROL CENTER</span>
-        </div>
+        <figure class="hero-visual" data-reveal>
+          <div class="image-frame">
+            <img src="./assets/axiom-galaxy.png" alt="A monochrome spiral galaxy surrounded by stars" width="986" height="614">
+            <div class="image-label image-label-top">AXIOM / LOCAL LOOP</div>
+            <div class="image-label image-label-bottom">INSPECT · VALIDATE · PLAN</div>
+          </div>
+          <figcaption>
+            <span>01</span>
+            <span>Signal before scale.</span>
+            <span>AXIOM</span>
+          </figcaption>
+        </figure>
       </div>
 
-      <div class="hero-console reveal reveal-delay-2">
-        <div class="console-top">
-          <div class="window-dots"><i></i><i></i><i></i></div>
-          <span>AXIOM CONTROL CENTER</span>
-          <span class="console-status"><i></i> READY</span>
+      <a class="scroll-cue" href="#capabilities" data-transition-link>
+        <span>Scroll to see the loop</span>
+        <span class="scroll-line" aria-hidden="true"></span>
+      </a>
+    </section>
+
+    <section class="band band-coffee" id="capabilities" aria-labelledby="capabilities-title">
+      <div class="section-inner">
+        <div class="section-intro" data-reveal>
+          <p class="eyebrow">THE POINT</p>
+          <h2 id="capabilities-title">A tighter loop for AI work.</h2>
+          <p>
+            Keep the decisions that shape a training run close to the code, the data, and the machine that will run it.
+          </p>
         </div>
 
-        <div class="console-body">
-          <div class="console-grid">
-            <article class="metric-card metric-wide">
-              <small>SYSTEM HEALTH</small>
-              <strong><span data-count="98.7">0</span>%</strong>
-              <em>+1.8% from previous check</em>
-              <div class="mini-chart">
-                <span style="height:32%"></span>
-                <span style="height:45%"></span>
-                <span style="height:39%"></span>
-                <span style="height:58%"></span>
-                <span style="height:52%"></span>
-                <span style="height:72%"></span>
-                <span style="height:65%"></span>
-                <span style="height:86%"></span>
-                <span style="height:80%"></span>
-                <span style="height:94%"></span>
-              </div>
-            </article>
+        <div class="capability-list">
+          <article class="capability-row" data-reveal>
+            <span class="capability-index">01</span>
+            <div>
+              <h3>Inspect models</h3>
+              <p>See what you are working with before you commit to a runtime or a run.</p>
+            </div>
+            <span class="row-arrow" aria-hidden="true">↗</span>
+          </article>
 
-            <article class="metric-card">
-              <small>AI RUNTIME</small>
-              <strong>READY</strong>
-              <em>Local engine</em>
-            </article>
+          <article class="capability-row" data-reveal>
+            <span class="capability-index">02</span>
+            <div>
+              <h3>Validate datasets</h3>
+              <p>Check the shape and readiness of your training data before it becomes a surprise.</p>
+            </div>
+            <span class="row-arrow" aria-hidden="true">↗</span>
+          </article>
 
-            <article class="metric-card">
-              <small>MODEL REGISTRY</small>
-              <strong>SYNCED</strong>
-              <em>Local models</em>
-            </article>
+          <article class="capability-row" data-reveal>
+            <span class="capability-index">03</span>
+            <div>
+              <h3>Plan around hardware</h3>
+              <p>Match the training plan to the local hardware you actually have available.</p>
+            </div>
+            <span class="row-arrow" aria-hidden="true">↗</span>
+          </article>
 
-            <article class="metric-card metric-wide">
-              <div class="activity-head">
-                <small>INFERENCE ACTIVITY</small>
-                <span>LIVE</span>
-              </div>
-              <div class="activity-line" aria-hidden="true"></div>
-            </article>
-          </div>
-        </div>
-
-        <div class="console-footer">
-          <span class="green-check">✓</span>
-          Local workspace. Your models. Your engineering environment.
+          <article class="capability-row" data-reveal>
+            <span class="capability-index">04</span>
+            <div>
+              <h3>Keep the workflow local</h3>
+              <p>Use the CLI and local workspace as one connected place for the work.</p>
+            </div>
+            <span class="row-arrow" aria-hidden="true">↗</span>
+          </article>
         </div>
       </div>
     </section>
 
-    <section class="section" id="workflow">
-      <div class="section-heading reveal">
-        <div>
-          <div class="eyebrow">ONE WORKSPACE</div>
-          <h2>Everything between idea and deployment.</h2>
+    <section class="band band-light" id="workflow" aria-labelledby="workflow-title">
+      <div class="section-inner workflow-layout">
+        <div class="workflow-intro" data-reveal>
+          <p class="eyebrow">THE WORKFLOW</p>
+          <h2 id="workflow-title">From model file to a plan you can run.</h2>
+          <p>
+            AXIOM makes the handoffs visible. Each step leaves you with a clearer next step, without sending the whole workflow away from your machine.
+          </p>
+          <a class="text-link" href="https://github.com/NetCore-Technologies/AXIOM-AI" target="_blank" rel="noopener">See AXIOM on GitHub <span aria-hidden="true">↗</span></a>
         </div>
-        <p>
-          A consistent control surface for the parts of AI development
-          that normally live in different tools.
-        </p>
-      </div>
 
-      <div class="feature-grid">
-        <article class="feature-card reveal">
-          <span class="feature-number">01</span>
-          <div class="feature-icon gradient-icon">◎</div>
-          <h3>Models</h3>
-          <p>Inspect model metadata, prepare local runtimes and keep your model workflow organized.</p>
-        </article>
-
-        <article class="feature-card reveal reveal-delay-1">
-          <span class="feature-number">02</span>
-          <div class="feature-icon gradient-icon">◇</div>
-          <h3>Datasets</h3>
-          <p>Validate, clean and reason about training data before it reaches your training pipeline.</p>
-        </article>
-
-        <article class="feature-card reveal reveal-delay-2">
-          <span class="feature-number">03</span>
-          <div class="feature-icon gradient-icon">⌁</div>
-          <h3>Training</h3>
-          <p>Turn configurations into repeatable training plans with a focused engineering interface.</p>
-        </article>
-
-        <article class="feature-card reveal">
-          <span class="feature-number">04</span>
-          <div class="feature-icon gradient-icon">◌</div>
-          <h3>Evaluation</h3>
-          <p>Keep checks, results and model quality visible instead of buried in disconnected logs.</p>
-        </article>
-
-        <article class="feature-card reveal reveal-delay-1">
-          <span class="feature-number">05</span>
-          <div class="feature-icon gradient-icon">▣</div>
-          <h3>Runtime</h3>
-          <p>Monitor execution, health and resource state from the same Control Center.</p>
-        </article>
-
-        <article class="feature-card reveal reveal-delay-2">
-          <span class="feature-number">06</span>
-          <div class="feature-icon gradient-icon">⌬</div>
-          <h3>MCP + Diagnostics</h3>
-          <p>Inspect tools, requests and system health with an engineering-first diagnostic surface.</p>
-        </article>
+        <ol class="workflow-steps">
+          <li data-reveal>
+            <span class="step-index">01</span>
+            <div>
+              <p class="step-label">START WITH THE MODEL</p>
+              <h3>Inspect</h3>
+              <p>Get oriented before you choose how and where to run it.</p>
+            </div>
+          </li>
+          <li data-reveal>
+            <span class="step-index">02</span>
+            <div>
+              <p class="step-label">MAKE THE DATA LEGIBLE</p>
+              <h3>Validate</h3>
+              <p>Find data problems while they are still cheap to fix.</p>
+            </div>
+          </li>
+          <li data-reveal>
+            <span class="step-index">03</span>
+            <div>
+              <p class="step-label">RESPECT THE MACHINE</p>
+              <h3>Plan</h3>
+              <p>Shape a training path around the hardware on your desk.</p>
+            </div>
+          </li>
+          <li data-reveal>
+            <span class="step-index">04</span>
+            <div>
+              <p class="step-label">KEEP CONTROL</p>
+              <h3>Run locally</h3>
+              <p>Stay close to the artifacts and decisions that matter.</p>
+            </div>
+          </li>
+        </ol>
       </div>
     </section>
 
-    <section class="section split-section">
-      <div class="split-panel reveal">
-        <div class="eyebrow">DESIGNED FOR ENGINEERS</div>
-        <h2>Local-first without feeling local.</h2>
-        <p>
-          AXIOM is built around a focused Control Center with clear hierarchy,
-          fast local feedback and a visual system that stays out of your way.
-        </p>
-
-        <div class="bullet-stack">
-          <div><span>✓</span><p>Dark / light workspace modes</p></div>
-          <div><span>✓</span><p>Responsive Control Center UI</p></div>
-          <div><span>✓</span><p>First-boot administrator experience</p></div>
-          <div><span>✓</span><p>Live telemetry and diagnostics surfaces</p></div>
-        </div>
-      </div>
-
-      <div class="architecture reveal reveal-delay-1">
-        <div class="arch-title">
-          <span>AXIOM WORKFLOW</span>
-          <span class="arch-live">LOCAL</span>
+    <section class="band band-deep" id="install" aria-labelledby="install-title">
+      <div class="section-inner install-layout">
+        <div class="install-copy" data-reveal>
+          <p class="eyebrow">GET STARTED</p>
+          <h2 id="install-title">Start local.</h2>
+          <p>Install the CLI, point AXIOM at your workflow, and keep the first pass close to home.</p>
+          <a class="text-link text-link-light" href="https://github.com/NetCore-Technologies/AXIOM-AI" target="_blank" rel="noopener">Read the repository on GitHub <span aria-hidden="true">↗</span></a>
         </div>
 
-        <div class="arch-node">
-          <span class="node-dot"></span>
-          <div>
-            <strong>Models</strong>
-            <small>local model registry</small>
+        <div class="install-commands" data-reveal>
+          <div class="command-block">
+            <div class="command-heading">
+              <span>macOS / Linux</span>
+              <button class="copy-button" type="button" data-copy="unix-command" aria-describedby="copy-status">Copy</button>
+            </div>
+            <pre><code id="unix-command">curl -fsSL https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.sh | bash</code></pre>
           </div>
-        </div>
 
-        <div class="arch-connector"></div>
-
-        <div class="arch-node">
-          <span class="node-dot"></span>
-          <div>
-            <strong>Data + Training</strong>
-            <small>repeatable engineering flow</small>
+          <div class="command-block">
+            <div class="command-heading">
+              <span>Windows PowerShell</span>
+              <button class="copy-button" type="button" data-copy="windows-command" aria-describedby="copy-status">Copy</button>
+            </div>
+            <pre><code id="windows-command">irm https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.ps1 | iex</code></pre>
           </div>
+
+          <p class="copy-status" id="copy-status" role="status" aria-live="polite"></p>
         </div>
-
-        <div class="arch-connector"></div>
-
-        <div class="arch-node">
-          <span class="node-dot"></span>
-          <div>
-            <strong>Evaluation</strong>
-            <small>checks + quality visibility</small>
-          </div>
-        </div>
-
-        <div class="arch-connector"></div>
-
-        <div class="arch-node arch-final">
-          <span class="node-dot"></span>
-          <div>
-            <strong>Runtime</strong>
-            <small>deployment + diagnostics</small>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="install-section" id="install">
-      <div class="install-panel reveal">
-        <div class="eyebrow">TERMINAL ONLY</div>
-        <h2>Install AXIOM where you work.</h2>
-        <p>AXIOM is operated from the terminal. The installer detects your platform and puts the <code>axiom</code> command on your path.</p>
-        <div class="terminal-label">macOS and Linux</div>
-        <div class="terminal-command"><span>$</span><code>curl -fsSL https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.sh | bash</code></div>
-        <div class="terminal-label">Windows PowerShell</div>
-        <div class="terminal-command"><span>&gt;</span><code>irm https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.ps1 | iex</code></div>
-        <p class="install-after">Verify the installation with <code>axiom version</code>.</p>
       </div>
     </section>
   </main>
 
   <footer class="site-footer">
-    <div>
-      <div class="footer-brand">AXIOM</div>
-      <p>Build AI. Own AI.</p>
+    <div class="footer-inner">
+      <a class="brand" href="#top" data-transition-link aria-label="AXIOM home">
+        <span class="brand-mark" aria-hidden="true">A</span>
+        <span class="brand-name">AXIOM</span>
+      </a>
+      <p>Local AI engineering, kept in reach.</p>
+      <a href="https://github.com/NetCore-Technologies/AXIOM-AI" target="_blank" rel="noopener">GitHub <span aria-hidden="true">↗</span></a>
     </div>
-
-    <div class="footer-links">
-      <a href="https://github.com/NetCore-Technologies/AXIOM-AI" target="_blank" rel="noopener">GitHub</a>
-      <a href="#install">Install</a>
-      <a href="https://github.com/NetCore-Technologies/AXIOM-AI/tree/main/docs" target="_blank" rel="noopener">Docs</a>
-      <a href="https://github.com/NetCore-Technologies/AXIOM-AI/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
-    </div>
-
-    <small>© 2026 NetCore Technologies</small>
   </footer>
 
   <script src="./script.js" defer></script>
