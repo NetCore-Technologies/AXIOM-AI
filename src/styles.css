@@ -1150,3 +1150,123 @@ code, kbd { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
     grid-template-columns: 1fr;
   }
 }
+
+/* Keep the optimization tools on the shared Control Center visual system. */
+.axiom-optimizer,
+.axiom-quantizer {
+  margin: 0;
+  color: var(--ink);
+}
+
+.axiom-optimizer-card,
+.axiom-quantizer {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.axiom-optimizer-card {
+  padding: 21px;
+}
+
+.axiom-optimizer-eyebrow,
+.axiom-quantizer-eyebrow {
+  color: var(--faint);
+}
+
+.axiom-optimizer-card h2,
+.axiom-quantizer h2 {
+  color: var(--ink-strong);
+}
+
+.axiom-optimizer-card p,
+.axiom-quantizer p,
+.axiom-quantizer-profile span,
+.axiom-quantizer-disclaimer,
+.axiom-optimizer-note {
+  color: var(--muted);
+}
+
+.axiom-optimizer-grid input,
+.axiom-optimizer-grid select,
+.axiom-quantizer-grid input,
+.axiom-quantizer-grid select {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.axiom-optimizer-grid input:focus,
+.axiom-optimizer-grid select:focus,
+.axiom-quantizer-grid input:focus,
+.axiom-quantizer-grid select:focus {
+  border-color: var(--accent);
+  outline: 0;
+}
+
+.axiom-optimizer-primary,
+.axiom-quantizer-button {
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.axiom-optimizer-primary:hover:not(:disabled),
+.axiom-quantizer-button:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.axiom-optimizer-result,
+.axiom-quantizer-result {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface-soft);
+}
+
+.axiom-optimizer-note,
+.axiom-quantizer-disclaimer {
+  color: var(--faint);
+}
+
+.axiom-optimizer-error,
+.axiom-quantizer-error {
+  border: 1px solid var(--danger);
+  border-radius: 2px;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.axiom-quantizer-header {
+  padding-bottom: 21px;
+  border-bottom: 1px solid var(--line);
+}
+
+.axiom-quantizer-target {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface-soft);
+  color: var(--accent);
+}
+
+.axiom-quantizer-profile {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface-soft);
+}
+
+.axiom-quantizer-profile strong,
+.axiom-quantizer-result-title,
+.axiom-quantizer-stats b {
+  color: var(--ink-strong);
+}
+
+@media (max-width: 900px) {
+  .axiom-optimizer-card,
+  .axiom-quantizer {
+    padding: 16px;
+  }
+}
