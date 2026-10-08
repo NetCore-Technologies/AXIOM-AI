@@ -1,50 +1,80 @@
-"""Trusted filesystem boundaries for model-related operations."""
+"""Trusted filesystem boundaries for AXIOM model and optimizer paths.
+
+User-supplied paths are canonicalized with ``realpath`` and accepted only when
+``commonpath`` proves that the resolved path stays inside an AXIOM-owned root.
+No filesystem operation is performed on the unvalidated input.
+"""
 from __future__ import annotations
 
 import os
 from collections.abc import Iterable
 from pathlib import Path
 
-_MODEL_ROOT_NAMES = ("models", ".axiom/models")
-_OUTPUT_ROOT_NAMES = ("optimized", ".axiom/optimized")
+_MODEL_ROOT_NAMES = (
+    "models",
+    ".axiom/models",
+)
+_OUTPUT_ROOT_NAMES = (
+    ".axiom/optimized",
+    "optimized",
+)
+
 
 def _trusted_roots(names: Iterable[str]) -> tuple[Path, ...]:
-    base = Path.cwd().resolve()
-    return tuple((base / name).resolve() for name in names)
+    base = os.path.realpath(os.getcwd())
+    roots: list[Path] = []
+    for name in names:
+        roots.append(Path(os.path.realpath(os.path.join(base, name))))
+    return tuple(roots)
+
 
 def allowed_model_roots() -> tuple[Path, ...]:
+    """Return the trusted model roots for the current AXIOM workspace."""
     return _trusted_roots(_MODEL_ROOT_NAMES)
 
-def allowed_output_roots() -> tuple[Path, ...]:
-    return _trusted_roots(_OUTPUT_ROOT_NAMES)
 
-def _within(candidate: Path, roots: Iterable[Path]) -> bool:
-    candidate = candidate.resolve()
+def _coerce_path(value: str | os.PathLike[str]) -> str:
+    try:
+        raw = os.fspath(value)
+    except TypeError as exc:
+        raise TypeError("path must be a string or path-like value") from exc
+    if not isinstance(raw, str):
+        raise TypeError("path must resolve to a string")
+    if not raw.strip():
+        raise ValueError("path must not be empty")
+    return raw
+
+
+def _inside(candidate: str, roots: Iterable[Path]) -> Path:
+    candidate_real = os.path.realpath(candidate)
     for root in roots:
+        root_real = os.path.realpath(os.fspath(root))
         try:
-            candidate.relative_to(root.resolve())
-            return True
+            if os.path.commonpath((candidate_real, root_real)) == root_real:
+                return Path(candidate_real)
         except ValueError:
-            pass
-    return False
+            continue
+    raise ValueError("path is outside an AXIOM trusted filesystem boundary")
+
 
 def validate_model_path(value: str | os.PathLike[str]) -> Path:
-    candidate = Path(value).resolve()
-    if not _within(candidate, allowed_model_roots()):
-        raise ValueError("model path is outside an AXIOM trusted model root")
-    return candidate
+    """Resolve a model path only when it is contained in a trusted model root."""
+    return _inside(_coerce_path(value), allowed_model_roots())
+
 
 def validate_output_path(value: str | os.PathLike[str]) -> Path:
-    candidate = Path(value).resolve()
-    if not _within(candidate, allowed_output_roots()):
-        raise ValueError("output path is outside an AXIOM trusted output root")
-    return candidate
+    """Resolve an optimizer output path only inside trusted output roots."""
+    return _inside(_coerce_path(value), _trusted_roots(_OUTPUT_ROOT_NAMES))
 
-def validate_child_path(root: Path, child: str | os.PathLike[str]) -> Path:
-    root = root.resolve()
-    candidate = (root / child).resolve()
+
+def validate_child_path(parent: str | os.PathLike[str] | Path, child: str | os.PathLike[str]) -> Path:
+    """Resolve a child path and require it to remain below the validated parent."""
+    parent_real = os.path.realpath(_coerce_path(parent))
+    child_raw = _coerce_path(child)
+    candidate = os.path.realpath(os.path.join(parent_real, child_raw))
     try:
-        candidate.relative_to(root)
+        if os.path.commonpath((candidate, parent_real)) != parent_real:
+            raise ValueError("child path escapes its trusted parent")
     except ValueError as exc:
-        raise ValueError("child path escapes the trusted root") from exc
-    return candidate
+        raise ValueError("child path escapes its trusted parent") from exc
+    return Path(candidate)

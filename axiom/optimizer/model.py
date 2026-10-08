@@ -158,19 +158,30 @@ def create_runtime_bundle(
         raise FileNotFoundError(source)
 
 # codeql[py/path-injection]
+    dst_root = dst.resolve()
     dst.mkdir(parents=True, exist_ok=True)
 
-# codeql[py/path-injection]
     root = src if src.is_dir() else src.parent
+    root = root.resolve()
 
     copied: list[str] = []
     skipped: list[str] = []
 
-# codeql[py/path-injection]
     for item in root.rglob("*"):
-# codeql[py/path-injection]
+        if item.is_symlink():
+            raise ValueError(
+                f"runtime bundle source contains an unsupported symlink: {item}"
+            )
         if not item.is_file():
             continue
+
+        resolved_item = item.resolve(strict=True)
+        try:
+            resolved_item.relative_to(root)
+        except ValueError as exc:
+            raise ValueError(
+                f"runtime bundle source escapes the trusted model root: {item}"
+            ) from exc
 
         rel = item.relative_to(root)
         name = item.name.lower()
@@ -186,9 +197,19 @@ def create_runtime_bundle(
             continue
 
         target = dst / rel
-# codeql[py/path-injection]
+        resolved_target = target.resolve(strict=False)
+        try:
+            resolved_target.relative_to(dst_root)
+        except ValueError as exc:
+            raise ValueError(
+                f"runtime bundle destination escapes the trusted output root: {target}"
+            ) from exc
+        if target.is_symlink():
+            raise ValueError(
+                f"runtime bundle destination contains an unsupported symlink: {target}"
+            )
+
         target.parent.mkdir(parents=True, exist_ok=True)
-# codeql[py/path-injection]
         shutil.copy2(item, target)
         copied.append(str(rel))
 
@@ -206,8 +227,14 @@ def write_runtime_profile(
     quantization: str,
     system: SystemInfo,
 ) -> Path:
-# codeql[py/path-injection]
-    path = Path(validate_model_path(bundle)) / "axiom-runtime.json"
+    path = Path(validate_output_path(bundle)) / "axiom-runtime.json"
+    resolved_path = path.resolve(strict=False)
+    try:
+        resolved_path.relative_to(Path(validate_output_path(bundle)).resolve())
+    except ValueError as exc:
+        raise ValueError("runtime profile path escapes the trusted output root") from exc
+    if path.is_symlink():
+        raise ValueError("runtime profile destination cannot be a symlink")
 
     data = {
         "agent_profile": profile.key,
@@ -225,7 +252,6 @@ def write_runtime_profile(
         ),
     }
 
-# codeql[py/path-injection]
     path.write_text(
         json.dumps(data, indent=2),
         encoding="utf-8",
