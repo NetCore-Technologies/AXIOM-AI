@@ -3,7 +3,7 @@
 ![AXIOM. Build AI. Own AI.](docs/assets/banner.svg)
 
 [![Status](https://img.shields.io/badge/status-active%20development-22c55e?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI)
-[![Version](https://img.shields.io/badge/version-v0.2.0--beta.5-0ea5e9?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
+[![Version](https://img.shields.io/badge/version-v0.2.0--beta.6-0ea5e9?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
 [![License](https://img.shields.io/badge/license-MIT-7c3aed?style=flat-square&labelColor=0f172a)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&labelColor=0f172a&logo=python&logoColor=white)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-475569?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
@@ -60,8 +60,10 @@ axiom version
 ```
 <!-- markdownlint-enable MD013 -->
 
-The shell installer uses the latest Linux x86_64 release when one is
-available. macOS and non-x86 Linux use an isolated Python environment and
+The shell installer uses the latest verified Linux x86_64 tarball when one is
+available. That bundle keeps the runtime unpacked between launches, so the
+CLI and daemon start without the repeated extraction cost of a one-file
+binary. macOS and non-x86 Linux use an isolated Python environment and
 install from the repository; those paths require Python 3.11+.
 
 The command is linked at `~/.local/bin/axiom`. If the installer tells you that
