@@ -114,6 +114,7 @@ jobs:
           "$onedir" --no-banner version
 
           daemon_log="$(mktemp)"
+          bundle_manifest="$(mktemp)"
           daemon_pid=""
           cleanup() {
             if [[ -n "$daemon_pid" ]] && kill -0 "$daemon_pid" 2>/dev/null; then
@@ -121,6 +122,7 @@ jobs:
               wait "$daemon_pid" 2>/dev/null || true
             fi
             rm -f "$daemon_log"
+            rm -f "$bundle_manifest"
           }
           trap cleanup EXIT
 
@@ -139,7 +141,8 @@ jobs:
           [[ -n "$daemon_url" ]]
           curl --fail --silent --show-error "$daemon_url/health" | grep -q '"status": "ok"'
 
-          tar -tzf "out/AXIOM-${TAG}-linux-x64.tar.gz" | grep -q '^AXIOM/AXIOM$'
+          tar -tzf "out/AXIOM-${TAG}-linux-x64.tar.gz" >"$bundle_manifest"
+          grep -q '^AXIOM/AXIOM$' "$bundle_manifest"
           dpkg-deb --info "out/AXIOM-${TAG}-linux-x64.deb" >/dev/null
           bash -n "out/AXIOM-${TAG}-linux-x64.sh"
 
