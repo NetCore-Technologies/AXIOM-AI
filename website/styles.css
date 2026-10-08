@@ -671,6 +671,16 @@ figcaption span:last-child {
   color: var(--muted-light);
 }
 
+.install-tip {
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  line-height: 1.7;
+}
+
+.install-tip code {
+  color: var(--cream);
+}
+
 .install-commands {
   align-self: center;
 }

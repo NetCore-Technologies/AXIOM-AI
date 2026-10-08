@@ -26,7 +26,6 @@ Describe alternative approaches or existing tools you considered.
 
 ## Scope
 
-- [ ] Control Center
 - [ ] Models
 - [ ] Datasets
 - [ ] Training
@@ -35,6 +34,7 @@ Describe alternative approaches or existing tools you considered.
 - [ ] MCP
 - [ ] Diagnostics
 - [ ] CLI
+- [ ] Local daemon
 - [ ] Website
 - [ ] Release / infrastructure
 - [ ] Documentation

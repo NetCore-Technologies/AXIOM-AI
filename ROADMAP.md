@@ -5,9 +5,7 @@
 - [x] Agent/model optimizer
 - [x] Quantization lab
 - [x] Hardware-aware optimization planning
-- [x] FastAPI health, hardware, optimizer, and policy-audit endpoints
-- [x] Routed Control Center GUI with responsive navigation
-- [x] Collapsible sidebar control from the AXIOM logo
+- [x] Local daemon health and capability endpoints
 - [x] Dataset quality inspection
 - [x] Trusted model filesystem boundaries
 - [x] Secure administrator storage
@@ -15,7 +13,7 @@
 
 ### Next
 
-- Connect model, dataset, training, evaluation, runtime, MCP, and log pages to API contracts
+- Connect the local daemon to model, dataset, training, runtime, and MCP workflows
 - Deeper runtime benchmarking
 - Broader local-model/runtime integration
 - Profiling and telemetry improvements
@@ -24,11 +22,11 @@
 
 ## Beta.5 completed
 
-- Agent/model optimization control center
+- Agent/model optimization planning
 - Quantization workflow and hardware-aware recommendations
 - Security hardening for model filesystem access
 - Secure administrator verification storage
-- CI browser/E2E reliability improvements
+- CI browser/E2E reliability improvements for the landing page
 
 ## Next
 

@@ -41,8 +41,8 @@ AXIOM covers several engineering areas.
 
 ### Platform engineering
 
-- AXIOM Control Center
 - CLI
+- Local daemon
 - Authentication
 - Diagnostics
 - Telemetry
@@ -80,7 +80,8 @@ AXIOM covers several engineering areas.
 
 ## 3. Development environment
 
-AXIOM combines a Python package/CLI with a web-based Control Center.
+AXIOM combines a Python package/CLI with a static landing page and a small
+loopback daemon.
 
 Typical setup:
 
@@ -94,7 +95,7 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-For the UI:
+For the landing page browser checks:
 
 ```bash
 npm install
@@ -175,7 +176,8 @@ Useful areas include:
 - Runtime
 - MCP
 - Authentication
-- Control Center UI
+- Website landing page
+- Local daemon
 - Release packaging
 
 For UI changes, verify the actual user experience rather than relying only on compilation.

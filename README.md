@@ -9,14 +9,13 @@
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-475569?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
 [![Stars](https://img.shields.io/github/stars/NetCore-Technologies/AXIOM-AI?style=flat-square&labelColor=0f172a&color=f59e0b)](https://github.com/NetCore-Technologies/AXIOM-AI)
 
-**AXIOM** is a local-first CLI for inspecting models, checking datasets,
-planning hardware-fit training, and exposing those operations through MCP
-tools.
+**AXIOM** is a local-first CLI and loopback daemon for inspecting models,
+checking datasets, and planning hardware-fit training.
 
-It keeps project files and local model metadata on your machine. The current
-beta ships the Python CLI, a stdio MCP server, and a small optional local API
-for optimizer and audit routes; it does not execute training or serve model
-inference yet.
+It keeps project files and local model metadata on your machine. The terminal
+is the product: `axiom` explains the next step, while `axiom daemon` exposes a
+small local HTTP boundary on an available port for scripts and integrations.
+It does not execute training or serve model inference yet.
 
 [**Install from the terminal**](#install) ·
 [**Website**](https://netcore-technologies.github.io/AXIOM-AI/) ·
@@ -40,8 +39,8 @@ The useful path is terminal-first and local:
   repositories.
 - Run the AXIOM MCP server over stdio for model, dataset, hardware,
   training-plan, and optional SuperCompress tools.
-- Optionally run the local FastAPI contract for health, hardware and optimizer
-  plans, model optimization, and read-only policy audits.
+- Start the dependency-free local daemon on a free loopback port and inspect
+  its `/health` and `/api/info` endpoints.
 
 AXIOM stores project configuration in `axiom.yaml` and local registry state in
 `.axiom`. Core inspection and planning commands do not require a hosted AXIOM
@@ -122,6 +121,14 @@ axiom system info
 axiom train plan 7 --method qlora
 ```
 
+When a script or integration needs a local HTTP boundary, run this in a
+separate terminal. It prints a URL such as `http://127.0.0.1:53142`; stop it
+with Ctrl-C:
+
+```bash
+axiom daemon
+```
+
 `axiom model inspect` expects a local model directory. The dataset commands
 currently support `.jsonl`. `axiom dataset validate` exits non-zero when it
 finds invalid records; `axiom dataset clean` writes a new file and leaves the
@@ -156,6 +163,7 @@ axiom check                           Check standard project paths
 axiom status                          Show local config and Git status
 axiom info                            Show the local Python environment
 axiom doctor                          Check common local tools
+axiom daemon                          Run the local daemon on a free port
 
 axiom model list                      List registered models
 axiom model add <name> <source>       Register local model metadata
@@ -204,8 +212,7 @@ inspection, project, dataset, and planning paths do not need that login.
   commands
 - Hugging Face access, integration registry, optional SuperCompress integration,
   and stdio MCP tooling
-- Optional local FastAPI routes for health, hardware and optimizer plans,
-  model optimization, and policy audits
+- Dependency-free loopback daemon with health and local capability info routes
 
 ### Foundations and roadmap items
 
@@ -234,25 +241,21 @@ axiom/
 ├── training/     Hardware-aware plan generation
 ├── optimizer/     Agent workload plans and runtime bundles
 ├── runtime/      Optional runtime integrations such as SuperCompress
+├── daemon.py      Dependency-free loopback HTTP daemon
 └── mcp/          Stdio MCP server and tools
-
-src/              React Control Center frontend
 ```
 
-The primary executable boundary is the Python CLI and stdio MCP server. The
-repository also contains an optional local FastAPI app at
-`axiom.api.server:create_app`, with health, optimizer-plan, model-optimization,
-and policy-audit routes. Start it with `uvicorn` when the API dependencies are
-installed:
+The primary executable boundary is the Python CLI and its local daemon:
 
 ```bash
-uvicorn axiom.api.server:create_app --factory --host 127.0.0.1 --port 8000
+axiom daemon
 ```
 
-This API is local and narrow; it is not a hosted AXIOM service or a general
-inference server. The Control Center uses the current optimizer and health
-contract, while broader model, dataset, training, evaluation, runtime, and log
-surfaces remain placeholders until their API contracts are implemented.
+The daemon binds to `127.0.0.1` and asks the operating system for a free port
+when no port is supplied. It exposes only `GET /`, `GET /health`, and
+`GET /api/info`; it is not a hosted AXIOM service or a general inference
+server. Use `--allow-network` only when you intentionally need a non-loopback
+bind.
 
 ## Principles
 

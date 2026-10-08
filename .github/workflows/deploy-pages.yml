@@ -6,23 +6,9 @@ on:
       - main
     paths:
       - "website/**"
-      - "src/**"
-      - "public/**"
-      - "package.json"
-      - "package-lock.json"
-      - "vite.config.ts"
-      - "tsconfig*.json"
-      - "playwright.config.ts"
-      - "e2e/**"
       - ".github/workflows/deploy-pages.yml"
 
   workflow_dispatch:
-
-  workflow_run:
-    workflows:
-      - AXIOM Release
-    types:
-      - completed
 
 permissions:
   contents: read
@@ -35,10 +21,6 @@ concurrency:
 
 jobs:
   deploy:
-    if: >
-      github.event_name != 'workflow_run' ||
-      github.event.workflow_run.conclusion == 'success'
-
     runs-on: ubuntu-latest
 
     environment:
@@ -51,38 +33,13 @@ jobs:
         with:
           ref: main
 
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install Control Center dependencies
-        run: npm ci
-
-      - name: Lint Control Center
-        run: npm run lint
-
-      - name: Build Control Center
-        run: npm run build
-
-      - name: Install Chromium for browser checks
-        run: npx playwright install --with-deps chromium
-
-      - name: Run Control Center end-to-end tests
-        run: npm run e2e
-
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
       - name: Assemble site
         run: |
           rm -rf _site
-          mkdir -p _site/app
-
           cp -R website/. _site/
-          cp -R dist/. _site/app/
-
           touch _site/.nojekyll
 
           echo "===== DEPLOYMENT TREE ====="

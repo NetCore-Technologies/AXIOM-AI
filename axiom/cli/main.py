@@ -20,6 +20,7 @@ from axiom.core.integrations import (
 from axiom.core.project import create_project
 from axiom.datasets.cleaner import clean_jsonl
 from axiom.datasets.inspector import inspect_dataset
+from axiom.daemon import run_daemon
 from axiom.models.analysis import analyze_config, disk_info
 from axiom.models.inspector import inspect_model
 from axiom.models.registry import Model, ModelRegistry
@@ -97,6 +98,34 @@ def _cli_error(message: str) -> None:
 def version():
     """Show AXIOM version."""
     console.print(f"[bold cyan]AXIOM[/bold cyan] v{__version__}")
+
+
+@app.command()
+def daemon(
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Loopback address to bind. Use --allow-network for a non-local host.",
+    ),
+    port: int = typer.Option(
+        0,
+        "--port",
+        min=0,
+        max=65535,
+        help="TCP port to bind; 0 chooses an available port automatically.",
+    ),
+    allow_network: bool = typer.Option(
+        False,
+        "--allow-network",
+        help="Allow binding beyond the local machine. Keep the default for private use.",
+    ),
+) -> None:
+    """Run AXIOM's local daemon on an available port."""
+
+    try:
+        run_daemon(host=host, port=port, allow_network=allow_network)
+    except (OSError, ValueError) as exc:
+        _cli_error(str(exc))
 
 
 @app.command()

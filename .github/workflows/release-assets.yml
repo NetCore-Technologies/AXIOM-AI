@@ -19,41 +19,8 @@ env:
   TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
-  build-ui:
-    name: Build AXIOM Control Center
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Build Control Center
-        run: npm run build
-
-      - name: Upload Control Center
-        uses: actions/upload-artifact@v4
-        with:
-          name: axiom-ui
-          path: dist/
-          if-no-files-found: error
-
   windows:
     name: Windows build
-    needs: build-ui
     runs-on: windows-latest
 
     steps:
@@ -61,12 +28,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG }}
-
-      - name: Download compiled UI
-        uses: actions/download-artifact@v4
-        with:
-          name: axiom-ui
-          path: dist
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -91,7 +52,6 @@ jobs:
             --clean `
             --onefile `
             --name AXIOM `
-            --add-data "dist;dist" `
             scripts/build_entry.py
 
           Copy-Item dist/AXIOM.exe "out/AXIOM-$env:TAG-windows-x64.exe"
@@ -105,7 +65,6 @@ jobs:
 
   linux:
     name: Linux build
-    needs: build-ui
     runs-on: ubuntu-latest
 
     steps:
@@ -113,12 +72,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG }}
-
-      - name: Download compiled UI
-        uses: actions/download-artifact@v4
-        with:
-          name: axiom-ui
-          path: dist
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -146,7 +99,6 @@ jobs:
             --clean \
             --onefile \
             --name AXIOM \
-            --add-data "dist:dist" \
             scripts/build_entry.py
 
           cp dist/AXIOM "out/AXIOM-${TAG}-linux-x64.elf"
@@ -448,22 +400,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
-          name: AXIOM ${{ env.TAG }} — GUI, First Boot & Release Packaging
+          name: AXIOM ${{ env.TAG }} — CLI, Local Daemon & Release Packaging
           body: |
             # AXIOM ${{ env.TAG }}
 
-            AXIOM focuses on the Control Center, first-boot experience, local administrator setup, authentication and cross-platform distribution.
+            AXIOM is a terminal-first local AI engineering toolkit with a small loopback daemon and cross-platform release packaging.
 
             ## Highlights
 
-            - Refined AXIOM red / purple / blue visual system
-            - Refined first-boot welcome experience
-            - Administrator setup with live validation
-            - Login and local session flow
-            - 10-minute inactivity logout
-            - User menu with password change and logout
-            - Dynamic administrator greeting
-            - Compiled Control Center UI
+            - Interactive AXIOM startup welcome with local next steps
+            - Model, dataset, hardware, and training-plan CLI workflows
+            - Dependency-free daemon with a free loopback port by default
             - Cross-platform release packaging
 
             ## Downloads
@@ -486,7 +433,7 @@ jobs:
 
             ## Beta
 
-            AXIOM is still under active development. The Control Center UI is substantially more polished, while deeper backend/runtime integration continues in upcoming releases.
+            AXIOM is still under active development. The CLI and local daemon are the supported product surface; deeper runtime integration continues in upcoming releases.
 
             **Build AI. Own AI.**
 
