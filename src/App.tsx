@@ -328,6 +328,7 @@ async function derivePasswordKey(password: string, salt: Uint8Array): Promise<Cr
     {
       name: "PBKDF2",
       salt: new Uint8Array(salt).buffer as ArrayBuffer,
+      iterations: 310000,
       hash: "SHA-256",
     },
     baseKey,
@@ -401,7 +402,7 @@ function isAuthenticated(): boolean {
 }
 
 function getAdministratorName(): string {
-  return getAdministratorName();
+  return readAdmin()?.username ?? "Administrator";
 }
 
 async function currentAdministrator(): Promise<string> {
@@ -448,12 +449,7 @@ async function saveAdministrator(
 
   localStorage.setItem(
     ADMIN_KEY,
-    JSON.stringify({
-      username: record.username,
-      salt: record.salt,
-      iv: record.iv,
-      ciphertext: record.ciphertext,
-    }),
+    JSON.stringify(record),
   );
   localStorage.removeItem(LEGACY_ADMIN_KEY);
 }
@@ -542,6 +538,16 @@ function App() {
     };
   }, [authenticated]);
 
+  useEffect(() => {
+    if (!authenticated) {
+      return;
+    }
+
+    currentAdministrator()
+      .then(setUsername)
+      .catch(() => setUsername("Administrator"));
+  }, [authenticated]);
+
   const setAndPersistTheme = (nextTheme: Theme) => {
     localStorage.setItem(THEME_KEY, nextTheme);
     setTheme(nextTheme);
@@ -602,7 +608,6 @@ function App() {
     );
   }
 
-  useEffect(() => { if (!authenticated) return; currentAdministrator().then(setUsername).catch(() => setUsername("Administrator")); }, [authenticated]);
   const logout = () => {
     sessionStorage.removeItem(SESSION_KEY);
     setAuthenticated(false);
