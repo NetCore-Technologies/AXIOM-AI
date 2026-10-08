@@ -40,39 +40,30 @@ def _is_within_trusted_model_roots(path: Path) -> bool:
     return False
 
 
+def _trusted_files(root: Path) -> tuple[Path, ...]:
+    candidates = (root,) if root.is_file() else root.rglob("*")
+    resolved_root = root.resolve()
+    files: list[Path] = []
+    for path in candidates:
+        if path.is_symlink() or not path.is_file():
+            continue
+        resolved_path = path.resolve(strict=True)
+        try:
+            resolved_path.relative_to(resolved_root)
+        except ValueError as exc:
+            raise ValueError(
+                f"model audit path escapes the trusted model root: {path}"
+            ) from exc
+        files.append(path)
+        if len(files) == 5000:
+            break
+    return tuple(files)
+
+
 def audit_model(model_path: str) -> dict[str, Any]:
     root = validate_model_path(model_path).resolve()
-    if not _is_within_trusted_model_roots(root):
-        raise ValueError("path is outside an AXIOM trusted filesystem boundary")
-    if not root.exists():
-        raise FileNotFoundError(root).resolve()
-    if not _is_within_trusted_model_roots(root):
-        raise ValueError("path is outside an AXIOM trusted filesystem boundary")
-    if not root.exists():
-        raise FileNotFoundError(root).resolve()
-    if not _is_within_trusted_model_roots(root):
-        raise ValueError("path is outside an AXIOM trusted filesystem boundary")
-    if not root.exists():
-        raise FileNotFoundError(root).resolve()
-    if not _is_within_trusted_model_roots(root):
-        raise ValueError("path is outside an AXIOM trusted filesystem boundary")
-# codeql[py/path-injection]
-    if not root.exists():
-        raise FileNotFoundError(root)
-
-# codeql[py/path-injection]
-    if root.is_file():
-        base = root.parent
-        files = (root,)
-    else:
-        base = root
-        files = tuple(
-            item
-# codeql[py/path-injection]
-            for item in root.rglob("*")  # codeql[py/path-injection]
-# codeql[py/path-injection]
-            if item.is_file()
-        )[:5000]
+    base = root.parent if root.is_file() else root
+    files = _trusted_files(root)
 
     indicators: set[str] = set()
     configs: list[str] = []

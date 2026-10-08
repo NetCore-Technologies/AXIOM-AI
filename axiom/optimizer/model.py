@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -57,9 +58,53 @@ RUNTIME_EXTENSIONS = {
 }
 
 
+def _trusted_files(root: Path) -> tuple[Path, ...]:
+    resolved_root = root.resolve()
+    files: list[Path] = []
+    for path in root.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        resolved_path = path.resolve(strict=True)
+        try:
+            resolved_path.relative_to(resolved_root)
+        except ValueError as exc:
+            raise ValueError(
+                f"model path escapes the trusted model root: {path}"
+            ) from exc
+        files.append(path)
+    return tuple(files)
+
+
+def _copy_without_following_symlinks(source: Path, destination: Path) -> None:
+    source_fd = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        destination_fd = os.open(
+            destination,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_TRUNC
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        try:
+            with os.fdopen(source_fd, "rb") as source_handle, os.fdopen(
+                destination_fd, "wb"
+            ) as destination_handle:
+                source_fd = destination_fd = -1
+                shutil.copyfileobj(source_handle, destination_handle)
+        finally:
+            if destination_fd >= 0:
+                os.close(destination_fd)
+    finally:
+        if source_fd >= 0:
+            os.close(source_fd)
+
+
 def _config(path: Path) -> dict[str, Any]:
     for name in ("config.json", "model_config.json"):
         cfg = path / name
+        if cfg.is_symlink():
+            raise ValueError(f"model configuration contains an unsupported symlink: {cfg}")
 # codeql[py/path-injection]
         if cfg.exists():
             try:
@@ -108,13 +153,12 @@ def inspect_model(source: str) -> ModelInfo:
     weights = [
         str(p.relative_to(root))
 # codeql[py/path-injection]
-        for p in root.rglob("*")
-# codeql[py/path-injection]
+        for p in _trusted_files(root)
         if p.is_file() and p.suffix.lower() in {".safetensors", ".bin", ".gguf"}
     ]
 
 # codeql[py/path-injection]
-    count = sum(1 for p in root.rglob("*") if p.is_file())
+    count = len(_trusted_files(root))
 
     return ModelInfo(
         source=source,
@@ -210,7 +254,7 @@ def create_runtime_bundle(
             )
 
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(item, target)
+        _copy_without_following_symlinks(item, target)
         copied.append(str(rel))
 
     return {
