@@ -26,7 +26,7 @@ def test_render_startup_contains_welcome_and_palette_copy():
 
     rendered = output.getvalue()
     assert (
-        "Hardware-aware tools for building, training, evaluating, and deploying AI models."
+        "Inspect models, validate datasets, and plan AI work around your hardware."
         in rendered
     )
     assert "Start here: " in rendered

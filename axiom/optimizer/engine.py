@@ -151,7 +151,8 @@ def optimize_model(req: OptimizationRequest) -> OptimizationResult:
     if req.model.startswith("http://") or req.model.startswith("https://"):
         raise ValueError("Use a Hugging Face model ID or local path, not a direct URL.")
 
-    # Prefer llama.cpp conversion when installed; otherwise the GUI/CLI can install/use the backend later.
+    # Prefer llama.cpp conversion when installed; otherwise a local CLI workflow
+    # can install or select the backend later.
     commands.append(
         f"huggingface-cli download {req.model} --local-dir {req.output_dir}/source"
     )

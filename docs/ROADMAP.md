@@ -140,34 +140,11 @@ axiom serve
 
 ---
 
-## Phase 7 — AXIOM Studio
+## Phase 7 — Public surface
 
-A web interface for the complete AXIOM workflow.
-
-**Status: In progress**
-
-```text
-Dashboard
-   │
-   ├── Models
-   ├── Datasets
-   ├── Training
-   ├── Experiments
-   ├── Evaluations
-   └── Deployments
-```
-
-Planned capabilities:
-
-* [x] visual project navigation and responsive workspace shell
-* [x] collapsible sidebar and light/dark themes
-* [x] backend health and hardware diagnostics
-* [x] agent optimizer and policy-audit surfaces
-* [ ] dataset browser
-* [ ] training controls
-* [ ] experiment graphs
-* [ ] model comparison
-* [ ] deployment management
+The public web surface is a focused static landing page. Product workflows
+remain in the CLI and local daemon; no hosted workspace is planned for this
+release line.
 * [ ] live hardware monitoring
 
 ---

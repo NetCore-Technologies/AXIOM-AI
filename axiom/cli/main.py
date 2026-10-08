@@ -28,10 +28,11 @@ from axiom.runtime.supercompress import compress_context, redacted_base_url
 from axiom.training.planner import create_training_plan
 from axiom.version import __version__
 from axiom.cli.startup import show_startup, suppress_for_arguments
+from axiom.cli.tools import register as register_tools_cli
 
 app = typer.Typer(
     name="axiom",
-    help="Build, train, evaluate, and deploy AI models.",
+    help="Inspect AI work, plan around your hardware, and keep it local.",
     invoke_without_command=True,
 )
 
@@ -43,6 +44,7 @@ hf_app = typer.Typer(help="Authenticate and manage Hugging Face access.")
 supercompress_app = typer.Typer(help="Use SuperCompress before inference.")
 integration_app = typer.Typer(help="Connect AXIOM to AI agents and runtimes.")
 mcp_app = typer.Typer(help="Run AXIOM as an MCP server.")
+tools_app = typer.Typer(help="Discover and safely set up developer tools.")
 
 app.add_typer(model_app, name="model")
 app.add_typer(dataset_app, name="dataset")
@@ -51,6 +53,7 @@ app.add_typer(hf_app, name="hf")
 app.add_typer(supercompress_app, name="supercompress")
 app.add_typer(integration_app, name="integration")
 app.add_typer(mcp_app, name="mcp")
+app.add_typer(tools_app, name="tools")
 
 app.add_typer(ai_app, name="ai")
 train_app = typer.Typer(help="Plan and manage AI training jobs.")
@@ -61,6 +64,7 @@ app.add_typer(train_app, name="train")
 from axiom.cli.extended import register as register_extended_cli
 
 register_extended_cli(app, model_app, dataset_app)
+register_tools_cli(app, tools_app)
 
 
 console = Console()

@@ -153,6 +153,33 @@ The shipped server exposes `axiom_info`, `axiom_model_list`,
 `axiom_system_info`, `axiom_training_plan`, `axiom_supercompress_status`, and
 `axiom_supercompress`. It is a local process, not an HTTP endpoint.
 
+## Developer tools
+
+AXIOM keeps optional developer-tool setup visible and reviewable:
+
+```bash
+axiom tools list
+axiom tools doctor
+axiom tools plan opencode
+axiom tools install opencode       # preview only
+axiom tools install opencode --yes
+```
+
+The catalog covers Codex, Claude Code, Antigravity CLI, GitHub Copilot CLI,
+Freebuff, Cursor Agent, free-pi, OpenCode, Gemini, OpenRouter, and z.ai GLM.
+Package-manager installs are opt-in; remote installer scripts, SDK-only
+providers, and API-key setup are shown for review instead of being executed or
+stored by AXIOM. Successful package installs can add a detected user-level bin
+directory to the user's shell profile without touching system PATH.
+
+For long-running local work, use a bounded cross-platform keep-awake session:
+
+```bash
+axiom session --keep-awake --minutes 60
+```
+
+The session uses the host's native helper and releases it on exit.
+
 ## CLI surface
 
 ```text
@@ -225,8 +252,6 @@ These are not live services in the current repository:
 - Automated evaluation runners, benchmark pipelines, model comparison, and
   regression reports
 - Live telemetry, request tracing, GPU monitoring, and metrics export
-- Broader frontend/API contracts for model, dataset, training, evaluation,
-  runtime, and log inventory pages
 - Hosted deployment, collaboration, and cloud workspaces
 
 ## Architecture
@@ -234,7 +259,7 @@ These are not live services in the current repository:
 ```text
 axiom/
 ├── cli/          Typer command surface
-├── api/          Optional local FastAPI routes
+├── api/          Internal planning and safety adapters
 ├── core/         Project, hardware, storage, and integration helpers
 ├── models/       Local registry, inspection, and metadata analysis
 ├── datasets/     JSONL inspection and cleaning

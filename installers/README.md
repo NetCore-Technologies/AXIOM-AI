@@ -25,6 +25,7 @@ command to add it. Verify the result with:
 ```bash
 axiom version
 axiom guide
+axiom daemon
 ```
 
 ## Windows PowerShell
@@ -42,6 +43,7 @@ The PowerShell installer downloads the latest non-draft Windows release to
 ```powershell
 axiom version
 axiom guide
+axiom daemon
 ```
 
 ## After installation
@@ -61,3 +63,6 @@ README.
 
 The installers never contain Hugging Face, SuperCompress, or other API
 credentials. Configure those integrations through AXIOM after installation.
+
+`axiom daemon` binds to loopback and asks the operating system for a free
+port. It prints the URL for local scripts; stop it with Ctrl-C.

@@ -1,8 +1,8 @@
 """Small, local-only HTTP daemon for the AXIOM CLI.
 
 The daemon is intentionally dependency-free. It gives local scripts and future
-editor integrations a stable health/info boundary without turning AXIOM into a
-hosted service or a second frontend.
+integrations a stable health/info boundary without turning AXIOM into a hosted
+service.
 """
 
 from __future__ import annotations

@@ -99,7 +99,7 @@ For the landing page browser checks:
 
 ```bash
 npm install
-npm run build
+npm run e2e
 ```
 
 Use the current repository documentation and package scripts for version-specific setup.

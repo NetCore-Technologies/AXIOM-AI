@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "axiom-ai"
 version = "0.2.0b5"
-description = "Open-source platform for building, training, evaluating, and deploying AI models."
+description = "Local-first CLI and daemon for inspecting models, datasets, and hardware-aware AI plans."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

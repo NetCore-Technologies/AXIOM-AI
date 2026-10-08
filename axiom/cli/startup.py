@@ -194,7 +194,7 @@ def render_startup(stream: TextIO, *, include_next_steps: bool = False) -> None:
     console.print(Text("  AXIOM", style=f"bold {AMBER}"))
     console.print(
         Text(
-            "Hardware-aware tools for building, training, evaluating, and deploying AI models.",
+            "Inspect models, validate datasets, and plan AI work around your hardware.",
             style=CREAM,
         )
     )
