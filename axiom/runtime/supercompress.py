@@ -79,9 +79,7 @@ def _configured_base_url() -> str:
         if parsed.port is not None and not 1 <= parsed.port <= 65535:
             raise ValueError
     except ValueError as exc:
-        raise RuntimeError(
-            "SUPERCOMPRESS_API_BASE must contain a valid port."
-        ) from exc
+        raise RuntimeError("SUPERCOMPRESS_API_BASE must contain a valid port.") from exc
 
     return raw_url.rstrip("/")
 
@@ -117,18 +115,16 @@ def redacted_base_url() -> str:
 def _read_limited(response: object) -> bytes:
     reader = getattr(response, "read", None)
     if not callable(reader):
-        raise RuntimeError("SuperCompress response was not readable.")
+        raise RuntimeError("SuperCompress response was not readable.")  # noqa: TRY004
 
     try:
         body = reader(MAX_RESPONSE_BYTES + 1)
     except OSError as exc:
         raise RuntimeError("SuperCompress response could not be read.") from exc
     if not isinstance(body, bytes):
-        raise RuntimeError("SuperCompress response was not valid bytes.")
+        raise TypeError("SuperCompress response was not valid bytes.")
     if len(body) > MAX_RESPONSE_BYTES:
-        raise RuntimeError(
-            "SuperCompress response exceeded the 10 MiB safety limit."
-        )
+        raise RuntimeError("SuperCompress response exceeded the 10 MiB safety limit.")
     return body
 
 
@@ -151,9 +147,7 @@ def _optional_string(data: dict, key: str) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):
-        raise RuntimeError(
-            f"SuperCompress response field {key!r} must be a string."
-        )
+        raise TypeError(f"SuperCompress response field {key!r} must be a string.")
     return value
 
 
@@ -165,7 +159,7 @@ def compress_context(
     ccr: bool = False,
 ) -> CompressionResult:
     if not isinstance(context, str) or not isinstance(query, str):
-        raise ValueError("Context and query must be strings.")
+        raise TypeError("Context and query must be strings.")
 
     if (
         isinstance(budget_ratio, bool)
@@ -176,14 +170,12 @@ def compress_context(
         raise ValueError("budget_ratio must be a finite number in (0, 1].")
 
     if not isinstance(ccr, bool):
-        raise ValueError("ccr must be a boolean.")
+        raise TypeError("ccr must be a boolean.")
 
     api_key = os.getenv("SUPERCOMPRESS_API_KEY")
 
     if not api_key:
-        raise RuntimeError(
-            "SUPERCOMPRESS_API_KEY is not configured."
-        )
+        raise RuntimeError("SUPERCOMPRESS_API_KEY is not configured.")
 
     base_url = _configured_base_url()
 
@@ -227,46 +219,30 @@ def compress_context(
                 "compression backend is not configured."
             ) from exc
 
-        raise RuntimeError(
-            f"SuperCompress HTTP {exc.code}: {body[:512]}"
-        ) from exc
+        raise RuntimeError(f"SuperCompress HTTP {exc.code}: {body[:512]}") from exc
     except error.URLError as exc:
-        raise RuntimeError(
-            f"SuperCompress connection failed: {exc.reason}"
-        ) from exc
+        raise RuntimeError(f"SuperCompress connection failed: {exc.reason}") from exc
     except (TimeoutError, OSError) as exc:
-        raise RuntimeError(
-            f"SuperCompress connection failed: {exc}"
-        ) from exc
+        raise RuntimeError(f"SuperCompress connection failed: {exc}") from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RuntimeError(
-            "SuperCompress returned invalid JSON."
-        ) from exc
+        raise RuntimeError("SuperCompress returned invalid JSON.") from exc
 
     if not isinstance(data, dict):
-        raise RuntimeError("SuperCompress response must be a JSON object.")
+        raise TypeError("SuperCompress response must be a JSON object.")
 
     compressed = data.get("compressed_text")
     if compressed is None:
         compressed = data.get("compressed")
 
     if not isinstance(compressed, str):
-        raise RuntimeError(
-            "SuperCompress response did not contain compressed text."
-        )
+        raise TypeError("SuperCompress response did not contain compressed text.")
 
     original = _optional_non_negative_int(data, "original_tokens")
     kept = _optional_non_negative_int(data, "kept_tokens")
     saved = _optional_non_negative_int(data, "tokens_saved")
 
-    if (
-        original is not None
-        and kept is not None
-        and kept > original
-    ):
-        raise RuntimeError(
-            "SuperCompress response kept more tokens than the original."
-        )
+    if original is not None and kept is not None and kept > original:
+        raise RuntimeError("SuperCompress response kept more tokens than the original.")
 
     savings = data.get("kv_savings_pct")
 

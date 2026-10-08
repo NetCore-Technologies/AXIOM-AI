@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from pathlib import Path
 import json
 import os
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 
 from axiom.api.model_paths import validate_model_path
@@ -34,8 +34,10 @@ class OptimizationPlan:
 def _model_root() -> Path:
     configured = os.environ.get("AXIOM_MODEL_ROOT")
     if not configured:
-        raise ValueError("AXIOM_MODEL_ROOT must be configured for local model inspection")
-    root = Path(configured).expanduser().resolve()
+        raise ValueError(
+            "AXIOM_MODEL_ROOT must be configured for local model inspection"
+        )
+    root = Path(validate_model_path(configured)).expanduser().resolve()
     if not root.is_dir():
         raise ValueError("AXIOM_MODEL_ROOT is not a directory")
     return root
@@ -43,7 +45,7 @@ def _model_root() -> Path:
 
 def _safe_model_config(model: str) -> Path | None:
     root = _model_root()
-    candidate = Path(model).expanduser()
+    candidate = validate_model_path(model).expanduser()
     candidate = candidate if candidate.is_absolute() else root / candidate
 
     try:
@@ -107,7 +109,9 @@ def plan_optimization(
     else:
         selected = quantization
 
-    bits = {"fp16": 16, "bf16": 16, "int8": 8, "int4": 4, "int4-awq": 4}.get(selected, 4)
+    bits = {"fp16": 16, "bf16": 16, "int8": 8, "int4": 4, "int4-awq": 4}.get(
+        selected, 4
+    )
     memory = params_b * bits / 8 * 1.30 + 1.5
     ram = _ram_gb()
     fits = not (ram and ram < memory + 2)
@@ -118,9 +122,13 @@ def plan_optimization(
         f"Estimated model size: {params_b:.2f}B parameters.",
     ]
     if latency == "low":
-        notes.append("Low-latency profile favors stronger quantization and shorter context.")
+        notes.append(
+            "Low-latency profile favors stronger quantization and shorter context."
+        )
     if use_case == "coding":
-        notes.append("Coding profile may benefit from additional context when hardware permits.")
+        notes.append(
+            "Coding profile may benefit from additional context when hardware permits."
+        )
     if use_case == "reasoning":
         notes.append("Reasoning profile may trade throughput for model capability.")
 

@@ -37,12 +37,7 @@ def _estimate_vram(
 
     # Conservative planning estimates, not measured runtime usage.
     optimizer = parameter_billions * 0.15
-    activations = (
-        batch_size
-        * sequence_length
-        * parameter_billions
-        * 0.000012
-    )
+    activations = batch_size * sequence_length * parameter_billions * 0.000012
     runtime = parameter_billions * 0.2
 
     return round(weights + optimizer + activations + runtime, 2)
@@ -65,20 +60,15 @@ def create_training_plan(
         )
 
     if method not in {"auto", "qlora", "lora", "full"}:
-        raise ValueError(
-            "Training method must be one of: auto, qlora, lora, full."
-        )
+        raise ValueError("Training method must be one of: auto, qlora, lora, full.")
 
     vram = hardware.vram_gb
 
-    if (
-        vram is not None
-        and (
-            isinstance(vram, bool)
-            or not isinstance(vram, (int, float))
-            or not math.isfinite(vram)
-            or vram < 0
-        )
+    if vram is not None and (
+        isinstance(vram, bool)
+        or not isinstance(vram, (int, float))
+        or not math.isfinite(vram)
+        or vram < 0
     ):
         raise ValueError("Hardware VRAM must be a finite number of GB.")
 

@@ -13,13 +13,16 @@ class OptimizationPlan:
     benchmark_required: bool = True
 
 
-def recommend_plan(*, parameter_count_b: float, hardware: HardwareProfile,
-                   priority: str = "balanced", target_tps: float | None = None,
-                   context_length: int = 8192) -> OptimizationPlan:
+def recommend_plan(
+    *,
+    parameter_count_b: float,
+    hardware: HardwareProfile,
+    priority: str = "balanced",
+    target_tps: float | None = None,
+    context_length: int = 8192,
+) -> OptimizationPlan:
     # Conservative inference-memory planning. Actual throughput is only established by benchmark.
-    if parameter_count_b >= 20:
-        quant = "Q4_K_M"
-    elif parameter_count_b >= 8:
+    if parameter_count_b >= 20 or parameter_count_b >= 8:
         quant = "Q4_K_M"
     elif parameter_count_b >= 3:
         quant = "Q5_K_M" if priority == "quality" else "Q4_K_M"

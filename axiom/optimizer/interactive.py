@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from .hardware import detect_hardware
 from .planner import build_plan
 
@@ -15,12 +16,14 @@ AGENTS = {
 
 PREFS = {"1": "speed", "2": "balanced", "3": "quality"}
 
+
 def _choose(prompt, options):
     while True:
         value = input(prompt).strip()
         if value in options:
             return options[value]
         print("Please choose one of the listed numbers.")
+
 
 def run_questionnaire(model):
     print("\n=== AXIOM AGENT OPTIMIZER ===\n")
@@ -53,12 +56,16 @@ def run_questionnaire(model):
     context = int(input("\nContext length [default 4096]: ").strip() or "4096")
     hardware = detect_hardware()
 
-    plan = build_plan(model, {
-        "agent_type": agent,
-        "preference": preference,
-        "target_tps": target,
-        "context": context,
-    }, hardware)
+    plan = build_plan(
+        model,
+        {
+            "agent_type": agent,
+            "preference": preference,
+            "target_tps": target,
+            "context": context,
+        },
+        hardware,
+    )
 
     print("\n=== HARDWARE DETECTED ===")
     for key in ("os", "arch", "cpu_cores", "ram_gb", "gpu", "vram_mb", "backend"):
@@ -69,7 +76,9 @@ def run_questionnaire(model):
     print(f"Model        : {plan['model']}")
     print(f"Quantization : {plan['quantization']}")
     print(f"Context      : {plan['context']}")
-    print(f"Target TPS   : {plan['target_tps'] if plan['target_tps'] else 'maximum possible'}")
+    print(
+        f"Target TPS   : {plan['target_tps'] if plan['target_tps'] else 'maximum possible'}"
+    )
     print(f"Status       : {plan['status']}")
     print(f"NOTE         : {plan['note']}")
     return plan

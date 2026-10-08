@@ -1,6 +1,3 @@
-from axiom.cli.optimizer import optimizer_app
-from axiom.cli.ai_features import ai_app
-from axiom.optimizer.cli import main as optimizer_main
 import json
 import os
 from pathlib import Path
@@ -11,6 +8,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from axiom.cli.ai_features import ai_app
+from axiom.cli.optimizer import optimizer_app
 from axiom.core.hardware import detect_hardware, estimate_model_fit
 from axiom.core.integrations import (
     AgentIntegration,
@@ -95,8 +94,6 @@ def init(name: str):
     )
 
 
-
-
 @hf_app.command("login")
 def hf_login():
     """Authenticate AXIOM with Hugging Face."""
@@ -112,13 +109,11 @@ def hf_login():
 
     try:
         login()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         console.print(f"[red]Error:[/red] Hugging Face login failed: {exc}")
         raise typer.Exit(code=1)
 
-    console.print(
-        "[green]✓[/green] Hugging Face authentication configured."
-    )
+    console.print("[green]✓[/green] Hugging Face authentication configured.")
 
 
 @hf_app.command("status")
@@ -126,14 +121,12 @@ def hf_status():
     """Show Hugging Face authentication status."""
     try:
         user = whoami()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         status_code = getattr(getattr(exc, "response", None), "status_code", None)
         if exc.__class__.__name__ == "LocalTokenNotFoundError" or status_code == 401:
             console.print(
                 Panel.fit(
-                    "[yellow]Not authenticated[/yellow]\n\n"
-                    "Run:\n"
-                    "  axiom hf login",
+                    "[yellow]Not authenticated[/yellow]\n\nRun:\n  axiom hf login",
                     title="AXIOM",
                 )
             )
@@ -141,20 +134,13 @@ def hf_status():
 
         _cli_error(f"Hugging Face status check failed: {exc}")
 
-    name = (
-        user.get("name")
-        or user.get("fullname")
-        or user.get("username")
-        or "Unknown"
-    )
+    name = user.get("name") or user.get("fullname") or user.get("username") or "Unknown"
 
     orgs = user.get("orgs") or []
 
     if isinstance(orgs, list):
         organization_names = [
-            item.get("name", str(item))
-            if isinstance(item, dict)
-            else str(item)
+            item.get("name", str(item)) if isinstance(item, dict) else str(item)
             for item in orgs
         ]
     else:
@@ -177,31 +163,22 @@ def hf_logout():
     """Log out of Hugging Face."""
     try:
         logout()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         console.print(f"[red]Error:[/red] Hugging Face logout failed: {exc}")
         raise typer.Exit(code=1)
 
-    console.print(
-        "[green]✓[/green] Hugging Face authentication removed."
-    )
-
-
-
+    console.print("[green]✓[/green] Hugging Face authentication removed.")
 
 
 @supercompress_app.command("status")
 def supercompress_status():
     """Show SuperCompress configuration without exposing secrets."""
-    configured = bool(
-        os.getenv("SUPERCOMPRESS_API_KEY", "").strip()
-    )
+    configured = bool(os.getenv("SUPERCOMPRESS_API_KEY", "").strip())
 
     endpoint = redacted_base_url()
 
     key_status = (
-        "[green]configured[/green]"
-        if configured
-        else "[red]not configured[/red]"
+        "[green]configured[/green]" if configured else "[red]not configured[/red]"
     )
 
     console.print(
@@ -239,9 +216,7 @@ def supercompress_compress(
     path = Path(context_file)
 
     if not path.is_file():
-        console.print(
-            f"[red]Error:[/red] Context file not found: {path}"
-        )
+        console.print(f"[red]Error:[/red] Context file not found: {path}")
         raise typer.Exit(code=1)
 
     try:
@@ -258,9 +233,7 @@ def supercompress_compress(
         _cli_error(str(exc))
 
     savings = (
-        f"{result.savings_pct:.1f}%"
-        if result.savings_pct is not None
-        else "Unknown"
+        f"{result.savings_pct:.1f}%" if result.savings_pct is not None else "Unknown"
     )
 
     console.print(
@@ -292,9 +265,7 @@ def integration_list():
     integrations = registry.list()
 
     if not integrations:
-        console.print(
-            "[yellow]No agent integrations configured.[/yellow]"
-        )
+        console.print("[yellow]No agent integrations configured.[/yellow]")
         return
 
     table = Table(title="AXIOM Agent Integrations")
@@ -338,26 +309,31 @@ def integration_add(
     try:
         integration_type = IntegrationType(type.lower())
     except ValueError:
-        console.print(
-            "[red]Error:[/red] Type must be one of: "
-            "mcp, cli, http, a2a."
-        )
+        console.print("[red]Error:[/red] Type must be one of: mcp, cli, http, a2a.")
         raise typer.Exit(code=1)
 
-    if integration_type in {
-        IntegrationType.MCP,
-        IntegrationType.CLI,
-    } and not command:
+    if (
+        integration_type
+        in {
+            IntegrationType.MCP,
+            IntegrationType.CLI,
+        }
+        and not command
+    ):
         console.print(
             "[red]Error:[/red] --command is required for "
             f"{integration_type.value} integrations."
         )
         raise typer.Exit(code=1)
 
-    if integration_type in {
-        IntegrationType.HTTP,
-        IntegrationType.A2A,
-    } and not url:
+    if (
+        integration_type
+        in {
+            IntegrationType.HTTP,
+            IntegrationType.A2A,
+        }
+        and not url
+    ):
         console.print(
             "[red]Error:[/red] --url is required for "
             f"{integration_type.value} integrations."
@@ -380,10 +356,7 @@ def integration_add(
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1)
 
-    console.print(
-        f"[green]✓[/green] Registered integration: "
-        f"[cyan]{name}[/cyan]"
-    )
+    console.print(f"[green]✓[/green] Registered integration: [cyan]{name}[/cyan]")
 
 
 @integration_app.command("remove")
@@ -392,14 +365,10 @@ def integration_remove(name: str):
     registry = IntegrationRegistry()
 
     if not registry.remove(name):
-        console.print(
-            f"[yellow]Integration not found:[/yellow] {name}"
-        )
+        console.print(f"[yellow]Integration not found:[/yellow] {name}")
         raise typer.Exit(code=1)
 
-    console.print(
-        f"[green]✓[/green] Removed integration: [cyan]{name}[/cyan]"
-    )
+    console.print(f"[green]✓[/green] Removed integration: [cyan]{name}[/cyan]")
 
 
 @integration_app.command("doctor")
@@ -411,9 +380,7 @@ def integration_doctor():
     integrations = registry.list()
 
     if not integrations:
-        console.print(
-            "[yellow]No agent integrations configured.[/yellow]"
-        )
+        console.print("[yellow]No agent integrations configured.[/yellow]")
         return
 
     table = Table(title="AXIOM Integration Doctor")
@@ -428,9 +395,7 @@ def integration_doctor():
             available = shutil.which(executable) is not None
 
             status = (
-                "[green]✓ Available[/green]"
-                if available
-                else "[red]✗ Not found[/red]"
+                "[green]✓ Available[/green]" if available else "[red]✗ Not found[/red]"
             )
         elif item.url:
             status = "[cyan]Configured[/cyan]"
@@ -453,11 +418,7 @@ def system_info():
     hardware = detect_hardware()
 
     gpu = hardware.gpu_name or "Not detected"
-    vram = (
-        f"{hardware.vram_gb:.2f} GB"
-        if hardware.vram_gb is not None
-        else "N/A"
-    )
+    vram = f"{hardware.vram_gb:.2f} GB" if hardware.vram_gb is not None else "N/A"
 
     console.print(
         Panel.fit(
@@ -487,10 +448,11 @@ def system_info():
         console.print(table)
 
 
-
 @train_app.command("plan")
 def train_plan(
-    parameters: float = typer.Argument(..., help="Model size in billions of parameters."),
+    parameters: float = typer.Argument(
+        ..., help="Model size in billions of parameters."
+    ),
     method: str = typer.Option(
         "auto",
         "--method",
@@ -513,9 +475,7 @@ def train_plan(
     if hardware.gpu_name:
         gpu = hardware.gpu_name
         vram = (
-            f"{hardware.vram_gb:.2f} GB"
-            if hardware.vram_gb is not None
-            else "Unknown"
+            f"{hardware.vram_gb:.2f} GB" if hardware.vram_gb is not None else "Unknown"
         )
     else:
         gpu = "Not detected"
@@ -575,7 +535,6 @@ def model_list():
     console.print(table)
 
 
-
 @model_app.command("info")
 def model_info(repo_id: str):
     """Show metadata for a Hugging Face model."""
@@ -583,10 +542,8 @@ def model_info(repo_id: str):
 
     try:
         info = api.model_info(repo_id=repo_id, files_metadata=True)
-    except Exception as exc:
-        console.print(
-            f"[red]Error:[/red] Could not retrieve model information: {exc}"
-        )
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Error:[/red] Could not retrieve model information: {exc}")
         raise typer.Exit(code=1)
 
     files = getattr(info, "siblings", None) or []
@@ -648,18 +605,13 @@ def model_add_hf(repo_id: str):
 
     try:
         info = api.model_info(repo_id=repo_id, files_metadata=True)
-    except Exception as exc:
-        console.print(
-            f"[red]Error:[/red] Could not retrieve model information: {exc}"
-        )
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Error:[/red] Could not retrieve model information: {exc}")
         raise typer.Exit(code=1)
 
     files = getattr(info, "siblings", None) or []
 
-    file_names = [
-        getattr(item, "rfilename", "")
-        for item in files
-    ]
+    file_names = [getattr(item, "rfilename", "") for item in files]
 
     formats = set()
 
@@ -673,11 +625,7 @@ def model_add_hf(repo_id: str):
         elif lower.endswith((".bin", ".pt", ".pth")):
             formats.add("pytorch")
 
-    model_format = (
-        ", ".join(sorted(formats))
-        if formats
-        else "unknown"
-    )
+    model_format = ", ".join(sorted(formats)) if formats else "unknown"
 
     pipeline = getattr(info, "pipeline_tag", None)
 
@@ -694,9 +642,7 @@ def model_add_hf(repo_id: str):
             )
         )
     except ValueError:
-        console.print(
-            f"[yellow]Model already registered:[/yellow] {repo_id}"
-        )
+        console.print(f"[yellow]Model already registered:[/yellow] {repo_id}")
         return
 
     console.print(
@@ -736,10 +682,7 @@ def model_add(
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1)
 
-    console.print(
-        f"[green]✓[/green] Registered model: [cyan]{name}[/cyan]"
-    )
-
+    console.print(f"[green]✓[/green] Registered model: [cyan]{name}[/cyan]")
 
 
 @model_app.command("analyze")
@@ -749,10 +692,8 @@ def model_analyze(repo_id: str):
 
     try:
         info = api.model_info(repo_id=repo_id, files_metadata=True)
-    except Exception as exc:
-        console.print(
-            f"[red]Error:[/red] Could not retrieve model information: {exc}"
-        )
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Error:[/red] Could not retrieve model information: {exc}")
         raise typer.Exit(code=1)
 
     files = [
@@ -772,17 +713,13 @@ def model_analyze(repo_id: str):
         config_path = Path(config_file)
 
         if config_path.is_file():
-            config = json.loads(
-                config_path.read_text(encoding="utf-8")
-            )
-    except Exception as exc:
-        console.print(
-            f"[yellow]Warning:[/yellow] Could not read config.json: {exc}"
-        )
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[yellow]Warning:[/yellow] Could not read config.json: {exc}")
 
     total_size = 0
 
-    for item in (getattr(info, "siblings", None) or []):
+    for item in getattr(info, "siblings", None) or []:
         name = getattr(item, "rfilename", "") or ""
         size = getattr(item, "size", None)
 
@@ -804,11 +741,7 @@ def model_analyze(repo_id: str):
         else "Unknown"
     )
 
-    context = (
-        f"{analysis.context_length:,}"
-        if analysis.context_length
-        else "Unknown"
-    )
+    context = f"{analysis.context_length:,}" if analysis.context_length else "Unknown"
 
     weight_size = (
         f"{analysis.weight_size_gb:.2f} GB"
@@ -848,15 +781,13 @@ def model_pull(
 
     try:
         info = api.model_info(repo_id=repo_id, files_metadata=True)
-    except Exception as exc:
-        console.print(
-            f"[red]Error:[/red] Could not retrieve model information: {exc}"
-        )
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Error:[/red] Could not retrieve model information: {exc}")
         raise typer.Exit(code=1)
 
     total_size = 0
 
-    for item in (getattr(info, "siblings", None) or []):
+    for item in getattr(info, "siblings", None) or []:
         size = getattr(item, "size", None)
 
         if size is not None:
@@ -866,8 +797,8 @@ def model_pull(
 
     used_bytes = total_bytes - free_bytes
     used_percent = (used_bytes / total_bytes) * 100 if total_bytes else 100
-    download_gb = total_size / (1024 ** 3)
-    free_gb = free_bytes / (1024 ** 3)
+    download_gb = total_size / (1024**3)
+    free_gb = free_bytes / (1024**3)
     remaining_gb = free_gb - download_gb
 
     console.print(
@@ -884,9 +815,7 @@ def model_pull(
     )
 
     if remaining_gb < 0:
-        console.print(
-            "[red]✗ Download blocked:[/red] insufficient disk space."
-        )
+        console.print("[red]✗ Download blocked:[/red] insufficient disk space.")
         raise typer.Exit(code=1)
 
     projected_used_percent = (
@@ -909,15 +838,12 @@ def model_pull(
             repo_id=repo_id,
             local_dir=Path("models") / repo_id.replace("/", "__"),
         )
-    except Exception as exc:
-        console.print(
-            f"[red]Error:[/red] Model download failed: {exc}"
-        )
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Error:[/red] Model download failed: {exc}")
         raise typer.Exit(code=1)
 
-    console.print(
-        f"[green]✓ Model downloaded:[/green] {destination}"
-    )
+    console.print(f"[green]✓ Model downloaded:[/green] {destination}")
+
 
 @model_app.command("inspect")
 def model_inspect(path: str):
@@ -934,7 +860,7 @@ def model_inspect(path: str):
         else "Unknown"
     )
 
-    size_gb = result.weight_size_bytes / (1024 ** 3)
+    size_gb = result.weight_size_bytes / (1024**3)
 
     vram = (
         f"{result.estimated_vram_gb:.2f} GB"
@@ -1007,15 +933,11 @@ def dataset_clean(
         raise typer.Exit(code=1)
 
     if source.suffix.lower() != ".jsonl":
-        console.print(
-            "[red]Error:[/red] Cleaning currently supports .jsonl files."
-        )
+        console.print("[red]Error:[/red] Cleaning currently supports .jsonl files.")
         raise typer.Exit(code=1)
 
     destination = (
-        Path(output)
-        if output
-        else source.with_name(f"{source.stem}.cleaned.jsonl")
+        Path(output) if output else source.with_name(f"{source.stem}.cleaned.jsonl")
     )
 
     try:

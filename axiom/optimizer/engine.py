@@ -33,8 +33,10 @@ class OptimizationResult:
 
 def _cmd(*args: str) -> str | None:
     try:
-        return subprocess.check_output(args, text=True, stderr=subprocess.DEVNULL).strip()
-    except Exception:
+        return subprocess.check_output(
+            args, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -53,8 +55,10 @@ def detect_hardware() -> dict[str, Any]:
         if Path("/proc/meminfo").exists():
             kb = int(Path("/proc/meminfo").read_text().split("MemTotal:")[1].split()[0])
             hw["ram_gb"] = round(kb / 1024 / 1024, 2)
-    except Exception:
-        __import__("logging").getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
+    except Exception:  # noqa: BLE001
+        __import__("logging").getLogger(__name__).debug(
+            "intentionally ignored exception", exc_info=True
+        )
 
     nvidia = shutil.which("nvidia-smi")
     if nvidia:
@@ -67,7 +71,9 @@ def detect_hardware() -> dict[str, Any]:
             try:
                 hw["gpu_vram_gb"] = round(float(vram.splitlines()[0].strip()) / 1024, 2)
             except ValueError:
-                __import__("logging").getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
+                __import__("logging").getLogger(__name__).debug(
+                    "intentionally ignored exception", exc_info=True
+                )
 
     if not hw["gpu"] and shutil.which("rocminfo"):
         hw["gpu_backend"] = "rocm"
@@ -77,7 +83,11 @@ def detect_hardware() -> dict[str, Any]:
                 hw["gpu"] = line.split(":", 1)[1].strip()
                 break
 
-    if not hw["gpu"] and platform.system() == "Darwin" and platform.machine() == "arm64":
+    if (
+        not hw["gpu"]
+        and platform.system() == "Darwin"
+        and platform.machine() == "arm64"
+    ):
         hw["gpu"] = "Apple Silicon"
         hw["gpu_backend"] = "metal"
 
@@ -87,11 +97,14 @@ def detect_hardware() -> dict[str, Any]:
 def _model_size_hint(model: str) -> float | None:
     """Infer parameter count from common model IDs such as 7B/8B/14B."""
     import re
-    m = re.search(r"(?:^|[-_/])([0-9]+(?:\.[0-9]+)?)B(?:$|[-_/])", model, re.I)
+
+    m = re.search(r"(?:^|[-_/])([0-9]+(?:\.[0-9]+)?)B(?:$|[-_/])", model, re.IGNORECASE)
     return float(m.group(1)) if m else None
 
 
-def _choose_quantization(params_b: float | None, hw: dict[str, Any], quality: str) -> str:
+def _choose_quantization(
+    params_b: float | None, hw: dict[str, Any], quality: str
+) -> str:
     vram = hw.get("gpu_vram_gb")
     ram = hw.get("ram_gb") or 8
     if params_b is None:
@@ -109,14 +122,27 @@ def _choose_quantization(params_b: float | None, hw: dict[str, Any], quality: st
 def optimize_model(req: OptimizationRequest) -> OptimizationResult:
     hw = detect_hardware()
     params_b = _model_size_hint(req.model)
-    quant = req.quantization if req.quantization != "auto" else _choose_quantization(params_b, hw, req.quality)
+    quant = (
+        req.quantization
+        if req.quantization != "auto"
+        else _choose_quantization(params_b, hw, req.quality)
+    )
 
     # Agent type changes the optimization profile rather than deleting arbitrary model layers.
     profiles = {
-        "chat": {"keep": ["conversation", "instruction following"], "sampling": "stable"},
+        "chat": {
+            "keep": ["conversation", "instruction following"],
+            "sampling": "stable",
+        },
         "coding": {"keep": ["code generation", "long context"], "sampling": "precise"},
-        "reasoning": {"keep": ["reasoning", "instruction following"], "sampling": "conservative"},
-        "tool-use": {"keep": ["tool calling", "structured output"], "sampling": "deterministic"},
+        "reasoning": {
+            "keep": ["reasoning", "instruction following"],
+            "sampling": "conservative",
+        },
+        "tool-use": {
+            "keep": ["tool calling", "structured output"],
+            "sampling": "deterministic",
+        },
         "general": {"keep": ["general instruction following"], "sampling": "balanced"},
     }
     profile = profiles.get(req.agent_type, profiles["general"])
@@ -126,13 +152,19 @@ def optimize_model(req: OptimizationRequest) -> OptimizationResult:
         raise ValueError("Use a Hugging Face model ID or local path, not a direct URL.")
 
     # Prefer llama.cpp conversion when installed; otherwise the GUI/CLI can install/use the backend later.
-    commands.append(f"huggingface-cli download {req.model} --local-dir {req.output_dir}/source")
+    commands.append(
+        f"huggingface-cli download {req.model} --local-dir {req.output_dir}/source"
+    )
     if quant in {"int4", "int4-cpu"}:
-        commands.append(f"# Quantize to 4-bit ({quant}) using the selected compatible backend")
+        commands.append(
+            f"# Quantize to 4-bit ({quant}) using the selected compatible backend"
+        )
     elif quant == "int8":
         commands.append("# Quantize to 8-bit using the selected compatible backend")
     else:
-        commands.append("# Keep FP16/BF16 weights; optimize runtime settings for detected accelerator")
+        commands.append(
+            "# Keep FP16/BF16 weights; optimize runtime settings for detected accelerator"
+        )
 
     return OptimizationResult(
         model=req.model,

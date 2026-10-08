@@ -43,9 +43,7 @@ def file_lock(
                     break
                 except OSError:
                     if time.monotonic() >= deadline:
-                        raise TimeoutError(
-                            f"Timed out waiting for lock: {lock_path}"
-                        )
+                        raise TimeoutError(f"Timed out waiting for lock: {lock_path}")
                     time.sleep(0.01)
 
             try:
@@ -100,4 +98,6 @@ def atomic_write_text(path: Path, content: str) -> None:
             try:
                 os.unlink(temporary_name)
             except FileNotFoundError:
-                __import__("logging").getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
+                __import__("logging").getLogger(__name__).debug(
+                    "intentionally ignored exception", exc_info=True
+                )

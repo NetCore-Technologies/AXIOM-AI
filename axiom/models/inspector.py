@@ -35,9 +35,7 @@ def _estimate_parameters(config: dict, weight_size_bytes: int) -> int | None:
     intermediate = config.get("intermediate_size")
 
     if all(
-        isinstance(value, int)
-        and not isinstance(value, bool)
-        and value > 0
+        isinstance(value, int) and not isinstance(value, bool) and value > 0
         for value in (hidden, layers, vocab)
     ):
         if (
@@ -46,11 +44,7 @@ def _estimate_parameters(config: dict, weight_size_bytes: int) -> int | None:
             and intermediate > 0
         ):
             return int(
-                layers
-                * (
-                    4 * hidden * intermediate
-                    + 4 * hidden * hidden
-                )
+                layers * (4 * hidden * intermediate + 4 * hidden * hidden)
                 + vocab * hidden
             )
 
@@ -67,9 +61,7 @@ def _detect_capabilities(config: dict) -> list[str]:
         raw_architectures if isinstance(raw_architectures, list) else []
     )
     architectures = [
-        str(item).lower()
-        for item in architectures_value
-        if isinstance(item, str)
+        str(item).lower() for item in architectures_value if isinstance(item, str)
     ]
 
     markers = (
@@ -121,11 +113,7 @@ def inspect_model(path: str) -> ModelInspection:
         if not isinstance(config, dict):
             raise ValueError("Invalid config.json: expected a JSON object.")
 
-    files = [
-        file
-        for file in model_path.rglob("*")
-        if file.is_file()
-    ]
+    files = [file for file in model_path.rglob("*") if file.is_file()]
 
     safetensors = any(
         file.suffix.lower() == ".safetensors"
@@ -135,10 +123,7 @@ def inspect_model(path: str) -> ModelInspection:
 
     gguf = any(file.suffix.lower() == ".gguf" for file in files)
 
-    pytorch = any(
-        file.suffix.lower() in {".bin", ".pt", ".pth"}
-        for file in files
-    )
+    pytorch = any(file.suffix.lower() in {".bin", ".pt", ".pth"} for file in files)
 
     if gguf:
         model_format = "GGUF"
@@ -150,8 +135,10 @@ def inspect_model(path: str) -> ModelInspection:
         model_format = "Unknown"
 
     weight_files = [
-        file for file in files
-        if file.suffix.lower() in {
+        file
+        for file in files
+        if file.suffix.lower()
+        in {
             ".safetensors",
             ".gguf",
             ".bin",
@@ -168,10 +155,7 @@ def inspect_model(path: str) -> ModelInspection:
         "tokenizer_config.json",
     }
 
-    has_tokenizer = any(
-        file.name in tokenizer_files
-        for file in files
-    )
+    has_tokenizer = any(file.name in tokenizer_files for file in files)
 
     architectures = config.get("architectures")
     architecture = (
@@ -189,7 +173,7 @@ def inspect_model(path: str) -> ModelInspection:
 
     if parameter_count is not None and parameter_count > 0:
         estimated_vram_gb = round(
-            parameter_count * 2 * 1.2 / (1024 ** 3),
+            parameter_count * 2 * 1.2 / (1024**3),
             2,
         )
 

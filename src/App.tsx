@@ -1,7 +1,6 @@
 import AxiomQuantizer from "./components/AxiomQuantizer";
 import AxiomOptimizer from "./components/AxiomOptimizer";
 import AxiomBeta5Features from "./components/AxiomBeta5Features";
-import AgentOptimizer from "./components/AgentOptimizer";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -300,7 +299,6 @@ const LEGACY_ADMIN_KEY = "axiom-admin";
 const SESSION_KEY = "axiom-session";
 const THEME_KEY = "axiom-theme";
 
-const PASSWORD_ITERATIONS = 120_000;
 const ADMIN_VERIFIER = "AXIOM-ADMIN-VERIFIER-V1";
 
 function encodeBase64(bytes: Uint8Array): string {
@@ -330,7 +328,6 @@ async function derivePasswordKey(password: string, salt: Uint8Array): Promise<Cr
     {
       name: "PBKDF2",
       salt: new Uint8Array(salt).buffer as ArrayBuffer,
-      iterations: PASSWORD_ITERATIONS,
       hash: "SHA-256",
     },
     baseKey,
@@ -449,7 +446,15 @@ async function saveAdministrator(
     updatedAt: Date.now(),
   };
 
-  localStorage.setItem(ADMIN_KEY, JSON.stringify(record));
+  localStorage.setItem(
+    ADMIN_KEY,
+    JSON.stringify({
+      username: record.username,
+      salt: record.salt,
+      iv: record.iv,
+      ciphertext: record.ciphertext,
+    }),
+  );
   localStorage.removeItem(LEGACY_ADMIN_KEY);
 }
 
@@ -1298,8 +1303,6 @@ function WorkspacePage({
       return <LogsPage onNotify={onNotify} />;
     case "settings":
       return <SettingsPage theme={theme} setTheme={setTheme} onChangePassword={onChangePassword} onNotify={onNotify} />;
-    case "optimizer":
-      return <AgentOptimizer />;
   }
 }
 

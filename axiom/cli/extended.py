@@ -146,9 +146,7 @@ def register(app, model_app, dataset_app) -> None:
         target = Path(path)
 
         if not target.exists():
-            console.print(
-                f"[red]Error:[/red] model path not found: {target}"
-            )
+            console.print(f"[red]Error:[/red] model path not found: {target}")
             raise typer.Exit(code=1)
 
         if target.is_file():
@@ -189,15 +187,11 @@ def register(app, model_app, dataset_app) -> None:
         root = Path(path)
 
         if not root.exists():
-            console.print(
-                f"[yellow]No model directory:[/yellow] {root}"
-            )
+            console.print(f"[yellow]No model directory:[/yellow] {root}")
             return
 
         matches = [
-            item
-            for item in root.rglob("*")
-            if query.lower() in str(item).lower()
+            item for item in root.rglob("*") if query.lower() in str(item).lower()
         ]
 
         if not matches:
@@ -213,9 +207,7 @@ def register(app, model_app, dataset_app) -> None:
             table.add_row(
                 str(item),
                 "file" if item.is_file() else "directory",
-                human_size(item.stat().st_size)
-                if item.is_file()
-                else "-",
+                human_size(item.stat().st_size) if item.is_file() else "-",
             )
 
         console.print(table)
@@ -228,9 +220,7 @@ def register(app, model_app, dataset_app) -> None:
         dataset = Path(path)
 
         if not dataset.is_file():
-            console.print(
-                f"[red]Error:[/red] dataset not found: {dataset}"
-            )
+            console.print(f"[red]Error:[/red] dataset not found: {dataset}")
             raise typer.Exit(code=1)
 
         total = 0
@@ -250,9 +240,7 @@ def register(app, model_app, dataset_app) -> None:
                     record = json.loads(raw)
 
                     if not isinstance(record, dict):
-                        raise ValueError(
-                            "record is not a JSON object"
-                        )
+                        raise TypeError("record is not a JSON object")
 
                     normalized = json.dumps(
                         record,
@@ -268,12 +256,9 @@ def register(app, model_app, dataset_app) -> None:
 
                     valid += 1
 
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     invalid += 1
-                    console.print(
-                        f"[red]INVALID[/red] line "
-                        f"{line_no}: {exc}"
-                    )
+                    console.print(f"[red]INVALID[/red] line {line_no}: {exc}")
 
         table = Table(title="AXIOM DATASET VALIDATION")
         table.add_column("Metric")
@@ -297,9 +282,7 @@ def register(app, model_app, dataset_app) -> None:
         dataset = Path(path)
 
         if not dataset.is_file():
-            console.print(
-                f"[red]Error:[/red] dataset not found: {dataset}"
-            )
+            console.print(f"[red]Error:[/red] dataset not found: {dataset}")
             raise typer.Exit(code=1)
 
         records = 0
@@ -331,9 +314,7 @@ def register(app, model_app, dataset_app) -> None:
             )
         )
 
-    project_app = typer.Typer(
-        help="Inspect and validate AXIOM projects."
-    )
+    project_app = typer.Typer(help="Inspect and validate AXIOM projects.")
     app.add_typer(project_app, name="project")
 
     @project_app.command("info")
@@ -368,11 +349,7 @@ def register(app, model_app, dataset_app) -> None:
             "outputs",
         ]
 
-        missing = [
-            item
-            for item in required
-            if not (root / item).exists()
-        ]
+        missing = [item for item in required if not (root / item).exists()]
 
         if missing:
             console.print("[red]Project validation failed.[/red]")
@@ -382,13 +359,9 @@ def register(app, model_app, dataset_app) -> None:
 
             raise typer.Exit(code=1)
 
-        console.print(
-            "[green]✓ AXIOM project structure is valid.[/green]"
-        )
+        console.print("[green]✓ AXIOM project structure is valid.[/green]")
 
-    config_app = typer.Typer(
-        help="Inspect AXIOM project configuration."
-    )
+    config_app = typer.Typer(help="Inspect AXIOM project configuration.")
     app.add_typer(config_app, name="config")
 
     @config_app.command("show")
@@ -402,14 +375,10 @@ def register(app, model_app, dataset_app) -> None:
         config = Path(path)
 
         if not config.is_file():
-            console.print(
-                f"[red]Error:[/red] config not found: {config}"
-            )
+            console.print(f"[red]Error:[/red] config not found: {config}")
             raise typer.Exit(code=1)
 
-        typer.echo(
-            config.read_text(encoding="utf-8")
-        )
+        typer.echo(config.read_text(encoding="utf-8"))
 
     @config_app.command("validate")
     def config_validate(
@@ -422,9 +391,7 @@ def register(app, model_app, dataset_app) -> None:
         config = Path(path)
 
         if not config.is_file():
-            console.print(
-                f"[red]Error:[/red] config not found: {config}"
-            )
+            console.print(f"[red]Error:[/red] config not found: {config}")
             raise typer.Exit(code=1)
 
         try:
@@ -435,15 +402,11 @@ def register(app, model_app, dataset_app) -> None:
             raise typer.Exit(code=1)
 
         if not contents.strip():
-            console.print(
-                "[red]Error:[/red] axiom.yaml is empty"
-            )
+            console.print("[red]Error:[/red] axiom.yaml is empty")
             raise typer.Exit(code=1)
 
         if not isinstance(parsed, dict):
-            console.print(
-                "[red]Error:[/red] axiom.yaml must contain a mapping"
-            )
+            console.print("[red]Error:[/red] axiom.yaml must contain a mapping")
             raise typer.Exit(code=1)
 
         console.print(

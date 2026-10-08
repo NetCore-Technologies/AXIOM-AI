@@ -38,15 +38,11 @@ def create_project(name: str, directory: Path | None = None) -> Path:
         or any(ord(character) < 32 for character in name)
         or any(character in name for character in '/\\\x00<>:"|?*')
     ):
-        raise ValueError(
-            "Project name must be a single safe directory name."
-        )
+        raise ValueError("Project name must be a single safe directory name.")
 
     windows_name = PureWindowsPath(name)
     if windows_name.anchor or name.rstrip(" .") != name:
-        raise ValueError(
-            "Project name must be a single safe directory name."
-        )
+        raise ValueError("Project name must be a single safe directory name.")
 
     root = (directory or Path.cwd()) / name
 
@@ -71,8 +67,7 @@ def create_project(name: str, directory: Path | None = None) -> Path:
     )
 
     (root / "README.md").write_text(
-        f"# {name}\n\n"
-        "AI project created with AXIOM.\n",
+        f"# {name}\n\nAI project created with AXIOM.\n",
         encoding="utf-8",
     )
 

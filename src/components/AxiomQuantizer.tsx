@@ -37,7 +37,7 @@ type Plan = {
 };
 
 const API =
-  (import.meta as any).env?.VITE_AXIOM_API_URL || "";
+  import.meta.env?.VITE_AXIOM_API_URL || "";
 
 export default function AxiomQuantizer() {
   const [profiles, setProfiles] = useState<Profile[]>([]);

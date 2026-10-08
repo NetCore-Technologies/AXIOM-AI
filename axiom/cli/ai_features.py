@@ -11,7 +11,6 @@ from axiom.api.huggingface import search_models
 from axiom.api.optimization import plan_optimization
 from axiom.api.policy_audit import audit_model
 
-
 ai_app = typer.Typer(
     help="AI optimization, Hugging Face discovery, and model auditing."
 )
@@ -76,7 +75,7 @@ def hf_search(
     """Search Hugging Face models."""
     try:
         results = search_models(query, limit)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise typer.BadParameter(str(exc))
 
     table = Table(title=f"Hugging Face: {query}")
@@ -102,9 +101,7 @@ def policy_audit(model_path: str):
     try:
         result = audit_model(model_path)
     except FileNotFoundError:
-        raise typer.BadParameter(
-            f"Model path does not exist: {model_path}"
-        )
+        raise typer.BadParameter(f"Model path does not exist: {model_path}")
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
 

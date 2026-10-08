@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from axiom.optimizer.agent_profiles import PROFILES, get_profile
-from axiom.optimizer.model import inspect_model, choose_quantization
+from axiom.optimizer.model import choose_quantization, inspect_model
 from axiom.optimizer.system import inspect_system
 
 

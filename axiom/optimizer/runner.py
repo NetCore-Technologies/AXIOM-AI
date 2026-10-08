@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 import subprocess
 import time
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
@@ -86,9 +86,7 @@ def benchmark_gguf(
     elapsed = max(0.001, time.perf_counter() - started)
 
     if result.returncode != 0:
-        raise RuntimeError(
-            result.stderr.strip() or "llama.cpp benchmark failed"
-        )
+        raise RuntimeError(result.stderr.strip() or "llama.cpp benchmark failed")
 
     # llama.cpp output is not guaranteed to expose an identical metrics
     # format across versions. Estimate generated tokens from requested

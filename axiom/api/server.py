@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from axiom.api.server_optimizer_routes import register_optimizer_routes
 from typing import Any
+
+from axiom.api.server_optimizer_routes import register_optimizer_routes
+
 
 def create_app() -> Any:
     from fastapi import FastAPI

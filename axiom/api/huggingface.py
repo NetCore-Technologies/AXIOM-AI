@@ -5,6 +5,7 @@ from typing import Any
 
 def search_models(query: str, limit: int = 10) -> list[dict[str, Any]]:
     from huggingface_hub import HfApi
+
     api = HfApi()
     return [
         {

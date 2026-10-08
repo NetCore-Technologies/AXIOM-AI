@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
-import json
-import os
-import shutil
 from typing import Any
 
+from axiom.api.model_paths import validate_model_path, validate_output_path
 from axiom.optimizer.agent_profiles import AgentProfile
 from axiom.optimizer.system import SystemInfo
 
@@ -66,12 +66,16 @@ def _config(path: Path) -> dict[str, Any]:
                 if isinstance(value, dict):
                     return value
             except (OSError, ValueError):
-                import logging as _axiom_logging; _axiom_logging.getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
+                import logging as _axiom_logging
+
+                _axiom_logging.getLogger(__name__).debug(
+                    "intentionally ignored exception", exc_info=True
+                )
     return {}
 
 
 def inspect_model(source: str) -> ModelInfo:
-    path = Path(source)
+    path = validate_model_path(source)
 
     if not path.exists():
         return ModelInfo(
@@ -139,8 +143,8 @@ def create_runtime_bundle(
     source: str,
     destination: str,
 ) -> dict[str, Any]:
-    src = Path(source)
-    dst = Path(destination)
+    src = validate_model_path(source)
+    dst = validate_output_path(destination)
 
     if not src.exists():
         raise FileNotFoundError(source)
@@ -161,10 +165,7 @@ def create_runtime_bundle(
         suffix = item.suffix.lower()
 
         # Keep inference-critical files and model weights.
-        keep = (
-            name in RUNTIME_KEEP_NAMES
-            or suffix in {".safetensors", ".bin", ".gguf"}
-        )
+        keep = name in RUNTIME_KEEP_NAMES or suffix in {".safetensors", ".bin", ".gguf"}
 
         # Drop obvious repository-only material such as docs/training/
         # source/test files from the runtime bundle.
@@ -191,7 +192,7 @@ def write_runtime_profile(
     quantization: str,
     system: SystemInfo,
 ) -> Path:
-    path = Path(bundle) / "axiom-runtime.json"
+    path = Path(validate_model_path(bundle)) / "axiom-runtime.json"
 
     data = {
         "agent_profile": profile.key,

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
-from pathlib import Path
 import platform
 import shutil
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
@@ -84,7 +84,11 @@ def inspect_system() -> SystemInfo:
     try:
         free_gb = shutil.disk_usage(Path.cwd()).free / 1024**3
     except OSError:
-        import logging as _axiom_logging; _axiom_logging.getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
+        import logging as _axiom_logging
+
+        _axiom_logging.getLogger(__name__).debug(
+            "intentionally ignored exception", exc_info=True
+        )
 
     return SystemInfo(
         os=platform.system(),

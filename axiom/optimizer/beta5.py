@@ -2,12 +2,13 @@
 
 Plans optimization candidates; measured throughput is only reported after a real benchmark.
 """
+
 from __future__ import annotations
-from dataclasses import dataclass, asdict
+
 import os
 import platform
-from pathlib import Path
-import shutil
+from dataclasses import asdict, dataclass
+
 
 @dataclass
 class HardwareProfile:
@@ -16,6 +17,7 @@ class HardwareProfile:
     ram_gb: float
     gpu: str | None
     vram_gb: float | None
+
 
 @dataclass
 class OptimizationPlan:
@@ -39,16 +41,47 @@ def detect_hardware() -> HardwareProfile:
         page_size = os.sysconf("SC_PAGE_SIZE")
         ram_gb = pages * page_size / (1024**3)
     except (ValueError, OSError):
-        __import__("logging").getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
-    return HardwareProfile(platform.processor() or platform.machine(), os.cpu_count() or 1, round(ram_gb, 2), None, None)
+        __import__("logging").getLogger(__name__).debug(
+            "intentionally ignored exception", exc_info=True
+        )
+    return HardwareProfile(
+        platform.processor() or platform.machine(),
+        os.cpu_count() or 1,
+        round(ram_gb, 2),
+        None,
+        None,
+    )
 
 
-def plan(model: str, task: str = "general", priority: str = "balanced", target_tps: float | None = None, context_length: int = 8192, parameter_billion: float | None = None) -> dict:
+def plan(
+    model: str,
+    task: str = "general",
+    priority: str = "balanced",
+    target_tps: float | None = None,
+    context_length: int = 8192,
+    parameter_billion: float | None = None,
+) -> dict:
     hw = detect_hardware()
     candidates = ["Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0"]
-    selected = "Q4_K_M" if priority == "speed" else ("Q6_K" if priority == "quality" else "Q5_K_M")
+    selected = (
+        "Q4_K_M"
+        if priority == "speed"
+        else ("Q6_K" if priority == "quality" else "Q5_K_M")
+    )
     estimated = None
     if parameter_billion:
         bits = {"Q4_K_M": 4.5, "Q5_K_M": 5.5, "Q6_K": 6.5, "Q8_0": 8.0}[selected]
         estimated = round(parameter_billion * bits / 8, 2)
-    return asdict(OptimizationPlan(model, task, priority, target_tps, context_length, hw, candidates, selected, estimated))
+    return asdict(
+        OptimizationPlan(
+            model,
+            task,
+            priority,
+            target_tps,
+            context_length,
+            hw,
+            candidates,
+            selected,
+            estimated,
+        )
+    )

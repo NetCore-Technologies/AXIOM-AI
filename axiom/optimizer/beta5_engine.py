@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
-from pathlib import Path
 import os
 import platform
-import shutil
+from dataclasses import asdict, dataclass
 from typing import Any
 
 
@@ -30,9 +28,11 @@ def detect_hardware() -> HardwareProfile:
     try:
         pages = os.sysconf("SC_PHYS_PAGES")
         size = os.sysconf("SC_PAGE_SIZE")
-        ram_gb = pages * size / (1024 ** 3)
+        ram_gb = pages * size / (1024**3)
     except (AttributeError, OSError, ValueError):
-        __import__("logging").getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
+        __import__("logging").getLogger(__name__).debug(
+            "intentionally ignored exception", exc_info=True
+        )
     return HardwareProfile(
         cpu=platform.processor() or platform.machine(),
         ram_gb=round(ram_gb, 2),

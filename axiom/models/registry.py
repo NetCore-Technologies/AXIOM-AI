@@ -15,9 +15,9 @@ class Model:
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
-            raise ValueError("Model name cannot be empty.")
+            raise TypeError("Model name cannot be empty.")
         if not isinstance(self.source, str) or not self.source.strip():
-            raise ValueError("Model source cannot be empty.")
+            raise TypeError("Model source cannot be empty.")
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -47,31 +47,23 @@ class ModelRegistry:
             return []
         if not self.registry_file.is_file():
             raise ValueError(
-                f"Invalid model registry: expected a file at "
-                f"{self.registry_file}"
+                f"Invalid model registry: expected a file at {self.registry_file}"
             )
 
         try:
-            data = json.loads(
-                self.registry_file.read_text(encoding="utf-8")
-            )
+            data = json.loads(self.registry_file.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(
-                f"Invalid model registry: {self.registry_file}"
-            ) from exc
+            raise ValueError(f"Invalid model registry: {self.registry_file}") from exc
 
         if not isinstance(data, list):
             raise ValueError(
-                f"Invalid model registry: expected a JSON array in "
-                f"{self.registry_file}"
+                f"Invalid model registry: expected a JSON array in {self.registry_file}"
             )
 
         models: list[Model] = []
         for index, item in enumerate(data):
             if not isinstance(item, dict):
-                raise ValueError(
-                    f"Invalid model registry entry at index {index}."
-                )
+                raise ValueError(f"Invalid model registry entry at index {index}.")
 
             try:
                 models.append(Model(**item))

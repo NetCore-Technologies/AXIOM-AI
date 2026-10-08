@@ -32,7 +32,9 @@ def _call_tool(name: str, arguments: dict) -> tuple[dict, object]:
     result = asyncio.run(mcp.call_tool(name, arguments))
     assert not result.is_error, result
     if result.structured_content is not None:
-        return result.structured_content.get("result", result.structured_content), result
+        return result.structured_content.get(
+            "result", result.structured_content
+        ), result
     assert result.content
     return json.loads(result.content[0].text), result
 
@@ -58,7 +60,8 @@ def test_mcp_schema_and_all_handlers(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     models, _ = _call_tool("axiom_model_list", {})
     assert models == []
-    assert not (tmp_path / ".axiom").exists()
+    if (tmp_path / ".axiom").exists():
+        raise AssertionError(None)
 
     model_path = tmp_path / "model"
     model_path.mkdir()
@@ -88,11 +91,7 @@ def test_mcp_schema_and_all_handlers(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     dataset = tmp_path / "records.jsonl"
     dataset.write_text(
-        '{"prompt":"a","answer":"b"}\n'
-        '{"prompt":"a","answer":"b"}\n'
-        "not json\n"
-        "[]\n"
-        "\n",
+        '{"prompt":"a","answer":"b"}\n{"prompt":"a","answer":"b"}\nnot json\n[]\n\n',
         encoding="utf-8",
     )
     inspected, _ = _call_tool(
@@ -109,10 +108,12 @@ def test_mcp_schema_and_all_handlers(tmp_path: Path, monkeypatch: pytest.MonkeyP
         {"path": str(dataset), "output": str(cleaned_path)},
     )
     assert cleaned["kept"] == 1
-    assert dataset.read_text(encoding="utf-8").count("not json") == 1
-    assert cleaned_path.read_text(encoding="utf-8") == (
-        '{"prompt": "a", "answer": "b"}\n'
-    )
+    if not (dataset.read_text(encoding="utf-8").count("not json") == 1):
+        raise AssertionError(None)
+    if not (
+        cleaned_path.read_text(encoding="utf-8") == ('{"prompt": "a", "answer": "b"}\n')
+    ):
+        raise AssertionError(None)
 
     hardware = HardwareInfo(
         os_name="test",
@@ -177,14 +178,18 @@ def test_dataset_cleaning_never_truncates_source(tmp_path: Path):
     with pytest.raises(OSError, match="must differ"):
         clean_jsonl(source, source)
 
-    assert source.read_text(encoding="utf-8") == original
+    if not (source.read_text(encoding="utf-8") == original):
+        raise AssertionError(None)
 
     output = tmp_path / "nested" / "clean.jsonl"
     result = clean_jsonl(source, output)
     assert result.kept == 1
-    assert output.exists()
-    assert source.read_text(encoding="utf-8") == original
-    assert not list(output.parent.glob(".clean.jsonl.*.tmp"))
+    if not (output.exists()):
+        raise AssertionError(None)
+    if not (source.read_text(encoding="utf-8") == original):
+        raise AssertionError(None)
+    if list(output.parent.glob(".clean.jsonl.*.tmp")):
+        raise AssertionError(None)
 
 
 def test_model_inspection_rejects_non_object_config(tmp_path: Path):
@@ -229,25 +234,27 @@ def test_project_name_cannot_escape_parent(tmp_path: Path):
 
     project = create_project("safe-project", tmp_path)
     assert project == tmp_path / "safe-project"
-    assert (project / "axiom.yaml").is_file()
+    if not ((project / "axiom.yaml").is_file()):
+        raise AssertionError(None)
 
 
 def test_model_registry_is_atomic_and_concurrent(tmp_path: Path):
     root = tmp_path / "registry"
 
     def add(index: int) -> None:
-        ModelRegistry(root).add(
-            Model(name=f"model-{index}", source=f"source-{index}")
-        )
+        ModelRegistry(root).add(Model(name=f"model-{index}", source=f"source-{index}"))
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         list(executor.map(add, range(24)))
 
     registry = ModelRegistry(root, create=False)
-    assert {model.name for model in registry.list()} == {
-        f"model-{index}" for index in range(24)
-    }
-    assert json.loads((root / "models.json").read_text(encoding="utf-8"))
+    if not (
+        {model.name for model in registry.list()}
+        == {f"model-{index}" for index in range(24)}
+    ):
+        raise AssertionError(None)
+    if not (json.loads((root / "models.json").read_text(encoding="utf-8"))):
+        raise AssertionError(None)
 
 
 def test_registries_do_not_create_state_on_read_and_reject_corruption(
@@ -256,10 +263,14 @@ def test_registries_do_not_create_state_on_read_and_reject_corruption(
     model_root = tmp_path / "models"
     integration_root = tmp_path / "integrations"
 
-    assert ModelRegistry(model_root, create=False).list() == []
-    assert IntegrationRegistry(integration_root, create=False).list() == []
-    assert not model_root.exists()
-    assert not integration_root.exists()
+    if not (ModelRegistry(model_root, create=False).list() == []):
+        raise AssertionError(None)
+    if not (IntegrationRegistry(integration_root, create=False).list() == []):
+        raise AssertionError(None)
+    if model_root.exists():
+        raise AssertionError(None)
+    if integration_root.exists():
+        raise AssertionError(None)
 
     model_root.mkdir()
     (model_root / "models.json").write_text("{}", encoding="utf-8")
@@ -268,7 +279,7 @@ def test_registries_do_not_create_state_on_read_and_reject_corruption(
 
     integration_root.mkdir()
     (integration_root / "integrations.json").write_text(
-        "{\"bad\": true}",
+        '{"bad": true}',
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="expected a JSON array"):
@@ -294,9 +305,12 @@ def test_integration_registry_is_atomic_and_case_insensitive(tmp_path: Path):
             )
         )
 
-    assert registry.remove("LOCAL MCP") is True
-    assert registry.list() == []
-    assert registry.remove("missing") is False
+    if not (registry.remove("LOCAL MCP") is True):
+        raise AssertionError(None)
+    if not (registry.list() == []):
+        raise AssertionError(None)
+    if not (registry.remove("missing") is False):
+        raise AssertionError(None)
 
 
 class _ProviderHandler(BaseHTTPRequestHandler):
@@ -374,7 +388,8 @@ def test_provider_http_boundary_and_redirect_protection(
         _ProviderHandler.redirect = True
         with pytest.raises(RuntimeError, match="HTTP 302"):
             compress_context("context", "query")
-        assert len(_ProviderHandler.requests) == 1
+        if not (len(_ProviderHandler.requests) == 1):
+            raise AssertionError(None)
     finally:
         server.shutdown()
         server.server_close()

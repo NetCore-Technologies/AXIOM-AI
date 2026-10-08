@@ -1,10 +1,11 @@
 """AXIOM Beta.5 agent/model optimization helpers."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
-from pathlib import Path
 import json
 import platform
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -28,8 +29,10 @@ def detect_system() -> dict:
         pages = int(__import__("os").sysconf("SC_PHYS_PAGES"))
         page_size = int(__import__("os").sysconf("SC_PAGE_SIZE"))
         memory_gb = pages * page_size / (1024**3)
-    except Exception:
-        __import__("logging").getLogger(__name__).debug("intentionally ignored exception", exc_info=True)
+    except Exception:  # noqa: BLE001
+        __import__("logging").getLogger(__name__).debug(
+            "intentionally ignored exception", exc_info=True
+        )
     return {
         "platform": platform.platform(),
         "cpu": platform.processor() or platform.machine(),
@@ -47,9 +50,14 @@ def recommend_quantization(memory_gb: float, model_size_b: float | None = None) 
     return "int4"
 
 
-def build_plan(*, agent_type: str, target_tokens_per_second: float = 10.0,
-               model_id: str | None = None, model_size_b: float | None = None,
-               context_length: int = 2048) -> OptimizationPlan:
+def build_plan(
+    *,
+    agent_type: str,
+    target_tokens_per_second: float = 10.0,
+    model_id: str | None = None,
+    model_size_b: float | None = None,
+    context_length: int = 2048,
+) -> OptimizationPlan:
     system = detect_system()
     quant = recommend_quantization(system["memory_gb"], model_size_b)
     notes = [
@@ -84,10 +92,12 @@ def policy_audit(model_path: str | None = None) -> dict:
         if cfg and cfg.exists():
             try:
                 data = json.loads(cfg.read_text())
-                result["checks"].append({
-                    "architecture": data.get("architectures"),
-                    "model_type": data.get("model_type"),
-                })
-            except Exception:
+                result["checks"].append(
+                    {
+                        "architecture": data.get("architectures"),
+                        "model_type": data.get("model_type"),
+                    }
+                )
+            except Exception:  # noqa: BLE001
                 result["checks"].append({"config_parse": "failed"})
     return result

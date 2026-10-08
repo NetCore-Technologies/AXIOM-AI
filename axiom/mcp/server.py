@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import os
@@ -26,7 +25,6 @@ mcp = MCPServer(
 )
 
 
-    
 @mcp.tool()
 def axiom_info() -> dict:
     """Return AXIOM release information."""
@@ -46,15 +44,13 @@ def axiom_info() -> dict:
         ],
     }
 
+
 @mcp.tool()
 def axiom_model_list() -> list[dict]:
     """List models registered with AXIOM."""
     registry = ModelRegistry(create=False)
 
-    return [
-        model.to_dict()
-        for model in registry.list()
-    ]
+    return [model.to_dict() for model in registry.list()]
 
 
 @mcp.tool()
@@ -123,9 +119,7 @@ def axiom_dataset_clean(
         raise ValueError("Cleaning currently supports .jsonl files.")
 
     destination = (
-        Path(output)
-        if output
-        else source.with_name(f"{source.stem}.cleaned.jsonl")
+        Path(output) if output else source.with_name(f"{source.stem}.cleaned.jsonl")
     )
 
     result = clean_jsonl(
@@ -197,9 +191,7 @@ def axiom_supercompress_status() -> dict:
     """Check whether SuperCompress is configured."""
 
     return {
-        "configured": bool(
-            os.getenv("SUPERCOMPRESS_API_KEY")
-        ),
+        "configured": bool(os.getenv("SUPERCOMPRESS_API_KEY")),
         "endpoint": redacted_base_url(),
     }
 

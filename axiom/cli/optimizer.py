@@ -8,9 +8,9 @@ from rich.table import Table
 
 from axiom.optimizer.agent_profiles import get_profile, menu
 from axiom.optimizer.model import (
+    choose_quantization,
     create_runtime_bundle,
     inspect_model,
-    choose_quantization,
     write_runtime_profile,
 )
 from axiom.optimizer.system import inspect_system
@@ -64,20 +64,19 @@ def run(
     selected = get_profile(profile)
 
     if not model:
-        model = typer.prompt(
-            "\nHugging Face model ID or local model path"
-        )
+        model = typer.prompt("\nHugging Face model ID or local model path")
 
     if not output:
         safe_name = model.replace("/", "__").replace("\\", "__")
-        output = str(
-            Path(".axiom") / "optimized" / safe_name / selected.key
-        )
+        output = str(Path(".axiom") / "optimized" / safe_name / selected.key)
 
-    if typer.confirm(
-        f"\nTarget {target_tps:g} tok/s. Keep this target?",
-        default=True,
-    ) is False:
+    if (
+        typer.confirm(
+            f"\nTarget {target_tps:g} tok/s. Keep this target?",
+            default=True,
+        )
+        is False
+    ):
         target_tps = typer.prompt(
             "Target tokens/sec",
             type=float,
@@ -101,25 +100,17 @@ def run(
         try:
             from huggingface_hub import snapshot_download
 
-            console.print(
-                f"\n[cyan]Downloading model snapshot:[/cyan] {model}"
-            )
+            console.print(f"\n[cyan]Downloading model snapshot:[/cyan] {model}")
 
             local = snapshot_download(
                 repo_id=model,
-                local_dir=str(
-                    Path(".axiom") / "models" / model.replace("/", "__")
-                ),
+                local_dir=str(Path(".axiom") / "models" / model.replace("/", "__")),
             )
             model = str(local)
 
-            console.print(
-                f"[green]✓ Model available at {model}[/green]"
-            )
-        except Exception as exc:
-            raise typer.Exit(
-                f"Could not download Hugging Face model: {exc}"
-            )
+            console.print(f"[green]✓ Model available at {model}[/green]")
+        except Exception as exc:  # noqa: BLE001
+            raise typer.Exit(f"Could not download Hugging Face model: {exc}")
 
     info = inspect_model(model)
 
@@ -137,11 +128,9 @@ def run(
 
     quant = choose_quantization(info, system, selected)
 
-    console.print(
-        f"\n[bold green]Recommended quantization:[/bold green] {quant}"
-    )
+    console.print(f"\n[bold green]Recommended quantization:[/bold green] {quant}")
 
-    runtime = create_runtime_bundle(model, output)
+    _ = create_runtime_bundle(model, output)
 
     write_runtime_profile(
         output,
@@ -168,13 +157,10 @@ def run(
             )
 
             console.print(
-                f"\nMeasured throughput: "
-                f"{result.tokens_per_second:.2f} tok/s"
+                f"\nMeasured throughput: {result.tokens_per_second:.2f} tok/s"
             )
-        except Exception as exc:
-            console.print(
-                f"\n[yellow]Benchmark not run:[/yellow] {exc}"
-            )
+        except Exception as exc:  # noqa: BLE001
+            console.print(f"\n[yellow]Benchmark not run:[/yellow] {exc}")
     else:
         console.print(
             "\n[yellow]10 tok/s is a target.[/yellow] "

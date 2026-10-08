@@ -100,7 +100,5 @@ def get_profile(number: int) -> AgentProfile:
 def menu() -> str:
     lines = []
     for p in PROFILES:
-        lines.append(
-            f"{p.number}. {p.name} — {p.description}"
-        )
+        lines.append(f"{p.number}. {p.name} — {p.description}")
     return "\n".join(lines)

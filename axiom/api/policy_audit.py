@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 import json
+from pathlib import Path
 from typing import Any
 
 from axiom.api.model_paths import validate_model_path
-
 
 HINTS = (
     "safety",
@@ -21,7 +20,9 @@ HINTS = (
 
 def _load_json(path: Path) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(
+            path.read_text(encoding="utf-8")
+        )  # codeql[py/path-injection]
     except (OSError, ValueError):
         return {}
     return value if isinstance(value, dict) else {}
@@ -37,7 +38,7 @@ def audit_model(model_path: str) -> dict[str, Any]:
         base = root
         files = tuple(
             item
-            for item in root.rglob("*")
+            for item in root.rglob("*")  # codeql[py/path-injection]
             if item.is_file()
         )[:5000]
 
@@ -63,17 +64,11 @@ def audit_model(model_path: str) -> dict[str, Any]:
 
             for hint in HINTS:
                 if hint in blob:
-                    indicators.add(
-                        f"{relative}: contains '{hint}'"
-                    )
+                    indicators.add(f"{relative}: contains '{hint}'")
 
     return {
         "model": str(root),
-        "status": (
-            "review_required"
-            if indicators
-            else "no_obvious_policy_indicators"
-        ),
+        "status": "review_required" if indicators else "no_obvious_policy_indicators",
         "policy_indicators": sorted(indicators),
         "config_files": sorted(configs),
         "scope": (

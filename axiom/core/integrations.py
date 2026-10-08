@@ -35,7 +35,7 @@ class AgentIntegration:
     @classmethod
     def from_dict(cls, data: dict) -> AgentIntegration:
         if not isinstance(data, dict):
-            raise ValueError("Integration entry must be a JSON object.")
+            raise TypeError("Integration entry must be a JSON object.")
 
         try:
             name = data["name"]
@@ -44,7 +44,7 @@ class AgentIntegration:
             raise ValueError("Integration entry is missing valid name/type.") from exc
 
         if not isinstance(name, str) or not name.strip():
-            raise ValueError("Integration name cannot be empty.")
+            raise TypeError("Integration name cannot be empty.")
 
         command = data.get("command")
         url = data.get("url")
@@ -55,7 +55,7 @@ class AgentIntegration:
         if url is not None and not isinstance(url, str):
             raise ValueError("Integration URL must be a string or null.")
         if not isinstance(description, str):
-            raise ValueError("Integration description must be a string.")
+            raise TypeError("Integration description must be a string.")
 
         return cls(
             name=name,
@@ -98,14 +98,11 @@ class IntegrationRegistry:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(
-                f"Invalid integrations registry: {self.path}"
-            ) from exc
+            raise ValueError(f"Invalid integrations registry: {self.path}") from exc
 
         if not isinstance(data, list):
             raise ValueError(
-                f"Invalid integrations registry: expected a JSON array in "
-                f"{self.path}"
+                f"Invalid integrations registry: expected a JSON array in {self.path}"
             )
 
         integrations: list[AgentIntegration] = []
@@ -131,12 +128,9 @@ class IntegrationRegistry:
             integrations = self._read()
 
             if any(
-                item.name.lower() == integration.name.lower()
-                for item in integrations
+                item.name.lower() == integration.name.lower() for item in integrations
             ):
-                raise ValueError(
-                    f"Integration already exists: {integration.name}"
-                )
+                raise ValueError(f"Integration already exists: {integration.name}")
 
             integrations.append(integration)
 
@@ -152,16 +146,14 @@ class IntegrationRegistry:
 
     def remove(self, name: str) -> bool:
         if not isinstance(name, str) or not name.strip():
-            raise ValueError("Integration name cannot be empty.")
+            raise TypeError("Integration name cannot be empty.")
 
         self.root.mkdir(parents=True, exist_ok=True)
         with file_lock(self.lock_file):
             integrations = self._read()
 
             remaining = [
-                item
-                for item in integrations
-                if item.name.lower() != name.lower()
+                item for item in integrations if item.name.lower() != name.lower()
             ]
 
             if len(remaining) == len(integrations):
