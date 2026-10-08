@@ -4,6 +4,7 @@ import os
 from typing import Any
 
 from axiom.api.server_optimizer_routes import register_optimizer_routes
+from axiom.version import __version__
 
 
 def create_app() -> Any:
@@ -14,7 +15,7 @@ def create_app() -> Any:
     from axiom.api.optimization import plan_optimization
     from axiom.api.policy_audit import audit_model
 
-    app = FastAPI(title="AXIOM API", version="0.2.0-beta.5")
+    app = FastAPI(title="AXIOM API", version=__version__)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -47,7 +48,7 @@ def create_app() -> Any:
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
-        return {"status": "ok", "version": "0.2.0-beta.5"}
+        return {"status": "ok", "version": __version__}
 
     @app.post("/api/models/optimize")
     def optimize(req: OptimizeRequest) -> dict[str, Any]:

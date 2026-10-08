@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0-beta.6]
+
+Linux release packaging now includes a checksum-verified onedir tarball for
+fast repeated CLI and daemon launches, plus smoke-tested DEB, AppImage, shell
+installer, and one-file executable assets.
+
+The landing page hero copy is grammatically tightened and its top-left brand
+mark is explicitly locked to the current AXIOM favicon asset.
+
 ## [0.2.0-beta.5]
 
 Optimizer, quantization lab, security hardening and E2E improvements.

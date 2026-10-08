@@ -10,7 +10,7 @@ on:
         description: "Existing release tag to build"
         required: true
         type: string
-        default: "v0.2.0-beta.5"
+        default: "v0.2.0-beta.6"
 
 permissions:
   contents: write
@@ -89,109 +89,59 @@ jobs:
           pip install .
           pip install "pyinstaller>=6.22,<7"
 
-      - name: Build AXIOM executable
+      - name: Download AppImage tool
         run: |
-          rm -rf build out
-          mkdir -p out
-
-          pyinstaller \
-            --noconfirm \
-            --clean \
-            --onefile \
-            --name AXIOM \
-            scripts/build_entry.py
-
-          cp dist/AXIOM "out/AXIOM-${TAG}-linux-x64.elf"
-          chmod +x "out/AXIOM-${TAG}-linux-x64.elf"
-
-      - name: Build Debian package
-        run: |
-          mkdir -p pkg/DEBIAN pkg/usr/bin
-          cp "out/AXIOM-${TAG}-linux-x64.elf" pkg/usr/bin/axiom
-          chmod +x pkg/usr/bin/axiom
-
-          cat > pkg/DEBIAN/control <<EOF
-          Package: axiom-ai
-          Version: ${TAG#v}
-          Section: devel
-          Priority: optional
-          Architecture: amd64
-          Maintainer: NetCore Technologies
-          Description: AXIOM AI Engineering Platform
-           Build AI. Own AI.
-          EOF
-
-          dpkg-deb --build pkg \
-            "out/AXIOM-${TAG}-linux-x64.deb"
-
-      - name: Build AppImage
-        run: |
-          mkdir -p AppDir/usr/bin
-          cp "out/AXIOM-${TAG}-linux-x64.elf" AppDir/usr/bin/axiom
-          chmod +x AppDir/usr/bin/axiom
-
-          cat > AppDir/AppRun <<'EOF'
-          #!/usr/bin/env bash
-          set -e
-          exec "$(dirname "$(readlink -f "$0")")/usr/bin/axiom" "$@"
-          EOF
-          chmod +x AppDir/AppRun
-
-          cat > AppDir/axiom.desktop <<'EOF'
-          [Desktop Entry]
-          Type=Application
-          Name=AXIOM
-          Comment=AI Engineering Platform
-          Exec=axiom
-          Icon=axiom
-          Terminal=true
-          Categories=Development;
-          EOF
-
-          cat > AppDir/axiom.svg <<'EOF'
-          <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-            <rect width="256" height="256" rx="36" fill="#0A0F1E"/>
-            <path d="M128 44L44 212h34l14-30h72l14 30h34L128 44Zm-22 108 22-48 22 48h-44Z" fill="#5B5BFF"/>
-          </svg>
-          EOF
-
           curl -fsSL \
             -o appimagetool.AppImage \
             "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
-
           chmod +x appimagetool.AppImage
 
-          ARCH=x86_64 ./appimagetool.AppImage \
-            AppDir \
-            "out/AXIOM-${TAG}-linux-x64.AppImage"
-
-      - name: Make Linux shell installer
+      - name: Build Linux release assets
         run: |
-          cat > "out/AXIOM-${TAG}-linux-x64.sh" <<EOF
-          #!/usr/bin/env bash
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
+            bash scripts/build_linux_release.sh \
+            "$TAG" \
+            out \
+            "$PWD/appimagetool.AppImage"
+
+      - name: Smoke test Linux release assets
+        run: |
           set -euo pipefail
 
-          SOURCE_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-          SOURCE="\${SOURCE_DIR}/AXIOM-${TAG}-linux-x64.elf"
-          TARGET_DIR="\${HOME}/.local/bin"
-          TARGET="\${TARGET_DIR}/axiom"
+          onefile="out/AXIOM-${TAG}-linux-x64.elf"
+          onedir="build/linux-release/onedir-dist/AXIOM/AXIOM"
+          "$onefile" --no-banner version
+          "$onedir" --no-banner version
 
-          if [[ ! -f "\${SOURCE}" ]]; then
-            echo "AXIOM ELF executable not found."
-            exit 1
-          fi
+          daemon_log="$(mktemp)"
+          daemon_pid=""
+          cleanup() {
+            if [[ -n "$daemon_pid" ]] && kill -0 "$daemon_pid" 2>/dev/null; then
+              kill "$daemon_pid" 2>/dev/null || true
+              wait "$daemon_pid" 2>/dev/null || true
+            fi
+            rm -f "$daemon_log"
+          }
+          trap cleanup EXIT
 
-          mkdir -p "\${TARGET_DIR}"
-          install -m 0755 "\${SOURCE}" "\${TARGET}"
+          "$onedir" --no-banner daemon --port 0 >"$daemon_log" 2>&1 &
+          daemon_pid=$!
+          daemon_url=""
+          for _ in {1..20}; do
+            daemon_url="$(sed -n 's/^AXIOM daemon listening at //p' "$daemon_log" | head -n 1)"
+            [[ -n "$daemon_url" ]] && break
+            kill -0 "$daemon_pid" 2>/dev/null || {
+              cat "$daemon_log"
+              exit 1
+            }
+            sleep 1
+          done
+          [[ -n "$daemon_url" ]]
+          curl --fail --silent --show-error "$daemon_url/health" | grep -q '"status": "ok"'
 
-          echo
-          echo "AXIOM installed to:"
-          echo "  \${TARGET}"
-          echo
-          echo "Run:"
-          echo "  axiom"
-          EOF
-          chmod +x "out/AXIOM-${TAG}-linux-x64.sh"
+          tar -tzf "out/AXIOM-${TAG}-linux-x64.tar.gz" | grep -q '^AXIOM/AXIOM$'
+          dpkg-deb --info "out/AXIOM-${TAG}-linux-x64.deb" >/dev/null
+          bash -n "out/AXIOM-${TAG}-linux-x64.sh"
 
       - name: Upload Linux binaries
         uses: actions/upload-artifact@v4
@@ -379,6 +329,8 @@ jobs:
           [[ -f "release/AXIOM-${TAG}-linux-x64.sh" ]]
           [[ -f "release/AXIOM-${TAG}-linux-x64.elf" ]]
 
+          [[ -f "release/AXIOM-${TAG}-linux-x64.tar.gz" ]]
+
           echo "All required AXIOM assets exist."
 
       - name: Generate checksums
@@ -392,6 +344,7 @@ jobs:
             "AXIOM-${TAG}-windows-x64.exe" \
             "AXIOM-${TAG}-linux-x64.deb" \
             "AXIOM-${TAG}-linux-x64.AppImage" \
+            "AXIOM-${TAG}-linux-x64.tar.gz" \
             "AXIOM-${TAG}-linux-x64.sh" \
             "AXIOM-${TAG}-linux-x64.elf" \
             > SHA256SUMS
@@ -424,8 +377,9 @@ jobs:
             ### Linux
             - `.deb` — Debian package
             - `.AppImage` — portable desktop package
+            - `.tar.gz` — recommended fast-start terminal bundle
             - `.sh` — local installer
-            - `.elf` — raw Linux executable
+            - `.elf` — single-file Linux executable
 
             ## Verification
 

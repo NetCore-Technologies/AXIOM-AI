@@ -14,7 +14,9 @@ curl -fsSL https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/
 The shell installer creates `~/.local/share/axiom` for AXIOM files and links
 the command at `~/.local/bin/axiom`.
 
-- On Linux `x86_64`, it downloads the latest release ELF.
+- On Linux `x86_64`, it downloads and verifies the latest release tarball.
+  The extracted onedir bundle avoids unpacking a large executable on every
+  CLI or daemon launch.
 - On macOS and non-x86 Linux, it creates an isolated Python environment and
   installs from the repository. Python 3.11+ is required for these
   source-install paths.
@@ -27,6 +29,9 @@ axiom version
 axiom guide
 axiom daemon
 ```
+
+The installer downloads `SHA256SUMS` with the Linux bundle and refuses to
+install when the checksum does not match.
 
 ## Windows PowerShell
 
