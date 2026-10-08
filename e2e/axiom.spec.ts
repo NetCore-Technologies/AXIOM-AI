@@ -68,4 +68,17 @@ test.describe("AXIOM landing page", () => {
     );
     expect(gradientElements).toEqual([]);
   });
+
+  test("keeps the landing page focused on the real CLI workflow", async ({ page }) => {
+    await expect(page.locator("#capabilities")).toHaveCount(0);
+    await expect(page.locator(".eyebrow, .image-label, .scroll-cue, figcaption")).toHaveCount(0);
+    await expect(page.locator('link[rel="icon"][href="./assets/axiom-mark.svg"]')).toHaveCount(1);
+    await expect(page.locator("body")).not.toContainText("THE POINT");
+    await expect(page.locator("#hero-title")).toContainText("machine can run");
+
+    const sectionBackgrounds = await page.locator("body > main > section, .site-footer").evaluateAll((elements) =>
+      elements.map((element) => getComputedStyle(element).backgroundColor),
+    );
+    expect(new Set(sectionBackgrounds).size).toBe(1);
+  });
 });

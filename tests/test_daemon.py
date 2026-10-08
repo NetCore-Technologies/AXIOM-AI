@@ -55,6 +55,24 @@ def test_daemon_info_describes_the_local_capabilities(daemon_server, tmp_path: P
     assert payload["port"] == port
     assert payload["project_config"] is True
     assert "model-inspection" in payload["capabilities"]
+    assert payload["endpoints"]["actions"] == "/api/actions"
+
+
+def test_daemon_exposes_local_actions_hardware_and_tool_presence(daemon_server):
+    host, port = daemon_server.server_address[:2]
+
+    status, actions = get_json(host, port, "/api/actions")
+    assert status == 200
+    assert actions["actions"][0]["command"] == "axiom guide"
+
+    status, hardware = get_json(host, port, "/api/hardware")
+    assert status == 200
+    assert hardware["hardware"]["cpu_cores"] >= 1
+    assert "ram_gb" in hardware["hardware"]
+
+    status, tools = get_json(host, port, "/api/tools")
+    assert status == 200
+    assert any(tool["id"] == "codex" for tool in tools["tools"])
 
 
 def test_daemon_returns_a_small_not_found_payload(daemon_server):
@@ -64,7 +82,7 @@ def test_daemon_returns_a_small_not_found_payload(daemon_server):
 
     assert status == 404
     assert payload["error"] == "not_found"
-    assert payload["hint"] == "Try /health or /api/info."
+    assert "/api/actions" in payload["hint"]
 
 
 def test_daemon_rejects_non_loopback_hosts_by_default():

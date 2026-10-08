@@ -26,18 +26,18 @@ def test_render_startup_contains_welcome_and_palette_copy():
 
     rendered = output.getvalue()
     assert (
-        "Inspect models, validate datasets, and plan AI work around your hardware."
+        "Inspect models, validate data, and plan local AI work around your machine."
         in rendered
     )
     assert "Start here: " in rendered
-    assert "axiom init my-project" in rendered
+    assert "axiom guide" in rendered
     assert "Next steps:" in rendered
-    assert COFFEE == "#6F4E37"
-    assert CREAM == "#F7E8C9"
-    assert AMBER == "#D69A3A"
-    assert "38;2;247;232;201" in rendered
-    assert "38;2;214;154;58" in rendered
-    assert "38;2;111;78;55" in rendered
+    assert COFFEE == "#99684E"
+    assert CREAM == "#DEC2AA"
+    assert AMBER == "#171310"
+    assert "38;2;222;194;170" in rendered
+    assert "38;2;23;19;16" in rendered
+    assert "38;2;153;104;78" in rendered
 
 
 def test_show_startup_requires_an_interactive_tty(tmp_path: Path):
@@ -113,7 +113,7 @@ def test_machine_and_usage_arguments_are_suppressed():
     assert suppress_for_arguments(["version"]) is False
 
 
-def test_bare_axiom_invokes_welcome_with_next_steps(monkeypatch):
+def test_bare_axiom_prints_commands_and_starts_the_daemon(monkeypatch):
     calls: list[bool] = []
 
     def fake_show_startup(*, include_next_steps: bool = False, **kwargs):
@@ -122,9 +122,31 @@ def test_bare_axiom_invokes_welcome_with_next_steps(monkeypatch):
         return True
 
     monkeypatch.setattr(cli_main, "show_startup", fake_show_startup)
+    monkeypatch.setattr(cli_main, "run_daemon", lambda: None)
 
     result = CliRunner().invoke(cli_main.app, [])
 
     assert result.exit_code == 0
     assert "Missing command" not in result.stdout
-    assert calls == [True]
+    assert calls == [False]
+    assert "Useful commands" in result.stdout
+    assert "axiom model inspect ./models/my-model" in result.stdout
+    assert "Local daemon" in result.stdout
+
+
+def test_no_banner_bare_axiom_still_starts_the_daemon(monkeypatch):
+    startup_calls: list[bool] = []
+
+    def fake_show_startup(*, include_next_steps: bool = False, **kwargs):
+        del kwargs
+        startup_calls.append(include_next_steps)
+        return True
+
+    monkeypatch.setattr(cli_main, "show_startup", fake_show_startup)
+    monkeypatch.setattr(cli_main, "run_daemon", lambda: None)
+
+    result = CliRunner().invoke(cli_main.app, ["--no-banner"])
+
+    assert result.exit_code == 0
+    assert startup_calls == []
+    assert "Useful commands" in result.stdout
