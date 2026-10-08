@@ -143,7 +143,8 @@ code, kbd { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .profile-dropdown .danger-action:hover { color: var(--danger); }
 
 .page-wrap { max-width: 1400px; margin: 0 auto; padding: 53px 42px 78px; }
-.sidebar-collapsed .page-wrap { max-width: none; width: 100%; }
+.sidebar-collapsed .main-shell { width: 100%; min-width: 0; }
+.sidebar-collapsed .page-wrap { max-width: none; width: 100%; margin-inline: 0; }
 .page-header { justify-content: space-between; align-items: flex-end; gap: 28px; margin-bottom: 34px; }
 .page-header h1 { margin: 10px 0 11px; color: var(--ink-strong); font-size: clamp(28px, 3vw, 42px); font-weight: 680; letter-spacing: -.055em; line-height: 1; }
 .page-description { max-width: 650px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
@@ -875,10 +876,12 @@ code, kbd { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 /* AXIOM Agent Optimizer */
 .axiom-optimizer {
   width: 100%;
+  width: 100%;
   margin: 24px 0;
 }
 
 .axiom-optimizer-card {
+  width: 100%;
   width: 100%;
   border: 1px solid rgba(255,255,255,.10);
   background: rgba(13,14,21,.80);

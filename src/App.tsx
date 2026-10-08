@@ -1,4 +1,5 @@
 import AxiomOptimizer from "./components/AxiomOptimizer";
+import AxiomQuantizer from "./components/AxiomQuantizer";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -80,7 +81,8 @@ type Page =
   | "diagnostics"
   | "logs"
   | "settings"
-  | "optimizer";
+  | "optimizer"
+  | "quantizer";
 
 type Theme = "dark" | "light";
 type Tone = "success" | "warning" | "danger" | "neutral" | "info";
@@ -105,6 +107,12 @@ const navItems: NavItem[] = [  {
     icon: Zap,
     section: "OPTIMIZATION",
   },
+{
+  id: "quantizer",
+  label: "Quantization Lab",
+  description: "Hardware-aware quantization and fit planning",
+  icon: SlidersHorizontal,
+},
 
   {
     id: "dashboard",
@@ -179,6 +187,11 @@ const pageMeta: Record<
     label: "Agent Optimizer",
     kicker: "BETA 5 / MODEL OPTIMIZATION",
     description: "Interactive questionnaire, hardware detection and quantization planning.",
+  },
+  quantizer: {
+    label: "Quantization Lab",
+    kicker: "BETA 5 / HARDWARE OPTIMIZATION",
+    description: "Choose an agent profile and hardware target to select a model quantization plan.",
   },
   dashboard: {
     label: "Control center",
@@ -1297,6 +1310,8 @@ function WorkspacePage({
   switch (page) {
     case "optimizer":
       return <AxiomOptimizer />;
+    case "quantizer":
+      return <AxiomQuantizer />;
     case "dashboard":
       return <Dashboard username={username} setPage={setPage} onNotify={onNotify} />;
     case "models":

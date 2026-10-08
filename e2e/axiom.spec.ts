@@ -39,6 +39,10 @@ test.describe("AXIOM Control Center", () => {
     await expect(page.getByRole("heading", { name: "Make a large model fit your device" })).toBeVisible();
     await expect(page.getByRole("button", { name: "OPTIMIZE MODEL" })).toBeDisabled();
 
+    await page.getByRole("button", { name: "Quantization Lab" }).click();
+    await expect(page.getByRole("heading", { name: "Make a large model fit your device" })).toBeVisible();
+    await expect(page.getByText("AXIOM / QUANTIZATION LAB")).toBeVisible();
+
     await page.getByRole("button", { name: "Collapse sidebar" }).click();
     await expect(page.locator(".app-shell")).toHaveClass(/sidebar-collapsed/);
     await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
