@@ -61,7 +61,7 @@ def test_cli_executable_names_are_present_and_globally_unique():
 def test_current_first_party_executable_and_auth_names_are_not_stale():
     by_id = {tool.id: tool for tool in TOOL_CATALOG}
 
-    assert by_id["cursor-agent"].executable_names == ("agent",)
+    assert set(by_id["cursor-agent"].executable_names) == {"cursor-agent", "agent"}
     assert by_id["openrouter"].executable_names == ("openrouter",)
     assert by_id["zai-glm"].executable_names == ("zai-cli",)
     assert "GEMINI_API_KEY" in by_id["antigravity-cli"].api_key_env_vars

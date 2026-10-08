@@ -56,8 +56,8 @@ class CapabilitySpec:
     command: str
     reference_url: str
     supported_platforms: tuple[Platform, ...]
-    notes: str = ""
     reference_supported_platforms: tuple[Platform, ...] = ("macos",)
+    notes: str = ""
 
 
 TOOL_CATALOG: tuple[ToolSpec, ...] = (
@@ -263,7 +263,7 @@ TOOL_CATALOG: tuple[ToolSpec, ...] = (
         id="cursor-agent",
         name="Cursor Agent",
         kind="cli",
-        executable_names=("agent",),
+        executable_names=("cursor-agent", "agent"),
         purpose="Run Cursor's coding agent interactively or headlessly from a terminal for code changes, review, and automation.",
         auth_notes=(
             "Browser login is recommended. Headless scripts can use CURSOR_API_KEY; never put that key "
@@ -271,7 +271,7 @@ TOOL_CATALOG: tuple[ToolSpec, ...] = (
         ),
         api_key_env_vars=("CURSOR_API_KEY",),
         homepage_url="https://cursor.com/",
-        source_url="https://cursor.com/docs/cli/overview",
+        source_url="https://docs.cursor.com/en/cli/overview",
         supported_platforms=ALL_PLATFORMS,
         install_candidates=(
             InstallCandidate(
@@ -292,11 +292,14 @@ TOOL_CATALOG: tuple[ToolSpec, ...] = (
                 platform="windows",
                 command="irm 'https://cursor.com/install?win32=true' | iex",
                 install_kind="script",
-                source_url="https://docs.cursor.com/en/cli/installation",
+                source_url="https://prod.cursor.com/docs/enterprise/deployment-patterns",
                 notes="Current official native Windows PowerShell candidate; WSL uses the POSIX command.",
             ),
         ),
-        notes="Current Cursor docs use agent as the executable; older docs used cursor-agent. Review command approvals before headless write access.",
+        notes=(
+            "The POSIX and WSL docs use cursor-agent; current native Windows deployment docs use agent. "
+            "Review command approvals before headless write access."
+        ),
     ),
     ToolSpec(
         id="free-pi",
@@ -548,9 +551,9 @@ TOOL_CATALOG: tuple[ToolSpec, ...] = (
             "Create a Z.AI API key or use a Z.AI GLM Coding Plan account. The official quick start passes "
             "the key to the SDK/client; the official CLI also supports ZAI_API_KEY and region selection. Keep the value in secure storage."
         ),
-        api_key_env_vars=("ZAI_API_KEY", "ZAI_REGION"),
+        api_key_env_vars=("ZAI_API_KEY",),
         homepage_url="https://z.ai/",
-        source_url="https://github.com/zai-org/zai-cli",
+        source_url="https://www.npmjs.com/package/@z_ai/zai-cli",
         supported_platforms=ALL_PLATFORMS,
         install_candidates=(
             InstallCandidate(
