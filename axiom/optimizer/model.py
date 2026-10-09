@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from axiom.api.model_paths import (
-    validate_child_path,
+    MODEL_ROOT,
     validate_model_path,
     validate_output_path,
 )
@@ -104,16 +104,21 @@ def _copy_without_following_symlinks(source: Path, destination: Path) -> None:
 
 def _config(path: Path) -> dict[str, Any]:
     trusted_path = validate_model_path(path)
-    if not trusted_path.is_dir():
+    root_str = os.path.realpath(trusted_path)
+    if not root_str.startswith(os.path.realpath(MODEL_ROOT)):
+        return {}
+    if not os.path.isdir(root_str):
         return {}
 
     for name in ("config.json", "model_config.json"):
-        candidate = trusted_path / name
-        if candidate.is_symlink():
+        raw = os.path.join(root_str, name)
+        if os.path.islink(raw):
             raise ValueError(
-                f"model configuration contains an unsupported symlink: {candidate}"
+                f"model configuration contains an unsupported symlink: {raw}"
             )
-        cfg = validate_child_path(trusted_path, name)
+        cfg = os.path.realpath(raw)
+        if not cfg.startswith(root_str + os.sep):
+            continue
         try:
             fd = os.open(cfg, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         except FileNotFoundError:
@@ -146,7 +151,6 @@ def _config(path: Path) -> dict[str, Any]:
 def inspect_model(source: str) -> ModelInfo:
     path = validate_model_path(source)
 
-    # codeql[py/path-injection]
     if not path.exists():
         return ModelInfo(
             source=source,
@@ -157,7 +161,6 @@ def inspect_model(source: str) -> ModelInfo:
             weights=[],
         )
 
-    # codeql[py/path-injection]
     root = path if path.is_dir() else path.parent
     cfg = _config(root)
 
@@ -174,12 +177,10 @@ def inspect_model(source: str) -> ModelInfo:
 
     weights = [
         str(p.relative_to(root))
-        # codeql[py/path-injection]
         for p in _trusted_files(root)
         if p.is_file() and p.suffix.lower() in {".safetensors", ".bin", ".gguf"}
     ]
 
-    # codeql[py/path-injection]
     count = len(_trusted_files(root))
 
     return ModelInfo(
@@ -202,7 +203,6 @@ def choose_quantization(
     if usable <= 0:
         return profile.preferred_quantization
 
-    # Conservative memory budget.
     if model.estimated_fp16_gb <= usable * 0.75:
         return "int8"
 
@@ -219,11 +219,9 @@ def create_runtime_bundle(
     src = validate_model_path(source)
     dst = validate_output_path(destination)
 
-    # codeql[py/path-injection]
     if not src.exists():
         raise FileNotFoundError(source)
 
-    # codeql[py/path-injection]
     dst_root = dst.resolve()
     dst.mkdir(parents=True, exist_ok=True)
 
@@ -253,11 +251,8 @@ def create_runtime_bundle(
         name = item.name.lower()
         suffix = item.suffix.lower()
 
-        # Keep inference-critical files and model weights.
         keep = name in RUNTIME_KEEP_NAMES or suffix in {".safetensors", ".bin", ".gguf"}
 
-        # Drop obvious repository-only material such as docs/training/
-        # source/test files from the runtime bundle.
         if not keep:
             skipped.append(str(rel))
             continue
