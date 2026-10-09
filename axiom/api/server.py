@@ -4,6 +4,7 @@ import os
 from typing import Any
 
 from axiom.api.server_optimizer_routes import register_optimizer_routes
+from axiom.api.workspace import router as workspace_router
 from axiom.version import __version__
 
 
@@ -32,6 +33,7 @@ def create_app() -> Any:
     )
 
     register_optimizer_routes(app)
+    app.include_router(workspace_router)
 
     class OptimizeRequest(BaseModel):
         model: str

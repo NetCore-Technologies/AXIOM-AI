@@ -52,6 +52,36 @@ Activity,
 
 const API_BASE = import.meta.env.VITE_AXIOM_API_URL || "";
 
+async function recordWorkspaceAction(
+  action: string,
+  detail?: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/workspace/actions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, detail }),
+  });
+  if (!response.ok) {
+    throw new Error(`Workspace action failed (${response.status})`);
+  }
+}
+
+function backendAction(
+  action: string,
+  onNotify: (message: string, tone?: Tone) => void,
+  message: string,
+  detail?: string,
+) {
+  void recordWorkspaceAction(action, detail)
+    .then(() => onNotify(message))
+    .catch((error: unknown) => {
+      onNotify(
+        error instanceof Error ? error.message : "Backend action failed.",
+        "warning",
+      );
+    });
+}
+
 function equalSecrets(a: string, b: string): boolean {
   const left = new TextEncoder().encode(a);
   const right = new TextEncoder().encode(b);
@@ -1437,7 +1467,7 @@ function Dashboard({
           <div className="inline-meta"><span><TerminalSquare size={14} /> Suggested command</span><code>axiom doctor</code></div>
         </Surface>
 
-        <Surface className="module-surface" title="Platform map" eyebrow="WHAT AXIOM OWNS" action={<button type="button" className="text-button" onClick={() => onNotify("Module details are available in the workspace navigation.")}>View all <ArrowRight size={15} /></button>}>
+        <Surface className="module-surface" title="Platform map" eyebrow="WHAT AXIOM OWNS" action={<button type="button" className="text-button" onClick={() => backendAction("dashboard.module_details", onNotify, "Module details are available in the workspace navigation.")}>View all <ArrowRight size={15} /></button>}>
           <div className="module-list">{platformModules.map((module) => <ModuleRow key={module.page} module={module} onClick={() => setPage(module.page)} />)}</div>
         </Surface>
 
@@ -1472,27 +1502,58 @@ function FeaturePage({
 }
 
 function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
-  return <FeaturePage page="models" actions={<button type="button" className="button primary-button" onClick={() => onNotify("Model import needs a connected runtime or the local CLI.", "warning")}><Plus size={16} /> Add model</button>}>
-    <div className="info-grid"><InfoCard icon={BrainCircuit} label="Registry" value="Waiting" detail="No endpoint connected" tone="warning" /><InfoCard icon={HardDrive} label="Storage" value="N/A" detail="Not reported" tone="neutral" /><InfoCard icon={SlidersHorizontal} label="Formats" value="Ready" detail="Metadata supported" tone="success" /></div>
-    <Surface title="Model registry" eyebrow="LOCAL INVENTORY" action={<button type="button" className="icon-text-button" onClick={() => onNotify("There is no model refresh endpoint in this frontend contract.", "warning")}><RefreshCcw size={15} /> Refresh</button>}>
-      <EmptyState icon={BrainCircuit} title="No model inventory connected" description="The repository currently exposes model management through the AXIOM CLI. This UI does not invent a registry endpoint, so it is waiting for a real connection." action={<CliReference command="axiom model list" />} />
+  const [models, setModels] = useState<Array<{ name: string; source: string; format: string }>>([]);
+  const refresh = () => {
+    void fetch(`${API_BASE}/api/workspace/models`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Could not load the model registry");
+        return response.json() as Promise<{ models: Array<{ name: string; source: string; format: string }> }>;
+      })
+      .then((data) => setModels(data.models))
+      .catch((error: unknown) => onNotify(error instanceof Error ? error.message : "Model registry unavailable", "warning"));
+  };
+  useEffect(refresh, []);
+  return <FeaturePage page="models" actions={<button type="button" className="button primary-button" onClick={() => backendAction("models.add", onNotify, "Model import requested. Use the CLI or provide a model path to continue.")}><Plus size={16} /> Add model</button>}>
+    <div className="info-grid"><InfoCard icon={BrainCircuit} label="Registry" value={models.length ? `${models.length}` : "Empty"} detail={models.length ? "Models registered" : "No models registered"} tone={models.length ? "success" : "warning"} /><InfoCard icon={HardDrive} label="Storage" value="Local" detail="AXIOM registry" tone="neutral" /><InfoCard icon={SlidersHorizontal} label="Formats" value="Ready" detail="Metadata supported" tone="success" /></div>
+    <Surface title="Model registry" eyebrow="LOCAL INVENTORY" action={<button type="button" className="icon-text-button" onClick={refresh}><RefreshCcw size={15} /> Refresh</button>}>
+      {models.length ? <div className="module-list">{models.map((model) => <div className="module-row" key={model.name}><span className="module-icon"><BrainCircuit size={17} /></span><span className="module-copy"><b>{model.name}</b><small>{model.source} · {model.format}</small></span></div>)}</div> : <EmptyState icon={BrainCircuit} title="No model inventory connected" description="Add a model through the CLI, then refresh this registry." action={<CliReference command="axiom model list" />} />}
     </Surface>
     <ContractNote command="axiom model list" />
   </FeaturePage>;
 }
 
 function Datasets({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
-  return <FeaturePage page="datasets" actions={<button type="button" className="button primary-button" onClick={() => onNotify("Dataset import needs a connected runtime or the local CLI.", "warning")}><Plus size={16} /> Import dataset</button>}>
-    <div className="info-grid"><InfoCard icon={Database} label="Latest report" value="None" detail="No inspection loaded" tone="neutral" /><InfoCard icon={CircleAlert} label="Validation" value="Pending" detail="No dataset selected" tone="warning" /><InfoCard icon={BarChart3} label="Token estimate" value="N/A" detail="Waiting for data" tone="neutral" /></div>
-    <Surface title="Dataset workspace" eyebrow="INSPECTION QUEUE" action={<button type="button" className="icon-text-button" onClick={() => onNotify("There is no dataset listing endpoint in this frontend contract.", "warning")}><RefreshCcw size={15} /> Refresh</button>}>
-      <EmptyState icon={Database} title="No dataset report yet" description="Start with a JSONL file and run inspection or validation through the CLI. The UI will stay empty until a real report contract exists." action={<CliReference command="axiom dataset inspect ./data/train.jsonl" />} />
+  const [datasets, setDatasets] = useState<Array<{ path: string; size_bytes: number }>>([]);
+  const refresh = () => {
+    void fetch(`${API_BASE}/api/workspace/datasets`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Could not load datasets");
+        return response.json() as Promise<{ datasets: Array<{ path: string; size_bytes: number }> }>;
+      })
+      .then((data) => setDatasets(data.datasets))
+      .catch((error: unknown) => onNotify(error instanceof Error ? error.message : "Dataset inventory unavailable", "warning"));
+  };
+  useEffect(refresh, []);
+  return <FeaturePage page="datasets" actions={<button type="button" className="button primary-button" onClick={() => backendAction("datasets.import", onNotify, "Dataset import requested. Use the CLI or provide a dataset path to continue.")}><Plus size={16} /> Import dataset</button>}>
+    <div className="info-grid"><InfoCard icon={Database} label="Datasets" value={`${datasets.length}`} detail={datasets.length ? "JSONL files found" : "No JSONL files"} tone={datasets.length ? "success" : "neutral"} /><InfoCard icon={CircleAlert} label="Validation" value="CLI" detail="Run inspection to validate" tone="warning" /><InfoCard icon={BarChart3} label="Inventory" value="Live" detail="Read from data/" tone="success" /></div>
+    <Surface title="Dataset workspace" eyebrow="INSPECTION QUEUE" action={<button type="button" className="icon-text-button" onClick={refresh}><RefreshCcw size={15} /> Refresh</button>}>
+      {datasets.length ? <div className="module-list">{datasets.map((dataset) => <div className="module-row" key={dataset.path}><span className="module-icon"><Database size={17} /></span><span className="module-copy"><b>{dataset.path}</b><small>{dataset.size_bytes.toLocaleString()} bytes</small></span></div>)}</div> : <EmptyState icon={Database} title="No dataset report yet" description="Add a JSONL file under data/ through the CLI, then refresh this view." action={<CliReference command="axiom dataset inspect ./data/train.jsonl" />} />}
     </Surface>
     <ContractNote command="axiom dataset validate ./data/train.jsonl" />
   </FeaturePage>;
 }
 
 function Training({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
-  return <FeaturePage page="training" actions={<button type="button" className="button primary-button" onClick={() => onNotify("Training execution is not exposed by the current repository contract.", "warning")}><Play size={16} /> New plan</button>}>
+  const createPlan = () => {
+    void fetch(`${API_BASE}/api/workspace/training-plan`, { method: "POST" })
+      .then((response) => {
+        if (!response.ok) throw new Error("Training plan request failed");
+        return response.json() as Promise<{ plan: { method: string; fits_hardware: boolean } }>;
+      })
+      .then((data) => onNotify(`Training plan ready: ${data.plan.method}, ${data.plan.fits_hardware ? "fits hardware" : "review hardware fit"}.`))
+      .catch((error: unknown) => onNotify(error instanceof Error ? error.message : "Training plan unavailable", "warning"));
+  };
+  return <FeaturePage page="training" actions={<button type="button" className="button primary-button" onClick={createPlan}><Play size={16} /> New plan</button>}>
     <div className="info-grid"><InfoCard icon={Zap} label="Method" value="LoRA" detail="Recommended starting point" tone="success" /><InfoCard icon={Cpu} label="Hardware" value="Unknown" detail="Run axiom system info" tone="warning" /><InfoCard icon={TimerReset} label="Execution" value="Not available" detail="Planning only today" tone="neutral" /></div>
     <div className="two-column-grid">
       <Surface title="Planning checklist" eyebrow="BEFORE YOU RUN">
@@ -1504,7 +1565,7 @@ function Training({ onNotify }: { onNotify: (message: string, tone?: Tone) => vo
 }
 
 function Evaluation({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
-  return <FeaturePage page="evaluation" actions={<button type="button" className="button primary-button" onClick={() => onNotify("Evaluation runners are not exposed by the current repository contract.", "warning")}><Play size={16} /> Run evaluation</button>}>
+  return <FeaturePage page="evaluation" actions={<button type="button" className="button primary-button" onClick={() => backendAction("evaluation.run", onNotify, "Evaluation request recorded. A benchmark runner is required to produce results.")}><Play size={16} /> Run evaluation</button>}>
     <div className="info-grid"><InfoCard icon={Gauge} label="Latest score" value="N/A" detail="No report loaded" tone="neutral" /><InfoCard icon={BarChart3} label="Regression" value="N/A" detail="Needs a baseline" tone="neutral" /><InfoCard icon={TriangleAlert} label="Failures" value="N/A" detail="No assertions run" tone="neutral" /></div>
     <Surface title="Quality history" eyebrow="REPORTS"><EmptyState icon={CircleGauge} title="No evaluation history" description="The evaluation subsystem is present as a foundation, but there is no report API for this frontend to read yet." action={<CliReference command="axiom evaluation" disabled />} /></Surface>
     <Callout tone="info" title="Keep quality repeatable">When evaluation is wired in, this surface is ready for baselines, regressions, and blocking checks without changing the surrounding navigation.</Callout>
@@ -1512,21 +1573,30 @@ function Evaluation({ onNotify }: { onNotify: (message: string, tone?: Tone) => 
 }
 
 function Runtime({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
-  return <FeaturePage page="runtime" actions={<button type="button" className="button secondary-button" onClick={() => onNotify("Runtime deployment needs an exposed serving contract.", "warning")}><RadioTower size={16} /> Connect runtime</button>}>
+  const checkRuntime = () => {
+    void fetch(`${API_BASE}/api/workspace/runtime`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Runtime status request failed");
+        return response.json() as Promise<{ status: string }>;
+      })
+      .then((data) => onNotify(`Runtime status: ${data.status}.`))
+      .catch((error: unknown) => onNotify(error instanceof Error ? error.message : "Runtime status unavailable", "warning"));
+  };
+  return <FeaturePage page="runtime" actions={<button type="button" className="button secondary-button" onClick={checkRuntime}><RadioTower size={16} /> Connect runtime</button>}>
     <div className="runtime-banner"><div className="runtime-state-icon"><RadioTower size={20} /></div><div><StatusPill tone="warning">OFFLINE</StatusPill><h2>Waiting for a local engine</h2><p>No frontend endpoint or serving process is defined in this repository. The UI is ready to show runtime state when one exists.</p></div><code>axiom mcp serve</code></div>
     <div className="info-grid"><InfoCard icon={Activity} label="Requests" value="N/A" detail="No live feed" tone="neutral" /><InfoCard icon={Cpu} label="Memory" value="N/A" detail="No telemetry" tone="neutral" /><InfoCard icon={ServerCog} label="API" value="Unbound" detail="Contract required" tone="warning" /></div>
-    <Surface title="Request flow" eyebrow="LIVE TELEMETRY"><EmptyState icon={RadioTower} title="No requests to display" description="Request throughput, latency, and model selection will appear here after a real runtime connector is added." action={<button type="button" className="text-button" onClick={() => onNotify("The current UI build has no runtime connector to inspect.", "warning")}>Why is this empty? <ArrowRight size={15} /></button>} /></Surface>
+    <Surface title="Request flow" eyebrow="LIVE TELEMETRY"><EmptyState icon={RadioTower} title="No requests to display" description="Request throughput, latency, and model selection will appear here after a real runtime connector is added." action={<button type="button" className="text-button" onClick={() => backendAction("runtime.explain_empty", onNotify, "No runtime request feed is connected yet.")}>Why is this empty? <ArrowRight size={15} /></button>} /></Surface>
   </FeaturePage>;
 }
 
 function MCP({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
   const servers = ["filesystem", "local-runtime", "developer-tools"];
-  return <FeaturePage page="mcp" actions={<button type="button" className="button primary-button" onClick={() => onNotify("MCP server discovery needs a connected gateway.", "warning")}><Plus size={16} /> Add server</button>}>
+  return <FeaturePage page="mcp" actions={<button type="button" className="button primary-button" onClick={() => backendAction("mcp.add_server", onNotify, "MCP server registration requested. Connect a gateway to continue.")}><Plus size={16} /> Add server</button>}>
     <div className="mcp-layout">
       <Surface title="Servers" eyebrow="GATEWAY INVENTORY">
-        <div className="server-list">{servers.map((server) => <button type="button" className="server-row" key={server} onClick={() => onNotify(`${server} is a design-time placeholder until the MCP gateway is connected.`, "warning")}><span className="server-icon"><Network size={16} /></span><span><b>{server}</b><small>Waiting for gateway</small></span><StatusPill tone="neutral">OFFLINE</StatusPill></button>)}</div>
+        <div className="server-list">{servers.map((server) => <button type="button" className="server-row" key={server} onClick={() => backendAction("mcp.inspect", onNotify, `${server} inspection requested; the MCP gateway is not connected.`)}><span className="server-icon"><Network size={16} /></span><span><b>{server}</b><small>Waiting for gateway</small></span><StatusPill tone="neutral">OFFLINE</StatusPill></button>)}</div>
       </Surface>
-      <Surface title="Inspector" eyebrow="TOOLS / RESOURCES"><EmptyState icon={Network} title="Select a connected server" description="Tool schemas, resources, prompts, and execution traces will appear here when the MCP gateway reports them." action={<button type="button" className="text-button" onClick={() => onNotify("No MCP gateway endpoint is available in the current frontend contract.", "warning")}>Check contract <ArrowRight size={15} /></button>} /></Surface>
+      <Surface title="Inspector" eyebrow="TOOLS / RESOURCES"><EmptyState icon={Network} title="Select a connected server" description="Tool schemas, resources, prompts, and execution traces will appear here when the MCP gateway reports them." action={<button type="button" className="text-button" onClick={() => backendAction("mcp.check_contract", onNotify, "MCP contract check recorded; no gateway is connected.")}>Check contract <ArrowRight size={15} /></button>} /></Surface>
     </div>
   </FeaturePage>;
 }
@@ -1563,13 +1633,21 @@ function Diagnostics({ onNotify }: { onNotify: (message: string, tone?: Tone) =>
       <DiagnosticRow icon={CircleCheck} title="Session timeout" detail="Automatic logout is enabled after 10 minutes of inactivity." state="PASS" tone="success" />
     </div>
     {scanState === "blocked" && <Callout tone="warning" title="Backend connection failed">Start the AXIOM API and verify <code>/api/health</code> before retrying the scan.</Callout>}
-    {scanState === "idle" && <button type="button" className="text-button" onClick={() => onNotify("The scan will stay honest: without a bridge, it reports the contract boundary.")}>What does this check? <ArrowRight size={15} /></button>}
+    {scanState === "idle" && <button type="button" className="text-button" onClick={() => backendAction("dashboard.module_details", onNotify, "The scan checks backend health and hardware availability.")}>What does this check? <ArrowRight size={15} /></button>}
   </FeaturePage>;
 }
 
 function LogsPage({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
-  return <FeaturePage page="logs" actions={<button type="button" className="button secondary-button" onClick={() => onNotify("There are no events to filter in this session.")}><ListFilter size={16} /> Filter</button>}>
-    <Surface title="Event stream" eyebrow="LIVE / LOCAL" action={<StatusPill tone="neutral">EMPTY</StatusPill>}><EmptyState icon={TerminalSquare} title="No events recorded" description="The log view is intentionally empty until a runtime, MCP gateway, or CLI report sends events to it." action={<button type="button" className="text-button" onClick={() => onNotify("Log ingestion is not connected in this frontend-only build.", "warning")}>About the boundary <ArrowRight size={15} /></button>} /></Surface>
+  const [eventCount, setEventCount] = useState(0);
+  const refresh = () => {
+    void fetch(`${API_BASE}/api/workspace/events`)
+      .then((response) => response.json() as Promise<{ events: unknown[] }>)
+      .then((data) => setEventCount(data.events.length))
+      .catch(() => onNotify("Could not load workspace events.", "warning"));
+  };
+  useEffect(refresh, []);
+  return <FeaturePage page="logs" actions={<button type="button" className="button secondary-button" onClick={() => { refresh(); backendAction("logs.filter", onNotify, "Workspace event stream refreshed."); }}><ListFilter size={16} /> Refresh</button>}>
+    <Surface title="Event stream" eyebrow="LIVE / LOCAL" action={<StatusPill tone={eventCount ? "success" : "neutral"}>{eventCount ? `${eventCount} EVENTS` : "EMPTY"}</StatusPill>}>{eventCount ? <div className="empty-copy"><h3>{eventCount} workspace actions recorded</h3><p>Refresh to retrieve the latest backend event count.</p></div> : <EmptyState icon={TerminalSquare} title="No events recorded" description="Backend-connected workspace actions will appear here." action={<button type="button" className="text-button" onClick={() => backendAction("logs.explain_empty", onNotify, "No backend workspace events have been recorded yet.")}>About the boundary <ArrowRight size={15} /></button>} />}</Surface>
     <div className="log-contract"><span><FileCode2 size={15} /> Expected event sources</span><code>runtime · mcp · evaluation · axiom.core</code></div>
   </FeaturePage>;
 }
@@ -1599,7 +1677,7 @@ function SettingsPage({
       </Surface>
       <Surface title="Integration boundary" eyebrow="HONEST STATE">
         <Callout tone="info" title="Backend connection is available">Health, hardware, optimization, and policy-audit requests use the AXIOM FastAPI contract. Model inventory, datasets, runtime, and logs still require their dedicated endpoints.</Callout>
-        <button type="button" className="text-button" onClick={() => onNotify("The dashboard and diagnostics pages use the live backend health and hardware endpoints.")}>Review integration note <ArrowRight size={15} /></button>
+        <button type="button" className="text-button" onClick={() => backendAction("settings.integration_note", onNotify, "Health, hardware, inventory, training-plan, runtime, and event actions use the AXIOM backend.")}>Review integration note <ArrowRight size={15} /></button>
       </Surface>
     </div>
   </FeaturePage>;
