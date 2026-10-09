@@ -215,7 +215,8 @@ def register(app, model_app, dataset_app) -> None:
                 f"System: {hardware['os_name']} / {hardware['architecture']}\n"
                 f"CPU: {hardware['cpu_cores']} cores, RAM: {hardware['ram_gb']:.2f} GB\n"
                 f"GPU: {hardware['gpu_name'] or 'not detected'}\n\n"
-                f"Tools on PATH: {tools['available']} of {tools['total']}",
+                f"Tools on PATH: {tools['available']} of {tools['total']}\n"
+                f"Missing tools: {', '.join(tools['missing']) or 'none'}",
                 title="AXIOM SUMMARY",
             )
         )
