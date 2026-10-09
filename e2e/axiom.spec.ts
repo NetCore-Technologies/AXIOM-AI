@@ -22,6 +22,53 @@ test.describe("AXIOM landing page", () => {
     await expect(page.locator("#install")).toContainText("Install the CLI");
   });
 
+  test("switches the installer to the visitor's platform", async ({ page }) => {
+    const unixPanel = page.locator('[data-platform-panel="unix"]');
+    const windowsPanel = page.locator('[data-platform-panel="windows"]');
+    const unixButton = page.getByRole("button", { name: "macOS / Linux" });
+    const windowsButton = page.getByRole("button", { name: "Windows" });
+    const detectedPlatform = await page.evaluate(() =>
+      /win/i.test(navigator.userAgentData?.platform || navigator.platform || "")
+        ? "windows"
+        : "unix",
+    );
+
+    await expect(page.locator(`[data-platform-panel="${detectedPlatform}"]`)).toBeVisible();
+    await expect(page.locator(`[data-platform="${detectedPlatform}"]`)).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await unixButton.click();
+
+    await expect(unixPanel).toBeVisible();
+    await expect(windowsPanel).toBeHidden();
+    await expect(unixButton).toHaveAttribute("aria-pressed", "true");
+
+    await windowsButton.click();
+
+    await expect(windowsPanel).toBeVisible();
+    await expect(unixPanel).toBeHidden();
+    await expect(windowsButton).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#platform-note")).toContainText("PowerShell");
+
+    await unixButton.click();
+    await expect(unixPanel).toBeVisible();
+    await expect(windowsPanel).toBeHidden();
+  });
+
+  test("explains and copies the loopback health check", async ({ page }) => {
+    await expect(page.locator(".daemon-preview")).toContainText("local only");
+    await expect(page.locator("#daemon-endpoint")).toHaveText(
+      "curl http://127.0.0.1:<free port>/health",
+    );
+
+    await page.locator('.daemon-preview [data-copy="daemon-endpoint"]').click();
+
+    await expect(page.locator('.daemon-preview [data-copy="daemon-endpoint"]')).toHaveText("Copied");
+    await expect(page.locator("#daemon-copy-status")).toHaveText("Copied to your clipboard.");
+  });
+
   test("keeps GitHub and CLI destinations explicit and network-independent", async ({ page }) => {
     const githubLinks = page.locator(
       'a[href="https://github.com/NetCore-Technologies/AXIOM-AI"]',
@@ -50,6 +97,7 @@ test.describe("AXIOM landing page", () => {
     await expect(page.locator("#windows-command")).toHaveText(
       "irm https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.ps1 | iex",
     );
+    await expect(page.locator(".install-optional")).toContainText("never required");
   });
 
   test("does not render gradient styling or fake dashboard metrics", async ({ page }) => {

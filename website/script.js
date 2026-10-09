@@ -93,12 +93,59 @@
     });
   });
 
+  const platformButtons = document.querySelectorAll("[data-platform]");
+  const platformPanels = document.querySelectorAll("[data-platform-panel]");
+  const platformNote = document.querySelector("#platform-note");
+  const platformNotes = {
+    unix: "The shell installer uses the native Linux bundle on x86_64 and a Python fallback elsewhere.",
+    windows: "PowerShell installs AXIOM under your user profile and adds the command to your user PATH.",
+  };
+
+  const detectedPlatform = /win/i.test(
+    navigator.userAgentData?.platform || navigator.platform || "",
+  )
+    ? "windows"
+    : "unix";
+
+  const setPlatform = (platform) => {
+    platformButtons.forEach((button) => {
+      const active = button.dataset.platform === platform;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+
+    platformPanels.forEach((panel) => {
+      panel.hidden = panel.dataset.platformPanel !== platform;
+      panel.classList.toggle("is-active", panel.dataset.platformPanel === platform);
+    });
+
+    if (platformNote) platformNote.textContent = platformNotes[platform] || "";
+  };
+
+  platformButtons.forEach((button) => {
+    button.addEventListener("click", () => setPlatform(button.dataset.platform));
+  });
+  setPlatform(detectedPlatform);
+
   const copyStatus = document.querySelector("#copy-status");
+
+  document.querySelectorAll("[aria-describedby]").forEach((element) => {
+    const status = document.getElementById(element.getAttribute("aria-describedby"));
+    if (status && !status.dataset.defaultText) {
+      status.dataset.defaultText = status.textContent.trim();
+    }
+  });
 
   const copyText = async (text) => {
     if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      return;
+      try {
+        await navigator.clipboard.writeText(text);
+        return;
+      } catch {
+        // Some browsers expose the API but still deny clipboard permission.
+        // Fall through to the selection-based path instead of reporting a
+        // failure when the browser can still copy locally.
+      }
     }
 
     const helper = document.createElement("textarea");
@@ -108,26 +155,35 @@
     helper.style.opacity = "0";
     document.body.appendChild(helper);
     helper.select();
-    document.execCommand("copy");
+    const copied = document.execCommand("copy");
     helper.remove();
+
+    if (!copied) throw new Error("Clipboard copy was unavailable");
   };
 
   document.querySelectorAll("[data-copy]").forEach((button) => {
     button.addEventListener("click", async () => {
       const source = document.getElementById(button.dataset.copy);
-      if (!source) return;
+      const value = source?.textContent.trim();
+      if (!value) return;
+
+      const statusId = button.getAttribute("aria-describedby");
+      const status = statusId ? document.getElementById(statusId) : copyStatus;
+      const defaultStatus = status?.dataset.defaultText || "";
 
       try {
-        await copyText(source.textContent.trim());
+        await copyText(value);
         button.textContent = "Copied";
-        if (copyStatus) copyStatus.textContent = "Command copied to your clipboard.";
+        if (status) {
+          status.textContent = "Copied to your clipboard.";
+        }
 
         window.setTimeout(() => {
           button.textContent = "Copy";
-          if (copyStatus) copyStatus.textContent = "";
+          if (status) status.textContent = defaultStatus;
         }, 2200);
       } catch {
-        if (copyStatus) copyStatus.textContent = "Copy failed. Select the command manually.";
+        if (status) status.textContent = "Copy failed. Select the command manually.";
       }
     });
   });

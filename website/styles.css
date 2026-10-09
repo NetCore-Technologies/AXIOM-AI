@@ -313,6 +313,67 @@ h1 em {
   line-height: 1.5;
 }
 
+.daemon-preview {
+  max-width: 510px;
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 246, 237, 0.22);
+}
+
+.daemon-preview-heading,
+.daemon-preview-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.daemon-preview-heading {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.daemon-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.58rem;
+}
+
+.daemon-state i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--coffee);
+}
+
+.daemon-preview-row {
+  padding: 14px;
+}
+
+.daemon-preview-row code {
+  min-width: 0;
+  overflow-x: auto;
+  color: var(--ink);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.daemon-preview-note {
+  margin: 0;
+  padding: 0 14px 14px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
 .hero-visual {
   width: 100%;
   max-width: 710px;
@@ -499,8 +560,68 @@ h1 em {
   color: var(--ink);
 }
 
+.install-optional {
+  max-width: 500px;
+  margin: 20px 0 0 !important;
+  color: var(--muted);
+  font-size: 0.78rem !important;
+  line-height: 1.6 !important;
+}
+
+.install-optional code {
+  color: var(--ink);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.install-optional a {
+  border-bottom: 1px solid currentColor;
+  color: var(--ink);
+  text-decoration: none;
+}
+
 .install-commands {
   align-self: center;
+}
+
+.install-switcher {
+  display: inline-flex;
+  gap: 0;
+  margin-bottom: 12px;
+  border: 1px solid var(--line-strong);
+}
+
+.platform-button {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 0;
+  border-right: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--muted);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.platform-button:last-child {
+  border-right: 0;
+}
+
+.platform-button:hover,
+.platform-button.is-active {
+  background: var(--coffee-soft);
+  color: var(--ink);
+}
+
+.platform-note {
+  max-width: 560px;
+  min-height: 38px;
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
+  line-height: 1.55;
 }
 
 .command-block {
@@ -718,6 +839,15 @@ html.js [data-reveal].is-visible {
   .hero-terminal {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+
+  .daemon-preview-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .daemon-preview-row .copy-button {
+    align-self: flex-start;
   }
 
   .band {
@@ -1094,3 +1224,58 @@ button,
   }
 }
 /* AXIOM SCREENSHOT THEME — END */
+
+/* Keep the public landing page on its coffee/light system. The app theme above
+   belongs to the product shell and must not leak into this static surface. */
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  background: var(--workflow-bg) !important;
+  color: var(--ink) !important;
+}
+
+body {
+  font-family: "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+}
+
+main :is(h1, h2, h3, p, code),
+.site-header :is(a, button),
+.site-footer :is(a, p) {
+  color: var(--ink);
+}
+
+main :is(.hero-lead, .hero-terminal p, .daemon-preview-note, .workflow-intro > p, .install-copy > p, .workflow-steps li p, .platform-note),
+.site-footer p {
+  color: var(--muted);
+}
+
+main a.button-primary {
+  background: var(--coffee-soft) !important;
+  border-color: var(--ink) !important;
+  color: var(--ink) !important;
+}
+
+main :is(.button-secondary, .copy-button, .platform-button) {
+  background: transparent !important;
+  border-color: var(--line-strong) !important;
+  color: var(--ink) !important;
+}
+
+main a.text-link {
+  color: var(--ink) !important;
+  text-decoration-color: var(--ink);
+}
+
+main .platform-button.is-active {
+  background: var(--coffee-soft) !important;
+  border-color: var(--line-strong) !important;
+}
+
+::selection {
+  color: var(--ink) !important;
+  background: var(--coffee-soft) !important;
+}
