@@ -312,8 +312,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before making a larger change.
 
 MIT. See [LICENSE](LICENSE).
 
-Built by [@manit6752025](https://github.com/manit6752025) and
-[contributors](https://github.com/NetCore-Technologies/AXIOM-AI/graphs/contributors).
+Built by [Manit Arora](https://github.com/manit6752025) and
+[Rangan V Balaji](https://github.com/TaxCollector23).
 
 [Website](https://netcore-technologies.github.io/AXIOM-AI/)
 
