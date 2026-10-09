@@ -6,8 +6,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
-from fastapi import Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from axiom.core.hardware import detect_hardware
