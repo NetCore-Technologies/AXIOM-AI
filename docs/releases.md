@@ -27,3 +27,7 @@ See [beta.6 release notes](releases/v0.2.0-beta.6.md).
 ## [v0.2.0-beta.7](releases/v0.2.0-beta.7.md)
 
 Optimizer, security hardening and release validation updates.
+
+## v0.2.0-beta.5
+
+See [AXIOM v0.2.0-beta.5 release notes](releases/v0.2.0-beta.5.md). macOS arm64 and Intel DMGs are attached by the macOS release workflow after the GitHub prerelease is published.

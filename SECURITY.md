@@ -122,3 +122,11 @@ This release includes model filesystem-boundary and administrator-storage harden
 ## Beta.7 security status
 
 Beta.7 is a pre-release. Open CodeQL Python path-injection alerts remain under investigation; this release does not claim those findings have been fixed. Please report new vulnerabilities privately through GitHub's Security Advisories feature.
+
+## macOS beta.5 distribution images
+
+The beta.5 DMGs are currently unsigned and not notarized. Download only from the official GitHub release, verify the accompanying SHA-256 checksum, and inspect the installer script before running it. Do not treat an open CodeQL alert as resolved until GitHub reports it closed after analysis of the fixed commit.
+
+## Beta 0.2.0-beta.7 status
+
+The beta.7 release includes cross-platform packaging and validation updates. Open CodeQL path-injection alerts are tracked as unresolved until a subsequent scan closes them. Do not rely on this beta as confirmation that every path-injection finding has been remediated. Report suspected vulnerabilities privately through GitHub Security Advisories.

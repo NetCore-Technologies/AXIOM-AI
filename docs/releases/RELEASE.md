@@ -66,3 +66,7 @@ Beta.5 is the optimizer, quantization, and security-hardening beta release.
 # v0.2.0-beta.7
 
 See [detailed release notes](v0.2.0-beta.7.md).
+
+## macOS DMG assets
+
+For beta releases, the macOS workflow builds separate Apple Silicon (arm64) and Intel (x86_64) DMGs, packages the AXIOM CLI and static Control Center files, verifies each image, generates SHA-256 checksums, and uploads the assets to the published GitHub release. These images are unsigned and not notarized unless a future signing/notarization workflow is configured.

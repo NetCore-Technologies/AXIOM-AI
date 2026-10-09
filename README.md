@@ -322,3 +322,7 @@ Built by [Manit Arora](https://github.com/manit6752025) and
 ## AXIOM v0.2.0-beta.7
 
 Optimizer/quantization planning, security hardening and E2E release verification. [Release notes](docs/releases/v0.2.0-beta.7.md).
+
+## AXIOM v0.2.0-beta.5 macOS DMG
+
+The release workflow packages separate macOS Apple Silicon (arm64) and Intel (x86_64) DMGs. Each contains the AXIOM CLI executable and compiled Control Center frontend, plus a SHA-256 checksum. The DMGs are currently unsigned and not notarized; API-backed UI features require a separately running/configured AXIOM backend. See `docs/releases/v0.2.0-beta.5.md` for release details.

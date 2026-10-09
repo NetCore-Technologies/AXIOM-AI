@@ -222,3 +222,7 @@ Optimizer, quantization, security hardening, and E2E validation are included in 
 
 - Optimizer/quantization Control Center improvements.
 - Security-boundary and automated validation updates.
+
+## AXIOM v0.2.0-beta.5 macOS DMG
+
+The release workflow packages separate macOS Apple Silicon (arm64) and Intel (x86_64) DMGs. Each contains the AXIOM CLI executable and compiled Control Center frontend, plus a SHA-256 checksum. The DMGs are currently unsigned and not notarized; API-backed UI features require a separately running/configured AXIOM backend. See `docs/releases/v0.2.0-beta.5.md` for release details.
