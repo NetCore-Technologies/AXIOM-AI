@@ -55,13 +55,17 @@ def test_linux_installer_verifies_the_published_bundle_before_user_path_update()
     assert 'set -euo pipefail' in installer
     assert 'REPO="NetCore-Technologies/AXIOM-AI"' in installer
     assert 'asset="AXIOM-${tag}-linux-x64.tar.gz"' in installer
-    assert 'curl -fL --retry 3 "$download_base/SHA256SUMS"' in installer
-    assert 'expected="$(awk -v asset="$asset"' in installer
-    assert 'actual="$(sha256_file "$DOWNLOAD_DIR/$asset")"' in installer
+    assert 'download_file "$download_base/SHA256SUMS"' in installer
+    assert 'verify_checksum "$DOWNLOAD_DIR/$asset" "$asset"' in installer
+    assert 'validate_archive "$DOWNLOAD_DIR/$asset"' in installer
+    assert 'actual="$(sha256_file "$file")"' in installer
     assert '[[ "$actual" == "$expected" ]]' in installer
-    assert '[[ -x "$extracted_dir/AXIOM/AXIOM" ]]' in installer
+    assert '[[ -f "$extracted_dir/AXIOM/AXIOM" && -x "$extracted_dir/AXIOM/AXIOM" ]]' in installer
     assert 'release_dir="$INSTALL_DIR/releases/$tag"' in installer
-    assert 'ln -sfn "$INSTALL_DIR/current/AXIOM" "$BIN_DIR/axiom"' in installer
+    assert 'link_path "$INSTALL_DIR/current/AXIOM" "$BIN_DIR/axiom"' in installer
+    assert 'AXIOM_RELEASE_TAG' in installer
+    assert 'AXIOM_INSTALL_DIR' in installer
+    assert 'AXIOM_BIN_DIR' in installer
 
 
 def test_release_workflow_publishes_and_checksums_every_linux_install_asset():

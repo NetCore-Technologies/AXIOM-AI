@@ -112,19 +112,13 @@ def test_headroom_detection_is_observational_when_catalogued(
     tmp_path: Path,
     installed: bool,
 ):
-    """Enable this coverage automatically if Headroom becomes a CLI entry.
-
-    Headroom is not currently present in AXIOM's catalog.  The skip keeps the
-    test honest today while making the installed/missing contract executable as
-    soon as a future catalog change adds it.
-    """
+    """Headroom detection stays observational and never installs or runs it."""
 
     headroom = next(
         (tool for tool in daemon.TOOL_CATALOG if tool.id == "headroom"),
         None,
     )
-    if headroom is None:
-        pytest.skip("Headroom is not currently an AXIOM tool-catalog entry")
+    assert headroom is not None, "Headroom must remain discoverable in the catalog"
     if not headroom.executable_names:
         pytest.skip("Headroom is catalogued as API-only, not as a PATH executable")
 
@@ -141,7 +135,7 @@ def test_headroom_detection_is_observational_when_catalogued(
     entry = next(tool for tool in snapshot if tool["id"] == headroom.id)
     assert entry["available"] is installed
     assert entry["executable"] == ("/fake/bin/headroom" if installed else None)
-    assert set(which_calls) <= set(headroom.executable_names)
+    assert executable in which_calls
 
     payload = daemon.local_summary(tmp_path)
     assert (headroom.name in payload["tools"]["names"]) is installed
