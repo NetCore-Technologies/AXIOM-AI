@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "axiom-ai"
+name = "axiom-all"
 version = "0.2.0b6"
 description = "Local-first CLI and daemon for inspecting models, datasets, and hardware-aware AI plans."
 readme = "README.md"
