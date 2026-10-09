@@ -4,6 +4,7 @@ User-supplied paths are canonicalized with ``realpath`` and accepted only when
 ``commonpath`` proves that the resolved path stays inside an AXIOM-owned root.
 No filesystem operation is performed on the unvalidated input.
 """
+
 from __future__ import annotations
 
 import os
@@ -67,7 +68,9 @@ def validate_output_path(value: str | os.PathLike[str]) -> Path:
     return _inside(_coerce_path(value), _trusted_roots(_OUTPUT_ROOT_NAMES))
 
 
-def validate_child_path(parent: str | os.PathLike[str] | Path, child: str | os.PathLike[str]) -> Path:
+def validate_child_path(
+    parent: str | os.PathLike[str] | Path, child: str | os.PathLike[str]
+) -> Path:
     """Resolve a child path and require it to remain below the validated parent."""
     parent_real = os.path.realpath(_coerce_path(parent))
     child_raw = _coerce_path(child)

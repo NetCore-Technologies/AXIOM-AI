@@ -59,17 +59,23 @@ def test_show_startup_claims_one_marker_per_terminal_session(tmp_path: Path):
     first_output = TTYBuffer()
     second_output = TTYBuffer()
 
-    assert show_startup(
-        first_output,
-        include_next_steps=True,
-        environ=environment,
-        marker_dir=tmp_path,
-    ) is True
-    assert show_startup(
-        second_output,
-        environ=environment,
-        marker_dir=tmp_path,
-    ) is False
+    assert (
+        show_startup(
+            first_output,
+            include_next_steps=True,
+            environ=environment,
+            marker_dir=tmp_path,
+        )
+        is True
+    )
+    assert (
+        show_startup(
+            second_output,
+            environ=environment,
+            marker_dir=tmp_path,
+        )
+        is False
+    )
 
     assert "AXIOM" in first_output.getvalue()
     assert "Start here: " in first_output.getvalue()

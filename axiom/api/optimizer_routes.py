@@ -15,7 +15,7 @@ from axiom.api.model_paths import validate_model_path
 router = APIRouter(prefix="/api/optimization", tags=["optimization"])
 
 _SAFE_ROOTS = tuple(
-# codeql[py/path-injection]
+    # codeql[py/path-injection]
     Path(validate_model_path(p)).resolve()
     for p in (
         os.environ.get("AXIOM_MODEL_ROOT", "./models"),
@@ -27,7 +27,7 @@ _SAFE_ROOTS = tuple(
 def _safe_path(raw: str | None) -> Path | None:
     if not raw:
         return None
-# codeql[py/path-injection]
+    # codeql[py/path-injection]
     candidate = Path(validate_model_path(raw)).expanduser().resolve()
     if any(candidate == root or root in candidate.parents for root in _SAFE_ROOTS):
         return candidate
@@ -101,7 +101,7 @@ def plan(request: PlanRequest) -> dict[str, Any]:
         or "\\" in request.model
     ):
         model_path = _safe_path(request.model)
-# codeql[py/path-injection]
+        # codeql[py/path-injection]
         if model_path is not None and not model_path.exists():
             raise HTTPException(status_code=404, detail="Model path does not exist")
 
@@ -115,7 +115,7 @@ def plan(request: PlanRequest) -> dict[str, Any]:
     )
     if match:
         params_b = float(match.group(1))
-# codeql[py/path-injection]
+    # codeql[py/path-injection]
     elif model_path and model_path.is_file():
         params_b = max(0.5, model_path.stat().st_size * 8 / 1e9)
 

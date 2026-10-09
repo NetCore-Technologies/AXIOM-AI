@@ -73,11 +73,7 @@ def project_detected(root: Path) -> bool:
 
 def missing_project_paths(root: Path) -> list[str]:
     """Return standard project paths that are absent from ``root``."""
-    return [
-        path
-        for path in PROJECT_PATHS
-        if not (root / path).exists()
-    ]
+    return [path for path in PROJECT_PATHS if not (root / path).exists()]
 
 
 def next_commands(root: Path) -> tuple[str, ...]:
@@ -269,26 +265,19 @@ def register(app, model_app, dataset_app) -> None:
         root = Path.cwd()
 
         if not project_detected(root):
-            console.print(
-                f"[yellow]No AXIOM project detected:[/yellow] {root}"
-            )
+            console.print(f"[yellow]No AXIOM project detected:[/yellow] {root}")
             console.print("Next: [cyan]axiom init my-ai[/cyan]")
             return
 
         missing = missing_project_paths(root)
-        console.print(
-            f"[green]✓ AXIOM project detected:[/green] {root}"
-        )
+        console.print(f"[green]✓ AXIOM project detected:[/green] {root}")
 
         if missing:
             console.print(
-                "[yellow]Missing standard paths:[/yellow] "
-                f"{', '.join(missing)}"
+                f"[yellow]Missing standard paths:[/yellow] {', '.join(missing)}"
             )
         else:
-            console.print(
-                "[green]✓ Standard project paths are present.[/green]"
-            )
+            console.print("[green]✓ Standard project paths are present.[/green]")
 
         console.print("Next: [cyan]axiom config validate[/cyan]")
 
@@ -529,9 +518,7 @@ def register(app, model_app, dataset_app) -> None:
 
         console.print("[green]✓ AXIOM project structure is valid.[/green]")
 
-    config_app = typer.Typer(
-        help="Inspect local AXIOM project configuration."
-    )
+    config_app = typer.Typer(help="Inspect local AXIOM project configuration.")
     app.add_typer(config_app, name="config")
 
     @config_app.command("show")

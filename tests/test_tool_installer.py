@@ -107,7 +107,9 @@ def test_api_keys_are_rejected_and_never_persisted(tmp_path: Path):
         ("Windows", ("powershell",), "powershell"),
     ],
 )
-def test_platform_command_selection(system: str, available: tuple[str, ...], executable: str):
+def test_platform_command_selection(
+    system: str, available: tuple[str, ...], executable: str
+):
     selection = build_awake_command(
         system,
         duration=12.5,

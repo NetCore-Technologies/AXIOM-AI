@@ -21,7 +21,7 @@ HINTS = (
 def _load_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(
-# codeql[py/path-injection]
+            # codeql[py/path-injection]
             path.read_text(encoding="utf-8")
         )  # codeql[py/path-injection]
     except (OSError, ValueError):

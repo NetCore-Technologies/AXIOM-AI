@@ -1,12 +1,30 @@
 {
-  "name": "axiom-website-tests",
+  "name": "axiom-ui",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "e2e": "playwright test"
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "e2e": "playwright test",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lucide-react": "^1.37.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.64.0"
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.1.0",
+    "eslint": "^10.9.0",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.71.1",
+    "vite": "^8.2.2"
   }
 }

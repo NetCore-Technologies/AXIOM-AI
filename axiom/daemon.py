@@ -170,7 +170,11 @@ class _DaemonServer(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, server_address: tuple[str, int], request_handler: type[BaseHTTPRequestHandler]):
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        request_handler: type[BaseHTTPRequestHandler],
+    ):
         super().__init__(server_address, request_handler)
         self.axion_host = server_address[0]
 
@@ -189,7 +193,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+    def do_GET(self) -> None:
         path = urlsplit(self.path).path.rstrip("/") or "/"
 
         if path == "/":
@@ -282,7 +286,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             },
         )
 
-    def do_HEAD(self) -> None:  # noqa: N802 - stdlib handler API
+    def do_HEAD(self) -> None:
         path = urlsplit(self.path).path.rstrip("/") or "/"
         if path in {
             "/",

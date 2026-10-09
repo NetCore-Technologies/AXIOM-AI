@@ -43,7 +43,9 @@ def test_daemon_chooses_an_available_loopback_port(daemon_server):
     assert payload["version"]
 
 
-def test_daemon_info_describes_the_local_capabilities(daemon_server, tmp_path: Path, monkeypatch):
+def test_daemon_info_describes_the_local_capabilities(
+    daemon_server, tmp_path: Path, monkeypatch
+):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "axiom.yaml").write_text("name: local\n", encoding="utf-8")
     host, port = daemon_server.server_address[:2]

@@ -16,7 +16,7 @@ import signal
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, Self
 
 from .installer import SecretInputError
 
@@ -75,9 +75,9 @@ def _normalise_platform(system: str | None) -> str:
     return "other"
 
 
-def _duration_seconds(value: float | int) -> int:
+def _duration_seconds(value: float) -> int:
     if isinstance(value, bool):
-        raise ValueError("duration must be a positive finite number")
+        raise TypeError("duration must be a positive finite number")
     try:
         number = float(value)
     except (TypeError, ValueError) as exc:
@@ -139,7 +139,7 @@ class AwakeCommand:
 
 def build_awake_command(
     system: str | None = None,
-    duration: float | int = 3600,
+    duration: float = 3600,
     *,
     which: Callable[[str], str | None] | None = None,
     runner: object | None = None,
@@ -248,7 +248,7 @@ def build_awake_command(
 
 def select_awake_command(
     system: str | None = None,
-    duration: float | int = 3600,
+    duration: float = 3600,
     **kwargs: Any,
 ) -> tuple[str, ...] | None:
     """Return only the selected argv, or ``None`` when unavailable."""
@@ -283,10 +283,10 @@ class KeepAwakeSession:
 
     def __init__(
         self,
-        duration: float | int = 3600,
+        duration: float = 3600,
         *,
-        seconds: float | int | None = None,
-        duration_seconds: float | int | None = None,
+        seconds: float | None = None,
+        duration_seconds: float | None = None,
         system: str | None = None,
         platform_name: str | None = None,
         reason: str = "AXIOM timed session",
@@ -348,7 +348,7 @@ class KeepAwakeSession:
             return runner(self.selection.argv)
         raise TypeError("runner must expose popen/start or be callable")
 
-    def start(self) -> "KeepAwakeSession":
+    def start(self) -> KeepAwakeSession:
         if self.is_running:
             return self
         self._process = self._start_process()
@@ -395,7 +395,7 @@ class KeepAwakeSession:
 
     close = stop
 
-    def __enter__(self) -> "KeepAwakeSession":
+    def __enter__(self) -> Self:
         return self.start()
 
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> bool:
@@ -408,12 +408,12 @@ TimedAwakeSession = KeepAwakeSession
 
 
 __all__ = [
+    "WINDOWS_KEEP_AWAKE_SCRIPT",
     "AwakeCommand",
     "AwakeSession",
     "AwakeUnavailableError",
     "KeepAwakeSession",
     "TimedAwakeSession",
-    "WINDOWS_KEEP_AWAKE_SCRIPT",
     "build_awake_command",
     "select_awake_command",
 ]

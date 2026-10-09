@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-
 INSTALLER_COMMANDS = ("npm", "brew", "winget", "choco", "curl")
 
 # This is intentionally a small allowlist.  Values are the permitted command
@@ -29,9 +28,7 @@ COMMAND_ALLOWLIST: dict[str, frozenset[str]] = {
     "brew": frozenset({"install", "--prefix"}),
     "winget": frozenset({"install"}),
     "choco": frozenset({"install"}),
-    "curl": frozenset(
-        {"--fail", "--silent", "--show-error", "--location", "--output"}
-    ),
+    "curl": frozenset({"--fail", "--silent", "--show-error", "--location", "--output"}),
 }
 ALLOWED_COMMANDS = COMMAND_ALLOWLIST
 
@@ -42,7 +39,7 @@ _MANAGER_ORDER = {
     "other": ("npm", "curl"),
 }
 _PACKAGE_RE = re.compile(r"^[A-Za-z0-9@._+:/=-]+$")
-_SHELL_META = frozenset("$;|&<>`\n\r\x00\"")
+_SHELL_META = frozenset('$;|&<>`\n\r\x00"')
 _SECRET_FIELD_RE = re.compile(
     r"(?:^|[_-])(?:api[_-]?key|access[_-]?token|token|secret|password|credential)s?(?:$|[_-])",
     re.IGNORECASE,
@@ -180,9 +177,7 @@ def _safe_package(value: object, *, label: str = "package") -> str:
         raise ValueError(f"{label} must be a non-empty string")
     result = value.strip()
     _reject_secret_text(result, context=label)
-    if any(char in _SHELL_META for char in result) or not _PACKAGE_RE.fullmatch(
-        result
-    ):
+    if any(char in _SHELL_META for char in result) or not _PACKAGE_RE.fullmatch(result):
         raise ValueError(f"{label} contains unsupported command characters")
     return result
 
@@ -209,7 +204,9 @@ def _safe_https_url(value: object, *, label: str = "download URL") -> str:
         raise ValueError(f"{label} must use HTTPS")
     if parsed.username or parsed.password:
         raise SecretInputError(f"{label} cannot contain embedded credentials")
-    query_keys = {key.lower() for key in re.findall(r"(?:^|&)\s*([^=&]+)", parsed.query)}
+    query_keys = {
+        key.lower() for key in re.findall(r"(?:^|&)\s*([^=&]+)", parsed.query)
+    }
     if query_keys & {"key", "api_key", "apikey", "token", "secret", "password"}:
         raise SecretInputError(f"{label} cannot contain credential query parameters")
     return result
@@ -268,7 +265,9 @@ class InstallTarget:
         object.__setattr__(self, "auth_instructions", instructions)
 
 
-def _target_from_input(target: InstallTarget | Mapping[str, Any] | str | Any | None) -> InstallTarget:
+def _target_from_input(
+    target: InstallTarget | Mapping[str, Any] | str | Any | None,
+) -> InstallTarget:
     if target is None:
         return InstallTarget()
     if isinstance(target, InstallTarget):
@@ -280,7 +279,9 @@ def _target_from_input(target: InstallTarget | Mapping[str, Any] | str | Any | N
         _reject_secret_fields(target, context="target")
         data = target
         name = data.get("name", "AXIOM")
-        package = data.get("package", data.get("package_name", data.get("id", "axiom-ai")))
+        package = data.get(
+            "package", data.get("package_name", data.get("id", "axiom-ai"))
+        )
         manager = data.get("package_manager", data.get("manager"))
         path_entries = data.get("path_entries", data.get("paths", ()))
         if isinstance(path_entries, str):
@@ -392,9 +393,7 @@ def validate_command(command: Sequence[str]) -> tuple[str, ...]:
                 "winget installs must use one explicit exact package id"
             )
         if argv[4] != "--exact":
-            raise UnsafeCommandError(
-                "winget installs must use an exact package id"
-            )
+            raise UnsafeCommandError("winget installs must use an exact package id")
         _safe_package(argv[3])
     if executable == "choco":
         if len(argv) != 5 or argv[3:] != ("--yes", "--no-progress"):
@@ -482,9 +481,7 @@ def _path_instructions(manager: str | None, target: InstallTarget) -> tuple[str,
         )
 
     for entry in target.path_entries:
-        instructions.append(
-            f"Ensure this user PATH entry is present: {entry}"
-        )
+        instructions.append(f"Ensure this user PATH entry is present: {entry}")
     if not instructions:
         instructions.append(
             "If the installed command is not found, add its user-level bin directory "
@@ -591,7 +588,9 @@ def build_install_plan(
 
     if profile is not None:
         safe_profile = validate_profile_target(profile, home_dir=home_dir)
-        warnings.append(f"PATH profile target validated for explicit update: {safe_profile}")
+        warnings.append(
+            f"PATH profile target validated for explicit update: {safe_profile}"
+        )
 
     return InstallPlan(
         target=target_value,
@@ -618,8 +617,7 @@ def _invoke_run(runner: Callable[..., Any], command: tuple[str, ...]) -> Any:
         signature = inspect.signature(runner)
         parameters = signature.parameters.values()
         accepts_kwargs = any(
-            parameter.kind == inspect.Parameter.VAR_KEYWORD
-            for parameter in parameters
+            parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters
         )
         names = signature.parameters
     except (TypeError, ValueError):
@@ -829,7 +827,9 @@ def validate_profile_target(
     try:
         resolved.relative_to(home)
     except ValueError as exc:
-        raise UnsafeProfileError("profile target must stay inside the user home") from exc
+        raise UnsafeProfileError(
+            "profile target must stay inside the user home"
+        ) from exc
 
     if resolved.name not in _PROFILE_NAMES:
         raise UnsafeProfileError(
@@ -843,7 +843,7 @@ def validate_profile_target(
 
 
 def _normalise_shell(profile: Path, shell: str | None) -> str:
-    value = (shell or ("powershell" if profile.suffix.lower() == ".ps1" else "posix"))
+    value = shell or ("powershell" if profile.suffix.lower() == ".ps1" else "posix")
     value = value.strip().lower()
     if value in {"posix", "bash", "zsh", "fish", "sh"}:
         return "posix"
@@ -871,7 +871,9 @@ def _profile_path_lines(
     path_line_seen = False
 
     if shell == "powershell":
-        assignment = re.compile(r"^(?P<prefix>\s*\$env:Path\s*=\s*)(?P<body>.*)$", re.IGNORECASE)
+        assignment = re.compile(
+            r"^(?P<prefix>\s*\$env:Path\s*=\s*)(?P<body>.*)$", re.IGNORECASE
+        )
     else:
         assignment = re.compile(
             r"^(?P<prefix>\s*(?:export\s+)?PATH\s*=\s*)(?P<body>.*)$"
@@ -891,7 +893,9 @@ def _profile_path_lines(
         suffix = ""
         if quote:
             if len(body) < 2 or body[-1] != quote:
-                raise UnsafeProfileError("profile contains an unterminated PATH assignment")
+                raise UnsafeProfileError(
+                    "profile contains an unterminated PATH assignment"
+                )
             body = body[1:-1]
         elif " #" in body:
             body, suffix = body.split(" #", 1)
@@ -906,9 +910,13 @@ def _profile_path_lines(
                 "$env:path",
                 "%path%",
             }
-            key = "__PATH_VARIABLE__" if variable else _path_key(
-                piece,
-                case_sensitive=case_sensitive,
+            key = (
+                "__PATH_VARIABLE__"
+                if variable
+                else _path_key(
+                    piece,
+                    case_sensitive=case_sensitive,
+                )
             )
             if variable:
                 if variable_seen:
@@ -944,13 +952,9 @@ def _profile_path_lines(
         if not rewritten or rewritten[-1].strip() != marker:
             rewritten.append(marker + "\n")
         if shell == "powershell":
-            rewritten.extend(
-                f'$env:Path = "$env:Path;{entry}"\n' for entry in missing
-            )
+            rewritten.extend(f'$env:Path = "$env:Path;{entry}"\n' for entry in missing)
         else:
-            rewritten.extend(
-                f'export PATH="{entry}:$PATH"\n' for entry in missing
-            )
+            rewritten.extend(f'export PATH="{entry}:$PATH"\n' for entry in missing)
 
     return "".join(rewritten), tuple(missing)
 
@@ -1037,7 +1041,9 @@ def append_path_to_profile(
     return update_profile_path(profile, entries, **kwargs)
 
 
-def safe_profile_path(profile: str | Path, *, home_dir: str | Path | None = None) -> Path:
+def safe_profile_path(
+    profile: str | Path, *, home_dir: str | Path | None = None
+) -> Path:
     """Compatibility alias for profile target validation."""
 
     return validate_profile_target(profile, home_dir=home_dir)
@@ -1057,10 +1063,10 @@ __all__ = [
     "UnsafeProfileError",
     "append_path_to_profile",
     "build_install_plan",
+    "deduplicate_path_entries",
     "detect_availability",
     "detect_command_paths",
     "detect_tools",
-    "deduplicate_path_entries",
     "execute_install_plan",
     "merge_path_entries",
     "safe_profile_path",

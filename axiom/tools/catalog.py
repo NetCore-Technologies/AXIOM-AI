@@ -93,7 +93,7 @@ TOOL_CATALOG: tuple[ToolSpec, ...] = (
             InstallCandidate(
                 platform="windows",
                 command=(
-                    'powershell -ExecutionPolicy ByPass -c '
+                    "powershell -ExecutionPolicy ByPass -c "
                     '"irm https://chatgpt.com/codex/install.ps1 | iex"'
                 ),
                 install_kind="script",

@@ -77,11 +77,7 @@ def _tty_name(stream: TextIO) -> str | None:
 
 def _session_key(stream: TextIO, environ: Mapping[str, str]) -> str:
     session_token = next(
-        (
-            environ[name]
-            for name in _SESSION_ENV_VARS
-            if environ.get(name)
-        ),
+        (environ[name] for name in _SESSION_ENV_VARS if environ.get(name)),
         "",
     )
 
@@ -91,7 +87,8 @@ def _session_key(stream: TextIO, environ: Mapping[str, str]) -> str:
         session_leader = ""
 
     tty = _tty_name(stream) or environ.get("TTY", "")
-    identity = "|".join((session_token, session_leader, tty)) or "interactive"
+    identity = f"{session_token}|{session_leader}|{tty}"
+    identity = identity or "interactive"
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
 
 
@@ -188,9 +185,7 @@ def render_startup(stream: TextIO, *, include_next_steps: bool = False) -> None:
 
     extrusion = Text("  " + "╲" * (len(_LOGO_ROWS[0]) - 2), style=AMBER)
     console.print(extrusion)
-    console.print(
-        Text("   " + "╲" * (len(_LOGO_ROWS[0]) - 3), style=COFFEE)
-    )
+    console.print(Text("   " + "╲" * (len(_LOGO_ROWS[0]) - 3), style=COFFEE))
     console.print(Text("  AXIOM", style=f"bold {AMBER}"))
     console.print(
         Text(

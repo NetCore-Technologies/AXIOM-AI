@@ -37,13 +37,9 @@ def test_catalog_contains_requested_tools_with_unique_ids():
 
 
 def test_cli_executable_names_are_present_and_globally_unique():
-    cli_tools = [
-        tool for tool in TOOL_CATALOG if tool.kind in ("cli", "cli-and-api")
-    ]
+    cli_tools = [tool for tool in TOOL_CATALOG if tool.kind in ("cli", "cli-and-api")]
     executable_names = [
-        executable
-        for tool in cli_tools
-        for executable in tool.executable_names
+        executable for tool in cli_tools for executable in tool.executable_names
     ]
 
     assert cli_tools
@@ -81,23 +77,33 @@ def test_every_tool_has_supported_platforms_and_a_candidate_per_platform():
 
     for tool in TOOL_CATALOG:
         supported = set(tool.supported_platforms)
-        candidate_platforms = {candidate.platform for candidate in tool.install_candidates}
+        candidate_platforms = {
+            candidate.platform for candidate in tool.install_candidates
+        }
 
         assert supported == allowed_platforms
         assert supported <= allowed_platforms
         assert candidate_platforms == supported
         assert tool.homepage_url.startswith("https://")
         assert tool.source_url.startswith("https://")
-        assert all(candidate.source_url.startswith("https://") for candidate in tool.install_candidates)
+        assert all(
+            candidate.source_url.startswith("https://")
+            for candidate in tool.install_candidates
+        )
 
 
 def test_catalog_and_capability_are_frozen_data_only_records():
     assert all(is_dataclass(tool) for tool in TOOL_CATALOG)
     assert all(is_dataclass(capability) for capability in CAPABILITY_CATALOG)
     assert all(type(tool).__dataclass_params__.frozen for tool in TOOL_CATALOG)
-    assert all(type(capability).__dataclass_params__.frozen for capability in CAPABILITY_CATALOG)
+    assert all(
+        type(capability).__dataclass_params__.frozen
+        for capability in CAPABILITY_CATALOG
+    )
     assert all(isinstance(tool, ToolSpec) for tool in TOOL_CATALOG)
-    assert all(isinstance(capability, CapabilitySpec) for capability in CAPABILITY_CATALOG)
+    assert all(
+        isinstance(capability, CapabilitySpec) for capability in CAPABILITY_CATALOG
+    )
 
 
 def test_catalog_contains_no_secret_values():

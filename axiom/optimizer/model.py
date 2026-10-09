@@ -80,16 +80,14 @@ def _copy_without_following_symlinks(source: Path, destination: Path) -> None:
     try:
         destination_fd = os.open(
             destination,
-            os.O_WRONLY
-            | os.O_CREAT
-            | os.O_TRUNC
-            | getattr(os, "O_NOFOLLOW", 0),
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0),
             0o600,
         )
         try:
-            with os.fdopen(source_fd, "rb") as source_handle, os.fdopen(
-                destination_fd, "wb"
-            ) as destination_handle:
+            with (
+                os.fdopen(source_fd, "rb") as source_handle,
+                os.fdopen(destination_fd, "wb") as destination_handle,
+            ):
                 source_fd = destination_fd = -1
                 shutil.copyfileobj(source_handle, destination_handle)
         finally:
@@ -104,11 +102,13 @@ def _config(path: Path) -> dict[str, Any]:
     for name in ("config.json", "model_config.json"):
         cfg = path / name
         if cfg.is_symlink():
-            raise ValueError(f"model configuration contains an unsupported symlink: {cfg}")
-# codeql[py/path-injection]
+            raise ValueError(
+                f"model configuration contains an unsupported symlink: {cfg}"
+            )
+        # codeql[py/path-injection]
         if cfg.exists():
             try:
-# codeql[py/path-injection]
+                # codeql[py/path-injection]
                 value = json.loads(cfg.read_text(encoding="utf-8"))
                 if isinstance(value, dict):
                     return value
@@ -124,7 +124,7 @@ def _config(path: Path) -> dict[str, Any]:
 def inspect_model(source: str) -> ModelInfo:
     path = validate_model_path(source)
 
-# codeql[py/path-injection]
+    # codeql[py/path-injection]
     if not path.exists():
         return ModelInfo(
             source=source,
@@ -135,7 +135,7 @@ def inspect_model(source: str) -> ModelInfo:
             weights=[],
         )
 
-# codeql[py/path-injection]
+    # codeql[py/path-injection]
     root = path if path.is_dir() else path.parent
     cfg = _config(root)
 
@@ -152,12 +152,12 @@ def inspect_model(source: str) -> ModelInfo:
 
     weights = [
         str(p.relative_to(root))
-# codeql[py/path-injection]
+        # codeql[py/path-injection]
         for p in _trusted_files(root)
         if p.is_file() and p.suffix.lower() in {".safetensors", ".bin", ".gguf"}
     ]
 
-# codeql[py/path-injection]
+    # codeql[py/path-injection]
     count = len(_trusted_files(root))
 
     return ModelInfo(
@@ -197,11 +197,11 @@ def create_runtime_bundle(
     src = validate_model_path(source)
     dst = validate_output_path(destination)
 
-# codeql[py/path-injection]
+    # codeql[py/path-injection]
     if not src.exists():
         raise FileNotFoundError(source)
 
-# codeql[py/path-injection]
+    # codeql[py/path-injection]
     dst_root = dst.resolve()
     dst.mkdir(parents=True, exist_ok=True)
 
@@ -276,7 +276,9 @@ def write_runtime_profile(
     try:
         resolved_path.relative_to(Path(validate_output_path(bundle)).resolve())
     except ValueError as exc:
-        raise ValueError("runtime profile path escapes the trusted output root") from exc
+        raise ValueError(
+            "runtime profile path escapes the trusted output root"
+        ) from exc
     if path.is_symlink():
         raise ValueError("runtime profile destination cannot be a symlink")
 

@@ -13,7 +13,9 @@ def _model_root(tmp_path: Path) -> Path:
     return root
 
 
-def test_runtime_bundle_rejects_source_symlinks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_runtime_bundle_rejects_source_symlinks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.chdir(tmp_path)
     model = _model_root(tmp_path)
     outside = tmp_path / "outside.txt"

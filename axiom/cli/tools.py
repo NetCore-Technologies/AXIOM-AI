@@ -17,8 +17,8 @@ from rich.panel import Panel
 from rich.table import Table
 
 from axiom.tools.awake import AwakeUnavailableError, KeepAwakeSession
-from axiom.tools.catalog import InstallCandidate, ToolSpec
 from axiom.tools.catalog import TOOL_CATALOG as TOOLS
+from axiom.tools.catalog import InstallCandidate, ToolSpec
 from axiom.tools.installer import (
     InstallerSafetyError,
     InstallTarget,
@@ -54,7 +54,11 @@ def _find_tool(tool_id: str) -> ToolSpec:
 
 def _current_candidates(tool: ToolSpec) -> tuple[InstallCandidate, ...]:
     current = _platform_name()
-    return tuple(candidate for candidate in tool.install_candidates if candidate.platform == current)
+    return tuple(
+        candidate
+        for candidate in tool.install_candidates
+        if candidate.platform == current
+    )
 
 
 def _status(tool: ToolSpec) -> str:
@@ -92,11 +96,17 @@ def _package_candidate(
         package: str | None = None
         if command == "npm" and len(parts) == 4 and parts[1:3] == ["install", "-g"]:
             package = parts[3]
-        elif command == "brew" and len(parts) == 3 and parts[1] == "install":
-            package = parts[2]
-        elif command == "winget" and len(parts) == 3 and parts[1] == "install":
-            package = parts[2]
-        elif command == "choco" and len(parts) == 3 and parts[1] == "install":
+        elif (
+            command == "brew"
+            and len(parts) == 3
+            and parts[1] == "install"
+            or command == "winget"
+            and len(parts) == 3
+            and parts[1] == "install"
+            or command == "choco"
+            and len(parts) == 3
+            and parts[1] == "install"
+        ):
             package = parts[2]
 
         if package:
@@ -116,8 +126,15 @@ def _profile_path() -> Path:
         )
     else:
         shell = Path(os.environ.get("SHELL", "")).name
-        preferred = ".zshrc" if shell == "zsh" else ".bashrc" if shell == "bash" else ".profile"
-        candidates = (home / preferred, home / ".profile", home / ".zshrc", home / ".bashrc")
+        preferred = (
+            ".zshrc" if shell == "zsh" else ".bashrc" if shell == "bash" else ".profile"
+        )
+        candidates = (
+            home / preferred,
+            home / ".profile",
+            home / ".zshrc",
+            home / ".bashrc",
+        )
 
     return next((path for path in candidates if path.exists()), candidates[0])
 
@@ -176,7 +193,11 @@ def _print_install_plan(
         commands = plan_dict.get("commands", [])
         lines.append(
             "AXIOM command: "
-            + (" ".join(commands[0]) if commands else "no supported package manager found")
+            + (
+                " ".join(commands[0])
+                if commands
+                else "no supported package manager found"
+            )
         )
         lines.extend(plan_dict.get("warnings", []))
     console.print(Panel.fit("\n".join(lines), title="AXIOM TOOL SETUP"))
@@ -185,7 +206,9 @@ def _print_install_plan(
 def _manual_setup(tool: ToolSpec) -> None:
     candidates = _current_candidates(tool)
     if not candidates:
-        console.print(f"[yellow]No {_platform_name()} candidate is cataloged for {tool.name}.[/yellow]")
+        console.print(
+            f"[yellow]No {_platform_name()} candidate is cataloged for {tool.name}.[/yellow]"
+        )
         return
     console.print(
         f"[yellow]AXIOM will not execute a remote installer script or SDK install automatically.[/yellow]\n"
@@ -199,7 +222,9 @@ def _manual_setup(tool: ToolSpec) -> None:
 def register(app: typer.Typer, tools_app: typer.Typer) -> None:
     @tools_app.command("list")
     def list_tools(
-        as_json: bool = typer.Option(False, "--json", help="Print machine-readable tool metadata."),
+        as_json: bool = typer.Option(
+            False, "--json", help="Print machine-readable tool metadata."
+        ),
     ) -> None:
         """List supported developer tools and their local status."""
 
@@ -237,17 +262,24 @@ def register(app: typer.Typer, tools_app: typer.Typer) -> None:
         table.add_column("Status")
         table.add_column("Credential reference")
         for tool in TOOLS:
-            executable = next((name for name in tool.executable_names if shutil.which(name)), "-")
-            credential = ", ".join(
-                name for name in tool.api_key_env_vars if os.getenv(name)
-            ) or "not checked"
+            executable = next(
+                (name for name in tool.executable_names if shutil.which(name)), "-"
+            )
+            credential = (
+                ", ".join(name for name in tool.api_key_env_vars if os.getenv(name))
+                or "not checked"
+            )
             table.add_row(tool.name, executable, _status(tool), credential)
         console.print(table)
-        console.print("[dim]Presence is not authentication; finish sign-in with each vendor.[/dim]")
+        console.print(
+            "[dim]Presence is not authentication; finish sign-in with each vendor.[/dim]"
+        )
 
     @tools_app.command("plan")
     def plan_tool(
-        tool_id: str = typer.Argument(..., help="Catalog ID, such as claude-code or opencode."),
+        tool_id: str = typer.Argument(
+            ..., help="Catalog ID, such as claude-code or opencode."
+        ),
     ) -> None:
         """Show the current-platform install options without running them."""
 
@@ -262,20 +294,38 @@ def register(app: typer.Typer, tools_app: typer.Typer) -> None:
         console.print(f"Source: {tool.source_url}")
         candidates = _current_candidates(tool)
         if not candidates:
-            console.print(f"[yellow]No {_platform_name()} install candidate is cataloged.[/yellow]")
+            console.print(
+                f"[yellow]No {_platform_name()} install candidate is cataloged.[/yellow]"
+            )
             return
         for candidate in candidates:
-            console.print(f"\n[cyan]{candidate.install_kind}[/cyan]  {candidate.command}")
-            console.print(f"  {candidate.notes or 'Review the vendor documentation before running it.'}")
+            console.print(
+                f"\n[cyan]{candidate.install_kind}[/cyan]  {candidate.command}"
+            )
+            console.print(
+                f"  {candidate.notes or 'Review the vendor documentation before running it.'}"
+            )
             console.print(f"  {candidate.source_url}")
 
     @tools_app.command("install")
     def install_tool(
         tool_id: str | None = typer.Argument(None, help="Catalog ID to install."),
-        all_tools: bool = typer.Option(False, "--all", help="Process every cataloged tool with a safe package candidate."),
-        yes: bool = typer.Option(False, "--yes", help="Execute the reviewed package-manager command."),
-        manager: str | None = typer.Option(None, "--manager", help="Force npm, brew, winget, or choco."),
-        add_to_path: bool = typer.Option(True, "--add-to-path/--no-add-to-path", help="Add a detected user-level bin directory to PATH after install."),
+        all_tools: bool = typer.Option(
+            False,
+            "--all",
+            help="Process every cataloged tool with a safe package candidate.",
+        ),
+        yes: bool = typer.Option(
+            False, "--yes", help="Execute the reviewed package-manager command."
+        ),
+        manager: str | None = typer.Option(
+            None, "--manager", help="Force npm, brew, winget, or choco."
+        ),
+        add_to_path: bool = typer.Option(
+            True,
+            "--add-to-path/--no-add-to-path",
+            help="Add a detected user-level bin directory to PATH after install.",
+        ),
     ) -> None:
         """Preview tool setup; use --yes for explicit package installation."""
 
@@ -293,7 +343,9 @@ def register(app: typer.Typer, tools_app: typer.Typer) -> None:
             if package_candidate is None:
                 _manual_setup(tool)
                 if yes:
-                    console.print("[dim]Skipped: no safe package-manager candidate for automatic execution.[/dim]")
+                    console.print(
+                        "[dim]Skipped: no safe package-manager candidate for automatic execution.[/dim]"
+                    )
                 continue
 
             selected_manager, package, candidate = package_candidate
@@ -318,7 +370,9 @@ def register(app: typer.Typer, tools_app: typer.Typer) -> None:
                     try:
                         console.print(_add_install_path(selected_manager))
                     except (OSError, ValueError, subprocess.SubprocessError) as exc:
-                        console.print(f"[yellow]Installed, but PATH was not updated:[/yellow] {exc}")
+                        console.print(
+                            f"[yellow]Installed, but PATH was not updated:[/yellow] {exc}"
+                        )
             except (InstallerSafetyError, SecretInputError, OSError, ValueError) as exc:
                 failures += 1
                 console.print(f"[red]Could not set up {tool.name}:[/red] {exc}")
@@ -328,21 +382,33 @@ def register(app: typer.Typer, tools_app: typer.Typer) -> None:
 
     @app.command("session")
     def session(
-        keep_awake: bool = typer.Option(False, "--keep-awake", help="Keep the machine awake for the timed session."),
-        minutes: float = typer.Option(60.0, "--minutes", min=0.1, max=24 * 60, help="Session duration in minutes."),
-        reason: str = typer.Option("AXIOM developer session", "--reason", help="Short reason shown to the OS power helper."),
+        keep_awake: bool = typer.Option(
+            False, "--keep-awake", help="Keep the machine awake for the timed session."
+        ),
+        minutes: float = typer.Option(
+            60.0, "--minutes", min=0.1, max=24 * 60, help="Session duration in minutes."
+        ),
+        reason: str = typer.Option(
+            "AXIOM developer session",
+            "--reason",
+            help="Short reason shown to the OS power helper.",
+        ),
     ) -> None:
         """Run a bounded local session, optionally holding a keep-awake lock."""
 
         if not keep_awake:
-            console.print("Use [cyan]axiom session --keep-awake --minutes 60[/cyan] to start a bounded keep-awake session.")
+            console.print(
+                "Use [cyan]axiom session --keep-awake --minutes 60[/cyan] to start a bounded keep-awake session."
+            )
             return
 
         duration = minutes * 60
         try:
             session_handle = KeepAwakeSession(duration=duration, reason=reason)
             if not session_handle.available:
-                console.print("[yellow]Keep-awake is unavailable on this host.[/yellow]")
+                console.print(
+                    "[yellow]Keep-awake is unavailable on this host.[/yellow]"
+                )
                 for instruction in session_handle.plan().instructions:
                     console.print(f"  {instruction}")
                 raise typer.Exit(code=1)

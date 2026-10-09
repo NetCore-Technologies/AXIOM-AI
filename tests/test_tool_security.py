@@ -45,8 +45,7 @@ def test_availability_does_not_claim_authentication(installer: Any):
         name="demo-agent",
         package="demo-agent",
         auth_instructions=(
-            "Use DEMO_AGENT_API_KEY from the environment or keychain service "
-            "com.example.demo-agent.",
+            "Use DEMO_AGENT_API_KEY from the environment or keychain service com.example.demo-agent.",
         ),
     )
     plan = installer.build_install_plan(
@@ -75,16 +74,13 @@ def test_api_keys_are_references_and_never_serialized(installer: Any):
     target = installer.InstallTarget(
         package="demo-agent",
         auth_instructions=(
-            "Read DEMO_AGENT_API_KEY from the environment; the keychain service "
-            "is com.example.demo-agent.",
+            "Read DEMO_AGENT_API_KEY from the environment; the keychain service is com.example.demo-agent.",
         ),
     )
     plan = installer.build_install_plan(
         target,
         system="linux",
-        which=lambda command: "/usr/local/bin/npm"
-        if command == "npm"
-        else None,
+        which=lambda command: "/usr/local/bin/npm" if command == "npm" else None,
     )
     serialized = json.dumps(plan.as_dict(), sort_keys=True)
 
@@ -142,9 +138,7 @@ def test_remote_install_is_reviewable_and_requires_explicit_opt_in(
         runner=runner,
         root_check=lambda: False,
     )
-    assert executions == [
-        (list(approved.command), {"check": True, "shell": False})
-    ]
+    assert executions == [(list(approved.command), {"check": True, "shell": False})]
 
 
 def test_unsupported_os_and_package_manager_return_guidance(installer: Any):
@@ -249,9 +243,8 @@ def test_keep_awake_restores_child_on_every_exit(awake: Any, fail: bool):
 
     assert session.available is True
     if fail:
-        with pytest.raises(RuntimeError, match="child failed"):
-            with session:
-                raise RuntimeError("child failed")
+        with pytest.raises(RuntimeError, match="child failed"), session:
+            raise RuntimeError("child failed")
     else:
         with session:
             assert session.is_running is True

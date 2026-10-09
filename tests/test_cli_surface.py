@@ -4,7 +4,6 @@ from typer.testing import CliRunner
 
 from axiom.cli.main import app
 
-
 runner = CliRunner()
 
 

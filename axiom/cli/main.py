@@ -11,6 +11,8 @@ from rich.table import Table
 
 from axiom.cli.ai_features import ai_app
 from axiom.cli.optimizer import optimizer_app
+from axiom.cli.startup import show_startup, suppress_for_arguments
+from axiom.cli.tools import register as register_tools_cli
 from axiom.core.hardware import detect_hardware, estimate_model_fit
 from axiom.core.integrations import (
     AgentIntegration,
@@ -18,17 +20,15 @@ from axiom.core.integrations import (
     IntegrationType,
 )
 from axiom.core.project import create_project
+from axiom.daemon import LOCAL_ACTIONS, run_daemon
 from axiom.datasets.cleaner import clean_jsonl
 from axiom.datasets.inspector import inspect_dataset
-from axiom.daemon import LOCAL_ACTIONS, run_daemon
 from axiom.models.analysis import analyze_config, disk_info
 from axiom.models.inspector import inspect_model
 from axiom.models.registry import Model, ModelRegistry
 from axiom.runtime.supercompress import compress_context, redacted_base_url
 from axiom.training.planner import create_training_plan
 from axiom.version import __version__
-from axiom.cli.startup import show_startup, suppress_for_arguments
-from axiom.cli.tools import register as register_tools_cli
 
 app = typer.Typer(
     name="axiom",
@@ -126,7 +126,9 @@ def _run_default_session(*, show_banner: bool = True) -> None:
         table.add_row(action["command"], action["description"])
     table.add_row("axiom daemon", "Run only the loopback daemon on a free port.")
     console.print(table)
-    console.print("\nLocal daemon: Ctrl-C stops it. Network access stays disabled by default.\n")
+    console.print(
+        "\nLocal daemon: Ctrl-C stops it. Network access stays disabled by default.\n"
+    )
 
     try:
         run_daemon()

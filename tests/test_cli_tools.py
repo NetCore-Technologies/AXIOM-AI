@@ -3,7 +3,6 @@ from typer.testing import CliRunner
 import axiom.cli.tools as cli_tools
 from axiom.cli.main import app
 
-
 runner = CliRunner()
 
 
