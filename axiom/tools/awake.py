@@ -28,19 +28,25 @@ class AwakeUnavailableError(RuntimeError):
 class ProcessLike(Protocol):
     pid: int
 
-    def poll(self) -> int | None: ...
+    def poll(self) -> int | None:
+        """Return the exit code, or None while the process is running."""
 
-    def terminate(self) -> Any: ...
+    def terminate(self) -> Any:
+        """Ask the process to stop."""
 
-    def kill(self) -> Any: ...
+    def kill(self) -> Any:
+        """Force the process to stop."""
 
-    def wait(self, timeout: float | None = None) -> Any: ...
+    def wait(self, timeout: float | None = None) -> Any:
+        """Wait for the process to exit."""
 
 
 class RunnerLike(Protocol):
-    def which(self, executable: str) -> str | None: ...
+    def which(self, executable: str) -> str | None:
+        """Resolve an executable name to a path, or None if missing."""
 
-    def popen(self, argv: Sequence[str]) -> ProcessLike: ...
+    def popen(self, argv: Sequence[str]) -> ProcessLike:
+        """Start a child process from an argv sequence."""
 
 
 WINDOWS_KEEP_AWAKE_SCRIPT = r"""
@@ -153,9 +159,6 @@ def build_awake_command(
 
     if platform_name == "darwin":
         available = _runner_which(runner, "caffeinate", which)
-        # caffeinate is part of macOS.  Falling back to its fixed command name
-        # keeps simulated-platform tests deterministic without weakening Linux
-        # availability detection.
         return AwakeCommand(
             platform=platform_name,
             argv=("caffeinate", "-dimsu", "-t", str(seconds)),
@@ -203,8 +206,6 @@ def build_awake_command(
                 executable = candidate
                 break
         if executable is None and which is None and runner is None:
-            # Windows includes Windows PowerShell on supported desktop hosts;
-            # this also makes explicit Windows simulation useful on CI.
             executable = "powershell"
         if executable is None:
             return AwakeCommand(
@@ -365,9 +366,6 @@ class KeepAwakeSession:
         if process.poll() is not None:
             return
 
-        # The built-in POSIX runner starts a new process group so systemd's
-        # `sleep` child cannot outlive the session.  Test doubles use the
-        # simpler process methods below and never receive a real signal.
         if isinstance(self.runner, _DefaultRunner) and os.name != "nt":
             pid = getattr(process, "pid", None)
             if isinstance(pid, int) and pid > 0:
