@@ -10,7 +10,7 @@ on:
         description: "Existing release tag to build"
         required: true
         type: string
-        default: "v0.2.0-beta.6"
+        default: "v0.2.0-beta.7"
 
 permissions:
   contents: write
@@ -144,7 +144,10 @@ jobs:
           tar -tzf "out/AXIOM-${TAG}-linux-x64.tar.gz" >"$bundle_manifest"
           grep -q '^AXIOM/AXIOM$' "$bundle_manifest"
           dpkg-deb --info "out/AXIOM-${TAG}-linux-x64.deb" >/dev/null
+          bash -n scripts/build_linux_release.sh
           bash -n "out/AXIOM-${TAG}-linux-x64.sh"
+          bash -n installers/install.sh
+          bash installers/install.sh --help >/dev/null
 
       - name: Upload Linux binaries
         uses: actions/upload-artifact@v4
@@ -400,3 +403,26 @@ jobs:
           overwrite_files: true
           prerelease: ${{ contains(env.TAG, '-beta.') || contains(env.TAG, '-b.') }}
           generate_release_notes: false
+
+  installer-smoke:
+    name: Published Linux installer smoke test
+    needs: publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Install pinned release into user-scoped paths
+        env:
+          HOME: ${{ runner.temp }}/axiom-home
+          AXIOM_RELEASE_TAG: ${{ env.TAG }}
+          AXIOM_INSTALL_DIR: ${{ runner.temp }}/axiom-data
+          AXIOM_BIN_DIR: ${{ runner.temp }}/axiom-bin
+        run: |
+          set -euo pipefail
+          bash installers/install.sh
+          test -x "$AXIOM_BIN_DIR/axiom"
+          "$AXIOM_BIN_DIR/axiom" --no-banner version
