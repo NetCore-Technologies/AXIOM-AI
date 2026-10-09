@@ -34,9 +34,9 @@ bundles contain the standalone `axiom` command and an installer helper. They
 are not Apple Developer ID signed or notarized unless a future workflow adds
 that capability.
 
-## Beta.7 status
+## Beta.8 status
 
-[Beta.7 notes](releases/v0.2.0-beta.7.md) describe the target and its known
+[Beta.8 notes](releases/v0.2.0-beta.8.md) describe the target and its known
 boundaries. The GitHub [Actions runs](https://github.com/NetCore-Technologies/AXIOM-AI/actions)
 and [Releases page](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
 are authoritative for the exact commit, workflow result, uploaded assets, and
@@ -45,4 +45,5 @@ checksums. A changelog entry or a local build is not release evidence by itself.
 ## Older notes
 
 - [Beta.6 — efficient Linux distribution](releases/v0.2.0-beta.6.md)
+- [Beta.7](releases/v0.2.0-beta.7.md)
 - [Beta.5](releases/v0.2.0-beta.5.md)

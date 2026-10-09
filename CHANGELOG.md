@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.2.0-beta.7 — unreleased preparation
+## 0.2.0-beta.8 — release preparation
 
-This section describes the beta.7 target. It is not a claim that release
+This section describes the beta.8 target. It is not a claim that release
 assets, workflows, or hosted pages have passed live verification.
 
 ### Documentation and product contract
@@ -18,6 +18,15 @@ assets, workflows, or hosted pages have passed live verification.
 - Kept Linux bundle and Python fallback installation behavior explicit.
 - Documented Headroom as an optional external context-compression proxy that
   AXIOM may explain or discover but never bundles or starts.
+- Added an explicit Headroom status and passthrough path that never installs
+  or starts the external proxy during discovery.
+- Hardened Linux release installation with pinned tags, user-scoped paths,
+  archive validation, and checksum verification.
+
+## 0.2.0-beta.7
+
+See the [published beta.7 release](https://github.com/NetCore-Technologies/AXIOM-AI/releases/tag/v0.2.0-beta.7)
+for the assets and commit associated with that earlier prerelease.
 
 ## 0.2.0-beta.6
 
