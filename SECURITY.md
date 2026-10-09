@@ -114,3 +114,7 @@ See the complete incident timeline, impact, patch, and regression coverage in
 ## Beta.5 security update
 
 Beta.5 hardens administrator browser storage and untrusted model filesystem path handling.
+
+## v0.2.0-beta.7 security update
+
+This release includes model filesystem-boundary and administrator-storage hardening. Report suspected vulnerabilities privately; do not publish exploit details in public issues.

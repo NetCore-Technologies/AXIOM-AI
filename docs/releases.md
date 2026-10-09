@@ -23,3 +23,7 @@ See [beta.5 release notes](releases/v0.2.0-beta.5.md).
 ## v0.2.0-beta.6
 
 See [beta.6 release notes](releases/v0.2.0-beta.6.md).
+
+## [v0.2.0-beta.7](releases/v0.2.0-beta.7.md)
+
+Optimizer, security hardening and release validation updates.

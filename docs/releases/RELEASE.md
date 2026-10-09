@@ -62,3 +62,7 @@ Built by **NetCore Technologies**.
 ## v0.2.0-beta.5
 
 Beta.5 is the optimizer, quantization, and security-hardening beta release.
+
+# v0.2.0-beta.7
+
+See [detailed release notes](v0.2.0-beta.7.md).

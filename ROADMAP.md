@@ -46,3 +46,9 @@ AXIOM beta.5 adds the optimizer/quantization workflow, hardware-aware model plan
 - Filesystem/path security hardening
 - Administrator storage hardening
 - CI/E2E reliability improvements
+
+## v0.2.0-beta.7 — released
+
+- Optimizer and quantization planning improvements.
+- Model-path and administrator-storage hardening.
+- E2E and release-pipeline verification.

@@ -318,3 +318,7 @@ Built by [Manit Arora](https://github.com/manit6752025) and
 [Website](https://netcore-technologies.github.io/AXIOM-AI/)
 
 **AXIOM. Build AI. Own AI.**
+
+## AXIOM v0.2.0-beta.7
+
+Optimizer/quantization planning, security hardening and E2E release verification. [Release notes](docs/releases/v0.2.0-beta.7.md).
