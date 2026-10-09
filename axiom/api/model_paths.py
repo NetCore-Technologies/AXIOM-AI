@@ -81,3 +81,6 @@ def validate_child_path(
     except ValueError as exc:
         raise ValueError("child path escapes its trusted parent") from exc
     return Path(candidate)
+
+# Backwards-compatible default root; caller-supplied paths must still be validated.
+MODEL_ROOT = Path("models")

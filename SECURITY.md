@@ -118,3 +118,7 @@ Beta.5 hardens administrator browser storage and untrusted model filesystem path
 ## v0.2.0-beta.7 security update
 
 This release includes model filesystem-boundary and administrator-storage hardening. Report suspected vulnerabilities privately; do not publish exploit details in public issues.
+
+## Beta.7 security status
+
+Beta.7 is a pre-release. Open CodeQL Python path-injection alerts remain under investigation; this release does not claim those findings have been fixed. Please report new vulnerabilities privately through GitHub's Security Advisories feature.
