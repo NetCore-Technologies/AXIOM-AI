@@ -1,10 +1,18 @@
 import json
+from io import StringIO
 from http.client import HTTPConnection
 from pathlib import Path
 
 import pytest
 
-from axiom.daemon import serve_in_thread, validate_bind_host
+import axiom.daemon as daemon_module
+from axiom.daemon import (
+    daemon_ready_payload,
+    run_daemon,
+    serve_in_thread,
+    start_daemon,
+    validate_bind_host,
+)
 
 
 def get_json(host: str, port: int, path: str) -> tuple[int, dict]:
@@ -41,6 +49,42 @@ def test_daemon_chooses_an_available_loopback_port(daemon_server):
     assert payload["name"] == "AXIOM"
     assert payload["status"] == "ok"
     assert payload["version"]
+
+
+def test_daemon_ready_payload_contains_absolute_inspection_urls(daemon_server):
+    payload = daemon_ready_payload(daemon_server)
+
+    assert payload["status"] == "ready"
+    assert payload["url"].startswith("http://127.0.0.1:")
+    assert payload["endpoints"]["health"] == f"{payload['url']}/health"
+    assert payload["endpoints"]["summary"] == f"{payload['url']}/api/summary"
+    assert payload["next_commands"] == [
+        "axiom summary --json",
+        f"curl -sS {payload['url']}/health",
+        f"curl -sS {payload['url']}/api/summary",
+    ]
+
+
+def test_run_daemon_can_emit_machine_readable_lifecycle_records(monkeypatch):
+    server = start_daemon()
+
+    def stop_after_ready():
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(server, "serve_forever", stop_after_ready)
+    monkeypatch.setattr(daemon_module, "start_daemon", lambda **_kwargs: server)
+
+    output = StringIO()
+    run_daemon(output=output, machine_readable=True)
+    records = [json.loads(line) for line in output.getvalue().splitlines()]
+
+    assert records[0]["status"] == "ready"
+    assert records[0]["endpoints"]["health"].endswith("/health")
+    assert records[-1] == {
+        "name": "AXIOM",
+        "service": "local-daemon",
+        "status": "stopped",
+    }
 
 
 def test_daemon_info_describes_the_local_capabilities(

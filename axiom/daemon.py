@@ -65,6 +65,16 @@ LOCAL_ACTIONS: tuple[dict[str, str], ...] = (
     },
 )
 
+DAEMON_ENDPOINT_PATHS: tuple[tuple[str, str], ...] = (
+    ("root", "/"),
+    ("health", "/health"),
+    ("info", "/api/info"),
+    ("summary", "/api/summary"),
+    ("actions", "/api/actions"),
+    ("hardware", "/api/hardware"),
+    ("tools", "/api/tools"),
+)
+
 
 def validate_bind_host(host: str, *, allow_network: bool = False) -> str:
     """Validate a daemon bind address before opening a listening socket."""
@@ -336,23 +346,90 @@ def daemon_url(server: ThreadingHTTPServer) -> str:
     return _display_url(host, server.server_address[1])
 
 
+def daemon_ready_payload(server: ThreadingHTTPServer) -> dict[str, Any]:
+    """Return stable connection details for a ready local daemon.
+
+    The payload is intentionally useful to both humans and shell tooling.  It
+    contains absolute endpoint URLs so callers never have to reconstruct the
+    address selected by the operating system when ``port=0`` is used.
+    """
+
+    base_url = daemon_url(server)
+    endpoints = {
+        name: f"{base_url}{path}" for name, path in DAEMON_ENDPOINT_PATHS
+    }
+
+    return {
+        "name": "AXIOM",
+        "service": "local-daemon",
+        "status": "ready",
+        "url": base_url,
+        "host": getattr(server, "axion_host", server.server_address[0]),
+        "port": server.server_address[1],
+        "endpoints": endpoints,
+        "next_commands": [
+            "axiom summary --json",
+            f"curl -sS {endpoints['health']}",
+            f"curl -sS {endpoints['summary']}",
+        ],
+    }
+
+
+def _announce_daemon(
+    server: ThreadingHTTPServer,
+    stream: TextIO,
+    *,
+    machine_readable: bool,
+) -> None:
+    payload = daemon_ready_payload(server)
+
+    if machine_readable:
+        print(json.dumps(payload, sort_keys=True), file=stream, flush=True)
+        return
+
+    endpoints = payload["endpoints"]
+    print(f"AXIOM daemon listening at {payload['url']}", file=stream, flush=True)
+    print(f"Health:  {endpoints['health']}", file=stream, flush=True)
+    print(f"Summary: {endpoints['summary']}", file=stream, flush=True)
+    print("Try next:", file=stream, flush=True)
+    for command in payload["next_commands"]:
+        print(f"  {command}", file=stream, flush=True)
+    print("Ctrl-C stops the daemon.", file=stream, flush=True)
+
+
 def run_daemon(
     *,
     host: str = "127.0.0.1",
     port: int = 0,
     allow_network: bool = False,
     output: TextIO | None = None,
+    machine_readable: bool = False,
 ) -> None:
-    """Run the local daemon until Ctrl-C, then close its socket cleanly."""
+    """Run the local daemon until Ctrl-C, then close its socket cleanly.
+
+    ``machine_readable`` emits one JSON readiness record and one JSON stopped
+    record, making ``axiom daemon --json`` safe to supervise without parsing
+    human-oriented terminal output.
+    """
 
     server = start_daemon(host=host, port=port, allow_network=allow_network)
     stream = sys.stdout if output is None else output
-    print(f"AXIOM daemon listening at {daemon_url(server)}", file=stream, flush=True)
+    _announce_daemon(server, stream, machine_readable=machine_readable)
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nAXIOM daemon stopped.", file=stream)
+        if machine_readable:
+            print(
+                json.dumps(
+                    {"name": "AXIOM", "service": "local-daemon", "status": "stopped"},
+                    sort_keys=True,
+                ),
+                file=stream,
+                flush=True,
+            )
+        else:
+            print("\nAXIOM daemon stopped.", file=stream)
     finally:
         server.server_close()
 
@@ -374,6 +451,8 @@ def serve_in_thread(
 __all__ = [
     "LOCAL_ACTIONS",
     "LOOPBACK_HOSTS",
+    "DAEMON_ENDPOINT_PATHS",
+    "daemon_ready_payload",
     "daemon_url",
     "local_summary",
     "run_daemon",
