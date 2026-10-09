@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "gui": "node scripts/start_gui.mjs",
     "build": "tsc -b && vite build",
     "e2e": "playwright test",
     "lint": "eslint .",

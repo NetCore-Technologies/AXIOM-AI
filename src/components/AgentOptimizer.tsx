@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BrainCircuit, Cpu, Database, Gauge, HardDrive, Play, Sparkles, Zap } from "lucide-react";
 
 type Goal = "coding" | "cybersecurity" | "assistant" | "reasoning" | "research" | "agentic" | "creative" | "custom";
@@ -34,6 +34,24 @@ export default function AgentOptimizer() {
   const [error, setError] = useState("");
 
   const targetLabel = useMemo(() => target === "max" ? "Maximum possible" : `${target} tokens/sec`, [target]);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/optimization/hardware", { credentials: "include" })
+      .then((response) => {
+        if (!response.ok) throw new Error("Hardware request failed");
+        return response.json() as Promise<ApiResult>;
+      })
+      .then((data) => {
+        if (active) setHardware(data);
+      })
+      .catch(() => {
+        if (active) setHardware(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function runOptimizer() {
     setBusy(true);

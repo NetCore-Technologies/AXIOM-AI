@@ -1371,18 +1371,25 @@ function Dashboard({
 
   useEffect(() => {
     let active = true;
-    fetch(`${API_BASE}/api/health`)
-      .then((response) => {
-        if (!response.ok) throw new Error("Health check failed");
-        return response.json() as Promise<{ status?: string }>;
-      })
-      .then((data) => {
-        if (active) setApiStatus(data.status === "ok" ? "online" : "offline");
-      })
-      .catch(() => {
-        if (active) setApiStatus("offline");
-      });
-    return () => { active = false; };
+    const checkHealth = () => {
+      fetch(`${API_BASE}/api/health`)
+        .then((response) => {
+          if (!response.ok) throw new Error("Health check failed");
+          return response.json() as Promise<{ status?: string }>;
+        })
+        .then((data) => {
+          if (active) setApiStatus(data.status === "ok" ? "online" : "offline");
+        })
+        .catch(() => {
+          if (active) setApiStatus("offline");
+        });
+    };
+    checkHealth();
+    const timer = window.setInterval(checkHealth, 10_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
   const apiLabel = apiStatus === "online" ? "Backend connected" : apiStatus === "checking" ? "Checking backend..." : "Backend unavailable";

@@ -7,7 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from axiom.api.model_paths import validate_model_path, validate_output_path
+from axiom.api.model_paths import (
+    validate_child_path,
+    validate_model_path,
+    validate_output_path,
+)
 from axiom.optimizer.agent_profiles import AgentProfile
 from axiom.optimizer.system import SystemInfo
 
@@ -99,25 +103,43 @@ def _copy_without_following_symlinks(source: Path, destination: Path) -> None:
 
 
 def _config(path: Path) -> dict[str, Any]:
-    for name in ("config.json", "model_config.json"):
-        cfg = path / name
-        if cfg.is_symlink():
-            raise ValueError(
-                f"model configuration contains an unsupported symlink: {cfg}"
-            )
-        # codeql[py/path-injection]
-        if cfg.exists():
-            try:
-                # codeql[py/path-injection]
-                value = json.loads(cfg.read_text(encoding="utf-8"))
-                if isinstance(value, dict):
-                    return value
-            except (OSError, ValueError):
-                import logging as _axiom_logging
+    trusted_path = validate_model_path(path)
+    if not trusted_path.is_dir():
+        return {}
 
-                _axiom_logging.getLogger(__name__).debug(
-                    "intentionally ignored exception", exc_info=True
-                )
+    for name in ("config.json", "model_config.json"):
+        candidate = trusted_path / name
+        if candidate.is_symlink():
+            raise ValueError(
+                f"model configuration contains an unsupported symlink: {candidate}"
+            )
+        cfg = validate_child_path(trusted_path, name)
+        try:
+            fd = os.open(cfg, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            if exc.errno == getattr(os, "ELOOP", 40):
+                raise ValueError(
+                    f"model configuration contains an unsupported symlink: {cfg}"
+                ) from exc
+            continue
+
+        try:
+            with os.fdopen(fd, "r", encoding="utf-8") as config_file:
+                fd = -1
+                value = json.load(config_file)
+            if isinstance(value, dict):
+                return value
+        except (OSError, ValueError):
+            import logging as _axiom_logging
+
+            _axiom_logging.getLogger(__name__).debug(
+                "intentionally ignored exception", exc_info=True
+            )
+        finally:
+            if fd >= 0:
+                os.close(fd)
     return {}
 
 

@@ -774,3 +774,323 @@ html.js [data-reveal].is-visible {
     transform: none;
   }
 }
+
+/* AXIOM SCREENSHOT THEME — START */
+:root {
+  color-scheme: dark;
+  --axiom-shot-bg: #101010;
+  --axiom-shot-sidebar: #0b0b0b;
+  --axiom-shot-surface: #141414;
+  --axiom-shot-surface-raised: #191919;
+  --axiom-shot-border: #292929;
+  --axiom-shot-text: #eeeeE8;
+  --axiom-shot-muted: #999990;
+  --axiom-shot-lime: #d7f64b;
+  --axiom-shot-lime-hover: #e4ff68;
+  --axiom-shot-lime-dim: #8d9e43;
+  --axiom-shot-amber: #e9ae58;
+  --axiom-shot-danger: #e36b6b;
+}
+
+html,
+body {
+  background: var(--axiom-shot-bg) !important;
+  color: var(--axiom-shot-text);
+}
+
+body {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--axiom-shot-text);
+}
+
+#root {
+  min-height: 100vh;
+  background-color: var(--axiom-shot-bg);
+  color: var(--axiom-shot-text);
+}
+
+/* Flat graphite surfaces, fine borders, no glass/gradient treatment. */
+:is(
+  .app-shell,
+  .app-layout,
+  .app-main,
+  .main-content,
+  .workspace,
+  .workspace-content,
+  .dashboard,
+  .dashboard-content,
+  .control-center,
+  .control-center-content,
+  .panel,
+  .card,
+  .surface,
+  .widget,
+  .metric-card,
+  .stat-card,
+  .section-card,
+  .table-container,
+  .modal,
+  .dialog,
+  .dropdown-menu,
+  [class*="-panel"],
+  [class*="-card"],
+  [class*="-surface"],
+  [class*="-widget"]
+) {
+  color: var(--axiom-shot-text);
+  border-color: var(--axiom-shot-border);
+  box-shadow: none;
+}
+
+:is(
+  .sidebar,
+  .app-sidebar,
+  .side-nav,
+  .sidebar-nav,
+  nav[aria-label*="side" i],
+  aside
+) {
+  background: var(--axiom-shot-sidebar) !important;
+  color: var(--axiom-shot-text);
+  border-color: #242424 !important;
+  box-shadow: none !important;
+}
+
+:is(
+  .topbar,
+  .top-bar,
+  .app-header,
+  .workspace-header,
+  .toolbar,
+  header[role="banner"]
+) {
+  background: #101010 !important;
+  color: var(--axiom-shot-text);
+  border-color: #262626 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+/* De-saturate old palettes while preserving status semantics. */
+:is(
+  .app-shell,
+  .app-layout,
+  .main-content,
+  .workspace,
+  .dashboard,
+  .control-center,
+  .page-content
+) :is(
+  .panel,
+  .card,
+  .surface,
+  .widget,
+  .metric-card,
+  .stat-card,
+  .section-card,
+  .table-container,
+  .modal,
+  .dialog,
+  [class*="-panel"],
+  [class*="-card"],
+  [class*="-surface"]
+) {
+  background-color: var(--axiom-shot-surface);
+  background-image: none;
+  border-color: var(--axiom-shot-border);
+}
+
+:is(h1, h2, h3, h4, h5, h6, strong, b, label, legend) {
+  color: var(--axiom-shot-text);
+}
+
+:is(p, small, .muted, .subtitle, .description, .helper-text, .secondary-text, .text-muted) {
+  color: var(--axiom-shot-muted);
+}
+
+:is(a, .link) {
+  color: var(--axiom-shot-lime);
+  text-decoration-color: color-mix(in srgb, var(--axiom-shot-lime) 45%, transparent);
+}
+
+:is(a, .link):hover {
+  color: var(--axiom-shot-lime-hover);
+}
+
+/* Sidebar rows and selected workspace navigation. */
+:is(.sidebar, .app-sidebar, .side-nav, aside) :is(a, button, [role="link"], [role="button"]) {
+  color: #a5a59c;
+  background-image: none;
+  box-shadow: none;
+}
+
+:is(.sidebar, .app-sidebar, .side-nav, aside) :is(a, button, [role="link"], [role="button"]):hover {
+  color: var(--axiom-shot-text);
+  background-color: #171717;
+}
+
+:is(.sidebar, .app-sidebar, .side-nav, aside) :is(.active, [aria-current="page"], [data-active="true"]) {
+  color: var(--axiom-shot-text) !important;
+  border-color: var(--axiom-shot-lime) !important;
+  box-shadow: inset 3px 0 0 var(--axiom-shot-lime);
+  background: #141414 !important;
+}
+
+/* Primary actions match the bright yellow-green screenshot accent. */
+:is(
+  button.primary,
+  button.primary-button,
+  .primary-button,
+  .button-primary,
+  .btn-primary,
+  a.primary-button,
+  [data-variant="primary"],
+  [data-kind="primary"]
+) {
+  background: var(--axiom-shot-lime) !important;
+  background-image: none !important;
+  color: #11120a !important;
+  border: 1px solid var(--axiom-shot-lime) !important;
+  box-shadow: none !important;
+  font-weight: 700;
+}
+
+:is(
+  button.primary,
+  button.primary-button,
+  .primary-button,
+  .button-primary,
+  .btn-primary,
+  a.primary-button,
+  [data-variant="primary"],
+  [data-kind="primary"]
+):hover:not(:disabled) {
+  background: var(--axiom-shot-lime-hover) !important;
+  border-color: var(--axiom-shot-lime-hover) !important;
+  color: #11120a !important;
+}
+
+button,
+[role="button"],
+.button,
+.btn {
+  border-radius: 3px;
+  box-shadow: none;
+  background-image: none;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+:is(button, [role="button"], .button, .btn):not(:is(
+  .primary,
+  .primary-button,
+  .button-primary,
+  .btn-primary,
+  [data-variant="primary"]
+)) {
+  background-color: #151515;
+  color: var(--axiom-shot-text);
+  border-color: #3a3a3a;
+}
+
+:is(button, [role="button"], .button, .btn):hover:not(:disabled):not(:is(
+  .primary,
+  .primary-button,
+  .button-primary,
+  .btn-primary,
+  [data-variant="primary"]
+)) {
+  background-color: #202020;
+  border-color: #656565;
+}
+
+:is(input, select, textarea) {
+  color: var(--axiom-shot-text);
+  background: #111111 !important;
+  border-color: #353535 !important;
+  border-radius: 3px;
+  box-shadow: none !important;
+}
+
+:is(input, select, textarea)::placeholder {
+  color: #77776f;
+  opacity: 1;
+}
+
+:is(input, select, textarea):focus-visible,
+:is(button, a, [role="button"]):focus-visible {
+  outline: 2px solid var(--axiom-shot-lime) !important;
+  outline-offset: 2px;
+}
+
+/* Status chips: lime for ready/success, amber for offline/warning. */
+:is(.status-ready, .status-success, .badge-success, .badge-ready, [data-status="ready"], [data-status="success"]) {
+  color: var(--axiom-shot-lime) !important;
+  border-color: #788b31 !important;
+  background: #171b0d !important;
+}
+
+:is(.status-warning, .status-offline, .badge-warning, .badge-offline, [data-status="offline"], [data-status="warning"]) {
+  color: var(--axiom-shot-amber) !important;
+  border-color: #6f5129 !important;
+  background: #1d170f !important;
+}
+
+:is(.status-error, .status-danger, .badge-danger, [data-status="error"], [data-status="failed"]) {
+  color: var(--axiom-shot-danger) !important;
+  border-color: #673535 !important;
+  background: #1e1111 !important;
+}
+
+/* Chart and activity bars use muted olive lime, not neon gradients. */
+:is(.chart-bar, .activity-bar, .bar-chart-bar, [data-chart-bar]) {
+  background: var(--axiom-shot-lime-dim);
+  border-color: var(--axiom-shot-lime-dim);
+}
+
+/* Existing optimizer/quantization UI: theme only; behavior/layout untouched. */
+:is(
+  .beta5-hero,
+  .beta5-panel,
+  .beta5-result-panel,
+  .beta5-empty,
+  .beta5-hardware,
+  .beta5-result,
+  .beta5-dataset,
+  .beta5-status,
+  .beta5-agent,
+  .optimizer-panel,
+  .optimizer-card,
+  .quantizer-panel,
+  .quantization-panel,
+  .agent-optimizer-panel
+) {
+  color: var(--axiom-shot-text);
+  background-color: var(--axiom-shot-surface) !important;
+  background-image: none !important;
+  border-color: var(--axiom-shot-border) !important;
+  box-shadow: none !important;
+}
+
+:is(.beta5-hero-badge, .beta5-panel-head span, .beta5-agent.active, .beta5-status span) {
+  color: var(--axiom-shot-lime);
+}
+
+:is(hr, .divider, .separator, [role="separator"]) {
+  border-color: #292929 !important;
+  background-color: #292929;
+}
+
+::selection {
+  color: #101010;
+  background: var(--axiom-shot-lime);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+/* AXIOM SCREENSHOT THEME — END */
