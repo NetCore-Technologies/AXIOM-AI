@@ -13,6 +13,7 @@ from axiom.cli.ai_features import ai_app
 from axiom.cli.optimizer import optimizer_app
 from axiom.cli.startup import show_startup, suppress_for_arguments
 from axiom.cli.tools import register as register_tools_cli
+from axiom.cli.headroom import register as register_headroom_cli
 from axiom.core.hardware import detect_hardware, estimate_model_fit
 from axiom.core.integrations import (
     AgentIntegration,
@@ -65,6 +66,7 @@ from axiom.cli.extended import register as register_extended_cli
 
 register_extended_cli(app, model_app, dataset_app)
 register_tools_cli(app, tools_app)
+register_headroom_cli(app)
 
 
 console = Console()
@@ -124,7 +126,10 @@ def _run_default_session(*, show_banner: bool = True) -> None:
     table.add_column("What it does")
     for action in LOCAL_ACTIONS:
         table.add_row(action["command"], action["description"])
-    table.add_row("axiom daemon", "Run only the loopback daemon on a free port.")
+    table.add_row(
+        "axiom daemon",
+        "Run the loopback daemon on a free port and print health/summary URLs.",
+    )
     console.print(table)
     console.print(
         "\nLocal daemon: Ctrl-C stops it. Network access stays disabled by default.\n"
@@ -161,11 +166,21 @@ def daemon(
         "--allow-network",
         help="Allow binding beyond the local machine. Keep the default for private use.",
     ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit JSON readiness and stopped records for a supervisor or script.",
+    ),
 ) -> None:
-    """Run AXIOM's local daemon on an available port."""
+    """Run AXIOM's local daemon and print how to inspect it."""
 
     try:
-        run_daemon(host=host, port=port, allow_network=allow_network)
+        run_daemon(
+            host=host,
+            port=port,
+            allow_network=allow_network,
+            machine_readable=json_output,
+        )
     except (OSError, ValueError) as exc:
         _cli_error(str(exc))
 

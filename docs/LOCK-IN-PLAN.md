@@ -90,7 +90,7 @@ must identify that boundary before making a request.
 
 ### Next CLI improvements
 
-- Add a non-blocking `axiom summary` command that prints the current project,
+- Keep the non-blocking `axiom summary` command focused on the current project,
   hardware, tool presence, and one recommended next command.
 - Add `--json` to local inspection and summary commands where automation has a
   clear use case.
@@ -119,6 +119,7 @@ are:
 ```text
 GET /health
 GET /api/info
+GET /api/summary
 GET /api/actions
 GET /api/hardware
 GET /api/tools
@@ -127,11 +128,11 @@ GET /api/tools
 These routes are intentionally JSON, small, and inspectable with `curl`. The
 root response should link to the routes without pretending to be a web app.
 
-### First high-value feature
+### Current high-value feature
 
-Add `GET /api/summary`. It should combine the current working directory,
-whether `axiom.yaml` exists, missing standard project paths, detected hardware,
-available executables, and the next recommended local command. It should be a
+`GET /api/summary` combines the current working directory, whether
+`axiom.yaml` exists, missing standard project paths, detected hardware,
+available executables, and the next recommended local command. Keep it a
 snapshot, not a background watcher.
 
 The response must make its evidence boundaries explicit:
@@ -395,13 +396,14 @@ when the site has more sections or the repository has more deploy records.
 
 ## Page 10 — 30-day execution schedule
 
-### Week 1: lock the contract
+### Baseline already landed
 
-- Ship the refined favicon and brand mark.
-- Add `/api/summary` and the non-blocking `axiom summary` command.
-- Update README examples and daemon route documentation.
-- Add route, CLI, and browser acceptance tests.
-- Open one PR, merge it, and verify the push deployment plus one manual rerun.
+- The static landing page, refined brand mark, local summary boundary, and
+  non-blocking `axiom summary` path are in the current product baseline.
+- README examples and daemon route documentation should stay aligned with the
+  command implementation.
+
+### Next 30 days
 
 ### Week 2: make local inspection sharper
 
@@ -428,7 +430,7 @@ when the site has more sections or the repository has more deploy records.
 
 ### Immediate next action
 
-The first implementation slice after this plan is intentionally small:
-replace the favicon, add the local summary boundary, test it end to end, and
-ship one reviewable commit. That gives AXIOM a better identity and a more useful
-daemon without reopening the scope that was just made clear.
+Choose the smallest unfinished item that shortens a real local workflow, add a
+focused test and documentation example, and ship it as one reviewable change.
+Do not expand the product surface merely to create another page, dashboard, or
+deployment record.

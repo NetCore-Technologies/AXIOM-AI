@@ -25,6 +25,7 @@ EXPECTED_TOOL_IDS = {
     "gemini-cli",
     "openrouter",
     "zai-glm",
+    "headroom",
 }
 
 
@@ -69,6 +70,20 @@ def test_current_first_party_executable_and_auth_names_are_not_stale():
     assert any(
         "@z_ai/zai-cli" in candidate.command
         for candidate in by_id["zai-glm"].install_candidates
+    )
+
+
+def test_headroom_is_explicitly_optional_and_does_not_claim_axiom_savings():
+    headroom = next(tool for tool in TOOL_CATALOG if tool.id == "headroom")
+
+    assert headroom.executable_names == ("headroom",)
+    assert headroom.kind == "cli"
+    assert "optional local proxy" in headroom.purpose.lower()
+    assert "does not perform or measure savings" in headroom.notes
+    assert headroom.api_key_env_vars == ()
+    assert all(
+        candidate.command.startswith("uv tool install")
+        for candidate in headroom.install_candidates
     )
 
 

@@ -156,3 +156,18 @@ def test_no_banner_bare_axiom_still_starts_the_daemon(monkeypatch):
     assert result.exit_code == 0
     assert startup_calls == []
     assert "Useful commands" in result.stdout
+
+
+def test_daemon_json_option_passes_machine_readable_mode(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_run_daemon(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(cli_main, "run_daemon", fake_run_daemon)
+
+    result = CliRunner().invoke(cli_main.app, ["daemon", "--json"])
+
+    assert result.exit_code == 0, result.stdout
+    assert captured["machine_readable"] is True
+    assert result.stdout == ""
