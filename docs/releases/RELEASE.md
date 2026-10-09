@@ -63,10 +63,15 @@ Built by **NetCore Technologies**.
 
 Beta.5 is the optimizer, quantization, and security-hardening beta release.
 
-# v0.2.0-beta.7
+# v0.2.0-beta.7 preparation
 
-See [detailed release notes](v0.2.0-beta.7.md).
+See [preparation notes](v0.2.0-beta.7.md). The notes do not replace the
+published GitHub release, successful workflow runs, or checksum verification.
 
 ## macOS DMG assets
 
-For beta releases, the macOS workflow builds separate Apple Silicon (arm64) and Intel (x86_64) DMGs, packages the AXIOM CLI and static Control Center files, verifies each image, generates SHA-256 checksums, and uploads the assets to the published GitHub release. These images are unsigned and not notarized unless a future signing/notarization workflow is configured.
+For beta releases, the macOS workflow builds separate Apple Silicon (arm64)
+and Intel (x86_64) DMGs, packages the standalone AXIOM CLI, generates
+SHA-256 checksums, and uploads assets only when the workflow succeeds. These
+images are unsigned and not notarized unless a future signing/notarization
+workflow is configured.

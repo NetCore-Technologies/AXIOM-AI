@@ -1,10 +1,10 @@
 # Accessibility
 
-AXIOM is an AI engineering platform, and its tools should be usable by as many people as practical, including people who navigate by keyboard, use assistive technology, zoom or magnify content, or need clear and predictable language. This document describes our accessibility priorities, contributor expectations, and how to report barriers. It is a statement of intent and current practice, not a claim of verified conformance to an accessibility standard.
+AXIOM is a terminal-first local AI tool with a static landing page, and its user-facing surfaces should be usable by as many people as practical, including people who navigate by keyboard, use assistive technology, zoom or magnify content, or need clear and predictable language. This document describes our accessibility priorities, contributor expectations, and how to report barriers. It is a statement of intent and current practice, not a claim of verified conformance to an accessibility standard.
 
 ## Priorities
 
-We aim to make the AXIOM Control Center and its documentation understandable and operable across different access needs. Priorities include:
+We aim to make the AXIOM landing page, terminal guidance, and documentation understandable and operable across different access needs. Priorities include:
 
 - **Keyboard access:** interactive controls should be reachable and usable without a mouse, with a visible focus indicator and a logical focus order.
 - **Structure and names:** use meaningful page headings, semantic elements, programmatic labels, and descriptive names for controls and icons.
@@ -61,7 +61,7 @@ The AXIOM maintainers under NetCore Technologies are responsible for reviewing a
 
 ## Supported environments
 
-The current end-to-end suite exercises the Control Center in Playwright's Chromium browser. This is useful regression coverage, but it is not a complete compatibility or accessibility audit. Other browsers, operating systems, mobile form factors, and specific screen-reader/browser combinations have not been systematically certified by this statement. Please include the environment details when reporting a problem.
+The current end-to-end suite exercises the static landing page in Playwright's Chromium browser. This is useful regression coverage, but it is not a complete compatibility or accessibility audit. Other browsers, operating systems, mobile form factors, terminal emulators, and specific screen-reader/browser combinations have not been systematically certified by this statement. Please include the environment details when reporting a problem.
 
 ## Known limitations
 
