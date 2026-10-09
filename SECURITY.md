@@ -110,3 +110,7 @@ and keeping runtime-profile writes below the trusted output root.
 
 See the complete incident timeline, impact, patch, and regression coverage in
 [SECURITY-ADVISORY-2026-10.md](SECURITY-ADVISORY-2026-10.md).
+
+## Beta.5 security update
+
+Beta.5 hardens administrator browser storage and untrusted model filesystem path handling.
