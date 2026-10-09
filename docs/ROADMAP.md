@@ -1,228 +1,77 @@
-# AXIOM Roadmap
-
-> **Build AI. Own AI.**
-
-AXIOM is under active development. The roadmap is directional and may change as the architecture matures.
-
----
-
-## Phase 0 — Foundation
-
-**Status: In progress**
-
-* [x] Python package
-* [x] AXIOM CLI
-* [x] Project initialization
-* [x] `axiom.yaml` project configuration
-* [x] Local model registry
-* [x] JSONL dataset inspection
-* [x] Basic dataset statistics
-* [x] GitHub repository structure
-
----
-
-## Phase 1 — Data Engineering
-
-**Status: In progress**
-
-* [ ] Dataset cleaning
-* [ ] Invalid record detection
-* [ ] Duplicate removal
-* [ ] Schema validation
-* [ ] Dataset preview
-* [ ] Dataset statistics
-* [ ] Dataset versioning
-* [ ] Token estimation improvements
-* [ ] Conversational dataset support
-* [ ] Training-format conversion
-
-Target workflow:
-
-```bash
-axiom dataset inspect ./data/train.jsonl
-axiom dataset clean ./data/train.jsonl
-axiom dataset validate ./data/train.jsonl
-```
-
----
-
-## Phase 2 — Model Intelligence
-
-* [ ] Hugging Face model discovery
-* [ ] Automatic model metadata
-* [ ] Local model import
-* [ ] Safetensors detection
-* [ ] GGUF detection
-* [ ] Quantization detection
-* [ ] Architecture detection
-* [ ] Parameter estimation
-* [ ] Model compatibility checks
-* [ ] Model versioning
-
-Target workflow:
-
-```bash
-axiom model add Qwen/...
-axiom model inspect Qwen/...
-```
-
----
-
-## Phase 3 — Training Engine
-
-* [ ] GPU detection
-* [ ] VRAM detection
-* [ ] CPU/RAM detection
-* [ ] Hardware-aware training recommendations
-* [ ] LoRA support
-* [ ] QLoRA support
-* [ ] Fine-tuning configuration
-* [ ] Training jobs
-* [ ] Checkpoints
-* [ ] Training logs
-* [ ] Experiment tracking
-
-Target workflow:
-
-```bash
-axiom train
-```
-
----
-
-## Phase 4 — Evaluation
-
-* [ ] Evaluation framework
-* [ ] Custom test datasets
-* [ ] Benchmark runners
-* [ ] Regression testing
-* [ ] Model comparison
-* [ ] Evaluation reports
-* [ ] Automated quality gates
-
-Target workflow:
-
-```bash
-axiom evaluate
-```
-
----
-
-## Phase 5 — Runtime
-
-* [ ] Local inference
-* [ ] Model loading
-* [ ] Streaming generation
-* [ ] OpenAI-compatible API
-* [ ] Runtime configuration
-* [ ] GPU/CPU selection
-* [ ] Resource monitoring
-* [ ] Local model serving
-
-Target workflow:
-
-```bash
-axiom serve
-```
-
----
-
-## Phase 6 — Deployment
-
-* [ ] Docker support
-* [ ] Reproducible deployments
-* [ ] Local server deployment
-* [ ] Remote server deployment
-* [ ] GPU deployment profiles
-* [ ] Model packaging
-* [ ] Deployment health checks
-* [ ] Rollback support
-
----
-
-## Phase 7 — Public surface
-
-The public web surface is a focused static landing page. Product workflows
-remain in the CLI and local daemon; no hosted workspace is planned for this
-release line.
-* [ ] live hardware monitoring
-
----
-
-## Phase 8 — AXIOM Cloud
-
-Optional hosted services built around the open-source core.
-
-Potential capabilities:
-
-* cloud GPU training
-* hosted inference
-* private workspaces
-* team collaboration
-* model storage
-* experiment storage
-* remote deployment
-* usage monitoring
-
-The goal is to keep the local/self-hosted AXIOM experience fully viable.
-
----
-
-## Long-term vision
-
-AXIOM should eventually make this possible:
-
-```text
-Idea
- ↓
-Dataset
- ↓
-Base Model
- ↓
-Fine-tuning
- ↓
-Evaluation
- ↓
-Optimization
- ↓
-Package
- ↓
-Deploy
- ↓
-Monitor
-```
-
-From a single reproducible project.
-
----
-
-## Guiding principle
-
-**AXIOM should make building your own AI feel like software development.**
-
-Models become versioned artifacts.
-
-Datasets become versioned inputs.
-
-Training becomes reproducible builds.
-
-Evaluation becomes testing.
-
-Deployment becomes release engineering.
-
----
-
-This roadmap is intentionally ambitious. Features may be reordered as implementation and community feedback shape the project.
-
-## v0.2.0-beta.5 — Released
-
-Optimizer, quantization, security hardening, and E2E validation are included in beta.5.
-
-## v0.2.0-beta.7 — released
-
-- Optimizer/quantization Control Center improvements.
-- Security-boundary and automated validation updates.
-
-## AXIOM v0.2.0-beta.5 macOS DMG
-
-The release workflow packages separate macOS Apple Silicon (arm64) and Intel (x86_64) DMGs. Each contains the AXIOM CLI executable and compiled Control Center frontend, plus a SHA-256 checksum. The DMGs are currently unsigned and not notarized; API-backed UI features require a separately running/configured AXIOM backend. See `docs/releases/v0.2.0-beta.5.md` for release details.
+# AXIOM roadmap
+
+AXIOM is a terminal-first companion for local AI work. The current product
+surface is a static landing page, a Python CLI, and a small loopback daemon.
+This roadmap is directional; a checked box means the repository contains the
+behavior, not that a hosted service or benchmark has been proven.
+
+## Current beta
+
+- [x] Installable Typer CLI with `axiom`, `guide`, `summary`, and `doctor`.
+- [x] Project scaffolding, configuration validation, and local status output.
+- [x] Local model registry, model inspection, metadata analysis, and
+  disk-checked Hugging Face pulls.
+- [x] JSONL inspection, validation, duplicate detection, statistics, and
+  source-preserving cleaning.
+- [x] CPU, RAM, GPU, VRAM, and CUDA detection with hardware-aware training
+  plans.
+- [x] Read-only loopback daemon with health, summary, action, hardware, and
+  tool routes.
+- [x] MCP stdio tools for local model, dataset, hardware, and planning tasks.
+- [x] Preview-first developer-tool catalog with explicit package-install opt-in.
+- [x] Cross-platform release workflows and a static landing page.
+
+## Next, in order
+
+### 1. Make local output easier to automate
+
+- Add stable JSON output to the local inspection commands where the schema is
+  useful and testable.
+- Keep `axiom summary --json` stable enough for scripts and document changes to
+  that shape.
+- Improve missing-path errors so each failure names the cause and one recovery
+  command.
+
+### 2. Make inspection more informative without pretending to evaluate quality
+
+- Add opt-in dataset schema hints and training-format checks.
+- Improve model architecture and quantization detection from local metadata.
+- Keep semantic quality, benchmark performance, and training success outside
+  the claims of an inspection command.
+
+### 3. Strengthen the daemon contract
+
+- Keep `/api/info`, `/api/summary`, `/api/actions`, `/api/hardware`, and
+  `/api/tools` small, local, and documented.
+- Add graceful shutdown and clearer fixed-port collision errors.
+- Add request routes only after path, size, content-type, and authorization
+  rules have tests.
+
+### 4. Harden tool setup and releases
+
+- Add a machine-readable `tools doctor` report and a command that explains the
+  user-level PATH locations AXIOM can update.
+- Keep vendor authentication, pricing, quotas, and API-key storage outside
+  AXIOM's authority.
+- Verify exact release commits, checksums, installer behavior, and live Pages
+  content before calling a build published.
+
+### 5. Measure only when the evidence exists
+
+If optimization or runtime work produces a benchmark, record the model,
+checkpoint, runtime, device, driver, seed, workload, command, and environment.
+Until then, use “recommended,” “estimated,” and “target,” not “faster” or
+“reduced” as if those were measured results.
+
+## Outside the current release boundary
+
+The following are not part of the current AXIOM product contract:
+
+- hosted workspaces, accounts, collaboration, or a browser control center;
+- training execution, job management, checkpoints, or experiment tracking;
+- model inference, production serving, streaming, batching, or an
+  OpenAI-compatible API;
+- background telemetry, live hardware monitoring, or hidden analytics.
+
+Those ideas may be revisited only with a clear local-first contract and
+evidence that they shorten a real developer workflow.
