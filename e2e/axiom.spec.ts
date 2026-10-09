@@ -98,6 +98,10 @@ test.describe("AXIOM landing page", () => {
       "irm https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.ps1 | iex",
     );
     await expect(page.locator(".install-optional")).toContainText("never required");
+    await expect(page.locator(".install-optional a")).toHaveAttribute(
+      "href",
+      "https://docs.headroomlabs.ai/docs",
+    );
   });
 
   test("does not render gradient styling or fake dashboard metrics", async ({ page }) => {
