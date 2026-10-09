@@ -21,8 +21,6 @@ from urllib.parse import urlsplit
 
 INSTALLER_COMMANDS = ("npm", "brew", "winget", "choco", "curl")
 
-# This is intentionally a small allowlist.  Values are the permitted command
-# words or option words; arguments are separately validated before execution.
 COMMAND_ALLOWLIST: dict[str, frozenset[str]] = {
     "npm": frozenset({"install", "prefix"}),
     "brew": frozenset({"install", "--prefix"}),
@@ -127,7 +125,6 @@ def _which(which: Callable[[str], str | None], command: str) -> str | None:
     if isinstance(result, str):
         return result or None
     if result:
-        # A small convenience for test doubles that return True.
         return command
     return None
 
@@ -614,15 +611,15 @@ def _invoke_run(runner: Callable[..., Any], command: tuple[str, ...]) -> Any:
     """Call a real runner with shell=False while accommodating small test doubles."""
 
     try:
-        signature = inspect.signature(runner)
-        parameters = signature.parameters.values()
-        accepts_kwargs = any(
-            parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters
-        )
-        names = signature.parameters
+        parameters = inspect.signature(runner).parameters
     except (TypeError, ValueError):
-        accepts_kwargs = True
-        names = {}
+        parameters = None
+
+    accepts_kwargs = parameters is None or any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+    names = parameters if parameters is not None else {}
 
     kwargs: dict[str, Any] = {}
     if accepts_kwargs or "check" in names:
@@ -945,8 +942,6 @@ def _profile_path_lines(
         if rewritten and not rewritten[-1].endswith("\n"):
             rewritten[-1] += "\n"
         if path_line_seen and rewritten and rewritten[-1].strip():
-            # Keep the existing profile statements intact and add a small,
-            # deterministic managed line for entries that were not present.
             pass
         marker = "# AXIOM managed PATH entries"
         if not rewritten or rewritten[-1].strip() != marker:
