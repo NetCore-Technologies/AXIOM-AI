@@ -622,6 +622,60 @@ TOOL_CATALOG: tuple[ToolSpec, ...] = (
         ),
         notes="The official CLI and provider API are separate access surfaces; no key value is stored here.",
     ),
+    ToolSpec(
+        id="headroom",
+        name="Headroom",
+        kind="cli",
+        executable_names=("headroom",),
+        purpose=(
+            "Optional local proxy for routing AI-client traffic through Headroom; "
+            "AXIOM only reports whether the external CLI is available."
+        ),
+        auth_notes=(
+            "Headroom and each provider own their setup and authentication. AXIOM does not "
+            "read, store, or forward Headroom credentials."
+        ),
+        api_key_env_vars=(),
+        homepage_url="https://docs.headroomlabs.ai/docs",
+        source_url="https://github.com/headroomlabs-ai/headroom",
+        supported_platforms=ALL_PLATFORMS,
+        install_candidates=(
+            InstallCandidate(
+                platform="macos",
+                command='uv tool install --python 3.13 "headroom-ai[all]"',
+                install_kind="package",
+                source_url="https://github.com/headroomlabs-ai/headroom",
+                notes=(
+                    "Optional vendor-documented CLI setup; AXIOM only displays this candidate "
+                    "and never runs it from axiom headroom."
+                ),
+            ),
+            InstallCandidate(
+                platform="linux",
+                command='uv tool install --python 3.13 "headroom-ai[all]"',
+                install_kind="package",
+                source_url="https://github.com/headroomlabs-ai/headroom",
+                notes=(
+                    "Optional vendor-documented CLI setup; AXIOM only displays this candidate "
+                    "and never runs it from axiom headroom."
+                ),
+            ),
+            InstallCandidate(
+                platform="windows",
+                command='uv tool install --python 3.13 "headroom-ai[all]"',
+                install_kind="package",
+                source_url="https://github.com/headroomlabs-ai/headroom",
+                notes=(
+                    "Optional vendor-documented CLI setup; AXIOM only displays this candidate "
+                    "and never runs it from axiom headroom."
+                ),
+            ),
+        ),
+        notes=(
+            "Optional external local proxy only. Use the documented commands headroom doctor, "
+            "headroom proxy, and headroom dashboard; AXIOM does not perform or measure savings."
+        ),
+    ),
 )
 
 # Short aliases keep the public data surface easy to discover without adding

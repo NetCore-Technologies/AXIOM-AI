@@ -119,6 +119,7 @@ def test_daemon_exposes_local_actions_hardware_and_tool_presence(daemon_server):
     status, tools = get_json(host, port, "/api/tools")
     assert status == 200
     assert any(tool["id"] == "codex" for tool in tools["tools"])
+    assert any(tool["id"] == "headroom" for tool in tools["tools"])
 
 
 def test_daemon_summary_recommends_a_safe_next_command(

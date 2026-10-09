@@ -63,6 +63,10 @@ LOCAL_ACTIONS: tuple[dict[str, str], ...] = (
         "command": "axiom tools doctor",
         "description": "Check which common developer tools are available on PATH.",
     },
+    {
+        "command": "axiom headroom",
+        "description": "Check the optional Headroom local proxy without installing or sending data.",
+    },
 )
 
 DAEMON_ENDPOINT_PATHS: tuple[tuple[str, str], ...] = (
@@ -140,6 +144,7 @@ def local_summary(cwd: Path | None = None) -> dict[str, Any]:
     missing = [path for path in PROJECT_PATHS if not (root / path).exists()]
     tools = _tool_snapshot()
     available_tools = [tool["name"] for tool in tools if tool["available"]]
+    missing_tools = [tool["name"] for tool in tools if not tool["available"]]
 
     if not config_path.is_file():
         recommended = {
@@ -172,6 +177,7 @@ def local_summary(cwd: Path | None = None) -> dict[str, Any]:
             "available": len(available_tools),
             "total": len(tools),
             "names": available_tools,
+            "missing": missing_tools,
         },
     }
 
