@@ -94,10 +94,18 @@ def inspect_jsonl(path: Path) -> DatasetInspection:
 
 
 def inspect_dataset(path: str) -> DatasetInspection:
-    dataset_path = Path(path)
-
-    if not dataset_path.exists():
-        raise FileNotFoundError(f"Dataset not found: {dataset_path}")
+    raw_path = str(path)
+    if not raw_path.strip() or "\x00" in raw_path:
+        raise ValueError("Dataset path is empty or contains an invalid character.")
+    requested_path = Path(raw_path).expanduser()
+    try:
+        # Work with a canonical path; daemon callers additionally restrict it to the
+        # workspace in resolve_in_workspace before calling this inspector.
+        dataset_path = requested_path.resolve(strict=True)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Dataset not found: {requested_path}") from None
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"Invalid dataset path: {requested_path}") from exc
 
     if not dataset_path.is_file():
         raise ValueError(f"Dataset path is not a file: {dataset_path}")

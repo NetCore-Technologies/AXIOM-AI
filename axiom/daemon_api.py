@@ -40,6 +40,10 @@ def resolve_in_workspace(raw: str, root: Path | None = None) -> Path:
         raise WorkspacePathError("path is required")
     if "\x00" in raw:
         raise WorkspacePathError("path contains an invalid character")
+    if len(raw) > 4096:
+        raise WorkspacePathError("path is too long")
+    if any(ord(char) < 32 or ord(char) == 127 for char in raw):
+        raise WorkspacePathError("path contains a control character")
     base = (Path.cwd() if root is None else root).resolve()
     candidate = Path(raw)
     if not candidate.is_absolute():

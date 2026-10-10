@@ -93,15 +93,24 @@ def _detect_capabilities(config: dict) -> list[str]:
 
 
 def inspect_model(path: str) -> ModelInspection:
-    model_path = Path(path)
-
-    if not model_path.exists():
-        raise FileNotFoundError(f"Model path not found: {model_path}")
+    raw_path = str(path)
+    if not raw_path.strip() or "\x00" in raw_path:
+        raise ValueError("Model path is empty or contains an invalid character.")
+    requested_path = Path(raw_path).expanduser()
+    try:
+        # Resolve aliases and symlinks before any child paths are constructed.
+        model_path = requested_path.resolve(strict=True)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Model path not found: {requested_path}") from None
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"Invalid model path: {requested_path}") from exc
 
     if not model_path.is_dir():
         raise ValueError(f"Model path is not a directory: {model_path}")
 
     config_path = model_path / "config.json"
+    if config_path.is_symlink():
+        raise ValueError("Model config.json must not be a symbolic link.")
     config = {}
 
     if config_path.is_file():
@@ -113,7 +122,13 @@ def inspect_model(path: str) -> ModelInspection:
         if not isinstance(config, dict):
             raise ValueError("Invalid config.json: expected a JSON object.")
 
-    files = [file for file in model_path.rglob("*") if file.is_file()]
+    # Do not follow file symlinks while collecting model metadata. In particular,
+    # a link inside a workspace model must not expose metadata for an external file.
+    files = [
+        file
+        for file in model_path.rglob("*")
+        if not file.is_symlink() and file.is_file()
+    ]
 
     safetensors = any(
         file.suffix.lower() == ".safetensors"

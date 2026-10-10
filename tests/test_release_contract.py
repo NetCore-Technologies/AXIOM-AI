@@ -82,11 +82,12 @@ def test_release_workflow_publishes_and_checksums_every_linux_install_asset():
 
     for asset in linux_assets:
         assert f'"release/{asset}"' in workflow
-        assert f'"{asset}"' in workflow
 
     assert 'tar -tzf "out/AXIOM-${TAG}-linux-x64.tar.gz" >"$bundle_manifest"' in workflow
     assert 'grep -q \'^AXIOM/AXIOM$\' "$bundle_manifest"' in workflow
     assert "files: release/*" in workflow
+    assert 'sha256sum "${release_binaries[@]#./}" > SHA256SUMS' in workflow
+    assert "No AXIOM release binaries found for checksumming." in workflow
 
 
 def test_pypi_workflow_publishes_validated_distributions_on_version_tags():
@@ -100,8 +101,11 @@ def test_pypi_workflow_publishes_validated_distributions_on_version_tags():
     assert metadata["project"]["name"] == "axiom-all"
     assert 'tags:\n      - "v*"' in workflow
     assert "bash scripts/build_webui.sh" in workflow
-    assert "python -m build --sdist --wheel --outdir dist" in workflow
-    assert "python -m twine check dist/*" in workflow
+    assert "python -m build --sdist --wheel --outdir python-dist" in workflow
+    assert "python -m twine check python-dist/*.whl python-dist/*.tar.gz" in workflow
+    assert "Expected exactly one wheel and one source archive" in workflow
+    assert "Verify downloaded artifacts contain only distributions" in workflow
+    assert "python -m twine check dist/*" not in workflow
     assert "axiom/webui/index.html" in workflow
     assert "axiom version" in workflow
     assert "pypa/gh-action-pypi-publish@release/v1" in workflow

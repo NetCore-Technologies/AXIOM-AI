@@ -206,6 +206,22 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
     protocol_version = "HTTP/1.1"
 
+    def send_response(self, code: int, message: str | None = None) -> None:
+        """Reject CR/LF in a custom status phrase before it reaches the wire."""
+        if message is not None and any(char in str(message) for char in ("\r", "\n", "\x00")):
+            raise ValueError("HTTP response status messages must not contain CR/LF or NUL.")
+        super().send_response(code, message)
+
+    def send_header(self, keyword: str, value: str) -> None:
+        """Reject response-header injection before delegating to http.server."""
+        header_name = str(keyword)
+        header_value = str(value)
+        if any(char in header_name for char in ("\r", "\n", ":")):
+            raise ValueError("Invalid HTTP response header name.")
+        if any(char in header_value for char in ("\r", "\n", "\x00")):
+            raise ValueError("HTTP response header values must not contain CR/LF or NUL.")
+        super().send_header(header_name, header_value)
+
     def _send_json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
         body = _json_bytes(payload)
         self.send_response(status)
