@@ -1,77 +1,67 @@
-# AXIOM roadmap
+# AXIOM Roadmap
 
-AXIOM is a terminal-first companion for local AI work. The current product
-surface is a static landing page, a Python CLI, and a small loopback daemon.
-This roadmap is directional; a checked box means the repository contains the
-behavior, not that a hosted service or benchmark has been proven.
+## v0.2.0-beta.9 — previous beta
 
-## Current beta
+- [x] Unified Optimizer and Quantization Lab theme
+- [x] Quantization size comparison
+- [x] Read-only local workspace API and daemon-served web UI
+- [x] Web UI bundled into release packages and the Python wheel
+- [x] PyPI tag publishing workflow
+- [x] Security hardening for filesystem boundaries and HTTP handling
 
-- [x] Installable Typer CLI with `axiom`, `guide`, `summary`, and `doctor`.
-- [x] Project scaffolding, configuration validation, and local status output.
-- [x] Local model registry, model inspection, metadata analysis, and
-  disk-checked Hugging Face pulls.
-- [x] JSONL inspection, validation, duplicate detection, statistics, and
-  source-preserving cleaning.
-- [x] CPU, RAM, GPU, VRAM, and CUDA detection with hardware-aware training
-  plans.
-- [x] Read-only loopback daemon with health, summary, action, hardware, and
-  tool routes.
-- [x] MCP stdio tools for local model, dataset, hardware, and planning tasks.
-- [x] Preview-first developer-tool catalog with explicit package-install opt-in.
-- [x] Cross-platform release workflows and a static landing page.
+## v0.3.0-beta.1 — engineering expansion
 
-## Next, in order
+This release cycle keeps the existing Control Center layout and visual language. New capabilities belong inside the current pages; no wholesale redesign is planned.
 
-### 1. Make local output easier to automate
+### Feature implementation status
 
-- Add stable JSON output to the local inspection commands where the schema is
-  useful and testable.
-- Keep `axiom summary --json` stable enough for scripts and document changes to
-  that shape.
-- Improve missing-path errors so each failure names the cause and one recovery
-  command.
+| Feature | Existing destination | Status for beta.1 |
+| --- | --- | --- |
+| Visual training workflow builder and graph validation | Training | Planned; do not imply training execution exists |
+| Agent profiles and explicit tool-permission policies | MCP | Planned; require backend enforcement before claiming security |
+| Local model registry and compatibility metadata | Models | Foundation exists; deeper compatibility scoring planned |
+| Quantization comparison with explicit estimates vs measured results | Quantization Lab | Existing comparison; measured benchmarks planned |
+| Dataset profiling, duplicate checks, and privacy indicators | Datasets | Inspection foundation exists; richer profiles planned |
+| Persistent experiment history | Evaluation | Planned; needs a durable backend store |
+| Repeatable evaluation baselines and regression reports | Evaluation | Planned; requires real evaluation runner |
+| Local API playground | Runtime | Planned; needs a defined runtime/inference contract |
+| Hardware telemetry and resource history | Control Center / Diagnostics | Partial hardware endpoint; history planned |
+| Security/configuration audit dashboard | Diagnostics | Existing diagnostics are partial; full audit planned |
 
-### 2. Make inspection more informative without pretending to evaluate quality
+### Engineering priorities
 
-- Add opt-in dataset schema hints and training-format checks.
-- Improve model architecture and quantization detection from local metadata.
-- Keep semantic quality, benchmark performance, and training success outside
-  the claims of an inspection command.
+1. Make backend contracts explicit before wiring new controls.
+2. Add unit, API, and browser tests alongside each feature.
+3. Distinguish estimated values from measured benchmarks.
+4. Keep experiment records local-first and make export/import explicit.
+5. Enforce MCP permissions and API authentication on the backend, not only in the GUI.
+6. Preserve the existing GUI theme, navigation, and page structure.
 
-### 3. Strengthen the daemon contract
+### Distribution targets
 
-- Keep `/api/info`, `/api/summary`, `/api/actions`, `/api/hardware`, and
-  `/api/tools` small, local, and documented.
-- Add graceful shutdown and clearer fixed-port collision errors.
-- Add request routes only after path, size, content-type, and authorization
-  rules have tests.
+- GitHub Releases: canonical signed/tagged source and platform artifacts.
+- PyPI: Python CLI/daemon package.
+- npm: only publish a clearly documented launcher/wrapper if it can reliably locate or install the Python runtime.
+- APT: signed repository metadata and package checksums.
+- Homebrew, Scoop/WinGet, and AUR: package manifests maintained against actual release artifacts.
 
-### 4. Harden tool setup and releases
+Package publication depends on maintainer account access, registry configuration, signing keys, and CI secrets. Do not report a channel as published until its release workflow succeeds.
 
-- Add a machine-readable `tools doctor` report and a command that explains the
-  user-level PATH locations AXIOM can update.
-- Keep vendor authentication, pricing, quotas, and API-key storage outside
-  AXIOM's authority.
-- Verify exact release commits, checksums, installer behavior, and live Pages
-  content before calling a build published.
+## Acceptance gates for beta.1
 
-### 5. Measure only when the evidence exists
+- Python tests pass.
+- Frontend type-check, lint, and production build pass.
+- Release asset contract tests pass.
+- CodeQL/security review has no untriaged findings.
+- Version numbers and release notes agree.
+- A release tag is created only after the main branch is synced and validated.
 
-If optimization or runtime work produces a benchmark, record the model,
-checkpoint, runtime, device, driver, seed, workload, command, and environment.
-Until then, use “recommended,” “estimated,” and “target,” not “faster” or
-“reduced” as if those were measured results.
 
-## Outside the current release boundary
-
-The following are not part of the current AXIOM product contract:
-
-- hosted workspaces, accounts, collaboration, or a browser control center;
-- training execution, job management, checkpoints, or experiment tracking;
-- model inference, production serving, streaming, batching, or an
-  OpenAI-compatible API;
-- background telemetry, live hardware monitoring, or hidden analytics.
-
-Those ideas may be revisited only with a clear local-first contract and
-evidence that they shorten a real developer workflow.
+<!-- AXIOM_DATASET_PROFILER_BEGIN -->
+### Dataset profiler — implemented foundation
+- [x] Bounded JSONL row/field profiling endpoint (`/api/dataset/profile`)
+- [x] Duplicate, malformed-row, null-rate, and field-type statistics
+- [x] Sensitive-looking field-name warnings without returning row values
+- [x] Existing Datasets page integration and automated tests
+- [ ] Broader privacy analysis and configurable retention/report export
+<!-- AXIOM_DATASET_PROFILER_END -->

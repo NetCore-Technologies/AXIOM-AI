@@ -1522,23 +1522,99 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
   </FeaturePage>;
 }
 
+type DatasetProfileField = {
+  name: string;
+  occurrences: number;
+  null_count: number;
+  null_rate: number;
+  types: Record<string, number>;
+  possibly_sensitive: boolean;
+};
+
+type DatasetProfileReport = {
+  file_name: string;
+  file_size_bytes: number;
+  bytes_scanned: number;
+  lines_scanned: number;
+  valid_rows: number;
+  invalid_rows: number;
+  empty_rows: number;
+  duplicate_rows: number;
+  overlong_rows: number;
+  privacy_review_recommended: boolean;
+  possibly_sensitive_fields: string[];
+  truncated: boolean;
+  fields: DatasetProfileField[];
+  warnings: string[];
+};
+
+// AXIOM_DATASET_PROFILE_UI
 function Datasets({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
-  const [datasets, setDatasets] = useState<Array<{ path: string; size_bytes: number }>>([]);
-  const refresh = () => {
-    void fetch(`${API_BASE}/api/workspace/datasets`)
-      .then((response) => {
-        if (!response.ok) throw new Error("Could not load datasets");
-        return response.json() as Promise<{ datasets: Array<{ path: string; size_bytes: number }> }>;
-      })
-      .then((data) => setDatasets(data.datasets))
-      .catch((error: unknown) => onNotify(error instanceof Error ? error.message : "Dataset inventory unavailable", "warning"));
+  const [datasets, setDatasets] = useState<Array<{ path: string }>>([]);
+  const [profile, setProfile] = useState<DatasetProfileReport | null>(null);
+  const [profileBusy, setProfileBusy] = useState<string | null>(null);
+  const [inventoryBusy, setInventoryBusy] = useState(false);
+
+  const refresh = async () => {
+    setInventoryBusy(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/files?kind=datasets`);
+      const data = await response.json() as { items?: Array<{ path: string }>; message?: string };
+      if (!response.ok) throw new Error(data.message || "Could not load datasets");
+      setDatasets(Array.isArray(data.items) ? data.items : []);
+    } catch (error: unknown) {
+      onNotify(error instanceof Error ? error.message : "Dataset inventory unavailable", "warning");
+    } finally {
+      setInventoryBusy(false);
+    }
   };
-  useEffect(refresh, []);
-  return <FeaturePage page="datasets" actions={<button type="button" className="button primary-button" onClick={() => backendAction("datasets.import", onNotify, "Dataset import requested. Use the CLI or provide a dataset path to continue.")}><Plus size={16} /> Import dataset</button>}>
-    <div className="info-grid"><InfoCard icon={Database} label="Datasets" value={`${datasets.length}`} detail={datasets.length ? "JSONL files found" : "No JSONL files"} tone={datasets.length ? "success" : "neutral"} /><InfoCard icon={CircleAlert} label="Validation" value="CLI" detail="Run inspection to validate" tone="warning" /><InfoCard icon={BarChart3} label="Inventory" value="Live" detail="Read from data/" tone="success" /></div>
-    <Surface title="Dataset workspace" eyebrow="INSPECTION QUEUE" action={<button type="button" className="icon-text-button" onClick={refresh}><RefreshCcw size={15} /> Refresh</button>}>
-      {datasets.length ? <div className="module-list">{datasets.map((dataset) => <div className="module-row" key={dataset.path}><span className="module-icon"><Database size={17} /></span><span className="module-copy"><b>{dataset.path}</b><small>{dataset.size_bytes.toLocaleString()} bytes</small></span></div>)}</div> : <EmptyState icon={Database} title="No dataset report yet" description="Add a JSONL file under data/ through the CLI, then refresh this view." action={<CliReference command="axiom dataset inspect ./data/train.jsonl" />} />}
+
+  useEffect(() => { void refresh(); }, []);
+
+  const runProfile = async (path: string) => {
+    setProfileBusy(path);
+    try {
+      const query = new URLSearchParams({ path });
+      const response = await fetch(`${API_BASE}/api/dataset/profile?${query.toString()}`);
+      const data = await response.json() as { profile?: DatasetProfileReport; message?: string };
+      if (!response.ok || !data.profile) throw new Error(data.message || "Dataset profiling failed");
+      setProfile(data.profile);
+      onNotify(`Profile ready: ${data.profile.valid_rows.toLocaleString()} valid rows.`);
+    } catch (error: unknown) {
+      onNotify(error instanceof Error ? error.message : "Dataset profiling failed", "warning");
+    } finally {
+      setProfileBusy(null);
+    }
+  };
+
+  return <FeaturePage page="datasets" actions={<button type="button" className="button primary-button" onClick={() => backendAction("datasets.import", onNotify, "Dataset import requested. Add a JSONL file under the workspace, then refresh.")}><Plus size={16} /> Import dataset</button>}>
+    <div className="info-grid">
+      <InfoCard icon={Database} label="Datasets" value={`${datasets.length}`} detail={datasets.length ? "JSONL files found" : "No JSONL files"} tone={datasets.length ? "success" : "neutral"} />
+      <InfoCard icon={CircleAlert} label="Profiler" value="Local" detail="Structural checks only" tone="success" />
+      <InfoCard icon={BarChart3} label="Privacy review" value={profile?.privacy_review_recommended ? "Recommended" : "On demand"} detail="Sensitive-looking field names" tone={profile?.privacy_review_recommended ? "warning" : "neutral"} />
+    </div>
+    <Surface title="Dataset workspace" eyebrow="INSPECTION QUEUE" action={<button type="button" className="icon-text-button" onClick={() => { void refresh(); }} disabled={inventoryBusy}><RefreshCcw size={15} /> {inventoryBusy ? "Refreshing" : "Refresh"}</button>}>
+      {datasets.length ? <div className="module-list">{datasets.map((dataset) => <div className="module-row" key={dataset.path}>
+        <span className="module-icon"><Database size={17} /></span>
+        <span className="module-copy"><b>{dataset.path}</b><small>JSONL dataset · local workspace</small></span>
+        <button type="button" className="button secondary-button" disabled={profileBusy !== null} onClick={() => { void runProfile(dataset.path); }}>{profileBusy === dataset.path ? "Profiling…" : "Profile"}</button>
+      </div>)}</div> : <EmptyState icon={Database} title="No dataset report yet" description="Add a JSONL file inside the AXIOM workspace, then refresh this view." action={<CliReference command="axiom dataset inspect ./data/train.jsonl" />} />}
     </Surface>
+    {profile && <Surface title={`Profile: ${profile.file_name}`} eyebrow="JSONL STRUCTURE REPORT" action={<button type="button" className="icon-text-button" onClick={() => setProfile(null)}>Clear report</button>}>
+      <div className="info-grid">
+        <InfoCard icon={Database} label="Valid rows" value={profile.valid_rows.toLocaleString()} detail="JSON object rows" tone="success" />
+        <InfoCard icon={CircleAlert} label="Invalid rows" value={profile.invalid_rows.toLocaleString()} detail={`${profile.empty_rows} blank · ${profile.overlong_rows} oversized`} tone={profile.invalid_rows ? "warning" : "neutral"} />
+        <InfoCard icon={RefreshCcw} label="Duplicates" value={profile.duplicate_rows.toLocaleString()} detail="Repeated valid rows" tone={profile.duplicate_rows ? "warning" : "neutral"} />
+      </div>
+      <p className="quiet-note">Scanned {profile.bytes_scanned.toLocaleString()} of {profile.file_size_bytes.toLocaleString()} bytes across {profile.lines_scanned.toLocaleString()} lines{profile.truncated ? " · Partial report: a scan limit was reached" : " · Complete scan"}.</p>
+      {profile.privacy_review_recommended && <p className="quiet-note">Privacy review recommended for field names: {profile.possibly_sensitive_fields.join(", ")}. AXIOM does not display their values.</p>}
+      {profile.warnings.map((warning) => <p className="quiet-note" key={warning}>{warning}</p>)}
+      <div className="module-list">{profile.fields.map((field) => <div className="module-row" key={field.name}>
+        <span className="module-icon"><BarChart3 size={17} /></span>
+        <span className="module-copy"><b>{field.name}{field.possibly_sensitive ? " · review" : ""}</b><small>{field.occurrences} values · {field.null_count} null · types: {Object.entries(field.types).map(([kind, count]) => `${kind} ${count}`).join(", ")}</small></span>
+        <small>{(field.null_rate * 100).toFixed(1)}% null</small>
+      </div>)}</div>
+    </Surface>}
     <ContractNote command="axiom dataset validate ./data/train.jsonl" />
   </FeaturePage>;
 }

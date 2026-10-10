@@ -1,3 +1,3 @@
 """AXIOM version information."""
 
-__version__ = "0.2.0-beta.9"
+__version__ = "0.3.0-beta.1"
