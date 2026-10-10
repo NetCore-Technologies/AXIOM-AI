@@ -1,23 +1,137 @@
+
 name: Publish npm launcher
+
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - "v*"
   workflow_dispatch:
+
 permissions:
   contents: read
-  id-token: write
+
+concurrency:
+  group: npm-publish-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   publish:
+    name: Validate and publish npm package
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: packaging/npm
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: "22"
-          registry-url: https://registry.npmjs.org
-      - run: node --check bin/axiom.mjs && npm pack --dry-run
-      - name: Publish using npm trusted publishing
-        run: npm publish --access public
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Verify npm token is configured
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.Publish_NPM }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::error::The GitHub Actions secret Publish_NPM is missing or unavailable."
+            echo "Add it under repository Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+          echo "npm publishing credential is configured."
+
+      - name: Validate and normalize package metadata
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npm pkg fix
+
+          node --input-type=module <<'JS'
+          import fs from "node:fs";
+
+          const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+
+          if (pkg.name !== "@netcore-technologies/axiom-cli") {
+            throw new Error(`Unexpected package name: ${pkg.name}`);
+          }
+
+          if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(pkg.version)) {
+            throw new Error(`Invalid package version: ${pkg.version}`);
+          }
+
+          if (!pkg.bin?.axiom) {
+            throw new Error("Missing axiom executable in package.json.");
+          }
+
+          if (!fs.existsSync(pkg.bin.axiom)) {
+            throw new Error(`Executable file does not exist: ${pkg.bin.axiom}`);
+          }
+
+          if (pkg.private === true) {
+            throw new Error("Cannot publish a package marked private.");
+          }
+
+          const output = process.env.GITHUB_OUTPUT;
+          fs.appendFileSync(output, `version=${pkg.version}\n`);
+          fs.appendFileSync(output, `name=${pkg.name}\n`);
+
+          console.log(`Package: ${pkg.name}`);
+          console.log(`Version: ${pkg.version}`);
+          console.log(`Executable: ${pkg.bin.axiom}`);
+          JS
+
+          node --check bin/axiom.mjs
+
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "::error::Tag $TAG_VERSION does not match package version $PACKAGE_VERSION."
+            exit 1
+          fi
+
+          echo "Release tag matches package version."
+
+      - name: Inspect package contents
+        run: npm pack --dry-run
+
+      - name: Publish package to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.Publish_NPM }}
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$PACKAGE_VERSION" == *-* ]]; then
+            PRERELEASE="${PACKAGE_VERSION#*-}"
+            DIST_TAG="${PRERELEASE%%.*}"
+          else
+            DIST_TAG="latest"
+          fi
+
+          echo "Publishing version: $PACKAGE_VERSION"
+          echo "Publishing dist-tag: $DIST_TAG"
+
+          npm publish \
+            --access public \
+            --tag "$DIST_TAG" \
+            --registry "https://registry.npmjs.org/"
