@@ -44,3 +44,6 @@ build/
 
 # Local AXIOM state
 .axiom/
+
+# Generated web UI bundle
+axiom/webui/

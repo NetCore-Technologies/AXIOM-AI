@@ -42,12 +42,27 @@ jobs:
           python-version: '3.12'
           cache: pip
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Build web UI into the Python package
+        shell: bash
+        run: bash scripts/build_webui.sh
+
       - name: Install AXIOM and PyInstaller
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install . pyinstaller
+
+      - name: Verify web UI is packaged
+        shell: bash
+        run: |
+          python -c "import axiom, pathlib; p = pathlib.Path(axiom.__file__).parent / 'webui' / 'index.html'; assert p.exists(), p"
 
       - name: Build standalone AXIOM CLI
         shell: bash

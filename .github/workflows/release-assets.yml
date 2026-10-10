@@ -34,12 +34,27 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Build web UI into the Python package
+        shell: bash
+        run: bash scripts/build_webui.sh
+
       - name: Install AXIOM
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install .
           pip install "pyinstaller>=6.22,<7"
+
+      - name: Verify web UI is packaged
+        shell: bash
+        run: |
+          python -c "import axiom, pathlib; p = pathlib.Path(axiom.__file__).parent / 'webui' / 'index.html'; assert p.exists(), p"
 
       - name: Build AXIOM executable
         shell: pwsh
@@ -52,6 +67,7 @@ jobs:
             --clean `
             --onefile `
             --name AXIOM `
+            --collect-data axiom `
             scripts/build_entry.py
 
           Copy-Item dist/AXIOM.exe "out/AXIOM-$env:TAG-windows-x64.exe"
@@ -83,11 +99,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y dpkg-dev patchelf
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Build web UI into the Python package
+        shell: bash
+        run: bash scripts/build_webui.sh
+
       - name: Install AXIOM
         run: |
           python -m pip install --upgrade pip
           pip install .
           pip install "pyinstaller>=6.22,<7"
+
+      - name: Verify web UI is packaged
+        shell: bash
+        run: |
+          python -c "import axiom, pathlib; p = pathlib.Path(axiom.__file__).parent / 'webui' / 'index.html'; assert p.exists(), p"
 
       - name: Download AppImage tool
         run: |
@@ -371,6 +402,7 @@ jobs:
             - Model, dataset, hardware, and training-plan CLI workflows
             - Dependency-free daemon with a free loopback port by default
             - Cross-platform release packaging
+            - Local web UI bundled inside every package (exe, msi, deb, AppImage, tar.gz, elf, dmg)
 
             ## Downloads
 

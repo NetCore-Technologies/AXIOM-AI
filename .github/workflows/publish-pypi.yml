@@ -1,112 +1,86 @@
-name: Publish AXIOM to PyPI
+name: Publish to PyPI
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to build and publish
+        description: "Existing tag to publish"
         required: true
         type: string
-        default: v0.2.0-beta.8
-      publish:
-        description: Upload the validated distributions to PyPI
-        required: true
-        type: boolean
-        default: true
 
 permissions:
   contents: read
 
 env:
-  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
   build:
-    name: Build and validate distributions
+    name: Build and verify
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout release source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-          cache: pip
+          python-version: "3.12"
 
-      - name: Install packaging tools
-        run: python -m pip install --upgrade pip build twine
-
-      - name: Verify tag and project version
-        env:
-          EXPECTED_TAG: ${{ env.TAG }}
+      - name: Check tag matches package version
         run: |
-          set -euo pipefail
-          python - "$EXPECTED_TAG" <<'PY'
-          import sys
-          import tomllib
+          PKG_VERSION=$(python -c "import re,pathlib; print(re.search(r'__version__ = \"(.+?)\"', pathlib.Path('axiom/version.py').read_text()).group(1))")
+          TOML_VERSION=$(python -c "import tomllib,pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          echo "tag=${TAG} version.py=${PKG_VERSION} pyproject=${TOML_VERSION}"
+          test "${TAG}" = "v${PKG_VERSION}"
+          test "${PKG_VERSION}" = "${TOML_VERSION}"
 
-          from packaging.version import Version
-
-          tag = sys.argv[1]
-          if not tag.startswith("v"):
-              raise SystemExit(f"release tag must start with v: {tag}")
-
-          with open("pyproject.toml", "rb") as handle:
-              metadata = tomllib.load(handle)
-
-          project_version = Version(str(metadata["project"]["version"]))
-          tag_version = Version(tag[1:])
-          if project_version != tag_version:
-              raise SystemExit(
-                  f"pyproject version {project_version} does not match {tag_version}"
-              )
-          print(f"Packaging AXIOM {project_version} from {tag}")
-          PY
-
-      - name: Build wheel and source distribution
-        run: python -m build --sdist --wheel --outdir dist
-
-      - name: Validate distributions
-        run: |
-          set -euo pipefail
-          python -m twine check dist/*
-          python -m pip install --force-reinstall dist/*.whl
-          axiom version
-          python -m pip check
-
-      - name: Upload distributions
-        uses: actions/upload-artifact@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          name: axiom-python-dist-${{ env.TAG }}
-          path: dist/*
-          if-no-files-found: error
+          node-version: "22"
+          cache: npm
+
+      - name: Build web UI into the Python package
+        shell: bash
+        run: bash scripts/build_webui.sh
+
+      - name: Run tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+          pytest -q
+
+      - name: Build sdist and wheel
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*
+
+      - name: Verify wheel contains the web UI
+        run: unzip -l dist/*.whl | grep -q 'axiom/webui/index.html'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
 
   publish:
-    name: Publish distributions to PyPI
+    name: Upload to PyPI
     needs: build
-    if: ${{ github.event_name == 'release' || inputs.publish == true }}
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/axiom-all
-    permissions:
-      contents: read
-      id-token: write
-
+    environment: pypi
     steps:
-      - name: Download distributions
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: axiom-python-dist-${{ env.TAG }}
-          path: dist
+          name: dist
+          path: dist/
 
-      - name: Publish to PyPI with Trusted Publishing
+      - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: dist/
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true

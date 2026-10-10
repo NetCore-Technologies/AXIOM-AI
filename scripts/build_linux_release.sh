@@ -38,6 +38,7 @@ PYINSTALLER=("$PYTHON" -m PyInstaller --noconfirm --clean)
 "${PYINSTALLER[@]}" \
   --onefile \
   --name AXIOM \
+  --collect-data axiom \
   --distpath "$ONEFILE_DIST" \
   --workpath "$BUILD_DIR/onefile-work" \
   --specpath "$BUILD_DIR/onefile-spec" \
@@ -49,6 +50,7 @@ install -m 0755 "$ONEFILE_DIST/AXIOM" \
 "${PYINSTALLER[@]}" \
   --onedir \
   --name AXIOM \
+  --collect-data axiom \
   --distpath "$ONEDIR_DIST" \
   --workpath "$BUILD_DIR/onedir-work" \
   --specpath "$BUILD_DIR/onedir-spec" \
