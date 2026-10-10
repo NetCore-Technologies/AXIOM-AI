@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from axiom.core.hardware import detect_hardware
+from axiom.datasets.profiler import profile_jsonl
 from axiom.models.registry import ModelRegistry
 from axiom.training.planner import create_training_plan
 
@@ -96,3 +97,23 @@ def workspace_training_plan(
 def workspace_runtime() -> dict[str, Any]:
     hardware = detect_hardware()
     return {"status": "offline", "hardware": hardware.__dict__}
+
+@router.get("/dataset-profile")
+def workspace_dataset_profile(path: str = Query(..., min_length=1, max_length=512)) -> dict[str, Any]:
+    """Profile a JSONL file contained within the local data directory."""
+    root = (Path.cwd() / "data").resolve()
+    requested = Path(path)
+    if requested.is_absolute():
+        raise HTTPException(status_code=400, detail="Use a path relative to data/.")
+    candidate = (root / requested).resolve()
+    if candidate != root and root not in candidate.parents:
+        raise HTTPException(status_code=400, detail="Dataset path must stay inside data/.")
+    if candidate.suffix.lower() != ".jsonl":
+        raise HTTPException(status_code=422, detail="Only .jsonl files are supported.")
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail="Dataset file not found.")
+    try:
+        report = profile_jsonl(candidate)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Dataset could not be profiled.") from exc
+    return {"profile": report}

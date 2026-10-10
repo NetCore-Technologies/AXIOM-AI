@@ -62,9 +62,11 @@ train_app = typer.Typer(help="Plan and manage AI training jobs.")
 app.add_typer(train_app, name="train")
 
 # Extended AXIOM CLI
+from axiom.cli.dataset_profile import register as register_dataset_profile
 from axiom.cli.extended import register as register_extended_cli
 
 register_extended_cli(app, model_app, dataset_app)
+register_dataset_profile(dataset_app)
 register_tools_cli(app, tools_app)
 register_headroom_cli(app)
 

@@ -1,0 +1,56 @@
+name: Publish signed APT repository
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download release packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download "${GITHUB_REF_NAME}" --dir release-assets --pattern "*.deb"
+      - name: Build and sign repository metadata
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$APT_SIGNING_KEY" || { echo "Set APT_SIGNING_KEY secret"; exit 1; }
+          shopt -s nullglob
+          debs=(release-assets/*.deb)
+          ((${#debs[@]} > 0)) || { echo "No .deb assets found; refusing to publish"; exit 1; }
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev apt-utils gnupg
+          printf '%s' "$APT_SIGNING_KEY" | gpg --batch --import
+          mkdir -p public/pool/main
+          cp "${debs[@]}" public/pool/main/
+          cd public
+          dpkg-scanpackages --arch all pool/main /dev/null > Packages
+          gzip -9c Packages > Packages.gz
+          cat > Release <<EOF
+          Origin: NetCore Technologies
+          Label: AXIOM
+          Suite: stable
+          Codename: stable
+          Architectures: amd64 arm64 all
+          Components: main
+          Description: AXIOM AI engineering platform packages
+          EOF
+          apt-ftparchive release . >> Release
+          gpg --batch --yes --clearsign -o InRelease Release
+          gpg --batch --yes -abs -o Release.gpg Release
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deployment
+        uses: actions/deploy-pages@v4

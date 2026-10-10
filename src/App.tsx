@@ -1551,10 +1551,33 @@ type DatasetProfileReport = {
 // AXIOM_DATASET_PROFILE_UI
 function Datasets({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
   const [datasets, setDatasets] = useState<Array<{ path: string }>>([]);
+  const [profileReport, setProfileReport] = useState<null | {
+    file_name: string; valid_rows: number; invalid_rows: number;
+    duplicate_rows: number; empty_rows: number;
+    privacy_review_recommended: boolean; possibly_sensitive_fields: string[];
+    fields: Array<{ name: string; occurrences: number; null_rate: number;
+      types: Record<string, number>; possibly_sensitive: boolean }>;
+    warnings: string[]; truncated: boolean;
+  }>(null);
+  const [profileLoading, setProfileLoading] = useState<string | null>(null);
   const [profile, setProfile] = useState<DatasetProfileReport | null>(null);
   const [profileBusy, setProfileBusy] = useState<string | null>(null);
   const [inventoryBusy, setInventoryBusy] = useState(false);
 
+  const profileDataset = async (path: string) => {
+    setProfileLoading(path);
+    setProfileReport(null);
+    try {
+      const response = await fetch(`${API_BASE}/api/workspace/dataset-profile?path=${encodeURIComponent(path)}`);
+      const payload = await response.json() as { profile?: NonNullable<typeof profileReport>; detail?: string };
+      if (!response.ok || !payload.profile) throw new Error(payload.detail || "Dataset profile failed");
+      setProfileReport(payload.profile);
+    } catch (error: unknown) {
+      onNotify(error instanceof Error ? error.message : "Dataset profile failed", "warning");
+    } finally {
+      setProfileLoading(null);
+    }
+  };
   const refresh = async () => {
     setInventoryBusy(true);
     try {
@@ -1598,7 +1621,7 @@ function Datasets({ onNotify }: { onNotify: (message: string, tone?: Tone) => vo
         <span className="module-icon"><Database size={17} /></span>
         <span className="module-copy"><b>{dataset.path}</b><small>JSONL dataset · local workspace</small></span>
         <button type="button" className="button secondary-button" disabled={profileBusy !== null} onClick={() => { void runProfile(dataset.path); }}>{profileBusy === dataset.path ? "Profiling…" : "Profile"}</button>
-      </div>)}</div> : <EmptyState icon={Database} title="No dataset report yet" description="Add a JSONL file inside the AXIOM workspace, then refresh this view." action={<CliReference command="axiom dataset inspect ./data/train.jsonl" />} />}
+      <button type="button" className="button secondary-button" onClick={() => void profileDataset(dataset.path)} disabled={profileLoading === dataset.path}>{profileLoading === dataset.path ? "Profiling…" : "Profile"}</button></div>)}</div> : <EmptyState icon={Database} title="No dataset report yet" description="Add a JSONL file inside the AXIOM workspace, then refresh this view." action={<CliReference command="axiom dataset inspect ./data/train.jsonl" />} />}
     </Surface>
     {profile && <Surface title={`Profile: ${profile.file_name}`} eyebrow="JSONL STRUCTURE REPORT" action={<button type="button" className="icon-text-button" onClick={() => setProfile(null)}>Clear report</button>}>
       <div className="info-grid">
@@ -1615,7 +1638,18 @@ function Datasets({ onNotify }: { onNotify: (message: string, tone?: Tone) => vo
         <small>{(field.null_rate * 100).toFixed(1)}% null</small>
       </div>)}</div>
     </Surface>}
-    <ContractNote command="axiom dataset validate ./data/train.jsonl" />
+    {profileReport && <Surface title={`Profile: ${profileReport.file_name}`} eyebrow="LOCAL DATASET REPORT" action={<button type="button" className="icon-text-button" onClick={() => setProfileReport(null)}>Close</button>}>
+      <div className="info-grid">
+        <InfoCard icon={Database} label="Valid rows" value={String(profileReport.valid_rows)} detail="JSON objects" tone="success" />
+        <InfoCard icon={CircleAlert} label="Invalid rows" value={String(profileReport.invalid_rows)} detail="Malformed or non-object rows" tone={profileReport.invalid_rows ? "warning" : "success"} />
+        <InfoCard icon={FileCode2} label="Duplicates" value={String(profileReport.duplicate_rows)} detail="Repeated valid rows" tone={profileReport.duplicate_rows ? "warning" : "neutral"} />
+      </div>
+      {profileReport.privacy_review_recommended && <Callout tone="warning" title="Privacy review recommended">Potentially sensitive field names: {profileReport.possibly_sensitive_fields.join(", ")}. Raw dataset values are not returned.</Callout>}
+      {profileReport.warnings.map((warning) => <p className="muted-copy" key={warning}>{warning}</p>)}
+      {profileReport.truncated && <p className="muted-copy">This report is partial because a scan limit was reached.</p>}
+      <div className="module-list">{profileReport.fields.map((field) => <div className="module-row" key={field.name}><span className="module-copy"><b>{field.name}</b><small>{field.occurrences} occurrences · {Math.round(field.null_rate * 100)}% null · {Object.keys(field.types).join(", ")}</small></span>{field.possibly_sensitive && <StatusPill tone="warning">REVIEW</StatusPill>}</div>)}</div>
+    </Surface>}
+    <ContractNote command="axiom dataset profile ./data/train.jsonl" />
   </FeaturePage>;
 }
 
