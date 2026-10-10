@@ -89,6 +89,25 @@ def test_release_workflow_publishes_and_checksums_every_linux_install_asset():
     assert "files: release/*" in workflow
 
 
+def test_pypi_workflow_uses_trusted_publishing_and_validates_the_package():
+    workflow = (ROOT / ".github/workflows/publish-pypi.yml").read_text(
+        encoding="utf-8"
+    )
+    metadata = tomllib.loads(
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    assert metadata["project"]["name"] == "axiom-all"
+    assert "python -m build --sdist --wheel --outdir dist" in workflow
+    assert "python -m twine check dist/*" in workflow
+    assert "axiom version" in workflow
+    assert "pypa/gh-action-pypi-publish@release/v1" in workflow
+    assert "id-token: write" in workflow
+    assert "environment:\n      name: pypi" in workflow
+    assert "PYPI_API_TOKEN" not in workflow
+    assert "release:\n    types: [published]" in workflow
+
+
 def test_website_uses_the_saturn_mark_for_favicon_and_brand_logo():
     html = (ROOT / "website/index.html").read_text(encoding="utf-8")
     parser = _AssetParser()

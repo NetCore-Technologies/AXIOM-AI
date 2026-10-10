@@ -34,6 +34,28 @@ bundles contain the standalone `axiom` command and an installer helper. They
 are not Apple Developer ID signed or notarized unless a future workflow adds
 that capability.
 
+## PyPI
+
+The Python distribution is named `axiom-all` and installs the `axiom` command:
+
+```bash
+python -m pip install --upgrade --pre axiom-all
+axiom version
+```
+
+The `publish-pypi.yml` workflow builds and validates a wheel and source
+distribution for a published GitHub release, then uses PyPI Trusted Publishing
+through the repository's `pypi` environment. It does not store a PyPI token in
+the repository. The PyPI project owner must register this exact publisher:
+
+- Owner: `NetCore-Technologies`
+- Repository: `AXIOM-AI`
+- Workflow: `.github/workflows/publish-pypi.yml`
+- Environment: `pypi`
+
+Until that one-time PyPI publisher registration is complete, the workflow can
+still build and validate distributions but will not upload them.
+
 ## Beta.8 status
 
 [Beta.8 notes](releases/v0.2.0-beta.8.md) describe the target and its known

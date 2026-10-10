@@ -73,6 +73,18 @@ Then use the command that answers your next question:
 
 ## Install
 
+### PyPI
+
+The beta package installs the `axiom` command from PyPI:
+
+```bash
+python -m pip install --upgrade --pre axiom-all
+axiom version
+```
+
+`axiom-all` is the distribution name; the installed command is `axiom`.
+Stable releases can be installed without `--pre` once one is published.
+
 ### macOS and Linux
 
 <!-- markdownlint-disable MD013 -->

@@ -9,6 +9,15 @@ description = "Local-first CLI and daemon for inspecting models, datasets, and h
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+keywords = ["ai", "cli", "machine-learning", "local-first", "hardware"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 
 dependencies = [
     "typer>=0.12",
@@ -28,6 +37,13 @@ test = [
 
 [project.scripts]
 axiom = "axiom.cli.main:app"
+
+[project.urls]
+Homepage = "https://netcore-technologies.github.io/AXIOM-AI/"
+Repository = "https://github.com/NetCore-Technologies/AXIOM-AI"
+Documentation = "https://github.com/NetCore-Technologies/AXIOM-AI/wiki/Home"
+Issues = "https://github.com/NetCore-Technologies/AXIOM-AI/issues"
+Changelog = "https://github.com/NetCore-Technologies/AXIOM-AI/blob/main/docs/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 include = ["axiom*"]
