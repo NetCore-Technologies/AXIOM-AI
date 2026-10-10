@@ -23,6 +23,11 @@ from urllib.parse import parse_qs, urlsplit
 
 from axiom import daemon_api
 from axiom.core.hardware import detect_hardware
+from axiom.path_safety import (
+    SafePathError,
+    find_existing_relative_path,
+    open_regular_file,
+)
 from axiom.tools.catalog import TOOL_CATALOG
 from axiom.version import __version__
 
@@ -246,17 +251,31 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
     def _send_static(self, path: str, *, head_only: bool = False) -> bool:
         relative = path[len("/ui") :].lstrip("/") or "index.html"
-        root = WEBUI_DIR.resolve()
-        target = (root / relative).resolve()
-        if not target.is_relative_to(root):
+        try:
+            target = find_existing_relative_path(
+                WEBUI_DIR, relative, allow_directories=False, skip_directories=()
+            )
+        except SafePathError:
             return False
-        if not target.is_file():
-            if Path(relative).suffix:
+        except (FileNotFoundError, OSError, RuntimeError):
+            leaf = relative.rpartition("/")[2]
+            if "." in leaf:
                 return False
-            target = root / "index.html"
-        if not target.is_file():
+            try:
+                target = find_existing_relative_path(
+                    WEBUI_DIR, "index.html",
+                    allow_directories=False,
+                    skip_directories=(),
+                )
+            except (SafePathError, FileNotFoundError, OSError, RuntimeError):
+                return False
+
+        try:
+            with open_regular_file(target) as stream:
+                body = stream.read()
+        except (OSError, SafePathError):
             return False
-        body = target.read_bytes()
+
         content_type = {
             ".html": "text/html; charset=utf-8",
             ".htm": "text/html; charset=utf-8",
