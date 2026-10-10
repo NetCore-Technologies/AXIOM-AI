@@ -21,6 +21,7 @@ from axiom.datasets.inspector import inspect_dataset
 from axiom.datasets.profiler import profile_jsonl
 from axiom.models.inspector import inspect_model
 from axiom.models.registry import ModelRegistry
+from axiom.path_safety import SafePathError, find_existing_relative_path
 from axiom.training.planner import create_training_plan
 
 Response = tuple[HTTPStatus, dict[str, Any]]
@@ -38,33 +39,16 @@ class WorkspacePathError(ValueError):
 
 
 def resolve_in_workspace(raw: str, root: Path | None = None) -> Path:
-    """Resolve a client path and reject paths outside the workspace."""
-    if not raw or not raw.strip():
-        raise WorkspacePathError("path is required")
-    if "\x00" in raw:
-        raise WorkspacePathError("path contains an invalid character")
-    if len(raw) > 4096:
-        raise WorkspacePathError("path is too long")
-    if any(ord(char) < 32 or ord(char) == 127 for char in raw):
-        raise WorkspacePathError("path contains a control character")
-
+    """Resolve an existing workspace entry through a trusted directory listing."""
     base = (Path.cwd() if root is None else root).resolve()
-    candidate = Path(raw).expanduser()
-
-    if not candidate.is_absolute():
-        candidate = base / candidate
-
     try:
-        resolved = candidate.resolve()
-    except (OSError, RuntimeError) as exc:
-        raise WorkspacePathError("path could not be resolved") from exc
-
-    if not resolved.is_relative_to(base):
-        raise WorkspacePathError(
-            "path must stay inside the working directory"
+        return find_existing_relative_path(
+            base,
+            raw,
+            skip_directories=SKIPPED_DIRECTORIES,
         )
-
-    return resolved
+    except SafePathError as exc:
+        raise WorkspacePathError(str(exc)) from exc
 
 
 def _relative(path: Path, root: Path) -> str:
@@ -341,6 +325,24 @@ def route(
 
             try:
                 model = str(resolve_in_workspace(model))
+            except FileNotFoundError:
+                # A remote model ID is an identifier, not a filesystem path.
+                parts = model.split("/")
+                valid_model_id = (
+                    not model.startswith("/")
+                    and "\\" not in model
+                    and all(part not in ("", ".", "..") for part in parts)
+                    and all(
+                        char.isalnum() or char in "._-"
+                        for char in model
+                    )
+                )
+                if not valid_model_id:
+                    return _error(
+                        HTTPStatus.BAD_REQUEST,
+                        "invalid_model",
+                        "Use a valid model identifier or an existing workspace path.",
+                    )
             except WorkspacePathError as exc:
                 return _error(
                     HTTPStatus.BAD_REQUEST,
