@@ -225,6 +225,43 @@ export default function AxiomQuantizer() {
             <b>{plan.optimization.target_tokens_per_second} tok/s</b>
           </div>
 
+          <div className="axiom-quantizer-compare">
+            <h3>Quantization comparison (weights only, rough estimate)</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Format</th>
+                  <th>Size</th>
+                  <th>Fit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { label: "FP16", factor: 1, key: "fp16" },
+                  { label: "INT8", factor: 0.5, key: "int8" },
+                  { label: "INT4", factor: 0.25, key: "int4" },
+                ].map((row) => {
+                  const size = plan.model.estimated_fp16_gb * row.factor;
+                  const budget = plan.system.vram_gb || plan.system.ram_gb;
+                  const fit =
+                    size <= budget * 0.7 ? "yes" : size <= budget ? "tight" : "no";
+                  const recommended = plan.optimization.recommended_quantization
+                    .toLowerCase()
+                    .includes(row.key);
+                  return (
+                    <tr key={row.key} className={recommended ? "recommended" : undefined}>
+                      <td>{row.label}</td>
+                      <td>{size.toFixed(1)} GB</td>
+                      <td className={`fit-${fit}`}>
+                        {fit === "yes" ? "fits" : fit === "tight" ? "tight" : "too large"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
           <div className="axiom-quantizer-disclaimer">
             AXIOM can recommend and prepare a runtime representation.
             A real benchmark is required to verify actual throughput.

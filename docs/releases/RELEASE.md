@@ -63,9 +63,9 @@ Built by **NetCore Technologies**.
 
 Beta.5 is the optimizer, quantization, and security-hardening beta release.
 
-# v0.2.0-beta.8 preparation
+# v0.2.0-beta.9 preparation
 
-See [preparation notes](v0.2.0-beta.8.md). The notes do not replace the
+See [preparation notes](v0.2.0-beta.9.md). The notes do not replace the
 published GitHub release, successful workflow runs, or checksum verification.
 
 ## macOS DMG assets

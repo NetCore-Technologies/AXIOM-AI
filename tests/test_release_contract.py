@@ -89,7 +89,7 @@ def test_release_workflow_publishes_and_checksums_every_linux_install_asset():
     assert "files: release/*" in workflow
 
 
-def test_pypi_workflow_uses_trusted_publishing_and_validates_the_package():
+def test_pypi_workflow_publishes_validated_distributions_on_version_tags():
     workflow = (ROOT / ".github/workflows/publish-pypi.yml").read_text(
         encoding="utf-8"
     )
@@ -98,14 +98,15 @@ def test_pypi_workflow_uses_trusted_publishing_and_validates_the_package():
     )
 
     assert metadata["project"]["name"] == "axiom-all"
+    assert 'tags:\n      - "v*"' in workflow
+    assert "bash scripts/build_webui.sh" in workflow
     assert "python -m build --sdist --wheel --outdir dist" in workflow
     assert "python -m twine check dist/*" in workflow
+    assert "axiom/webui/index.html" in workflow
     assert "axiom version" in workflow
     assert "pypa/gh-action-pypi-publish@release/v1" in workflow
-    assert "id-token: write" in workflow
     assert "environment:\n      name: pypi" in workflow
-    assert "PYPI_API_TOKEN" not in workflow
-    assert "release:\n    types: [published]" in workflow
+    assert "secrets.PYPI_API_TOKEN" in workflow
 
 
 def test_website_uses_the_saturn_mark_for_favicon_and_brand_logo():

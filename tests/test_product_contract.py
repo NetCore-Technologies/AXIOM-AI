@@ -16,7 +16,10 @@ from typer.testing import CliRunner
 
 import axiom.cli.main as cli_main
 import axiom.daemon as daemon
-from axiom.daemon import LOCAL_ACTIONS, serve_in_thread, validate_bind_host
+
+LOCAL_ACTIONS = daemon.LOCAL_ACTIONS
+serve_in_thread = daemon.serve_in_thread
+validate_bind_host = daemon.validate_bind_host
 
 
 def _get_json(host: str, port: int, path: str) -> tuple[int, dict[str, object]]:

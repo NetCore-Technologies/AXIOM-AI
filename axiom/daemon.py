@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import mimetypes
+import os
 import shutil
 import sys
 from dataclasses import asdict
@@ -17,13 +19,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
 from typing import Any, TextIO
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
+from axiom import daemon_api
 from axiom.core.hardware import detect_hardware
 from axiom.tools.catalog import TOOL_CATALOG
 from axiom.version import __version__
 
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+WEBUI_DIR = Path(__file__).resolve().parent / "webui"
 PROJECT_PATHS: tuple[str, ...] = (
     "axiom.yaml",
     "README.md",
@@ -77,6 +81,7 @@ DAEMON_ENDPOINT_PATHS: tuple[tuple[str, str], ...] = (
     ("actions", "/api/actions"),
     ("hardware", "/api/hardware"),
     ("tools", "/api/tools"),
+    ("ui", "/ui/"),
 )
 
 
@@ -193,6 +198,7 @@ class _DaemonServer(ThreadingHTTPServer):
     ):
         super().__init__(server_address, request_handler)
         self.axion_host = server_address[0]
+        self.allow_network = False
 
 
 class _RequestHandler(BaseHTTPRequestHandler):
@@ -209,8 +215,76 @@ class _RequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _host_allowed(self) -> bool:
+        if self.server.allow_network:
+            return True
+        header = self.headers.get("Host", "")
+        host = header.rsplit(":", 1)[0] if not header.startswith("[") else header.split("]")[0] + "]"
+        host = host.strip("[]").lower()
+        if host in LOOPBACK_HOSTS:
+            return True
+        try:
+            return ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            return False
+
+    def _send_static(self, path: str, *, head_only: bool = False) -> bool:
+        relative = path[len("/ui") :].lstrip("/") or "index.html"
+        root = WEBUI_DIR.resolve()
+        target = (root / relative).resolve()
+        if not target.is_relative_to(root):
+            return False
+        if not target.is_file():
+            if Path(relative).suffix:
+                return False
+            target = root / "index.html"
+        if not target.is_file():
+            return False
+        body = target.read_bytes()
+        content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        if not head_only:
+            self.wfile.write(body)
+        return True
+
     def do_GET(self) -> None:
-        path = urlsplit(self.path).path.rstrip("/") or "/"
+        parts = urlsplit(self.path)
+        path = parts.path.rstrip("/") or "/"
+
+        if not self._host_allowed():
+            self._send_json(
+                HTTPStatus.FORBIDDEN,
+                {"error": "forbidden_host", "message": "Use a loopback address."},
+            )
+            return
+
+        if path == "/ui" or path.startswith("/ui/"):
+            if parts.path == "/ui":
+                self.send_response(HTTPStatus.MOVED_PERMANENTLY)
+                self.send_header("Location", "/ui/")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if self._send_static(path):
+                return
+            self._send_json(
+                HTTPStatus.NOT_FOUND,
+                {
+                    "error": "web_ui_missing",
+                    "hint": "Run scripts/build_webui.sh to bundle the web UI.",
+                },
+            )
+            return
+
+        routed = daemon_api.route(path, parse_qs(parts.query))
+        if routed is not None:
+            self._send_json(*routed)
+            return
 
         if path == "/":
             self._send_json(
@@ -256,6 +330,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
                         "training-plans",
                         "action-suggestions",
                         "tool-discovery",
+                        "web-ui",
+                        "model-registry",
+                        "optimization-plans",
+                        "headroom-status",
                     ],
                     "endpoints": {
                         "health": "/health",
@@ -298,13 +376,20 @@ class _RequestHandler(BaseHTTPRequestHandler):
             {
                 "error": "not_found",
                 "path": path,
-                "hint": "Try /health, /api/info, /api/summary, /api/actions, /api/hardware, or /api/tools.",
+                "hint": "Try /ui/, /health, /api/info, /api/summary, /api/actions, /api/hardware, or /api/tools.",
             },
         )
 
     def do_HEAD(self) -> None:
         path = urlsplit(self.path).path.rstrip("/") or "/"
+        if not self._host_allowed():
+            self.send_response(HTTPStatus.FORBIDDEN)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if path in {
+            *daemon_api.API_PATHS,
+            "/ui",
             "/",
             "/health",
             "/api/info",
@@ -342,7 +427,10 @@ def start_daemon(
         raise ValueError("port must be between 0 and 65535")
 
     normalized_host = validate_bind_host(host, allow_network=allow_network)
-    return _DaemonServer((normalized_host, port), _RequestHandler)
+    os.environ.setdefault("AXIOM_MODEL_ROOT", str(Path.cwd().resolve() / "models"))
+    server = _DaemonServer((normalized_host, port), _RequestHandler)
+    server.allow_network = allow_network
+    return server
 
 
 def daemon_url(server: ThreadingHTTPServer) -> str:

@@ -6,13 +6,12 @@ from pathlib import Path
 import pytest
 
 import axiom.daemon as daemon_module
-from axiom.daemon import (
-    daemon_ready_payload,
-    run_daemon,
-    serve_in_thread,
-    start_daemon,
-    validate_bind_host,
-)
+
+daemon_ready_payload = daemon_module.daemon_ready_payload
+run_daemon = daemon_module.run_daemon
+serve_in_thread = daemon_module.serve_in_thread
+start_daemon = daemon_module.start_daemon
+validate_bind_host = daemon_module.validate_bind_host
 
 
 def get_json(host: str, port: int, path: str) -> tuple[int, dict]:

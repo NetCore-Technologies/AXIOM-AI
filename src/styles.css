@@ -1597,3 +1597,214 @@ button,
   }
 }
 /* AXIOM SCREENSHOT THEME — END */
+
+/* AXIOM-UNIFIED-LAB-THEME: Optimizer, Quantization Lab and Beta.5 panels use the app theme tokens. */
+.axiom-optimizer-card,
+.axiom-quantizer,
+.axiom-beta5-card,
+.beta5-optimizer,
+.beta5-optimizer-panel {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface);
+  box-shadow: none;
+  backdrop-filter: none;
+  color: var(--ink);
+  padding: 24px;
+}
+.axiom-optimizer-card h2,
+.axiom-quantizer h2,
+.axiom-beta5-card h2 {
+  margin: 9px 0 8px;
+  color: var(--ink-strong);
+  font-size: 25px;
+  letter-spacing: -.04em;
+}
+.axiom-optimizer-card p,
+.axiom-quantizer p,
+.axiom-beta5-card p,
+.axiom-optimizer-note,
+.axiom-beta5-muted {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.axiom-optimizer-eyebrow,
+.axiom-quantizer-eyebrow,
+.axiom-beta5-eyebrow {
+  color: var(--accent);
+  opacity: 1;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.axiom-optimizer-grid label,
+.axiom-quantizer-grid label,
+.axiom-beta5-fields label {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.axiom-optimizer-grid input,
+.axiom-optimizer-grid select,
+.axiom-quantizer-grid input,
+.axiom-quantizer-grid select,
+.axiom-beta5-fields input,
+.axiom-beta5-fields select,
+.beta5-optimizer input,
+.beta5-optimizer select,
+.beta5-optimizer-panel input,
+.beta5-optimizer-panel select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  outline: 0;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.axiom-optimizer-grid input:focus,
+.axiom-optimizer-grid select:focus,
+.axiom-quantizer-grid input:focus,
+.axiom-quantizer-grid select:focus,
+.axiom-beta5-fields input:focus,
+.axiom-beta5-fields select:focus,
+.beta5-optimizer input:focus,
+.beta5-optimizer select:focus,
+.beta5-optimizer-panel input:focus,
+.beta5-optimizer-panel select:focus {
+  border-color: var(--accent);
+}
+.axiom-optimizer-primary,
+.axiom-quantizer-button,
+.axiom-beta5-primary,
+.beta5-optimizer button,
+.beta5-optimizer-panel button {
+  min-height: 42px;
+  padding: 0 18px;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+.axiom-optimizer-primary:hover:not(:disabled),
+.axiom-quantizer-button:hover:not(:disabled),
+.axiom-beta5-primary:hover:not(:disabled),
+.beta5-optimizer button:hover:not(:disabled),
+.beta5-optimizer-panel button:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+.axiom-optimizer-primary:disabled,
+.axiom-quantizer-button:disabled,
+.axiom-beta5-primary:disabled {
+  opacity: .45;
+}
+.axiom-beta5-secondary {
+  min-height: 42px;
+  padding: 0 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 750;
+}
+.axiom-beta5-secondary:hover { border-color: var(--accent); color: var(--ink-strong); }
+.beta5-choice-grid .selected { outline: 0; border-color: var(--accent); box-shadow: inset 2px 0 var(--accent); }
+.axiom-optimizer-result,
+.axiom-quantizer-result,
+.axiom-beta5-result {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--line-strong);
+  border-left: 2px solid var(--accent);
+  border-radius: 2px;
+  background: var(--surface-soft);
+}
+.axiom-optimizer-title,
+.axiom-quantizer-result-title {
+  margin-bottom: 12px;
+  color: var(--ink-strong);
+  font-weight: 800;
+}
+.axiom-optimizer-stats,
+.axiom-quantizer-stats,
+.axiom-beta5-stats {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 18px;
+  font-size: 11px;
+}
+.axiom-optimizer-stats span,
+.axiom-quantizer-stats span,
+.axiom-beta5-stats span { color: var(--muted); }
+.axiom-optimizer-stats b,
+.axiom-quantizer-stats b,
+.axiom-beta5-stats b { color: var(--ink-strong); }
+.axiom-quantizer-disclaimer,
+.axiom-beta5-note {
+  margin-top: 14px;
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1.6;
+}
+.axiom-quantizer-target {
+  min-width: 118px;
+  padding: 10px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  background: var(--info-soft);
+  color: var(--accent);
+  text-align: right;
+}
+.axiom-quantizer-target span { display: block; color: var(--muted); font-size: 9px; letter-spacing: .1em; }
+.axiom-quantizer-target strong { color: var(--accent); font-size: 14px; }
+.axiom-quantizer-profile {
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface-soft);
+}
+.axiom-quantizer-profile strong { display: block; color: var(--ink-strong); font-size: 12px; }
+.axiom-quantizer-profile span { color: var(--muted); font-size: 11px; }
+.axiom-beta5-audit-list div { border-radius: 2px; background: var(--surface-soft); color: var(--ink); }
+.axiom-optimizer-error,
+.axiom-quantizer-error,
+.axiom-beta5-error {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--danger);
+  border-radius: 2px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 11px;
+}
+.axiom-quantizer-compare { margin-top: 16px; }
+.axiom-quantizer-compare h3 {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.axiom-quantizer-compare table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.axiom-quantizer-compare th,
+.axiom-quantizer-compare td { padding: 8px 6px; border-bottom: 1px solid var(--line); text-align: left; }
+.axiom-quantizer-compare th { color: var(--faint); font-size: 9px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.axiom-quantizer-compare td { color: var(--ink); }
+.axiom-quantizer-compare tr.recommended td { color: var(--ink-strong); box-shadow: inset 2px 0 var(--accent); }
+.axiom-quantizer-compare .fit-yes { color: var(--success); }
+.axiom-quantizer-compare .fit-tight { color: var(--warning); }
+.axiom-quantizer-compare .fit-no { color: var(--danger); }

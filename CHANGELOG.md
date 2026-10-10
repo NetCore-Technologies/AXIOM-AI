@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.2.0-beta.9
+
+### Changed
+
+- Optimizer, Quantization Lab and Beta.5 panels share the app theme tokens in dark and light mode.
+- Quantization Lab shows an FP16, INT8 and INT4 size comparison against detected memory (rough estimate).
+
+### Added
+
+- Read-only daemon routes for the local workspace: `/api/models`, `/api/files`,
+  `/api/model/inspect`, `/api/dataset/inspect`, `/api/train/plan`,
+  `/api/ai/plan`, and `/api/headroom`.
+- The daemon serves a bundled web UI at `/ui/` when `axiom/webui` is present.
+- Release workflows build the web UI and bundle it into the Windows, Linux,
+  macOS, and PyPI packages.
+- PyPI publishing on version tags with a version-consistency check.
+
+### Security
+
+- Daemon workspace paths must resolve inside the working directory.
+- Requests with a non-loopback `Host` header are refused unless the daemon was
+  started with `--allow-network`.
+
+### Fixed
+
+- CodeQL alerts for modules imported with both `import` and `import from`.
+
 ## 0.2.0-beta.8 — release preparation
 
 This section describes the beta.8 target. It is not a claim that release
