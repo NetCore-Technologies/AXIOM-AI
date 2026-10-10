@@ -76,14 +76,31 @@ jobs:
         run: bash scripts/build_webui.sh
 
       - name: Build wheel and source distribution
-        run: python -m build --sdist --wheel --outdir dist
+        run: |
+          set -euo pipefail
+          rm -rf python-dist
+          python -m build --sdist --wheel --outdir python-dist
 
       - name: Validate distributions
         run: |
           set -euo pipefail
-          python -m twine check dist/*
-          unzip -l dist/*.whl | grep -q 'axiom/webui/index.html'
-          python -m pip install --force-reinstall dist/*.whl
+          python - <<'PY'
+          from pathlib import Path
+
+          output = Path("python-dist")
+          wheels = sorted(output.glob("*.whl"))
+          sdists = sorted(output.glob("*.tar.gz"))
+          if len(wheels) != 1 or len(sdists) != 1:
+              raise SystemExit(
+                  f"Expected exactly one wheel and one source archive in {output}; "
+                  f"found {len(wheels)} wheel(s) and {len(sdists)} source archive(s)."
+              )
+          print(f"Validating wheel: {wheels[0]}")
+          print(f"Validating source archive: {sdists[0]}")
+          PY
+          python -m twine check python-dist/*.whl python-dist/*.tar.gz
+          unzip -l python-dist/*.whl | grep -q 'axiom/webui/index.html'
+          python -m pip install --force-reinstall python-dist/*.whl
           axiom version
           python -m pip check
 
@@ -91,7 +108,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: axiom-python-dist-${{ env.TAG }}
-          path: dist/*
+          path: python-dist/
           if-no-files-found: error
 
   publish:
@@ -108,6 +125,29 @@ jobs:
         with:
           name: axiom-python-dist-${{ env.TAG }}
           path: dist
+
+      - name: Verify downloaded artifacts contain only distributions
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          output = Path("dist")
+          wheels = sorted(output.glob("*.whl"))
+          sdists = sorted(output.glob("*.tar.gz"))
+          expected = {wheels[0].name, sdists[0].name} if len(wheels) == 1 and len(sdists) == 1 else set()
+          unexpected = sorted(
+              entry.name
+              for entry in output.iterdir()
+              if entry.is_dir() or entry.name not in expected
+          )
+          if len(wheels) != 1 or len(sdists) != 1 or unexpected:
+              raise SystemExit(
+                  f"Unexpected PyPI artifact contents: wheels={len(wheels)}, "
+                  f"sdists={len(sdists)}, unexpected_entries={unexpected}"
+              )
+          print("Downloaded wheel and source archive are ready to publish.")
+          PY
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
