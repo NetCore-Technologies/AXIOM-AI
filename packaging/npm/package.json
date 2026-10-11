@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/NetCore-Technologies/AXIOM-AI.git"
+    "url": "git+https://github.com/NetCore-Technologies/AXIOM-AI.git"
   },
   "bin": {
     "axiom": "bin/axiom.mjs"
