@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0-beta.9
+## v0.3.0.b.1
 
 ### Changed
 
