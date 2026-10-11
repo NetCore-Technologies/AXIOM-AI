@@ -1,0 +1,47 @@
+<svg width="900" height="392" viewBox="0 0 900 392" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Animated terminal showing AXIOM commands">
+  <defs>
+    <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1e293b"/><stop offset="1" stop-color="#0f172a"/></linearGradient>
+  </defs>
+  <style>
+    .mono{font-family:'SF Mono','JetBrains Mono',Menlo,Consolas,'Liberation Mono',monospace}
+    .caret{animation:blink 1s step-end infinite}
+    @keyframes blink{50%{opacity:0}}
+    @keyframes k0{0%,4.44%{width:0}9.44%,94%{width:150.8px}98%,100%{width:0}}
+    #c0{animation:k0 18.0s linear infinite}
+    @keyframes o1{0%,11.39%{opacity:0}13.61%,94%{opacity:1}98%,100%{opacity:0}}
+    #o1{animation:o1 18.0s linear infinite;opacity:0}
+    @keyframes k2{0%,16.39%{width:0}21.39%,94%{width:159.9px}98%,100%{width:0}}
+    #c2{animation:k2 18.0s linear infinite}
+    @keyframes o3{0%,23.33%{opacity:0}25.56%,94%{opacity:1}98%,100%{opacity:0}}
+    #o3{animation:o3 18.0s linear infinite;opacity:0}
+    @keyframes k4{0%,28.33%{width:0}38.58%,94%{width:377.1px}98%,100%{width:0}}
+    #c4{animation:k4 18.0s linear infinite}
+    @keyframes o5{0%,40.53%{opacity:0}42.75%,94%{opacity:1}98%,100%{opacity:0}}
+    #o5{animation:o5 18.0s linear infinite;opacity:0}
+    @keyframes k6{0%,45.53%{width:0}53.78%,94%{width:304.7px}98%,100%{width:0}}
+    #c6{animation:k6 18.0s linear infinite}
+    @keyframes o7{0%,55.72%{opacity:0}57.94%,94%{opacity:1}98%,100%{opacity:0}}
+    #o7{animation:o7 18.0s linear infinite;opacity:0}
+  </style>
+  <rect x="0.5" y="0.5" width="899" height="391" rx="14" fill="#0b1020" stroke="#1e3a5f"/>
+  <path d="M0.5 14.5a14 14 0 0 1 14-14h871a14 14 0 0 1 14 14V44H0.5z" fill="url(#chrome)"/>
+  <circle cx="26" cy="23" r="6" fill="#ef4444"/><circle cx="48" cy="23" r="6" fill="#f59e0b"/><circle cx="70" cy="23" r="6" fill="#22c55e"/>
+  <text class="mono" x="450" y="27" font-size="12" fill="#64748b" text-anchor="middle">axiom — v0.3.0-beta.1</text>
+    <clipPath id="cp0"><rect id="c0" x="58" y="96" width="0" height="22"/></clipPath>
+  <text class="mono" x="40" y="112" font-size="15" fill="#38bdf8">$</text>
+  <text class="mono" x="58" y="112" font-size="15" fill="#e2e8f0" clip-path="url(#cp0)">axiom init my-ai</text>
+  <text id="o1" class="mono" x="58" y="142" font-size="14" fill="#4ade80">✓ created my-ai/axiom.yaml and .axiom registry</text>
+  <clipPath id="cp2"><rect id="c2" x="58" y="156" width="0" height="22"/></clipPath>
+  <text class="mono" x="40" y="172" font-size="15" fill="#38bdf8">$</text>
+  <text class="mono" x="58" y="172" font-size="15" fill="#e2e8f0" clip-path="url(#cp2)">axiom system info</text>
+  <text id="o3" class="mono" x="58" y="202" font-size="14" fill="#94a3b8">OS Linux x86_64 · RAM 32 GB · GPU 12 GB VRAM (sample)</text>
+  <clipPath id="cp4"><rect id="c4" x="58" y="216" width="0" height="22"/></clipPath>
+  <text class="mono" x="40" y="232" font-size="15" fill="#38bdf8">$</text>
+  <text class="mono" x="58" y="232" font-size="15" fill="#e2e8f0" clip-path="url(#cp4)">axiom dataset validate ./data/train.jsonl</text>
+  <text id="o5" class="mono" x="58" y="262" font-size="14" fill="#4ade80">✓ 12,480 records · 0 invalid · 14 duplicates</text>
+  <clipPath id="cp6"><rect id="c6" x="58" y="276" width="0" height="22"/></clipPath>
+  <text class="mono" x="40" y="292" font-size="15" fill="#38bdf8">$</text>
+  <text class="mono" x="58" y="292" font-size="15" fill="#e2e8f0" clip-path="url(#cp6)">axiom train plan 7 --method qlora</text>
+  <text id="o7" class="mono" x="58" y="322" font-size="14" fill="#94a3b8">plan: QLoRA starting point · fit is an estimate, not a benchmark</text>
+  <text class="mono caret" x="40" y="352" font-size="15" fill="#38bdf8">$ ▍</text>
+</svg>
