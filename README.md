@@ -18,7 +18,7 @@
 
 ![AXIOM terminal demo](docs/assets/terminal.svg)
 
-<sub>Sample output. Plans and estimates are not benchmark results.</sub>
+<sub>Sample output. Plans and estimates are not benchmark results. See the [Web UI](#%EF%B8%8F-web-ui) below.</sub>
 
 </div>
 
@@ -203,10 +203,20 @@ Ctrl-C.
 
 ## 🖥️ Web UI
 
-The release packages and the PyPI wheel bundle the web UI. It includes the
-Optimizer and the Quantization Lab, which compares FP16, INT8 and INT4 size
-estimates against the memory AXIOM detects. Plans are estimates, not benchmark
-results.
+The release packages and the PyPI wheel bundle the web UI. Start the daemon
+(or bare `axiom`), then open the loopback URL it prints.
+
+<div align="center">
+
+![AXIOM Web UI: Quantization Lab and Optimizer](docs/assets/webui.svg)
+
+<sub>Sample data. Sizes and plans are estimates, not benchmark results.</sub>
+
+</div>
+
+- **Quantization Lab** compares FP16, INT8 and INT4 size estimates against the
+  memory AXIOM detects, so you can see what fits before you download anything.
+- **Optimizer** turns that into a conservative starting plan.
 
 ## 🛠️ Commands by job
 
