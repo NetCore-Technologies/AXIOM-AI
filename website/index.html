@@ -170,6 +170,17 @@
             <pre><code id="windows-command">irm https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.ps1 | iex</code></pre>
           </div>
 
+          <div class="command-block is-active apt-command-block">
+            <div class="command-heading">
+              <span>Debian / Ubuntu / Linux Mint (APT, amd64)</span>
+              <button class="copy-button" type="button" data-copy="apt-command" aria-describedby="copy-status">Copy</button>
+            </div>
+            <pre><code id="apt-command">curl -fsSLo /tmp/axiom-archive-keyring.gpg https://netcore-technologies.github.io/AXIOM-AI/apt/axiom-archive-keyring.gpg
+sudo install -Dm0644 /tmp/axiom-archive-keyring.gpg /usr/share/keyrings/axiom-archive-keyring.gpg
+echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/axiom-archive-keyring.gpg] https://netcore-technologies.github.io/AXIOM-AI/apt stable main' | sudo tee /etc/apt/sources.list.d/axiom.list
+sudo apt update
+sudo apt install axiom-ai</code></pre>
+          </div>
           <p class="copy-status" id="copy-status" role="status" aria-live="polite"></p>
         </div>
       </div>

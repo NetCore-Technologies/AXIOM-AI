@@ -72,6 +72,20 @@ Then use the command that answers your next question:
 
 ## Install
 
+### Debian / Ubuntu / Linux Mint (APT, amd64)
+
+AXIOM publishes a signed APT repository alongside the project website. Add its public key and repository, then install the `axiom-ai` package:
+
+```bash
+curl -fsSLo /tmp/axiom-archive-keyring.gpg https://netcore-technologies.github.io/AXIOM-AI/apt/axiom-archive-keyring.gpg
+sudo install -Dm0644 /tmp/axiom-archive-keyring.gpg /usr/share/keyrings/axiom-archive-keyring.gpg
+echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/axiom-archive-keyring.gpg] https://netcore-technologies.github.io/AXIOM-AI/apt stable main' | sudo tee /etc/apt/sources.list.d/axiom.list
+sudo apt update
+sudo apt install axiom-ai
+```
+
+The APT package currently targets 64-bit Intel/AMD (`amd64`). The repository metadata and release signature are verified by APT using the dedicated public keyring.
+
 ### PyPI
 
 The beta package installs the `axiom` command from PyPI:

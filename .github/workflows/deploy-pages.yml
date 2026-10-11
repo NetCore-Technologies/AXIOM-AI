@@ -1,14 +1,23 @@
-name: Deploy AXIOM Website
+name: Deploy AXIOM website and signed APT repository
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - "website/**"
+      - "packaging/apt/**"
+      - "README.md"
       - ".github/workflows/deploy-pages.yml"
-
+      - ".github/workflows/publish-apt.yml"
+  workflow_run:
+    workflows: ["AXIOM Release"]
+    types: [completed]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to publish to APT (blank means newest published release)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -21,35 +30,113 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - name: Checkout website and repository configuration
+        uses: actions/checkout@v4
         with:
           ref: main
 
-      - name: Setup Pages
+      - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Assemble site
+      - name: Select release to publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+          WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        shell: bash
         run: |
+          set -euo pipefail
+          if [[ -n "${INPUT_RELEASE_TAG:-}" ]]; then
+            APT_TAG="$INPUT_RELEASE_TAG"
+          elif [[ "$EVENT_NAME" == "workflow_run" && "${WORKFLOW_HEAD_BRANCH:-}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            APT_TAG="$WORKFLOW_HEAD_BRANCH"
+          else
+            APT_TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,publishedAt,isDraft --jq '[.[] | select(.isDraft == false)] | sort_by(.publishedAt) | last | .tagName')"
+          fi
+          [[ "$APT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || {
+            echo "Could not resolve a valid published AXIOM release tag (got: ${APT_TAG:-empty})." >&2
+            exit 1
+          }
+          echo "Publishing APT package assets from $APT_TAG"
+          echo "APT_TAG=$APT_TAG" >> "$GITHUB_ENV"
+
+      - name: Download Debian release package
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh release download "$APT_TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets --pattern "*.deb"
+          compgen -G 'release-assets/*.deb' >/dev/null || {
+            echo "Release $APT_TAG contains no .deb package." >&2
+            exit 1
+          }
+
+      - name: Build website and signed APT repository together
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${APT_SIGNING_KEY:-}" || { echo "Missing github-pages environment secret APT_SIGNING_KEY" >&2; exit 1; }
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev apt-utils gnupg
+
           rm -rf _site
+          mkdir -p _site
           cp -R website/. _site/
           touch _site/.nojekyll
+          test -s _site/index.html
 
-          echo "===== DEPLOYMENT TREE ====="
-          find _site -maxdepth 2 -type f | sort | head -100
+          APT_ROOT="$PWD/_site/apt"
+          mkdir -p "$APT_ROOT/pool/main" "$APT_ROOT/dists/stable/main/binary-amd64"
+          cp release-assets/*.deb "$APT_ROOT/pool/main/"
+          install -m 0644 packaging/apt/axiom-archive-keyring.gpg "$APT_ROOT/axiom-archive-keyring.gpg"
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v4
+          cd "$APT_ROOT"
+          dpkg-scanpackages --arch amd64 pool/main /dev/null > dists/stable/main/binary-amd64/Packages
+          grep -q '^Package: axiom-ai$' dists/stable/main/binary-amd64/Packages || {
+            echo "The .deb release asset does not contain Package: axiom-ai for amd64." >&2
+            exit 1
+          }
+          gzip -n -9c dists/stable/main/binary-amd64/Packages > dists/stable/main/binary-amd64/Packages.gz
+
+          apt-ftparchive \
+            -o APT::FTPArchive::Release::Origin="NetCore Technologies" \
+            -o APT::FTPArchive::Release::Label="AXIOM" \
+            -o APT::FTPArchive::Release::Suite="stable" \
+            -o APT::FTPArchive::Release::Codename="stable" \
+            -o APT::FTPArchive::Release::Architectures="amd64" \
+            -o APT::FTPArchive::Release::Components="main" \
+            release dists/stable > dists/stable/Release
+
+          printf '%s' "$APT_SIGNING_KEY" | gpg --batch --import
+          SIGNING_FPR="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')"
+          test -n "$SIGNING_FPR" || { echo "No signing key was imported." >&2; exit 1; }
+          gpg --batch --yes --local-user "$SIGNING_FPR" --clearsign -o dists/stable/InRelease dists/stable/Release
+          gpg --batch --yes --local-user "$SIGNING_FPR" -abs -o dists/stable/Release.gpg dists/stable/Release
+          gpgv --keyring "$APT_ROOT/axiom-archive-keyring.gpg" dists/stable/InRelease
+
+          echo "===== Pages artifact contents ====="
+          cd "$GITHUB_WORKSPACE"
+          test -s _site/index.html
+          test -s _site/apt/axiom-archive-keyring.gpg
+          test -s _site/apt/dists/stable/InRelease
+          test -s _site/apt/dists/stable/main/binary-amd64/Packages
+          find _site -maxdepth 4 -type f | sort | head -100
+
+      - name: Upload combined Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          path: ./_site
+          path: _site
 
-      - name: Deploy to GitHub Pages
+      - name: Deploy combined website and repository
         id: deployment
         uses: actions/deploy-pages@v4
