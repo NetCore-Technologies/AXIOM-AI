@@ -3,19 +3,11 @@ name: Deploy AXIOM website and signed APT repository
 on:
   push:
     branches: [main]
-    paths:
-      - "website/**"
-      - "packaging/apt/**"
-      - "README.md"
-      - ".github/workflows/deploy-pages.yml"
-      - ".github/workflows/publish-apt.yml"
-  workflow_run:
-    workflows: ["AXIOM Release"]
-    types: [completed]
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Release tag to publish to APT (blank means newest published release)"
+        description: "Release tag to publish to APT (leave blank to use the latest GitHub Release)"
         required: false
         type: string
 
@@ -26,117 +18,159 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Checkout website and repository configuration
+      - name: Checkout website source
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && github.ref_name || 'main' }}
+
+      - name: Set up GitHub CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh --version
+
+      - name: Assemble website and signed APT repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$APT_SIGNING_KEY" || { echo "Missing APT_SIGNING_KEY in the github-pages environment." >&2; exit 1; }
+          command -v gh >/dev/null
+          command -v dpkg-deb >/dev/null
+
+          if [[ -n "${INPUT_RELEASE_TAG:-}" ]]; then
+            RELEASE_TAG="$INPUT_RELEASE_TAG"
+          elif [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == refs/tags/* ]]; then
+            RELEASE_TAG="$GITHUB_REF_NAME"
+          else
+            RELEASE_TAG="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          fi
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || {
+            echo "Invalid release tag: $RELEASE_TAG" >&2; exit 1;
+          }
+          echo "Publishing APT packages from release: $RELEASE_TAG"
+
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev apt-utils gnupg
+
+          RELEASE_DIR="$RUNNER_TEMP/axiom-release-assets"
+          mkdir -p "$RELEASE_DIR"
+          debs=()
+          # Release-assets workflow may finish after this tag-triggered workflow starts.
+          # Retry while the release workflow uploads the .deb asset.
+          for attempt in $(seq 1 60); do
+            find "$RELEASE_DIR" -maxdepth 1 -type f -name '*.deb' -delete
+            if gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+                --dir "$RELEASE_DIR" --pattern '*.deb'; then
+              mapfile -t debs < <(find "$RELEASE_DIR" -maxdepth 1 -type f -name '*.deb' -print | sort)
+              ((${#debs[@]} > 0)) && break
+            fi
+            echo "No downloadable .deb asset for $RELEASE_TAG yet (attempt $attempt/60); retrying in 10 seconds..."
+            sleep 10
+          done
+          ((${#debs[@]} > 0)) || { echo "No .deb assets found for release $RELEASE_TAG." >&2; exit 1; }
+
+          valid_debs=()
+          for deb in "${debs[@]}"; do
+            package="$(dpkg-deb -f "$deb" Package)"
+            architecture="$(dpkg-deb -f "$deb" Architecture)"
+            printf 'Release asset: %s | Package=%s | Architecture=%s\n' "$(basename "$deb")" "$package" "$architecture"
+            if [[ "$package" == "axiom-ai" && "$architecture" == "amd64" ]]; then
+              valid_debs+=("$deb")
+            fi
+          done
+          ((${#valid_debs[@]} > 0)) || {
+            echo "No release .deb has Package: axiom-ai and Architecture: amd64." >&2
+            echo "Inspect the tag's build output; this workflow will not publish a wrongly named or wrong-architecture package." >&2
+            exit 1
+          }
+
+          SITE_DIR="$GITHUB_WORKSPACE/_site"
+          APT_DIR="$SITE_DIR/apt"
+          rm -rf "$SITE_DIR"
+          mkdir -p "$SITE_DIR" "$APT_DIR/pool/main" \
+            "$APT_DIR/dists/stable/main/binary-amd64"
+          test -f website/index.html || { echo "website/index.html is missing." >&2; exit 1; }
+          cp -a website/. "$SITE_DIR/"
+          touch "$SITE_DIR/.nojekyll"
+
+          cp "${valid_debs[@]}" "$APT_DIR/pool/main/"
+          # Do not pass --arch here: dpkg-scanpackages' architecture selector can filter
+          # out the repository package entirely. Validate architecture from the built index below.
+          # Run from the repository root so Filename entries are relative URLs such as
+          # pool/main/AXIOM-v0.3.0-beta.1-linux-x64.deb, not runner filesystem paths.
+          (
+            cd "$APT_DIR"
+            dpkg-scanpackages pool/main /dev/null \
+              > dists/stable/main/binary-amd64/Packages
+          )
+          test -s "$APT_DIR/dists/stable/main/binary-amd64/Packages" || {
+            echo "APT Packages index is empty; refusing to publish." >&2; exit 1;
+          }
+          grep -Eq '^Package: axiom-ai$' "$APT_DIR/dists/stable/main/binary-amd64/Packages" || {
+            echo "APT index does not contain Package: axiom-ai." >&2; exit 1;
+          }
+          grep -Eq '^Architecture: amd64$' "$APT_DIR/dists/stable/main/binary-amd64/Packages" || {
+            echo "APT index does not contain Architecture: amd64." >&2; exit 1;
+          }
+          gzip -9n -c "$APT_DIR/dists/stable/main/binary-amd64/Packages" \
+            > "$APT_DIR/dists/stable/main/binary-amd64/Packages.gz"
+
+          GNUPGHOME="$RUNNER_TEMP/axiom-apt-gnupg"
+          export GNUPGHOME
+          mkdir -m 700 -p "$GNUPGHOME"
+          printf '%s' "$APT_SIGNING_KEY" | gpg --batch --import
+          FINGERPRINT="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" {print $10; exit}')"
+          [[ -n "$FINGERPRINT" ]] || { echo "Could not identify the imported APT signing key." >&2; exit 1; }
+          gpg --batch --export "$FINGERPRINT" > "$APT_DIR/axiom-archive-keyring.gpg"
+          test -s "$APT_DIR/axiom-archive-keyring.gpg"
+
+          RELEASE_FILE="$APT_DIR/dists/stable/Release"
+          cat > "$RUNNER_TEMP/apt-release.conf" <<'APTCONF'
+          APT::FTPArchive::Release {
+            Origin "NetCore Technologies";
+            Label "AXIOM";
+            Suite "stable";
+            Codename "stable";
+            Architectures "amd64";
+            Components "main";
+            Description "AXIOM AI engineering platform packages";
+          };
+          APTCONF
+          apt-ftparchive -c "$RUNNER_TEMP/apt-release.conf" release "$APT_DIR/dists/stable" > "$RELEASE_FILE"
+          gpg --batch --yes --local-user "$FINGERPRINT" --clearsign \
+            --output "$APT_DIR/dists/stable/InRelease" "$RELEASE_FILE"
+          gpg --batch --yes --local-user "$FINGERPRINT" --armor --detach-sign \
+            --output "$APT_DIR/dists/stable/Release.gpg" "$RELEASE_FILE"
+
+          echo "===== DEPLOYMENT TREE ====="
+          find "$SITE_DIR" -maxdepth 5 -type f | sort | head -150
+          echo "===== APT PACKAGE INDEX VALIDATION ====="
+          grep -E '^(Package|Version|Architecture|Filename):' \
+            "$APT_DIR/dists/stable/main/binary-amd64/Packages"
+          test -s "$APT_DIR/dists/stable/InRelease"
+          test -s "$APT_DIR/dists/stable/Release.gpg"
+          echo "Website and signed APT repository assembled successfully."
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Select release to publish
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_RELEASE_TAG: ${{ github.event.inputs.release_tag }}
-          WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -n "${INPUT_RELEASE_TAG:-}" ]]; then
-            APT_TAG="$INPUT_RELEASE_TAG"
-          elif [[ "$EVENT_NAME" == "workflow_run" && "${WORKFLOW_HEAD_BRANCH:-}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            APT_TAG="$WORKFLOW_HEAD_BRANCH"
-          else
-            APT_TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,publishedAt,isDraft --jq '[.[] | select(.isDraft == false)] | sort_by(.publishedAt) | last | .tagName')"
-          fi
-          [[ "$APT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || {
-            echo "Could not resolve a valid published AXIOM release tag (got: ${APT_TAG:-empty})." >&2
-            exit 1
-          }
-          echo "Publishing APT package assets from $APT_TAG"
-          echo "APT_TAG=$APT_TAG" >> "$GITHUB_ENV"
-
-      - name: Download Debian release package
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          mkdir -p release-assets
-          gh release download "$APT_TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets --pattern "*.deb"
-          compgen -G 'release-assets/*.deb' >/dev/null || {
-            echo "Release $APT_TAG contains no .deb package." >&2
-            exit 1
-          }
-
-      - name: Build website and signed APT repository together
-        env:
-          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${APT_SIGNING_KEY:-}" || { echo "Missing github-pages environment secret APT_SIGNING_KEY" >&2; exit 1; }
-          sudo apt-get update
-          sudo apt-get install -y dpkg-dev apt-utils gnupg
-
-          rm -rf _site
-          mkdir -p _site
-          cp -R website/. _site/
-          touch _site/.nojekyll
-          test -s _site/index.html
-
-          APT_ROOT="$PWD/_site/apt"
-          mkdir -p "$APT_ROOT/pool/main" "$APT_ROOT/dists/stable/main/binary-amd64"
-          cp release-assets/*.deb "$APT_ROOT/pool/main/"
-          install -m 0644 packaging/apt/axiom-archive-keyring.gpg "$APT_ROOT/axiom-archive-keyring.gpg"
-
-          cd "$APT_ROOT"
-          dpkg-scanpackages --arch amd64 pool/main /dev/null > dists/stable/main/binary-amd64/Packages
-          grep -q '^Package: axiom-ai$' dists/stable/main/binary-amd64/Packages || {
-            echo "The .deb release asset does not contain Package: axiom-ai for amd64." >&2
-            exit 1
-          }
-          gzip -n -9c dists/stable/main/binary-amd64/Packages > dists/stable/main/binary-amd64/Packages.gz
-
-          apt-ftparchive \
-            -o APT::FTPArchive::Release::Origin="NetCore Technologies" \
-            -o APT::FTPArchive::Release::Label="AXIOM" \
-            -o APT::FTPArchive::Release::Suite="stable" \
-            -o APT::FTPArchive::Release::Codename="stable" \
-            -o APT::FTPArchive::Release::Architectures="amd64" \
-            -o APT::FTPArchive::Release::Components="main" \
-            release dists/stable > dists/stable/Release
-
-          printf '%s' "$APT_SIGNING_KEY" | gpg --batch --import
-          SIGNING_FPR="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')"
-          test -n "$SIGNING_FPR" || { echo "No signing key was imported." >&2; exit 1; }
-          gpg --batch --yes --local-user "$SIGNING_FPR" --clearsign -o dists/stable/InRelease dists/stable/Release
-          gpg --batch --yes --local-user "$SIGNING_FPR" -abs -o dists/stable/Release.gpg dists/stable/Release
-          gpgv --keyring "$APT_ROOT/axiom-archive-keyring.gpg" dists/stable/InRelease
-
-          echo "===== Pages artifact contents ====="
-          cd "$GITHUB_WORKSPACE"
-          test -s _site/index.html
-          test -s _site/apt/axiom-archive-keyring.gpg
-          test -s _site/apt/dists/stable/InRelease
-          test -s _site/apt/dists/stable/main/binary-amd64/Packages
-          find _site -maxdepth 4 -type f | sort | head -100
-
       - name: Upload combined Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
-          path: _site
+          path: ./_site
 
-      - name: Deploy combined website and repository
+      - name: Deploy combined website and APT repository
         id: deployment
         uses: actions/deploy-pages@v4
