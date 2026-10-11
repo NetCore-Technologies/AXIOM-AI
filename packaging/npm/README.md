@@ -2,83 +2,50 @@
 
 **Build AI. Own AI.**
 
-The `@netcore-technologies/axiom-cli` npm package provides a Node.js
-launcher for the AXIOM AI command-line interface.
-
-This package is a launcher, not the complete AXIOM AI application.
-The Python application must be installed separately.
-
-- Project: https://github.com/NetCore-Technologies/AXIOM-AI
-- Issues: https://github.com/NetCore-Technologies/AXIOM-AI/issues
-- License: MIT
-- Status: Beta
+`@netcore-technologies/axiom-cli` provides a Node.js launcher for the AXIOM
+AI command-line interface. This package launches the Python CLI; it is not
+the complete AXIOM application.
 
 ## Requirements
 
 - Node.js 20 or newer.
-- Python installed and available on your PATH.
-- The AXIOM AI Python application installed in your Python environment.
+- >=3.11
+- Python available on PATH.
 
-## Installation
+## Install
 
-Install the AXIOM Python application:
-
-    python -m pip install axiom-ai
-
-Install the npm launcher:
-
+    python -m pip install axiom-all
     npm install --global @netcore-technologies/axiom-cli@beta
-
-Verify the launcher:
-
     axiom --help
 
-## Quick start
-
-Display available commands:
-
-    axiom --help
-
-Create a project:
+## Create a project
 
     axiom init my-first-ai
-
-Enter the project directory:
-
     cd my-first-ai
 
-Use the CLI help to discover commands supported by your installed version.
+## Beta feature foundations
+
+AXIOM includes a bounded JSONL dataset profiler with row statistics, field
+type/null summaries and potential sensitive-field-name warnings. The broader
+project includes model inspection, optimisation, quantization, local workspace
+APIs and GUI sections for engineering workflows.
+
+Advanced workflow building, persistent evaluation history, hardware telemetry
+and additional security diagnostics are part of the roadmap and should not
+be assumed available as completed end-to-end features.
 
 ## Updating
 
-Update the npm launcher:
-
     npm install --global @netcore-technologies/axiom-cli@beta
+    python -m pip install --upgrade axiom-all
 
-Update the Python application:
+## Documentation and support
 
-    python -m pip install --upgrade axiom-ai
+- [Project README](https://github.com/NetCore-Technologies/AXIOM-AI#readme)
+- [Roadmap](https://github.com/NetCore-Technologies/AXIOM-AI/blob/main/ROADMAP.md)
+- [Release notes](https://github.com/NetCore-Technologies/AXIOM-AI/blob/main/docs/releases/v0.3.0-beta.1.md)
+- [Wiki](https://github.com/NetCore-Technologies/AXIOM-AI/wiki)
+- [Issues](https://github.com/NetCore-Technologies/AXIOM-AI/issues)
 
-## Troubleshooting
-
-### The axiom command is not found
-
-Check that npm's global executable directory is on your PATH.
-Open a new terminal after changing PATH settings.
-
-### Python cannot be found
-
-Install Python and verify that python --version or python3 --version works.
-
-### AXIOM commands fail
-
-Run axiom --help and report reproducible issues at:
-
-https://github.com/NetCore-Technologies/AXIOM-AI/issues
-
-## Contributing
-
-Contributions and bug reports are welcome. Read the project's
-contribution guidelines before opening a pull request:
-
-https://github.com/NetCore-Technologies/AXIOM-AI/blob/main/CONTRIBUTING.md
+The npm launcher license is MIT. Consult the repository license and package
+metadata for licensing details of the complete application and dependencies.
