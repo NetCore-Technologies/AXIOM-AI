@@ -54,8 +54,17 @@ jobs:
           elif [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == refs/tags/* ]]; then
             RELEASE_TAG="$GITHUB_REF_NAME"
           else
-            RELEASE_TAG="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+            # gh release view without a tag may fail when the latest release is a prerelease.
+            # List published releases explicitly so beta releases are eligible as well.
+            RELEASE_TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
+              --json tagName,isDraft,publishedAt \
+              --jq '[.[] | select(.isDraft == false and .publishedAt != null)] | sort_by(.publishedAt) | last | .tagName // empty')"
+            if [[ -z "$RELEASE_TAG" ]]; then
+              echo "No published GitHub Releases found. Publish a release first or supply release_tag." >&2
+              exit 1
+            fi
           fi
+
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || {
             echo "Invalid release tag: $RELEASE_TAG" >&2; exit 1;
           }
@@ -63,7 +72,6 @@ jobs:
 
           sudo apt-get update
           sudo apt-get install -y dpkg-dev apt-utils gnupg
-
           RELEASE_DIR="$RUNNER_TEMP/axiom-release-assets"
           mkdir -p "$RELEASE_DIR"
           debs=()
@@ -104,12 +112,10 @@ jobs:
           test -f website/index.html || { echo "website/index.html is missing." >&2; exit 1; }
           cp -a website/. "$SITE_DIR/"
           touch "$SITE_DIR/.nojekyll"
-
           cp "${valid_debs[@]}" "$APT_DIR/pool/main/"
-          # Do not pass --arch here: dpkg-scanpackages' architecture selector can filter
-          # out the repository package entirely. Validate architecture from the built index below.
-          # Run from the repository root so Filename entries are relative URLs such as
-          # pool/main/AXIOM-v0.3.0-beta.1-linux-x64.deb, not runner filesystem paths.
+
+          # Do not pass --arch: it can filter out this repository's package.
+          # Run from APT_DIR so package filenames are relative URLs under /apt/.
           (
             cd "$APT_DIR"
             dpkg-scanpackages pool/main /dev/null \
