@@ -1,3 +1,4 @@
+<div align="center">
 
 ![AXIOM. Build AI. Own AI.](docs/assets/banner.svg)
 
@@ -6,6 +7,22 @@
 [![License](https://img.shields.io/badge/license-MIT-7c3aed?style=flat-square&labelColor=0f172a)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&labelColor=0f172a&logo=python&logoColor=white)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-475569?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
+
+**Know your model, your data, and your machine before you spend a single GPU hour.**
+
+[Quick start](#-quick-start) ·
+[Install](#-install) ·
+[Commands](#-commands-by-job) ·
+[Website](https://netcore-technologies.github.io/AXIOM-AI/) ·
+[Contributing](CONTRIBUTING.md)
+
+![AXIOM terminal demo](docs/assets/terminal.svg)
+
+<sub>Sample output. Plans and estimates are not benchmark results.</sub>
+
+</div>
+
+## What is AXIOM?
 
 AXIOM is a local-first CLI for answering the questions that come before a
 local AI job:
@@ -23,54 +40,74 @@ small JSON responses on a loopback address.
 Project configuration lives in `axiom.yaml`; the local model registry lives in
 `.axiom`. Core inspection and planning do not require an AXIOM account.
 
-AXIOM does not execute training, run model inference, or provide a hosted
-workspace. Estimates and plans are labeled as estimates and plans; they are
-not benchmark results.
+> AXIOM does not execute training, run model inference, or provide a hosted
+> workspace. Estimates and plans are labeled as estimates and plans.
 
-[**Start in 60 seconds**](#start-in-60-seconds) ·
-[**Install**](#install) ·
-[**Website**](https://netcore-technologies.github.io/AXIOM-AI/) ·
-[**Contributing**](CONTRIBUTING.md)
+## What is new in v0.3.0-beta.1
 
-## Start in 60 seconds
+- Version bumped to `v0.3.0-beta.1` across the package, badges, and docs.
+- Refreshed README with an animated banner and a terminal walkthrough.
+- Step-by-step quick start and a first-10-minutes guide below.
 
-After installation, run:
+## 🚀 Quick start
 
-```bash
-axiom --help
-axiom guide
-axiom summary
-```
+Do these in order. Each step is one command.
 
-For the interactive entry point, run bare `axiom`. In an interactive
-terminal it prints the startup mark once for that terminal session, shows the
-useful command path, starts the local daemon on a free port, and stays attached
-until Ctrl-C. `axiom --help`, `axiom guide`, and `axiom summary` do not start
-the daemon.
+1. Install AXIOM (see [Install](#-install)), then confirm it works:
 
-From a new project directory:
+   ```bash
+   axiom version
+   ```
 
-```bash
-axiom init my-ai
-cd my-ai
-axiom project validate
-axiom config validate
-```
+2. Get oriented. None of these start the daemon:
 
-Then use the command that answers your next question:
+   ```bash
+   axiom --help
+   axiom guide
+   axiom summary
+   ```
 
-| Question | Command | What it tells you |
+3. Create a project and check it:
+
+   ```bash
+   axiom init my-ai
+   cd my-ai
+   axiom project validate
+   axiom config validate
+   ```
+
+4. Look at your machine:
+
+   ```bash
+   axiom system info
+   ```
+
+5. Get a starting plan for a 7B model:
+
+   ```bash
+   axiom train plan 7 --method qlora
+   ```
+
+Want the interactive mode? Run bare `axiom`. In an interactive terminal it
+prints the startup mark once per session, shows the useful command path,
+starts the local daemon on a free port, and stays attached until Ctrl-C.
+
+## 🧭 First 10 minutes
+
+Pick the path that matches what you have in front of you.
+
+| I have... | Run this | You get |
 | --- | --- | --- |
-| What is this local model? | `axiom model inspect ./models/my-model` | Format, files, architecture hints, weight size, and conservative fit information. |
-| What model metadata is published? | `axiom model info org/model` | Hugging Face metadata without downloading weights. Network access is required. |
-| Is this dataset valid JSONL? | `axiom dataset validate ./data/train.jsonl` | Invalid records and duplicate objects; exits non-zero when records are invalid. |
-| How large is the dataset? | `axiom dataset stats ./data/train.jsonl` | Record, field, and rough token counts. |
-| Can I make a cleaned copy? | `axiom dataset clean ./data/train.jsonl ./data/train.cleaned.jsonl` | Writes a new JSONL file and leaves the source unchanged. |
-| What hardware is present? | `axiom system info` | OS, architecture, CPU, RAM, GPU, VRAM, and CUDA availability. |
-| What should I try first? | `axiom train plan 7 --method qlora` | A hardware-aware starting plan; it does not start training. |
-| Which developer tools are visible? | `axiom tools doctor` | Executable presence and credential-reference presence, not vendor authentication. |
+| A local model folder | `axiom model inspect ./models/my-model` | Format, files, architecture hints, weight size, conservative fit info. |
+| A model name on Hugging Face | `axiom model info org/model` | Published metadata without downloading weights. Needs network. |
+| A JSONL dataset | `axiom dataset validate ./data/train.jsonl` | Invalid records and duplicates; exits non-zero if records are invalid. |
+| A dataset I want sized up | `axiom dataset stats ./data/train.jsonl` | Record, field, and rough token counts. |
+| A messy dataset | `axiom dataset clean ./data/train.jsonl ./data/train.cleaned.jsonl` | A new cleaned file; the source is left unchanged. |
+| A new machine | `axiom system info` | OS, architecture, CPU, RAM, GPU, VRAM, CUDA availability. |
+| A plan to make | `axiom train plan 7 --method qlora` | Hardware-aware starting plan. It does not start training. |
+| Some dev tools installed | `axiom tools doctor` | Executable and credential-reference presence, not vendor login state. |
 
-## Install
+## 📦 Install
 
 ### Debian / Ubuntu / Linux Mint (APT, amd64)
 
@@ -136,10 +173,9 @@ axiom version
 ```
 
 Check the [Releases page](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
-for the exact assets and checksums available for a release. Beta.7 notes are
-preparation notes until the matching release workflow and assets are verified.
+for the exact assets and checksums available for a release.
 
-## The daemon boundary
+## 🔌 The daemon boundary
 
 Run the daemon by itself when a script or local integration needs HTTP:
 
@@ -165,14 +201,14 @@ The default bind is local-only. A non-loopback bind is rejected unless
 service, hosted AXIOM backend, or general inference server. Stop it with
 Ctrl-C.
 
-## Web UI
+## 🖥️ Web UI
 
 The release packages and the PyPI wheel bundle the web UI. It includes the
 Optimizer and the Quantization Lab, which compares FP16, INT8 and INT4 size
 estimates against the memory AXIOM detects. Plans are estimates, not benchmark
 results.
 
-## Commands by job
+## 🛠️ Commands by job
 
 ### Project and environment
 
@@ -278,7 +314,7 @@ axiom mcp serve
 It exposes local model, dataset, hardware, training-plan, and optional
 SuperCompress tools as a process. It is separate from the HTTP daemon.
 
-## What is shipped, and what is not
+## ✅ What is shipped, and what is not
 
 ### Shipped in the beta
 
@@ -301,7 +337,7 @@ SuperCompress tools as a process. It is separate from the HTTP daemon.
 - Live telemetry, background monitoring, hosted workspaces, accounts, or a
   browser control center.
 
-## Repository shape
+## 🗂️ Repository shape
 
 ```text
 axiom/
@@ -319,7 +355,7 @@ axiom/
 The public website is intentionally static. Product work belongs in the CLI,
 local daemon, and reproducible project files.
 
-## Principles
+## 🧱 Principles
 
 - **Local first:** keep models, datasets, configuration, and first-pass
   decisions close to the machine that will run them.
@@ -330,14 +366,14 @@ local daemon, and reproducible project files.
 - **Honest boundaries:** separate detections, estimates, plans, and measured
   results.
 
-## Contributing
+## 🤝 Contributing
 
 AXIOM is in active beta development. Bug fixes, tests, documentation, and
 tooling improvements are welcome.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before making a larger change.
 
-## License
+## 📄 License
 
 MIT. See [LICENSE](LICENSE).
 
