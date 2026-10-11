@@ -1,5 +1,37 @@
 # AXIOM Roadmap
 
+<!-- AXIOM-ROADMAP-UPDATE:START -->
+## Beta roadmap and implementation status
+
+### Current foundations
+
+- [x] Bounded JSONL profiling with row, field and privacy-review statistics.
+- [x] Workspace API foundations for datasets, runtime information and training plans.
+- [x] Existing model inspection, registry, optimisation and quantization components.
+- [x] GUI sections for the principal engineering workflows.
+
+### Planned feature priorities
+
+| Priority | Feature | Goal |
+|---|---|---|
+| 1 | Visual training workflow builder | Connect and validate training steps visually. |
+| 2 | Agent profiles and tool permissions | Add explicit permissions and auditable tool usage. |
+| 3 | Model registry and compatibility | Improve discovery, metadata and hardware/runtime checks. |
+| 4 | Quantization comparison lab | Compare options with documented assumptions. |
+| 5 | Dataset profiling and privacy checks | Expand bounded validation and privacy signals. |
+| 6 | Persistent experiment history | Save settings, outcomes and run history. |
+| 7 | Evaluation and regression reports | Repeat evaluations and compare results. |
+| 8 | Local API playground | Exercise supported endpoints and inspect responses. |
+| 9 | Hardware telemetry and resource history | Record resource snapshots and performance trends. |
+| 10 | Security and configuration audit | Provide actionable local diagnostics. |
+
+### Delivery standard
+
+A feature should not be marked shipped until the applicable backend, GUI,
+CLI, validation, tests and documentation have been verified. Roadmap entries
+remain planned work until that evidence exists.
+<!-- AXIOM-ROADMAP-UPDATE:END -->
+
 ## Beta.5 — released
 
 - [x] Agent/model optimizer

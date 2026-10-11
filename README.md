@@ -1,5 +1,41 @@
 # AXIOM
 
+<!-- AXIOM-BETA1-UPDATE:START -->
+## AXIOM AI v0.3.0-beta.1 — Feature update
+
+**Build AI. Own AI.**
+
+AXIOM is a local-first AI engineering platform with a Python CLI, local
+workspace APIs and a React-based GUI.
+
+### Beta foundations
+
+- **Dataset profiling:** bounded JSONL scanning, row statistics, duplicate
+  detection, field type/null summaries and potential sensitive-field-name
+  warnings.
+- **Workspace APIs:** foundations for dataset discovery, profiling, runtime
+  information and training plans.
+- **Model engineering:** existing model inspection, registry, optimisation,
+  agent-profile and quantization components.
+- **GUI:** Dashboard, Models, Datasets, Training, Evaluation, Runtime, MCP,
+  Diagnostics and Logs sections.
+
+Feature availability depends on installed version, backend support, hardware
+and platform. The list above describes foundations, not a claim that every
+planned end-to-end feature is complete.
+
+### Install
+
+    python -m pip install axiom-all
+
+    axiom --help
+    axiom init my-first-ai
+
+See the [roadmap](ROADMAP.md), [feature implementation plan](docs/Feature-Implementation-Plan.md),
+[release notes](docs/releases/v0.3.0-beta.1.md), and
+[GitHub Wiki](https://github.com/NetCore-Technologies/AXIOM-AI/wiki).
+<!-- AXIOM-BETA1-UPDATE:END -->
+
 ![AXIOM. Build AI. Own AI.](docs/assets/banner.svg)
 
 [![Status](https://img.shields.io/badge/status-active%20development-22c55e?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI)
