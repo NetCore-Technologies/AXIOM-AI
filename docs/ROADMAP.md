@@ -5,7 +5,7 @@
 
 ### Current foundations
 
-- [x] Bounded JSONL profiling with row, field and privacy-review statistics.
+- [x] Bounded JSONL profiling with row, field, privacy, UTF-8/newline, duplicate-key, token-length, opt-in PII, manifest, and cleaning-preview diagnostics.
 - [x] Workspace API foundations for datasets, runtime information and training plans.
 - [x] Existing model inspection, registry, optimisation and quantization components.
 - [x] GUI sections for the principal engineering workflows.

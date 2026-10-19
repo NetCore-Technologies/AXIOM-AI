@@ -1,11 +1,34 @@
 import AxiomOptimizer from "./components/AxiomOptimizer";
 import AxiomQuantizer from "./components/AxiomQuantizer";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import {
+  axiomApi,
+  type DatasetCleaningPreview,
+  type DatasetManifest,
+  type DatasetProfile,
+  type DatasetQualityResult,
+  type HardwareStatus,
+  type McpToolPolicy,
+  type RuntimeSnapshot,
+  type TrainingPlan as TrainingPlanResult,
+  type WorkspaceDataset,
+  type WorkspaceExperiment,
+  type WorkspaceEvaluationRun,
+  type WorkspaceEvent,
+  type WorkspaceModel,
+  type WorkspaceWorkflow,
+  type WorkflowNode,
+  type WorkflowNodeType,
+  type WorkflowDryRun,
+  type WorkflowTemplate,
+  type WorkspaceModelCandidate,
+  type WorkspaceModelInspection,
+} from "./api/client";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
-
-Activity,
+  Activity,
+  ArrowDownToLine,
   ArrowRight,
   ArrowUpRight,
   BarChart3,
@@ -18,69 +41,42 @@ Activity,
   CircleGauge,
   Clock3,
   Command,
+  Copy,
   Cpu,
   Database,
   FileCode2,
+  GitBranch,
   Gauge,
   Hammer,
   HardDrive,
   KeyRound,
   LayoutDashboard,
-  ListFilter,
   LockKeyhole,
   Menu,
   Moon,
   Network,
   PanelLeftClose,
+  Pencil,
   Play,
   Plus,
   RadioTower,
   RefreshCcw,
   Search,
-  ServerCog,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
+  Star,
   Sun,
+  Tag,
   TerminalSquare,
   TimerReset,
+  Trash2,
   TriangleAlert,
+  Upload,
   Wrench,
   X,
   Zap,
 } from "lucide-react";
-
-const API_BASE = import.meta.env.VITE_AXIOM_API_URL || "";
-
-async function recordWorkspaceAction(
-  action: string,
-  detail?: string,
-): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/workspace/actions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, detail }),
-  });
-  if (!response.ok) {
-    throw new Error(`Workspace action failed (${response.status})`);
-  }
-}
-
-function backendAction(
-  action: string,
-  onNotify: (message: string, tone?: Tone) => void,
-  message: string,
-  detail?: string,
-) {
-  void recordWorkspaceAction(action, detail)
-    .then(() => onNotify(message))
-    .catch((error: unknown) => {
-      onNotify(
-        error instanceof Error ? error.message : "Backend action failed.",
-        "warning",
-      );
-    });
-}
 
 function equalSecrets(a: string, b: string): boolean {
   const left = new TextEncoder().encode(a);
@@ -105,6 +101,7 @@ type Page =
   | "models"
   | "datasets"
   | "training"
+  | "workflows"
   | "evaluation"
   | "runtime"
   | "mcp"
@@ -130,19 +127,20 @@ type Notice = {
   tone: Tone;
 };
 
-const navItems: NavItem[] = [  {
+const navItems: NavItem[] = [
+  {
     id: "optimizer",
     label: "Agent Optimizer",
     description: "Interactive hardware-aware optimization",
     icon: Zap,
     section: "OPTIMIZATION",
   },
-{
-  id: "quantizer",
-  label: "Quantization Lab",
-  description: "Hardware-aware quantization and fit planning",
-  icon: SlidersHorizontal,
-},
+  {
+    id: "quantizer",
+    label: "Quantization Lab",
+    description: "Hardware-aware quantization and fit planning",
+    icon: SlidersHorizontal,
+  },
 
   {
     id: "dashboard",
@@ -168,6 +166,12 @@ const navItems: NavItem[] = [  {
     label: "Training",
     description: "Hardware-aware plans",
     icon: Hammer,
+  },
+  {
+    id: "workflows",
+    label: "Workflows",
+    description: "Build and validate training pipelines",
+    icon: GitBranch,
   },
   {
     id: "evaluation",
@@ -243,10 +247,15 @@ const pageMeta: Record<
     kicker: "MODEL OPTIMIZATION",
     description: "Shape a reproducible training plan around the hardware you actually have.",
   },
+  workflows: {
+    label: "Workflows",
+    kicker: "VISUAL PIPELINES",
+    description: "Compose and validate a local workflow graph; execution remains disabled until a runner is available.",
+  },
   evaluation: {
     label: "Evaluation",
     kicker: "QUALITY GATES",
-    description: "Make model quality visible with repeatable checks instead of optimistic guesses.",
+    description: "Score precomputed outputs, compare local baselines, and review saved plan snapshots.",
   },
   runtime: {
     label: "Runtime",
@@ -256,7 +265,7 @@ const pageMeta: Record<
   mcp: {
     label: "MCP inspector",
     kicker: "MODEL CONTEXT PROTOCOL",
-    description: "Inspect tools, resources, prompts, and schemas without losing the protocol context.",
+    description: "Grant tools through named profiles; the MCP server denies ungranted tools by default.",
   },
   diagnostics: {
     label: "Diagnostics",
@@ -274,6 +283,12 @@ const pageMeta: Record<
     description: "Tune the local interface and protect the administrator session.",
   },
 };
+
+function pageFromLocation(): Page {
+  if (typeof window === "undefined") return "dashboard";
+  const requested = new URLSearchParams(window.location.search).get("page");
+  return navItems.some((item) => item.id === requested) ? requested as Page : "dashboard";
+}
 
 const platformModules: Array<{
   page: Page;
@@ -314,6 +329,14 @@ const platformModules: Array<{
     state: "Plan only",
     tone: "warning",
     icon: Hammer,
+  },
+  {
+    page: "workflows",
+    title: "Workflows",
+    description: "Saved and validated training-pipeline designs",
+    state: "Design only",
+    tone: "neutral",
+    icon: GitBranch,
   },
   {
     page: "runtime",
@@ -519,7 +542,7 @@ function App() {
     () => localStorage.getItem("axiom-setup") === "1" && Boolean(localStorage.getItem(ADMIN_KEY)),
   );
   const [authenticated, setAuthenticated] = useState(isAuthenticated);
-  const [page, setPage] = useState<Page>("dashboard");
+  const [page, setPage] = useState<Page>(pageFromLocation);
   const [username, setUsername] = useState("Administrator");
 
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -531,6 +554,12 @@ function App() {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
   }, [theme]);
+
+  useEffect(() => {
+    const restorePage = () => setPage(pageFromLocation());
+    window.addEventListener("popstate", restorePage);
+    return () => window.removeEventListener("popstate", restorePage);
+  }, []);
 
   useEffect(() => {
     if (!notice) {
@@ -601,6 +630,11 @@ function App() {
   };
 
   const navigate = (nextPage: Page) => {
+    if (nextPage !== page) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("page", nextPage);
+      window.history.pushState({ page: nextPage }, "", url);
+    }
     setPage(nextPage);
     setMobileNavOpen(false);
   };
@@ -1215,6 +1249,7 @@ function Topbar({
 }) {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [activeResult, setActiveResult] = useState(0);
   const [profileOpen, setProfileOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const meta = pageMeta[page];
@@ -1223,6 +1258,8 @@ function Topbar({
     if (!normalized) return navItems.slice(0, 5);
     return navItems.filter((item) => `${item.label} ${item.description}`.toLowerCase().includes(normalized));
   }, [query]);
+
+  useEffect(() => setActiveResult(0), [query]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1268,8 +1305,16 @@ function Topbar({
                 setSearchOpen(false);
                 (event.target as HTMLInputElement).blur();
               }
-              if (event.key === "Enter" && results[0]) {
-                navigate(results[0].id);
+              if (event.key === "ArrowDown" && results.length) {
+                event.preventDefault();
+                setActiveResult((current) => (current + 1) % results.length);
+              }
+              if (event.key === "ArrowUp" && results.length) {
+                event.preventDefault();
+                setActiveResult((current) => (current - 1 + results.length) % results.length);
+              }
+              if (event.key === "Enter" && results[activeResult]) {
+                navigate(results[activeResult].id);
                 setSearchOpen(false);
                 setQuery("");
               }
@@ -1279,13 +1324,13 @@ function Topbar({
           {searchOpen && (
             <div id="workspace-search-results" className="command-menu" role="listbox" aria-label="Workspace views">
               <div className="command-menu-label">NAVIGATE</div>
-              {results.length > 0 ? results.map((item) => {
+              {results.length > 0 ? results.map((item, index) => {
                 const Icon = item.icon;
                 return (
                   <button
                     type="button"
                     role="option"
-                    aria-selected={item.id === page}
+                    aria-selected={index === activeResult}
                     key={item.id}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => { navigate(item.id); setSearchOpen(false); setQuery(""); }}
@@ -1343,25 +1388,27 @@ function WorkspacePage({
     case "quantizer":
       return <AxiomQuantizer />;
     case "dashboard":
-      return <Dashboard username={username} setPage={setPage} onNotify={onNotify} />;
+      return <Dashboard username={username} setPage={setPage} />;
     case "models":
       return <Models onNotify={onNotify} />;
     case "datasets":
       return <Datasets onNotify={onNotify} />;
     case "training":
       return <Training onNotify={onNotify} />;
+    case "workflows":
+      return <Workflows onNotify={onNotify} />;
     case "evaluation":
       return <Evaluation onNotify={onNotify} />;
     case "runtime":
-      return <Runtime onNotify={onNotify} />;
+      return <Runtime />;
     case "mcp":
       return <MCP onNotify={onNotify} />;
     case "diagnostics":
       return <Diagnostics onNotify={onNotify} />;
     case "logs":
-      return <LogsPage onNotify={onNotify} />;
+      return <LogsPage />;
     case "settings":
-      return <SettingsPage theme={theme} setTheme={setTheme} onChangePassword={onChangePassword} onNotify={onNotify} />;
+      return <SettingsPage theme={theme} setTheme={setTheme} onChangePassword={onChangePassword} />;
   }
 }
 
@@ -1391,22 +1438,36 @@ function PageHeader({
 function Dashboard({
   username,
   setPage,
-  onNotify,
 }: {
   username: string;
   setPage: (page: Page) => void;
-  onNotify: (message: string, tone?: Tone) => void;
 }) {
   const [apiStatus, setApiStatus] = useState<"checking" | "online" | "offline">("checking");
+  const [models, setModels] = useState<WorkspaceModel[] | null>(null);
+  const [datasets, setDatasets] = useState<WorkspaceDataset[] | null>(null);
+  const [runtime, setRuntime] = useState<RuntimeSnapshot | null>(null);
+  const [events, setEvents] = useState<WorkspaceEvent[] | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refreshWorkspace = async () => {
+    setRefreshing(true);
+    const [modelResult, datasetResult, runtimeResult, eventResult] = await Promise.allSettled([
+      axiomApi.models(),
+      axiomApi.datasets(),
+      axiomApi.runtime(),
+      axiomApi.events(),
+    ]);
+    if (modelResult.status === "fulfilled") setModels(modelResult.value);
+    if (datasetResult.status === "fulfilled") setDatasets(datasetResult.value);
+    if (runtimeResult.status === "fulfilled") setRuntime(runtimeResult.value);
+    if (eventResult.status === "fulfilled") setEvents(eventResult.value);
+    setRefreshing(false);
+  };
 
   useEffect(() => {
     let active = true;
     const checkHealth = () => {
-      fetch(`${API_BASE}/api/health`)
-        .then((response) => {
-          if (!response.ok) throw new Error("Health check failed");
-          return response.json() as Promise<{ status?: string }>;
-        })
+      axiomApi.health()
         .then((data) => {
           if (active) setApiStatus(data.status === "ok" ? "online" : "offline");
         })
@@ -1416,6 +1477,7 @@ function Dashboard({
     };
     checkHealth();
     const timer = window.setInterval(checkHealth, 10_000);
+    void refreshWorkspace();
     return () => {
       active = false;
       window.clearInterval(timer);
@@ -1424,14 +1486,15 @@ function Dashboard({
 
   const apiLabel = apiStatus === "online" ? "Backend connected" : apiStatus === "checking" ? "Checking backend..." : "Backend unavailable";
   const apiTone: Tone = apiStatus === "online" ? "success" : apiStatus === "checking" ? "neutral" : "warning";
+  const runtimeLabel = runtime?.status === "online" ? "Connected" : runtime ? "Not connected" : "Checking";
 
   return (
     <>
       <PageHeader
         page="dashboard"
         title={<>{getGreeting()}, {username}.</>}
-        description="The interface is ready. Connect the local engine when you want live model, dataset, and runtime state here."
-        actions={<button type="button" className="button secondary-button" onClick={() => setPage("diagnostics")}><CircleGauge size={16} /> Run diagnostics</button>}
+        description="A live view of the local model registry, datasets, hardware, and recent workspace activity."
+        actions={<><button type="button" className="button secondary-button" onClick={() => void refreshWorkspace()} disabled={refreshing}><RefreshCcw size={16} /> {refreshing ? "Refreshing" : "Refresh workspace"}</button><button type="button" className="button secondary-button" onClick={() => setPage("diagnostics")}><CircleGauge size={16} /> Diagnostics</button></>}
       />
 
       <section className="status-strip" aria-label="Workspace status">
@@ -1441,38 +1504,32 @@ function Dashboard({
       </section>
 
       <div className="summary-grid">
-        <SummaryCard icon={BrainCircuit} label="Model registry" value="Not connected" detail="CLI available" tone="warning" />
-        <SummaryCard icon={Database} label="Dataset state" value="No report" detail="Import through CLI" tone="neutral" />
-        <SummaryCard icon={Activity} label="Active runs" value="0" detail="No jobs queued" tone="neutral" />
-        <SummaryCard icon={RadioTower} label="Inference" value="Offline" detail="Runtime not attached" tone="warning" />
+        <SummaryCard icon={BrainCircuit} label="Model registry" value={models === null ? "—" : String(models.length)} detail={models === null ? "Loading inventory" : models.length ? "Registered locally" : "No models registered"} tone={models?.length ? "success" : "neutral"} />
+        <SummaryCard icon={Database} label="Datasets" value={datasets === null ? "—" : String(datasets.length)} detail={datasets === null ? "Loading inventory" : "JSONL files in workspace"} tone={datasets?.length ? "success" : "neutral"} />
+        <SummaryCard icon={Cpu} label="Hardware" value={runtime?.hardware.gpu_name || "CPU"} detail={runtime ? `${runtime.hardware.ram_gb.toFixed(1)} GB RAM · ${runtime.hardware.cpu_cores} cores` : "Checking local system"} tone={runtime ? "success" : "neutral"} />
+        <SummaryCard icon={RadioTower} label="Inference runtime" value={runtimeLabel} detail="Planning is available; serving is not connected" tone={runtime?.status === "online" ? "success" : "warning"} />
       </div>
 
       <div className="dashboard-grid">
-        <Surface className="activity-surface" title="Workspace activity" eyebrow="SESSION SIGNAL" action={<StatusPill tone="neutral">NO LIVE FEED</StatusPill>}>
-          <div className="activity-empty">
-            <div className="activity-visual" aria-hidden="true">
-              <div className="activity-grid-lines" />
-              <div className="activity-bars">{activityBars.map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}</div>
-            </div>
-            <div className="empty-copy"><h3>Waiting for a connected runtime</h3><p>This panel will show request volume and latency after a runtime endpoint is available.</p><button type="button" className="text-button" onClick={() => setPage("runtime")}>Open runtime <ArrowRight size={15} /></button></div>
-          </div>
+        <Surface className="activity-surface" title="Recent workspace activity" eyebrow="LOCAL EVENT FEED" action={<StatusPill tone={events?.length ? "success" : "neutral"}>{events ? `${events.length} EVENTS` : "LOADING"}</StatusPill>}>
+          {events?.length ? <div className="event-list">{events.slice(0, 5).map((event, index) => <div className="event-row" key={`${event.timestamp}-${index}`}><span className="event-marker" /><div><b>{event.action.replaceAll(".", " / ")}</b><small>{event.detail || "Completed"} · {formatTimestamp(event.timestamp)}</small></div></div>)}</div> : <EmptyState icon={Activity} title={events ? "No workspace activity yet" : "Loading workspace activity"} description={events ? "Register a model, profile a dataset, or create a training plan to start the local event feed." : "The local API event feed is being loaded."} />}
         </Surface>
 
         <Surface title="Next useful step" eyebrow="ORIENTATION">
           <div className="next-step">
             <div className="next-step-number">01</div>
-            <div><h3>Inspect your environment</h3><p>Run the local CLI doctor before wiring models or data into a training plan.</p><button type="button" className="button small-button primary-button" onClick={() => setPage("diagnostics")}><Wrench size={15} /> Open diagnostics</button></div>
+            <div><h3>{models?.length ? "Build a hardware-aware plan" : "Register a local model"}</h3><p>{models?.length ? "Use the local hardware snapshot to choose a training approach." : "Add a model to the registry, then plan around the hardware available here."}</p><button type="button" className="button small-button primary-button" onClick={() => setPage(models?.length ? "training" : "models")}><ArrowRight size={15} /> {models?.length ? "Open training" : "Open models"}</button></div>
           </div>
           <div className="surface-divider" />
-          <div className="inline-meta"><span><TerminalSquare size={14} /> Suggested command</span><code>axiom doctor</code></div>
+          <div className="inline-meta"><span><TerminalSquare size={14} /> CLI companion</span><code>{models?.length ? "axiom train plan 7 --method qlora" : "axiom model list"}</code></div>
         </Surface>
 
-        <Surface className="module-surface" title="Platform map" eyebrow="WHAT AXIOM OWNS" action={<button type="button" className="text-button" onClick={() => backendAction("dashboard.module_details", onNotify, "Module details are available in the workspace navigation.")}>View all <ArrowRight size={15} /></button>}>
+        <Surface className="module-surface" title="Platform map" eyebrow="WORKSPACE VIEWS" action={<button type="button" className="text-button" onClick={() => setPage("diagnostics")}>Diagnostics <ArrowRight size={15} /></button>}>
           <div className="module-list">{platformModules.map((module) => <ModuleRow key={module.page} module={module} onClick={() => setPage(module.page)} />)}</div>
         </Surface>
 
-        <Surface title="Recent activity" eyebrow="EVENTS">
-          <EmptyState icon={Clock3} title="No events in this session" description="When the runtime and CLI reports are connected, validation and inference events will appear here." action={<button type="button" className="text-button" onClick={() => setPage("logs")}>Open logs <ArrowRight size={15} /></button>} />
+        <Surface title="About this workspace" eyebrow="LOCAL FIRST">
+          <div className="empty-copy"><h3>{apiStatus === "online" ? "Backend is connected" : "Backend connection required"}</h3><p>Inventory and planning requests use the local AXIOM API. Plans are estimates; this interface does not start training or inference.</p><button type="button" className="text-button" onClick={() => setPage("logs")}>Open event log <ArrowRight size={15} /></button></div>
         </Surface>
       </div>
     </>
@@ -1481,6 +1538,27 @@ function Dashboard({
 
 function SummaryCard({ icon: Icon, label, value, detail, tone }: { icon: LucideIcon; label: string; value: string; detail: string; tone: Tone }) {
   return <div className="summary-card"><div className="summary-card-head"><span>{label}</span><Icon size={17} /></div><strong>{value}</strong><div><StatusPill tone={tone}>{detail}</StatusPill></div></div>;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unit = units[0];
+  for (let index = 1; value >= 1024 && index < units.length; index += 1) {
+    value /= 1024;
+    unit = units[index];
+  }
+  return `${value.toFixed(1)} ${unit}`;
+}
+
+function formatTimestamp(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
 function ModuleRow({ module, onClick }: { module: (typeof platformModules)[number]; onClick: () => void }) {
@@ -1502,91 +1580,274 @@ function FeaturePage({
 }
 
 function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
-  const [models, setModels] = useState<Array<{ name: string; source: string; format: string }>>([]);
-  const refresh = () => {
-    void fetch(`${API_BASE}/api/workspace/models`)
-      .then((response) => {
-        if (!response.ok) throw new Error("Could not load the model registry");
-        return response.json() as Promise<{ models: Array<{ name: string; source: string; format: string }> }>;
-      })
-      .then((data) => setModels(data.models))
-      .catch((error: unknown) => onNotify(error instanceof Error ? error.message : "Model registry unavailable", "warning"));
+  const [models, setModels] = useState<WorkspaceModel[]>([]);
+  const [modelTotal, setModelTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [discoveryBusy, setDiscoveryBusy] = useState(false);
+  const [discovery, setDiscovery] = useState<{ candidates: WorkspaceModelCandidate[]; truncated: boolean } | null>(null);
+  const [inspection, setInspection] = useState<WorkspaceModelInspection | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState<WorkspaceModel | null>(null);
+  const [removingBusy, setRemovingBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [source, setSource] = useState("");
+  const [format, setFormat] = useState("safetensors");
+  const [parameters, setParameters] = useState("");
+  const [architecture, setArchitecture] = useState("");
+  const [license, setLicense] = useState("");
+  const [quantization, setQuantization] = useState("");
+  const [tags, setTags] = useState("");
+  const importRef = useRef<HTMLInputElement>(null);
+
+  const refresh = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const page = await axiomApi.modelsPage(0, 25);
+      setModels(page.models);
+      setModelTotal(page.total);
+      setHasMore(page.has_more);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Model registry unavailable.");
+    } finally {
+      setLoading(false);
+    }
   };
-  useEffect(refresh, []);
-  return <FeaturePage page="models" actions={<button type="button" className="button primary-button" onClick={() => backendAction("models.add", onNotify, "Model import requested. Use the CLI or provide a model path to continue.")}><Plus size={16} /> Add model</button>}>
-    <div className="info-grid"><InfoCard icon={BrainCircuit} label="Registry" value={models.length ? `${models.length}` : "Empty"} detail={models.length ? "Models registered" : "No models registered"} tone={models.length ? "success" : "warning"} /><InfoCard icon={HardDrive} label="Storage" value="Local" detail="AXIOM registry" tone="neutral" /><InfoCard icon={SlidersHorizontal} label="Formats" value="Ready" detail="Metadata supported" tone="success" /></div>
-    <Surface title="Model registry" eyebrow="LOCAL INVENTORY" action={<button type="button" className="icon-text-button" onClick={refresh}><RefreshCcw size={15} /> Refresh</button>}>
-      {models.length ? <div className="module-list">{models.map((model) => <div className="module-row" key={model.name}><span className="module-icon"><BrainCircuit size={17} /></span><span className="module-copy"><b>{model.name}</b><small>{model.source} · {model.format}</small></span></div>)}</div> : <EmptyState icon={BrainCircuit} title="No model inventory connected" description="Add a model through the CLI, then refresh this registry." action={<CliReference command="axiom model list" />} />}
+
+  useEffect(() => { void refresh(); }, []);
+
+  const discoverLocalModels = async () => {
+    setDiscoveryBusy(true);
+    setInspection(null);
+    try {
+      const result = await axiomApi.discoverModels();
+      setDiscovery(result);
+      onNotify(result.candidates.length ? `Found ${result.candidates.length} local model folder${result.candidates.length === 1 ? "" : "s"}.` : "No local model folders found under models/.", result.candidates.length ? "success" : "neutral");
+    } catch (cause) {
+      onNotify(cause instanceof Error ? cause.message : "Local model discovery failed.", "warning");
+    } finally {
+      setDiscoveryBusy(false);
+    }
+  };
+
+  const inspectCandidate = async (candidate: WorkspaceModelCandidate) => {
+    try {
+      const result = await axiomApi.inspectModel(candidate.path);
+      setInspection(result.inspection);
+      return result.inspection;
+    } catch (cause) {
+      onNotify(cause instanceof Error ? cause.message : "Model inspection failed.", "warning");
+      return null;
+    }
+  };
+
+  const useCandidateMetadata = async (candidate: WorkspaceModelCandidate) => {
+    const result = await inspectCandidate(candidate);
+    if (!result) return;
+    const fallbackName = candidate.path === "." ? "Local model" : candidate.path.split("/").filter(Boolean).at(-1) || "Local model";
+    setName(fallbackName);
+    setSource(candidate.path === "." ? "models" : `models/${candidate.path}`);
+    setFormat(result.model_format.toLowerCase());
+    setArchitecture(result.architecture || "");
+    setParameters(result.parameter_count ? `${(result.parameter_count / 1_000_000_000).toFixed(1)}B` : "");
+    setFormOpen(true);
+  };
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const page = await axiomApi.modelsPage(models.length, 25);
+      setModels((current) => [...current, ...page.models]);
+      setModelTotal(page.total);
+      setHasMore(page.has_more);
+    } catch (cause) {
+      onNotify(cause instanceof Error ? cause.message : "More models could not be loaded.", "warning");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const addModel = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await axiomApi.addModel({
+        name,
+        source,
+        format,
+        parameters: parameters.trim() || null,
+        architecture: architecture.trim() || null,
+        license: license.trim() || null,
+        quantization: quantization.trim() || null,
+        tags: [...new Set(tags.split(",").map((tag) => tag.trim()).filter(Boolean))],
+        favorite: false,
+      });
+      setName("");
+      setSource("");
+      setParameters("");
+      setArchitecture("");
+      setLicense("");
+      setQuantization("");
+      setTags("");
+      setFormOpen(false);
+      onNotify("Model registered in the local AXIOM inventory.", "success");
+      await refresh();
+    } catch (cause) {
+      onNotify(cause instanceof Error ? cause.message : "Model registration failed.", "warning");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleFavorite = async (model: WorkspaceModel) => {
+    try {
+      const result = await axiomApi.updateModel(model.id, { favorite: !model.favorite });
+      setModels((current) => current.map((item) => item.id === model.id ? result.model : item));
+    } catch (cause) {
+      onNotify(cause instanceof Error ? cause.message : "Favorite could not be updated.", "warning");
+    }
+  };
+
+  const removeModel = async () => {
+    if (!removing) return;
+    setRemovingBusy(true);
+    try {
+      const result = await axiomApi.removeModel(removing.id);
+      onNotify(`${result.removed.name} removed from registry. Local weights were not deleted.`, "success");
+      setRemoving(null);
+      await refresh();
+    } catch (cause) {
+      onNotify(cause instanceof Error ? cause.message : "Model could not be removed.", "warning");
+    } finally {
+      setRemovingBusy(false);
+    }
+  };
+
+  const exportModels = async () => {
+    try {
+      const payload = await axiomApi.exportModels();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "axiom-model-registry.json";
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      onNotify("Model registry export downloaded.", "success");
+    } catch (cause) {
+      onNotify(cause instanceof Error ? cause.message : "Model registry export failed.", "warning");
+    }
+  };
+
+  const importModels = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      if (file.size > 4 * 1024 * 1024) throw new Error("Import files must be 4 MB or smaller.");
+      const payload = JSON.parse(await file.text()) as { schema_version?: unknown; models?: unknown };
+      if (payload.schema_version !== 1 || !Array.isArray(payload.models)) {
+        throw new Error("Choose an AXIOM model registry export with schema_version 1.");
+      }
+      const result = await axiomApi.importModels({ schema_version: 1, models: payload.models as WorkspaceModel[] });
+      onNotify(`Imported ${result.imported} model records.`, "success");
+      await refresh();
+    } catch (cause) {
+      onNotify(cause instanceof Error ? cause.message : "Model registry import failed.", "warning");
+    } finally {
+      input.value = "";
+    }
+  };
+
+  return <FeaturePage page="models" actions={<><button type="button" className="button secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCcw size={16} /> Refresh</button><button type="button" className="button secondary-button" onClick={() => void discoverLocalModels()} disabled={discoveryBusy}><Search size={15} /> {discoveryBusy ? "Discovering…" : "Discover local"}</button><button type="button" className="button secondary-button" onClick={() => void exportModels()}><ArrowDownToLine size={15} /> Export</button><button type="button" className="button secondary-button" onClick={() => importRef.current?.click()}><Upload size={15} /> Import</button><input ref={importRef} type="file" accept="application/json,.json" hidden onChange={(event) => void importModels(event)} /><button type="button" className="button primary-button" onClick={() => setFormOpen((open) => !open)}><Plus size={16} /> Register model</button></>}>
+    <div className="info-grid"><InfoCard icon={BrainCircuit} label="Registry" value={loading ? "—" : String(modelTotal)} detail={loading ? "Loading inventory" : `${models.filter((model) => model.favorite).length} favorites loaded`} tone={modelTotal ? "success" : "neutral"} /><InfoCard icon={HardDrive} label="Storage" value="Local" detail="Registry metadata only" tone="neutral" /><InfoCard icon={SlidersHorizontal} label="Inventory" value={loading ? "—" : String(models.length)} detail={hasMore ? `Showing ${models.length} of ${modelTotal}` : "All registry entries shown"} tone="info" /></div>
+    {formOpen && <Surface title="Register model metadata" eyebrow="LOCAL REGISTRY">
+      <form className="integration-form" onSubmit={(event) => void addModel(event)}>
+        <label className="field"><span className="field-label-row"><span>Display name</span></span><input value={name} onChange={(event) => setName(event.target.value)} maxLength={160} required placeholder="Qwen 3 8B" /></label>
+        <label className="field"><span className="field-label-row"><span>Source or local path</span></span><input value={source} onChange={(event) => setSource(event.target.value)} maxLength={512} required placeholder="./models/qwen3-8b" /></label>
+        <label className="field"><span className="field-label-row"><span>Format</span></span><input value={format} onChange={(event) => setFormat(event.target.value)} maxLength={64} required placeholder="safetensors, gguf, ..." /></label>
+        <label className="field"><span className="field-label-row"><span>Architecture</span></span><input value={architecture} onChange={(event) => setArchitecture(event.target.value)} maxLength={160} placeholder="Qwen3ForCausalLM" /></label>
+        <label className="field"><span className="field-label-row"><span>Parameters</span></span><input value={parameters} onChange={(event) => setParameters(event.target.value)} maxLength={80} placeholder="8B" /></label>
+        <label className="field"><span className="field-label-row"><span>Quantization</span></span><input value={quantization} onChange={(event) => setQuantization(event.target.value)} maxLength={80} placeholder="Q4_K_M" /></label>
+        <label className="field"><span className="field-label-row"><span>License</span></span><input value={license} onChange={(event) => setLicense(event.target.value)} maxLength={120} placeholder="Apache-2.0" /></label>
+        <label className="field"><span className="field-label-row"><span>Tags, comma-separated</span></span><input value={tags} onChange={(event) => setTags(event.target.value)} maxLength={1200} placeholder="chat, local, favorite" /></label>
+        <div className="integration-form-actions"><button type="button" className="button secondary-button" onClick={() => setFormOpen(false)}>Cancel</button><button type="submit" className="button primary-button" disabled={saving || !name.trim() || !source.trim() || !format.trim()}>{saving ? "Registering…" : "Save to registry"}</button></div>
+      </form>
+      <p className="quiet-note">This saves metadata only. It does not download, move, or inspect model files. Registry import accepts AXIOM schema version 1 and never overwrites existing entries.</p>
+    </Surface>}
+    {discovery && <Surface title="Local model folders" eyebrow="SAFE DISCOVERY">
+      <p className="quiet-note">Scans at most 5,000 folders, four levels deep, and reports at most 100 candidates. Symlinked folders and files are skipped. Discovery is limited to models/.</p>
+      {discovery.truncated && <Callout tone="warning" title="Discovery was bounded">Some folders may not be listed. Narrow the models/ tree and retry.</Callout>}
+      {discovery.candidates.length ? <div className="module-list">{discovery.candidates.map((candidate) => <div className="module-row" key={candidate.path}>
+        <span className="module-icon"><HardDrive size={17} /></span><span className="module-copy"><b>{candidate.path === "." ? "models/" : `models/${candidate.path}`}</b><small>{candidate.format} · {candidate.weight_file_count} weight files · {formatBytes(candidate.weight_size_bytes)}{candidate.has_config ? " · config.json" : " · no config"}</small></span>
+        <button type="button" className="button secondary-button" onClick={() => void inspectCandidate(candidate)}>Inspect</button><button type="button" className="button secondary-button" onClick={() => void useCandidateMetadata(candidate)}>Use metadata</button>
+      </div>)}</div> : <EmptyState icon={Search} title="No candidate folders found" description="Create a local model folder under models/ with config.json or supported weight files." />}
+    </Surface>}
+    {inspection && <Surface title="Model inspection summary" eyebrow="LOCAL FILE METADATA" action={<button type="button" className="icon-text-button" onClick={() => setInspection(null)}>Dismiss</button>}>
+      <p className="quiet-note">{inspection.path} · {inspection.status}</p>
+      <div className="info-grid"><InfoCard icon={BrainCircuit} label="Architecture" value={inspection.architecture || inspection.model_type || "Unknown"} detail={inspection.capabilities.join(" · ")} tone="neutral" /><InfoCard icon={HardDrive} label="Format / weights" value={inspection.model_format} detail={`${formatBytes(inspection.weight_size_bytes)} · ${inspection.has_tokenizer ? "Tokenizer found" : "No tokenizer detected"}`} tone={inspection.weight_size_bytes ? "success" : "warning"} /><InfoCard icon={Cpu} label="Estimated VRAM" value={inspection.estimated_vram_gb === null ? "Unknown" : `${inspection.estimated_vram_gb} GB`} detail={inspection.parameter_count ? `${inspection.parameter_count.toLocaleString()} parameters · estimate only` : "No parameter count available"} tone="info" /></div>
+    </Surface>}
+    <Surface title="Model registry" eyebrow="LOCAL INVENTORY">
+      {error ? <InlineAlert tone="warning" role="alert">{error}</InlineAlert> : null}
+      {loading ? <div className="loading-state" role="status">Loading model registry…</div> : models.length ? <><div className="module-list">{models.map((model) => <div className="module-row model-registry-row" key={model.id}><span className="module-icon"><BrainCircuit size={17} /></span><span className="module-copy"><b>{model.name}</b><small>{model.source} · {model.format}{model.parameters ? ` · ${model.parameters}` : ""}{model.quantization ? ` · ${model.quantization}` : ""}{model.architecture ? ` · ${model.architecture}` : ""}{model.license ? ` · ${model.license}` : ""}{model.tags?.length ? ` · ${model.tags.join(", ")}` : ""}</small></span><button type="button" className="icon-button" aria-label={`${model.favorite ? "Remove" : "Add"} ${model.name} ${model.favorite ? "favorite" : "to favorites"}`} title={model.favorite ? "Remove favorite" : "Add favorite"} onClick={() => void toggleFavorite(model)}><Star size={15} fill={model.favorite ? "currentColor" : "none"} /></button><button type="button" className="icon-button danger-icon-button" aria-label={`Remove ${model.name} from registry`} title="Remove registry entry" onClick={() => setRemoving(model)}><Trash2 size={15} /></button></div>)}</div>{hasMore && <div className="pagination-actions"><button type="button" className="button secondary-button" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load more models"}</button></div>}</> : <EmptyState icon={BrainCircuit} title="Registry is empty" description="Register model metadata here or use the CLI. Model files remain where they are." action={<CliReference command="axiom model add my-model local safetensors" />} />}
     </Surface>
-    <ContractNote command="axiom model list" />
+    {removing && <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !removingBusy) setRemoving(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="remove-model-title"><div className="dialog-head"><div><p className="eyebrow">CONFIRM REGISTRY CHANGE</p><h2 id="remove-model-title">Remove {removing.name}?</h2></div><button type="button" className="icon-button" aria-label="Close confirmation" onClick={() => setRemoving(null)} disabled={removingBusy}><X size={16} /></button></div><p className="quiet-note">This removes only its AXIOM registry metadata. Local model weights will not be deleted.</p><div className="integration-form-actions"><button type="button" className="button secondary-button" onClick={() => setRemoving(null)} disabled={removingBusy}>Cancel</button><button type="button" className="button danger-button" onClick={() => void removeModel()} disabled={removingBusy}>{removingBusy ? "Removing…" : "Remove registry entry"}</button></div></section></div>}
   </FeaturePage>;
 }
 
-type DatasetProfileField = {
-  name: string;
-  occurrences: number;
-  null_count: number;
-  null_rate: number;
-  types: Record<string, number>;
-  possibly_sensitive: boolean;
-};
+const datasetScanPresets = {
+  quick: {
+    label: "Quick",
+    description: "10,000 rows · 8 MB · 256 KB per line",
+    limits: { max_bytes: 8 * 1024 * 1024, max_rows: 10_000, max_line_bytes: 256 * 1024 },
+  },
+  standard: {
+    label: "Standard",
+    description: "100,000 rows · 64 MB · 1 MB per line",
+    limits: { max_bytes: 64 * 1024 * 1024, max_rows: 100_000, max_line_bytes: 1024 * 1024 },
+  },
+  deep: {
+    label: "Deep",
+    description: "500,000 rows · 256 MB · 8 MB per line",
+    limits: { max_bytes: 256 * 1024 * 1024, max_rows: 500_000, max_line_bytes: 8 * 1024 * 1024 },
+  },
+} as const;
 
-type DatasetProfileReport = {
-  file_name: string;
-  file_size_bytes: number;
-  bytes_scanned: number;
-  lines_scanned: number;
-  valid_rows: number;
-  invalid_rows: number;
-  empty_rows: number;
-  duplicate_rows: number;
-  overlong_rows: number;
-  privacy_review_recommended: boolean;
-  possibly_sensitive_fields: string[];
-  truncated: boolean;
-  fields: DatasetProfileField[];
-  warnings: string[];
-};
-
-// AXIOM_DATASET_PROFILE_UI
 function Datasets({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
-  const [datasets, setDatasets] = useState<Array<{ path: string }>>([]);
-  const [profileReport, setProfileReport] = useState<null | {
-    file_name: string; valid_rows: number; invalid_rows: number;
-    duplicate_rows: number; empty_rows: number;
-    privacy_review_recommended: boolean; possibly_sensitive_fields: string[];
-    fields: Array<{ name: string; occurrences: number; null_rate: number;
-      types: Record<string, number>; possibly_sensitive: boolean }>;
-    warnings: string[]; truncated: boolean;
-  }>(null);
-  const [profileLoading, setProfileLoading] = useState<string | null>(null);
-  const [profile, setProfile] = useState<DatasetProfileReport | null>(null);
+  const [datasets, setDatasets] = useState<WorkspaceDataset[]>([]);
+  const [profile, setProfile] = useState<DatasetProfile | null>(null);
+  const [manifest, setManifest] = useState<DatasetManifest | null>(null);
+  const [parentManifestSha256, setParentManifestSha256] = useState("");
+  const [cleanPreview, setCleanPreview] = useState<DatasetCleaningPreview | null>(null);
+  const [comparePaths, setComparePaths] = useState<string[]>([]);
+  const [requiredFields, setRequiredFields] = useState("");
+  const [expectedTypeRules, setExpectedTypeRules] = useState("");
+  const [duplicateKeyFields, setDuplicateKeyFields] = useState("");
+  const [duplicateRateThreshold, setDuplicateRateThreshold] = useState("");
+  const [textFields, setTextFields] = useState("");
+  const [sensitiveFieldRules, setSensitiveFieldRules] = useState("");
+  const [ignoredSensitiveFields, setIgnoredSensitiveFields] = useState("");
+  const [scanPii, setScanPii] = useState(false);
+  const [qualityReport, setQualityReport] = useState<DatasetQualityResult | null>(null);
+  const [qualityBusy, setQualityBusy] = useState(false);
+  const [scanPreset, setScanPreset] = useState<keyof typeof datasetScanPresets>("standard");
   const [profileBusy, setProfileBusy] = useState<string | null>(null);
-  const [inventoryBusy, setInventoryBusy] = useState(false);
+  const [manifestBusy, setManifestBusy] = useState<string | null>(null);
+  const [cleanPreviewBusy, setCleanPreviewBusy] = useState<string | null>(null);
+  const [inventoryBusy, setInventoryBusy] = useState(true);
+  const [error, setError] = useState("");
 
-  const profileDataset = async (path: string) => {
-    setProfileLoading(path);
-    setProfileReport(null);
-    try {
-      const response = await fetch(`${API_BASE}/api/workspace/dataset-profile?path=${encodeURIComponent(path)}`);
-      const payload = await response.json() as { profile?: NonNullable<typeof profileReport>; detail?: string };
-      if (!response.ok || !payload.profile) throw new Error(payload.detail || "Dataset profile failed");
-      setProfileReport(payload.profile);
-    } catch (error: unknown) {
-      onNotify(error instanceof Error ? error.message : "Dataset profile failed", "warning");
-    } finally {
-      setProfileLoading(null);
-    }
-  };
   const refresh = async () => {
     setInventoryBusy(true);
+    setError("");
     try {
-      const response = await fetch(`${API_BASE}/api/files?kind=datasets`);
-      const data = await response.json() as { items?: Array<{ path: string }>; message?: string };
-      if (!response.ok) throw new Error(data.message || "Could not load datasets");
-      setDatasets(Array.isArray(data.items) ? data.items : []);
-    } catch (error: unknown) {
-      onNotify(error instanceof Error ? error.message : "Dataset inventory unavailable", "warning");
+      setDatasets(await axiomApi.datasets());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Dataset inventory unavailable.");
     } finally {
       setInventoryBusy(false);
     }
@@ -1594,43 +1855,262 @@ function Datasets({ onNotify }: { onNotify: (message: string, tone?: Tone) => vo
 
   useEffect(() => { void refresh(); }, []);
 
+  const parseProfileOptions = () => {
+    const parseFields = (value: string) => [...new Set(value.split(",").map((field) => field.trim()).filter(Boolean))];
+    const duplicateFields = parseFields(duplicateKeyFields);
+    const selectedTextFields = parseFields(textFields);
+    const rules = parseFields(sensitiveFieldRules);
+    const exclusions = parseFields(ignoredSensitiveFields);
+    if ([...duplicateFields, ...selectedTextFields, ...rules, ...exclusions].some((field) => field.length > 160) || [duplicateFields, selectedTextFields, rules, exclusions].some((fields) => fields.length > 100)) {
+      onNotify("Use at most 100 profile fields per group, each 160 characters or fewer.", "warning");
+      return null;
+    }
+    const threshold = duplicateRateThreshold.trim() === "" ? null : Number(duplicateRateThreshold);
+    if (threshold !== null && (!Number.isFinite(threshold) || threshold < 0 || threshold > 1)) {
+      onNotify("Duplicate-rate threshold must be between 0 and 1.", "warning");
+      return null;
+    }
+    return {
+      duplicate_key_fields: duplicateFields,
+      duplicate_rate_threshold: threshold,
+      text_fields: selectedTextFields,
+      sensitive_field_rules: rules,
+      ignored_sensitive_fields: exclusions,
+      scan_pii: scanPii,
+    };
+  };
+
   const runProfile = async (path: string) => {
+    const options = parseProfileOptions();
+    if (!options) return;
     setProfileBusy(path);
+    setProfile(null);
     try {
-      const query = new URLSearchParams({ path });
-      const response = await fetch(`${API_BASE}/api/dataset/profile?${query.toString()}`);
-      const data = await response.json() as { profile?: DatasetProfileReport; message?: string };
-      if (!response.ok || !data.profile) throw new Error(data.message || "Dataset profiling failed");
-      setProfile(data.profile);
-      onNotify(`Profile ready: ${data.profile.valid_rows.toLocaleString()} valid rows.`);
-    } catch (error: unknown) {
-      onNotify(error instanceof Error ? error.message : "Dataset profiling failed", "warning");
+      const report = await axiomApi.profileDataset(path, datasetScanPresets[scanPreset].limits, options);
+      setProfile(report);
+      onNotify(`Profile ready: ${report.valid_rows.toLocaleString()} valid rows.`, "success");
+    } catch (cause) {
+      onNotify(cause instanceof Error ? cause.message : "Dataset profiling failed.", "warning");
     } finally {
       setProfileBusy(null);
     }
   };
 
-  return <FeaturePage page="datasets" actions={<button type="button" className="button primary-button" onClick={() => backendAction("datasets.import", onNotify, "Dataset import requested. Add a JSONL file under the workspace, then refresh.")}><Plus size={16} /> Import dataset</button>}>
+  const runManifest = async (path: string) => {
+    const parentHash = parentManifestSha256.trim();
+    if (parentHash && !/^[0-9a-f]{64}$/i.test(parentHash)) {
+      onNotify("Parent manifest must be a 64-character SHA-256 hex digest.", "warning");
+      return;
+    }
+    setManifestBusy(path);
+    setManifest(null);
+    try {
+      setManifest(await axiomApi.datasetManifest(path, datasetScanPresets[scanPreset].limits.max_bytes, parentHash || undefined));
+      onNotify("Dataset provenance manifest ready.", "success");
+    } catch (cause) {
+      onNotify(cause instanceof Error ? cause.message : "Dataset manifest failed.", "warning");
+    } finally {
+      setManifestBusy(null);
+    }
+  };
+
+  const runCleaningPreview = async (path: string) => {
+    setCleanPreviewBusy(path);
+    setCleanPreview(null);
+    try {
+      setCleanPreview(await axiomApi.previewDatasetCleaning(path, datasetScanPresets[scanPreset].limits));
+      onNotify("Cleaning preview ready; no file was written.", "success");
+    } catch (cause) {
+      onNotify(cause instanceof Error ? cause.message : "Dataset cleaning preview failed.", "warning");
+    } finally {
+      setCleanPreviewBusy(null);
+    }
+  };
+
+  const runQualityChecks = async () => {
+    const options = parseProfileOptions();
+    if (!options) return;
+    const expectedTypes: Record<string, string> = {};
+    const supportedTypes = new Set(["string", "integer", "number", "boolean", "object", "array", "null"]);
+    for (const rule of expectedTypeRules.split(/\r?\n/).map((value) => value.trim()).filter(Boolean)) {
+      const separator = rule.lastIndexOf("=");
+      const field = rule.slice(0, separator).trim();
+      const type = rule.slice(separator + 1).trim();
+      if (separator < 1 || !field || !supportedTypes.has(type)) {
+        onNotify("Use one field=type rule per line with a supported JSON type.", "warning");
+        return;
+      }
+      expectedTypes[field] = type;
+    }
+    const fields = [...new Set(requiredFields.split(",").map((value) => value.trim()).filter(Boolean))];
+    if (fields.length > 100 || Object.keys(expectedTypes).length > 100) {
+      onNotify("Use at most 100 required fields and 100 type rules.", "warning");
+      return;
+    }
+    setQualityBusy(true);
+    try {
+      const report = await axiomApi.datasetQuality({
+        paths: comparePaths,
+        required_fields: fields,
+        expected_types: expectedTypes,
+        ...options,
+        limits: datasetScanPresets[scanPreset].limits,
+      });
+      setQualityReport(report);
+      const passed = Object.values(report.checks).every((check) => check.passed);
+      onNotify(passed ? "Dataset comparison and checks passed." : "Dataset report ready; review the schema differences.", passed ? "success" : "warning");
+    } catch (cause) {
+      onNotify(cause instanceof Error ? cause.message : "Dataset quality report failed.", "warning");
+    } finally {
+      setQualityBusy(false);
+    }
+  };
+
+  const exportQualityReport = () => {
+    if (!qualityReport) return;
+    const blob = new Blob([JSON.stringify({ generated_at: new Date().toISOString(), ...qualityReport }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "axiom-dataset-quality-report.json";
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
+  const exportManifest = () => {
+    if (!manifest) return;
+    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${manifest.file_name}.manifest.json`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
+  const exportCleaningPreview = () => {
+    if (!cleanPreview) return;
+    const blob = new Blob([JSON.stringify(cleanPreview, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${cleanPreview.file_name}.cleaning-preview.json`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
+  const clearReports = () => {
+    setProfile(null);
+    setQualityReport(null);
+    setManifest(null);
+    setCleanPreview(null);
+  };
+
+  return <FeaturePage page="datasets" actions={<div className="dataset-page-actions"><button type="button" className="button secondary-button" onClick={() => void refresh()} disabled={inventoryBusy}><RefreshCcw size={16} /> {inventoryBusy ? "Refreshing" : "Refresh inventory"}</button><button type="button" className="button secondary-button" onClick={clearReports} disabled={(!profile && !qualityReport && !manifest && !cleanPreview) || profileBusy !== null || qualityBusy || manifestBusy !== null || cleanPreviewBusy !== null}><Trash2 size={15} /> Clear reports</button></div>}>
     <div className="info-grid">
-      <InfoCard icon={Database} label="Datasets" value={`${datasets.length}`} detail={datasets.length ? "JSONL files found" : "No JSONL files"} tone={datasets.length ? "success" : "neutral"} />
-      <InfoCard icon={CircleAlert} label="Profiler" value="Local" detail="Structural checks only" tone="success" />
-      <InfoCard icon={BarChart3} label="Privacy review" value={profile?.privacy_review_recommended ? "Recommended" : "On demand"} detail="Sensitive-looking field names" tone={profile?.privacy_review_recommended ? "warning" : "neutral"} />
+      <InfoCard icon={Database} label="Datasets" value={inventoryBusy ? "—" : String(datasets.length)} detail={inventoryBusy ? "Loading inventory" : "JSONL files under data/"} tone={datasets.length ? "success" : "neutral"} />
+      <InfoCard icon={CircleAlert} label="Profiler" value="Local" detail="Bounded structural scan" tone="success" />
+      <InfoCard icon={BarChart3} label="Privacy review" value={profile?.privacy_review_recommended ? "Recommended" : "On demand"} detail="Field names only; values stay private" tone={profile?.privacy_review_recommended ? "warning" : "neutral"} />
     </div>
-    <Surface title="Dataset workspace" eyebrow="INSPECTION QUEUE" action={<button type="button" className="icon-text-button" onClick={() => { void refresh(); }} disabled={inventoryBusy}><RefreshCcw size={15} /> {inventoryBusy ? "Refreshing" : "Refresh"}</button>}>
-      {datasets.length ? <div className="module-list">{datasets.map((dataset) => <div className="module-row" key={dataset.path}>
+    <Surface title="Dataset workspace" eyebrow="INSPECTION QUEUE">
+      {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
+      <div className="dataset-scan-controls">
+        <label htmlFor="dataset-scan-preset">
+          <span>Scan budget</span>
+          <select id="dataset-scan-preset" value={scanPreset} onChange={(event) => setScanPreset(event.target.value as keyof typeof datasetScanPresets)}>
+            {Object.entries(datasetScanPresets).map(([key, preset]) => <option key={key} value={key}>{preset.label}</option>)}
+          </select>
+        </label>
+        <p className="quiet-note">{datasetScanPresets[scanPreset].description}. The API enforces fixed maximums; values are never returned.</p>
+      </div>
+      <label className="dataset-manifest-parent"><span>Optional parent manifest SHA-256 · link this dataset to an earlier source</span><input value={parentManifestSha256} onChange={(event) => setParentManifestSha256(event.target.value)} maxLength={64} placeholder="Paste a previous manifest digest (leave blank for source)" /></label>
+      {inventoryBusy ? <div className="loading-state" role="status">Scanning the local data directory…</div> : datasets.length ? <div className="module-list">{datasets.map((dataset) => <div className="module-row" key={dataset.path}>
         <span className="module-icon"><Database size={17} /></span>
-        <span className="module-copy"><b>{dataset.path}</b><small>JSONL dataset · local workspace</small></span>
-        <button type="button" className="button secondary-button" disabled={profileBusy !== null} onClick={() => { void runProfile(dataset.path); }}>{profileBusy === dataset.path ? "Profiling…" : "Profile"}</button>
-      <button type="button" className="button secondary-button" onClick={() => void profileDataset(dataset.path)} disabled={profileLoading === dataset.path}>{profileLoading === dataset.path ? "Profiling…" : "Profile"}</button></div>)}</div> : <EmptyState icon={Database} title="No dataset report yet" description="Add a JSONL file inside the AXIOM workspace, then refresh this view." action={<CliReference command="axiom dataset inspect ./data/train.jsonl" />} />}
+        <span className="module-copy"><b>{dataset.path}</b><small>JSONL · {formatBytes(dataset.size_bytes)} · local workspace</small></span>
+        <div className="module-row-actions"><button type="button" className="button secondary-button" disabled={profileBusy !== null} onClick={() => void runProfile(dataset.path)}>{profileBusy === dataset.path ? "Profiling…" : "Profile"}</button><button type="button" className="button secondary-button" disabled={manifestBusy !== null} onClick={() => void runManifest(dataset.path)}>{manifestBusy === dataset.path ? "Hashing…" : "Manifest"}</button><button type="button" className="button secondary-button" disabled={cleanPreviewBusy !== null} onClick={() => void runCleaningPreview(dataset.path)}>{cleanPreviewBusy === dataset.path ? "Previewing…" : "Preview clean"}</button></div>
+      </div>)}</div> : <EmptyState icon={Database} title="No JSONL datasets found" description="Place a JSONL file under the workspace data/ directory, then refresh. You can inspect any path directly with the CLI." action={<CliReference command="axiom dataset profile ./data/train.jsonl" />} />}
     </Surface>
+    {datasets.length > 0 && <Surface title="Compare and validate" eyebrow="DATASET QUALITY">
+      <p className="quiet-note">Select two or three JSONL files. The report compares field presence and observed types; checks never return row values.</p>
+      <div className="dataset-quality-selection">
+        {datasets.map((dataset) => <label className="dataset-quality-choice" key={dataset.path}>
+          <input
+            type="checkbox"
+            checked={comparePaths.includes(dataset.path)}
+            disabled={qualityBusy || (!comparePaths.includes(dataset.path) && comparePaths.length >= 3)}
+            onChange={() => setComparePaths((current) => current.includes(dataset.path) ? current.filter((path) => path !== dataset.path) : [...current, dataset.path])}
+          />
+          <span><b>{dataset.path}</b><small>{formatBytes(dataset.size_bytes)}</small></span>
+        </label>)}
+      </div>
+      <div className="dataset-quality-form">
+        <label className="field"><span className="field-label-row"><span>Required fields</span></span><input value={requiredFields} onChange={(event) => setRequiredFields(event.target.value)} maxLength={2000} placeholder="prompt, completion, label" /></label>
+        <label className="field"><span className="field-label-row"><span>Expected types, one per line</span></span><textarea value={expectedTypeRules} onChange={(event) => setExpectedTypeRules(event.target.value)} rows={3} maxLength={4000} placeholder={'count=integer\nscore=number\ntext=string'} /></label>
+        <label className="field"><span className="field-label-row"><span>Duplicate keys</span></span><input value={duplicateKeyFields} onChange={(event) => setDuplicateKeyFields(event.target.value)} maxLength={2000} placeholder="id, source_id" /></label>
+        <label className="field"><span className="field-label-row"><span>Duplicate-rate threshold (0–1)</span></span><input inputMode="decimal" value={duplicateRateThreshold} onChange={(event) => setDuplicateRateThreshold(event.target.value)} maxLength={8} placeholder="0.05" /></label>
+        <label className="field"><span className="field-label-row"><span>Text fields for token-length summary</span></span><input value={textFields} onChange={(event) => setTextFields(event.target.value)} maxLength={2000} placeholder="prompt, completion" /></label>
+        <label className="field"><span className="field-label-row"><span>Additional sensitive-name rules</span></span><input value={sensitiveFieldRules} onChange={(event) => setSensitiveFieldRules(event.target.value)} maxLength={2000} placeholder="customer_ref, employee_id" /></label>
+        <label className="field"><span className="field-label-row"><span>Ignore exact names (false-positive control)</span></span><input value={ignoredSensitiveFields} onChange={(event) => setIgnoredSensitiveFields(event.target.value)} maxLength={2000} placeholder="email_template" /></label>
+      </div>
+      <label className="dataset-scan-optin"><input type="checkbox" checked={scanPii} onChange={(event) => setScanPii(event.target.checked)} /><span><b>Explicitly scan local values for likely PII</b><small>Off by default. Scans bounded text for email, phone-like, and payment-card patterns; matched values are never returned.</small></span></label>
+      <div className="integration-form-actions">
+        <button type="button" className="button primary-button" disabled={qualityBusy || comparePaths.length < 2} onClick={() => void runQualityChecks()}>{qualityBusy ? "Comparing…" : `Compare ${comparePaths.length || "datasets"}`}</button>
+        {qualityReport && <button type="button" className="button secondary-button" onClick={exportQualityReport}><ArrowDownToLine size={15} /> Export JSON report</button>}
+      </div>
+    </Surface>}
+    {manifest && <Surface title={`Manifest: ${manifest.file_name}`} eyebrow="DATASET PROVENANCE" action={<button type="button" className="button secondary-button" onClick={exportManifest}><ArrowDownToLine size={15} /> Export JSON</button>}>
+      <div className="info-grid">
+        <InfoCard icon={ShieldCheck} label="Hash status" value={manifest.status.replaceAll("_", " ")} detail={manifest.full_content_hashed ? "Full content SHA-256" : `${formatBytes(manifest.bytes_hashed)} hashed of ${formatBytes(manifest.file_size_bytes)}`} tone={manifest.full_content_hashed ? "success" : "warning"} />
+        <InfoCard icon={HardDrive} label="File size" value={formatBytes(manifest.file_size_bytes)} detail={`${manifest.path} · ${manifest.lineage.relation}`} tone="neutral" />
+        <InfoCard icon={Clock3} label="Generated" value={new Date(manifest.generated_at).toLocaleString()} detail={manifest.modified_at ? `Modified ${new Date(manifest.modified_at).toLocaleString()}` : "Modification time unavailable"} tone="neutral" />
+      </div>
+      <div className="dataset-quality-check passed"><b>{manifest.full_content_hashed ? "SHA-256" : manifest.status === "partial" ? "Partial SHA-256" : "Hash unavailable"}</b><small className="manifest-digest">{manifest.sha256 ?? manifest.partial_sha256 ?? "The source changed while it was being read; retry to create a stable checksum."}</small>{manifest.lineage.parent_manifest_sha256 && <small className="manifest-digest">Parent manifest SHA-256: {manifest.lineage.parent_manifest_sha256}</small>}<small>Manifest contains file metadata and checksums only, never dataset values.</small></div>
+    </Surface>}
+    {cleanPreview && <Surface title={`Cleaning preview: ${cleanPreview.file_name}`} eyebrow="NO-WRITE PREVIEW" action={<button type="button" className="button secondary-button" onClick={exportCleaningPreview}><ArrowDownToLine size={15} /> Export JSON</button>}>
+      <Callout tone="success" title="Preview only">No output file was created or changed. The counts simulate the existing JSONL cleaner for the scanned portion; use `axiom dataset clean` only after reviewing.</Callout>
+      <div className="info-grid">
+        <InfoCard icon={Database} label="Kept rows" value={cleanPreview.kept_rows.toLocaleString()} detail={`${cleanPreview.removed_rows.toLocaleString()} rows removed by current rules`} tone="success" />
+        <InfoCard icon={CircleAlert} label="Rewritten rows" value={cleanPreview.rewritten_rows.toLocaleString()} detail="JSON formatting or line-ending normalization" tone={cleanPreview.rewritten_rows ? "warning" : "neutral"} />
+        <InfoCard icon={HardDrive} label="Estimated output" value={formatBytes(cleanPreview.estimated_output_bytes)} detail={`${formatBytes(cleanPreview.bytes_scanned)} scanned${cleanPreview.truncated ? " · partial preview" : " · complete scan"}`} tone="neutral" />
+      </div>
+      <div className="dataset-quality-checks">{cleanPreview.changes.filter((change) => change.rows > 0).map((change) => <div key={change.operation} className="dataset-quality-check passed"><b>{change.operation.replaceAll("_", " ")}</b><small>{change.rows.toLocaleString()} rows</small></div>)}</div>
+      {cleanPreview.warnings.map((warning) => <p className="quiet-note" key={warning}>{warning}</p>)}
+    </Surface>}
+    {qualityReport && <Surface title="Schema comparison report" eyebrow="LOCAL QUALITY REPORT">
+      <div className="info-grid">
+        <InfoCard icon={Database} label="Datasets" value={String(qualityReport.comparison.dataset_count)} detail="Compared with the same scan budget" tone="neutral" />
+        <InfoCard icon={CircleAlert} label="Schema differences" value={qualityReport.comparison.has_differences ? "Found" : "None"} detail="Field presence or observed type" tone={qualityReport.comparison.has_differences ? "warning" : "success"} />
+        <InfoCard icon={CircleCheck} label="Validation checks" value={`${Object.values(qualityReport.checks).filter((check) => check.passed).length}/${qualityReport.comparison.dataset_count}`} detail="Required fields and expected types" tone={Object.values(qualityReport.checks).every((check) => check.passed) ? "success" : "warning"} />
+      </div>
+      <p className="quiet-note">Per-file limits: {qualityReport.limits.max_rows.toLocaleString()} rows · {formatBytes(qualityReport.limits.max_bytes)} · {formatBytes(qualityReport.limits.max_line_bytes)} per line. Truncated profiles may omit later fields.</p>
+      <div className="module-list">{qualityReport.comparison.fields.map((field) => <div className="module-row" key={field.name}>
+        <span className="module-icon"><BarChart3 size={17} /></span>
+        <span className="module-copy"><b>{field.name}{field.possibly_sensitive ? " · review" : ""}</b><small>{field.missing_from.length ? `Missing from: ${field.missing_from.join(", ")}` : `Present in all ${qualityReport.comparison.dataset_count} datasets`} · {Object.entries(field.types_by_dataset).map(([path, types]) => `${path}: ${types.join("/")}`).join(" · ")}</small></span>
+        <StatusPill tone={field.missing_from.length || field.type_mismatch ? "warning" : "success"}>{field.missing_from.length || field.type_mismatch ? "REVIEW" : "MATCH"}</StatusPill>
+      </div>)}</div>
+      <div className="dataset-quality-checks">{Object.entries(qualityReport.checks).map(([path, check]) => <div key={path} className={check.passed ? "dataset-quality-check passed" : "dataset-quality-check failed"}>
+        <b>{path} · {check.passed ? "checks passed" : "needs review"}</b>
+        {check.missing_fields.length > 0 && <small>Missing required fields: {check.missing_fields.join(", ")}</small>}
+        {check.type_mismatches.map((mismatch) => <small key={mismatch.field}>{mismatch.field}: expected {mismatch.expected}, observed {mismatch.observed.join(", ") || "no values"}</small>)}
+      </div>)}</div>
+      <div className="dataset-quality-checks">{qualityReport.datasets.map(({ path, profile: item }) => <div key={`diagnostics-${path}`} className="dataset-quality-check passed">
+        <b>{path} · scan diagnostics</b>
+        <small>{item.diagnostics.newline_style} line endings · {item.diagnostics.encoding_errors} UTF-8 errors · {item.diagnostics.malformed_json_rows} malformed JSON · {item.diagnostics.non_object_json_rows} non-object rows{item.truncated ? ` · partial due to ${item.truncation_reasons.join(", ") || "scan limit"}` : ""}</small>
+        {item.duplicate_key_summary.fields.length > 0 && <small>Duplicate keys ({item.duplicate_key_summary.fields.join(", ")}): {item.duplicate_key_summary.duplicate_rows}/{item.duplicate_key_summary.eligible_rows} · {(item.duplicate_key_summary.rate * 100).toFixed(2)}%{item.duplicate_key_summary.threshold_exceeded ? " · THRESHOLD EXCEEDED" : ""}</small>}
+        {Object.entries(item.text_token_lengths).map(([field, stats]) => <small key={field}>{field} whitespace-token count: {stats.observations} values · {Object.entries(stats.histogram).map(([bucket, count]) => `${bucket}: ${count}`).join(", ") || "no string values"}</small>)}
+        {item.pii_scan.opted_in && <small>Local PII scan: {Object.entries(item.pii_scan.matches_by_type).map(([kind, count]) => `${kind.replaceAll("_", " ")}: ${count}`).join(" · ")} · fields: {Object.values(item.pii_scan.fields_by_type).flat().join(", ") || "none"} · match values withheld</small>}
+      </div>)}</div>
+    </Surface>}
     {profile && <Surface title={`Profile: ${profile.file_name}`} eyebrow="JSONL STRUCTURE REPORT" action={<button type="button" className="icon-text-button" onClick={() => setProfile(null)}>Clear report</button>}>
       <div className="info-grid">
         <InfoCard icon={Database} label="Valid rows" value={profile.valid_rows.toLocaleString()} detail="JSON object rows" tone="success" />
-        <InfoCard icon={CircleAlert} label="Invalid rows" value={profile.invalid_rows.toLocaleString()} detail={`${profile.empty_rows} blank · ${profile.overlong_rows} oversized`} tone={profile.invalid_rows ? "warning" : "neutral"} />
+        <InfoCard icon={CircleAlert} label="Invalid rows" value={profile.invalid_rows.toLocaleString()} detail={`${profile.empty_rows} blank · ${profile.overlong_rows} oversized`} tone={profile.invalid_rows ? "warning" : "success"} />
         <InfoCard icon={RefreshCcw} label="Duplicates" value={profile.duplicate_rows.toLocaleString()} detail="Repeated valid rows" tone={profile.duplicate_rows ? "warning" : "neutral"} />
       </div>
-      <p className="quiet-note">Scanned {profile.bytes_scanned.toLocaleString()} of {profile.file_size_bytes.toLocaleString()} bytes across {profile.lines_scanned.toLocaleString()} lines{profile.truncated ? " · Partial report: a scan limit was reached" : " · Complete scan"}.</p>
-      {profile.privacy_review_recommended && <p className="quiet-note">Privacy review recommended for field names: {profile.possibly_sensitive_fields.join(", ")}. AXIOM does not display their values.</p>}
+      <p className="quiet-note">Scanned {formatBytes(profile.bytes_scanned)} of {formatBytes(profile.file_size_bytes)} across {profile.lines_scanned.toLocaleString()} lines{profile.truncated ? ` · Partial report: ${profile.truncation_reasons.join(", ") || "scan limit reached"}` : " · Complete scan"}. Limits: {profile.limits.max_rows.toLocaleString()} rows · {formatBytes(profile.limits.max_bytes)} · {formatBytes(profile.limits.max_line_bytes)} per line.</p>
+      <div className="dataset-quality-check passed"><b>Scan diagnostics</b><small>{profile.diagnostics.newline_style} line endings · {profile.diagnostics.encoding_errors} UTF-8 errors · {profile.diagnostics.malformed_json_rows} malformed JSON · {profile.diagnostics.non_object_json_rows} non-object rows</small>{profile.duplicate_key_summary.fields.length > 0 && <small>Duplicate keys ({profile.duplicate_key_summary.fields.join(", ")}): {profile.duplicate_key_summary.duplicate_rows}/{profile.duplicate_key_summary.eligible_rows} · {(profile.duplicate_key_summary.rate * 100).toFixed(2)}%{profile.duplicate_key_summary.threshold_exceeded ? " · THRESHOLD EXCEEDED" : ""}</small>}{Object.entries(profile.text_token_lengths).map(([field, stats]) => <small key={field}>{field} whitespace-token count: {stats.observations} values · {Object.entries(stats.histogram).map(([bucket, count]) => `${bucket}: ${count}`).join(", ") || "no string values"}</small>)}<small>Sensitive-name rules: {profile.sensitive_field_rules.length ? profile.sensitive_field_rules.join(", ") : "built-in defaults"} · exclusions: {profile.ignored_sensitive_fields.join(", ") || "none"}</small></div>
+      {profile.privacy_review_recommended && <Callout tone="warning" title="Privacy review recommended">Potentially sensitive field names: {profile.possibly_sensitive_fields.join(", ")}. Raw dataset values are not returned.</Callout>}
+      {profile.pii_scan.opted_in && <Callout tone={Object.values(profile.pii_scan.matches_by_type).some((count) => count > 0) ? "warning" : "success"} title={Object.values(profile.pii_scan.matches_by_type).some((count) => count > 0) ? "Likely PII patterns detected" : "No likely PII patterns detected"}>{Object.entries(profile.pii_scan.matches_by_type).map(([kind, count]) => `${kind.replaceAll("_", " ")}: ${count}`).join(" · ")} · fields: {Object.entries(profile.pii_scan.fields_by_type).flatMap(([kind, fields]) => fields.map((field) => `${field} (${kind.replaceAll("_", " ")})`)).join(", ") || "none"}. Values scanned: {profile.pii_scan.values_scanned.toLocaleString()}; {profile.pii_scan.long_values_skipped} long values skipped; matched text is never shown. This heuristic scan is not a guarantee of detection.</Callout>}
       {profile.warnings.map((warning) => <p className="quiet-note" key={warning}>{warning}</p>)}
       <div className="module-list">{profile.fields.map((field) => <div className="module-row" key={field.name}>
         <span className="module-icon"><BarChart3 size={17} /></span>
@@ -1638,127 +2118,857 @@ function Datasets({ onNotify }: { onNotify: (message: string, tone?: Tone) => vo
         <small>{(field.null_rate * 100).toFixed(1)}% null</small>
       </div>)}</div>
     </Surface>}
-    {profileReport && <Surface title={`Profile: ${profileReport.file_name}`} eyebrow="LOCAL DATASET REPORT" action={<button type="button" className="icon-text-button" onClick={() => setProfileReport(null)}>Close</button>}>
-      <div className="info-grid">
-        <InfoCard icon={Database} label="Valid rows" value={String(profileReport.valid_rows)} detail="JSON objects" tone="success" />
-        <InfoCard icon={CircleAlert} label="Invalid rows" value={String(profileReport.invalid_rows)} detail="Malformed or non-object rows" tone={profileReport.invalid_rows ? "warning" : "success"} />
-        <InfoCard icon={FileCode2} label="Duplicates" value={String(profileReport.duplicate_rows)} detail="Repeated valid rows" tone={profileReport.duplicate_rows ? "warning" : "neutral"} />
-      </div>
-      {profileReport.privacy_review_recommended && <Callout tone="warning" title="Privacy review recommended">Potentially sensitive field names: {profileReport.possibly_sensitive_fields.join(", ")}. Raw dataset values are not returned.</Callout>}
-      {profileReport.warnings.map((warning) => <p className="muted-copy" key={warning}>{warning}</p>)}
-      {profileReport.truncated && <p className="muted-copy">This report is partial because a scan limit was reached.</p>}
-      <div className="module-list">{profileReport.fields.map((field) => <div className="module-row" key={field.name}><span className="module-copy"><b>{field.name}</b><small>{field.occurrences} occurrences · {Math.round(field.null_rate * 100)}% null · {Object.keys(field.types).join(", ")}</small></span>{field.possibly_sensitive && <StatusPill tone="warning">REVIEW</StatusPill>}</div>)}</div>
-    </Surface>}
-    <ContractNote command="axiom dataset profile ./data/train.jsonl" />
   </FeaturePage>;
 }
 
 function Training({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
-  const createPlan = () => {
-    void fetch(`${API_BASE}/api/workspace/training-plan`, { method: "POST" })
-      .then((response) => {
-        if (!response.ok) throw new Error("Training plan request failed");
-        return response.json() as Promise<{ plan: { method: string; fits_hardware: boolean } }>;
-      })
-      .then((data) => onNotify(`Training plan ready: ${data.plan.method}, ${data.plan.fits_hardware ? "fits hardware" : "review hardware fit"}.`))
-      .catch((error: unknown) => onNotify(error instanceof Error ? error.message : "Training plan unavailable", "warning"));
+  const [parameterBillions, setParameterBillions] = useState("7");
+  const [method, setMethod] = useState("auto");
+  const [plan, setPlan] = useState<TrainingPlanResult | null>(null);
+  const [hardware, setHardware] = useState<RuntimeSnapshot | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [savingExperiment, setSavingExperiment] = useState(false);
+  const [savedExperimentId, setSavedExperimentId] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    axiomApi.runtime().then(setHardware).catch(() => setHardware(null));
+  }, []);
+
+  const createPlan = async () => {
+    const size = Number(parameterBillions);
+    if (!Number.isFinite(size) || size <= 0 || size > 1000) {
+      setError("Enter a model size between 0 and 1000 billion parameters.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const result = await axiomApi.trainingPlan(size, method);
+      setPlan(result);
+      onNotify(`Training plan ready: ${result.method}, ${result.fits_hardware ? "estimated to fit" : "review the hardware estimate"}.`, result.fits_hardware ? "success" : "warning");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Training plan unavailable.");
+    } finally {
+      setBusy(false);
+    }
   };
-  return <FeaturePage page="training" actions={<button type="button" className="button primary-button" onClick={createPlan}><Play size={16} /> New plan</button>}>
-    <div className="info-grid"><InfoCard icon={Zap} label="Method" value="LoRA" detail="Recommended starting point" tone="success" /><InfoCard icon={Cpu} label="Hardware" value="Unknown" detail="Run axiom system info" tone="warning" /><InfoCard icon={TimerReset} label="Execution" value="Not available" detail="Planning only today" tone="neutral" /></div>
+
+  const saveExperiment = async () => {
+    if (!plan) return;
+    setSavingExperiment(true);
+    setError("");
+    try {
+      const result = await axiomApi.createExperiment({
+        name: `${parameterBillions}B ${plan.method} plan`,
+        parameter_billions: Number(parameterBillions),
+        method,
+        plan_snapshot: plan,
+      });
+      setSavedExperimentId(result.experiment.id);
+      onNotify("Plan saved to persistent experiment history. No job was started.", "success");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Experiment could not be saved.");
+    } finally {
+      setSavingExperiment(false);
+    }
+  };
+
+  return <FeaturePage page="training" actions={<button type="button" className="button primary-button" onClick={() => void createPlan()} disabled={busy}><Play size={16} /> {busy ? "Building plan…" : "Build plan"}</button>}>
+    <div className="info-grid">
+      <InfoCard icon={Zap} label="Method" value={plan?.method.toUpperCase() || method.toUpperCase()} detail={plan ? plan.precision : "Choose a planning method"} tone={plan?.fits_hardware ? "success" : "neutral"} />
+      <InfoCard icon={Cpu} label="Detected hardware" value={hardware?.hardware.gpu_name || "CPU only"} detail={hardware ? `${hardware.hardware.ram_gb.toFixed(1)} GB RAM · ${hardware.hardware.vram_gb ?? 0} GB VRAM` : "Hardware unavailable"} tone={hardware?.hardware.cuda_available ? "success" : "warning"} />
+      <InfoCard icon={TimerReset} label="Execution" value="Plan only" detail="No training job is started" tone="neutral" />
+    </div>
     <div className="two-column-grid">
-      <Surface title="Planning checklist" eyebrow="BEFORE YOU RUN">
-        <StepList steps={[{ label: "Choose a base model", detail: "Use an inspected local or Hugging Face model.", state: "pending" }, { label: "Validate the dataset", detail: "Confirm JSONL shape and duplicate behavior.", state: "pending" }, { label: "Estimate hardware fit", detail: "Select LoRA or QLoRA around available memory.", state: "ready" }, { label: "Create a reproducible config", detail: "Keep the plan close to the project axiom.yaml.", state: "ready" }]} />
+      <Surface title="Plan inputs" eyebrow="HARDWARE-AWARE ESTIMATE">
+        <label className="field"><span className="field-label-row"><span>Model size (billions of parameters)</span></span><input type="number" min="0.1" max="1000" step="0.1" value={parameterBillions} onChange={(event) => { setParameterBillions(event.target.value); setPlan(null); setSavedExperimentId(""); }} /></label>
+        <label className="field"><span className="field-label-row"><span>Training method</span></span><select value={method} onChange={(event) => { setMethod(event.target.value); setPlan(null); setSavedExperimentId(""); }}><option value="auto">Automatic</option><option value="qlora">QLoRA</option><option value="lora">LoRA</option><option value="full">Full fine-tuning</option></select></label>
+        <p className="quiet-note">The estimate uses detected GPU memory when available. AXIOM never starts a training run from this page.</p>
+        {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
+        <button type="button" className="button primary-button" onClick={() => void createPlan()} disabled={busy}><Play size={15} /> {busy ? "Building plan…" : "Generate plan"}</button>
       </Surface>
-      <Surface title="Plan preview" eyebrow="NO ACTIVE RUN"><EmptyState icon={Hammer} title="No training plan saved" description="AXIOM can generate hardware-aware plans today; execution and job management are not part of the current contract." action={<CliReference command="axiom train plan 7" />} /></Surface>
+      <Surface title="Plan result" eyebrow={plan ? "ESTIMATE · NOT A BENCHMARK" : "READY WHEN YOU ARE"}>
+        {plan ? <>
+          <div className="diagnostic-row"><span className={`diagnostic-icon ${plan.fits_hardware ? "success" : "warning"}`}><Cpu size={16} /></span><div><b>{plan.fits_hardware ? "Estimated to fit" : "Hardware fit needs review"}</b><span>{plan.reason}</span></div><StatusPill tone={plan.fits_hardware ? "success" : "warning"}>{plan.fits_hardware ? "ESTIMATE" : "REVIEW"}</StatusPill></div>
+          <div className="plan-result-grid">
+            <div><small>Precision</small><b>{plan.precision}</b></div>
+            <div><small>Estimated VRAM</small><b>{plan.estimated_vram_gb.toFixed(2)} GB</b></div>
+            <div><small>Batch size</small><b>{plan.batch_size}</b></div>
+            <div><small>Gradient accumulation</small><b>{plan.gradient_accumulation}</b></div>
+            <div><small>Sequence length</small><b>{plan.sequence_length.toLocaleString()}</b></div>
+            <div><small>Learning rate</small><b>{plan.learning_rate}</b></div>
+          </div>
+          <CliReference command={`axiom train plan ${parameterBillions} --method ${plan.method}`} />
+          <div className="experiment-save-row">
+            <button type="button" className="button secondary-button" onClick={() => void saveExperiment()} disabled={savingExperiment}>
+              {savingExperiment ? "Saving plan…" : savedExperimentId ? "Save another snapshot" : "Save to experiment history"}
+            </button>
+            {savedExperimentId && <span className="quiet-note">Saved · {savedExperimentId.slice(0, 12)}</span>}
+          </div>
+        </> : <EmptyState icon={Hammer} title="No plan generated" description="Choose a model size and method to receive a reproducible hardware-aware starting point." action={<CliReference command="axiom train plan 7 --method qlora" />} />}
+      </Surface>
     </div>
   </FeaturePage>;
 }
 
 function Evaluation({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
-  return <FeaturePage page="evaluation" actions={<button type="button" className="button primary-button" onClick={() => backendAction("evaluation.run", onNotify, "Evaluation request recorded. A benchmark runner is required to produce results.")}><Play size={16} /> Run evaluation</button>}>
-    <div className="info-grid"><InfoCard icon={Gauge} label="Latest score" value="N/A" detail="No report loaded" tone="neutral" /><InfoCard icon={BarChart3} label="Regression" value="N/A" detail="Needs a baseline" tone="neutral" /><InfoCard icon={TriangleAlert} label="Failures" value="N/A" detail="No assertions run" tone="neutral" /></div>
-    <Surface title="Quality history" eyebrow="REPORTS"><EmptyState icon={CircleGauge} title="No evaluation history" description="The evaluation subsystem is present as a foundation, but there is no report API for this frontend to read yet." action={<CliReference command="axiom evaluation" disabled />} /></Surface>
-    <Callout tone="info" title="Keep quality repeatable">When evaluation is wired in, this surface is ready for baselines, regressions, and blocking checks without changing the surrounding navigation.</Callout>
+  const [experiments, setExperiments] = useState<WorkspaceExperiment[]>([]);
+  const [datasets, setDatasets] = useState<WorkspaceDataset[]>([]);
+  const [evaluationRuns, setEvaluationRuns] = useState<WorkspaceEvaluationRun[]>([]);
+  const [baselineRuns, setBaselineRuns] = useState<WorkspaceEvaluationRun[]>([]);
+  const [evaluationTotal, setEvaluationTotal] = useState(0);
+  const [evaluationOffset, setEvaluationOffset] = useState(0);
+  const [datasetPath, setDatasetPath] = useState("");
+  const [predictionField, setPredictionField] = useState("prediction");
+  const [referenceField, setReferenceField] = useState("reference");
+  const [splitField, setSplitField] = useState("");
+  const [splitValue, setSplitValue] = useState("");
+  const [modelLabel, setModelLabel] = useState("");
+  const [markBaseline, setMarkBaseline] = useState(false);
+  const [baselineRunId, setBaselineRunId] = useState("");
+  const [regressionMetric, setRegressionMetric] = useState<"exact_match" | "normalized_exact_match" | "token_f1_micro">("token_f1_micro");
+  const [regressionTolerance, setRegressionTolerance] = useState("0.05");
+  const [evaluationBusy, setEvaluationBusy] = useState(false);
+  const [deletingRun, setDeletingRun] = useState<WorkspaceEvaluationRun | null>(null);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [query, setQuery] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<WorkspaceExperiment | null>(null);
+  const [deleting, setDeleting] = useState<WorkspaceExperiment | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editTags, setEditTags] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const refresh = async (nextOffset = offset) => {
+    setLoading(true);
+    setError("");
+    try {
+      const page = await axiomApi.experimentsPage({
+        limit: 20,
+        offset: nextOffset,
+        q: query.trim() || undefined,
+        tag: tagFilter.trim() || undefined,
+      });
+      setExperiments(page.experiments);
+      setTotal(page.total);
+      setOffset(nextOffset);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Experiment history unavailable.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refreshEvaluationRuns = async (nextOffset = evaluationOffset) => {
+    try {
+      const [page, allRuns] = await Promise.all([
+        axiomApi.evaluationRunsPage(20, nextOffset),
+        axiomApi.evaluationRunsPage(1000, 0),
+      ]);
+      setEvaluationRuns(page.runs);
+      setEvaluationTotal(page.total);
+      setEvaluationOffset(nextOffset);
+      setBaselineRuns(allRuns.runs.filter((run) => run.baseline));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Evaluation reports unavailable.");
+    }
+  };
+
+  useEffect(() => {
+    axiomApi.datasets().then((items) => {
+      setDatasets(items);
+      setDatasetPath((current) => current || items[0]?.path || "");
+    }).catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : "Dataset inventory unavailable.");
+    });
+    void refreshEvaluationRuns(0);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void refresh(0), 180);
+    return () => window.clearTimeout(timer);
+  }, [query, tagFilter]);
+
+  const beginEdit = (experiment: WorkspaceExperiment) => {
+    setEditing(experiment);
+    setEditName(experiment.name);
+    setEditNotes(experiment.notes ?? "");
+    setEditTags(experiment.tags.join(", "));
+    setError("");
+  };
+
+  const saveMetadata = async () => {
+    if (!editing) return;
+    setSaving(true);
+    setError("");
+    try {
+      await axiomApi.updateExperiment(editing.id, {
+        name: editName,
+        notes: editNotes || null,
+        tags: [...new Set(editTags.split(",").map((tag) => tag.trim()).filter(Boolean))],
+      });
+      setEditing(null);
+      onNotify("Experiment metadata updated. The saved plan snapshot is unchanged.", "success");
+      await refresh(offset);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Experiment metadata could not be updated.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeExperiment = async () => {
+    if (!deleting) return;
+    setSaving(true);
+    setError("");
+    try {
+      await axiomApi.deleteExperiment(deleting.id);
+      setDeleting(null);
+      onNotify("Saved plan record deleted. No run artifacts were removed.", "success");
+      await refresh(experiments.length === 1 && offset > 0 ? offset - 20 : offset);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Experiment record could not be deleted.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const runOfflineEvaluation = async () => {
+    if (!datasetPath || !predictionField.trim() || !referenceField.trim()) return;
+    setEvaluationBusy(true);
+    setError("");
+    try {
+      const result = await axiomApi.createEvaluationRun({
+        path: datasetPath,
+        prediction_field: predictionField.trim(),
+        reference_field: referenceField.trim(),
+        split_field: splitField.trim() || undefined,
+        split_value: splitValue.trim() || undefined,
+        model_label: modelLabel.trim() || undefined,
+        baseline: markBaseline,
+        baseline_run_id: baselineRunId || undefined,
+        regression_metric: regressionMetric,
+        regression_tolerance: Number(regressionTolerance),
+      });
+      onNotify(
+        result.run.comparison?.status === "regression"
+          ? `Regression gate failed: ${result.run.comparison.delta.toFixed(3)} ${result.run.comparison.metric}.`
+          : "Offline evaluation report saved. No model inference was run.",
+        result.run.comparison?.status === "regression" ? "warning" : "success",
+      );
+      await refreshEvaluationRuns(0);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Offline evaluation could not be completed.");
+    } finally {
+      setEvaluationBusy(false);
+    }
+  };
+
+  const removeEvaluationRun = async () => {
+    if (!deletingRun) return;
+    setSaving(true);
+    setError("");
+    try {
+      await axiomApi.deleteEvaluationRun(deletingRun.id);
+      setDeletingRun(null);
+      onNotify("Evaluation report deleted from local history.", "success");
+      await refreshEvaluationRuns(evaluationRuns.length === 1 && evaluationOffset > 0 ? evaluationOffset - 20 : evaluationOffset);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Evaluation report could not be deleted.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const exportEvaluationRun = (run: WorkspaceEvaluationRun) => {
+    const blob = new Blob([JSON.stringify(run, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `axiom-evaluation-${run.id}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return <FeaturePage page="evaluation" actions={<button type="button" className="button secondary-button" onClick={() => { void refresh(); void refreshEvaluationRuns(); }} disabled={loading}><RefreshCcw size={16} /> {loading ? "Refreshing" : "Refresh history"}</button>}>
+    <div className="info-grid">
+      <InfoCard icon={BarChart3} label="Saved plans" value={loading ? "—" : String(total)} detail="Persistent local snapshots" tone={total ? "success" : "neutral"} />
+      <InfoCard icon={Gauge} label="Offline evaluations" value={String(evaluationTotal)} detail="Scored from supplied predictions" tone={evaluationTotal ? "success" : "neutral"} />
+      <InfoCard icon={TriangleAlert} label="Baselines" value={String(baselineRuns.length)} detail="Immutable local references" tone={baselineRuns.length ? "success" : "neutral"} />
+    </div>
+    <Surface title="Evaluate existing predictions" eyebrow="BOUNDED / LOCAL / NO INFERENCE">
+      {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
+      <div className="two-column-grid">
+        <div>
+          <label className="field"><span className="field-label-row"><span>JSONL dataset</span></span><select value={datasetPath} onChange={(event) => setDatasetPath(event.target.value)}><option value="">{datasets.length ? "Select a dataset" : "No JSONL files under data/"}</option>{datasets.map((dataset) => <option value={dataset.path} key={dataset.path}>{dataset.path} · {formatBytes(dataset.size_bytes)}</option>)}</select></label>
+          <label className="field"><span className="field-label-row"><span>Prediction field</span></span><input value={predictionField} onChange={(event) => setPredictionField(event.target.value)} maxLength={160} /></label>
+          <label className="field"><span className="field-label-row"><span>Reference field</span></span><input value={referenceField} onChange={(event) => setReferenceField(event.target.value)} maxLength={160} /></label>
+          <label className="field"><span className="field-label-row"><span>Split field (optional)</span></span><input value={splitField} onChange={(event) => setSplitField(event.target.value)} maxLength={160} placeholder="split" /></label>
+          <label className="field"><span className="field-label-row"><span>Selected split value</span></span><input value={splitValue} onChange={(event) => setSplitValue(event.target.value)} maxLength={160} placeholder="test" /></label>
+        </div>
+        <div>
+          <label className="field"><span className="field-label-row"><span>Model label (optional)</span></span><input value={modelLabel} onChange={(event) => setModelLabel(event.target.value)} maxLength={256} placeholder="candidate model" /></label>
+          <label className="field"><span className="field-label-row"><span>Compare against baseline</span></span><select value={baselineRunId} onChange={(event) => setBaselineRunId(event.target.value)}><option value="">No baseline comparison</option>{baselineRuns.map((run) => <option value={run.id} key={run.id}>{run.name} · {run.report.metrics.token_f1_micro.toFixed(3)} token F1</option>)}</select></label>
+          <label className="field"><span className="field-label-row"><span>Regression metric</span></span><select value={regressionMetric} onChange={(event) => setRegressionMetric(event.target.value as typeof regressionMetric)}><option value="token_f1_micro">Token F1 (micro)</option><option value="exact_match">Exact match</option><option value="normalized_exact_match">Normalized exact match</option></select></label>
+          <label className="field"><span className="field-label-row"><span>Allowed score drop</span></span><input type="number" min="0" max="1" step="0.01" value={regressionTolerance} onChange={(event) => setRegressionTolerance(event.target.value)} /></label>
+          <label className="checkbox-field"><input type="checkbox" checked={markBaseline} onChange={(event) => setMarkBaseline(event.target.checked)} /><span>Mark this immutable report as a baseline</span></label>
+          <p className="quiet-note">Metrics use exact match, whitespace-normalized case-insensitive exact match, and micro token F1. Only aggregate counts and scores are stored; raw text is never returned.</p>
+          <button type="button" className="button primary-button" onClick={() => void runOfflineEvaluation()} disabled={evaluationBusy || !datasetPath || !predictionField.trim() || !referenceField.trim() || Boolean(splitField.trim()) !== Boolean(splitValue.trim())}>{evaluationBusy ? "Scoring bounded dataset…" : "Run offline evaluation"}</button>
+        </div>
+      </div>
+    </Surface>
+    <Surface title="Evaluation reports" eyebrow="IMMUTABLE / LOCAL HISTORY">
+      {evaluationRuns.length ? <div className="module-list">{evaluationRuns.map((run) => <div className="module-row experiment-row" key={run.id}>
+        <span className="module-icon"><BarChart3 size={17} /></span>
+        <span className="module-copy"><b>{run.name}{run.baseline ? " · baseline" : ""}</b><small>{run.report.path} · {run.report.counts.valid_samples.toLocaleString()} samples · exact {run.report.metrics.exact_match.toFixed(3)} (95% {run.report.confidence_intervals.exact_match.low.toFixed(3)}–{run.report.confidence_intervals.exact_match.high.toFixed(3)}) · normalized {run.report.metrics.normalized_exact_match.toFixed(3)} · token F1 {run.report.metrics.token_f1_micro.toFixed(3)} · {run.status}{run.comparison ? ` · ${run.comparison.status} vs baseline (${run.comparison.delta >= 0 ? "+" : ""}${run.comparison.delta.toFixed(3)})` : ""}</small></span>
+        <StatusPill tone={run.comparison?.status === "regression" ? "warning" : run.baseline ? "success" : "neutral"}>{run.comparison?.status === "regression" ? "REGRESSION" : run.baseline ? "BASELINE" : run.status.toUpperCase()}</StatusPill>
+        <button type="button" className="icon-button" aria-label={"Export " + run.name + " report as JSON"} onClick={() => exportEvaluationRun(run)}><ArrowDownToLine size={15} /></button>
+        <button type="button" className="icon-button danger-icon-button" aria-label={"Delete " + run.name + " evaluation report"} onClick={() => setDeletingRun(run)}><Trash2 size={15} /></button>
+      </div>)}</div> : <EmptyState icon={BarChart3} title="No evaluation reports" description="Select a local JSONL file containing precomputed prediction and reference fields. AXIOM does not run model inference here." action={<CliReference command="axiom evaluation run ./data/eval.jsonl --prediction-field prediction --reference-field reference" />} />}
+      {evaluationTotal > 20 && <div className="pagination-actions"><button type="button" className="button secondary-button" disabled={evaluationOffset === 0} onClick={() => void refreshEvaluationRuns(Math.max(0, evaluationOffset - 20))}>Previous</button><small>{evaluationOffset + 1}–{Math.min(evaluationOffset + evaluationRuns.length, evaluationTotal)} of {evaluationTotal}</small><button type="button" className="button secondary-button" disabled={evaluationOffset + evaluationRuns.length >= evaluationTotal} onClick={() => void refreshEvaluationRuns(evaluationOffset + 20)}>Next</button></div>}
+    </Surface>
+    <Surface title="Experiment history" eyebrow="PERSISTENT / LOCAL">
+      {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
+      <div className="experiment-filters">
+        <label className="event-filter"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, model, dataset, notes, or tags" aria-label="Search experiments" /></label>
+        <label className="event-filter"><Tag size={15} /><input value={tagFilter} onChange={(event) => setTagFilter(event.target.value)} placeholder="Filter by exact tag" aria-label="Filter experiments by tag" /></label>
+      </div>
+      {loading ? <div className="loading-state" role="status">Loading saved experiments…</div> : experiments.length ? <div className="module-list">{experiments.map((experiment) => <div className="module-row experiment-row" key={experiment.id}>
+        <span className="module-icon"><CircleGauge size={17} /></span>
+        <span className="module-copy"><b>{experiment.name}</b><small>{experiment.parameter_billions}B parameters · requested {experiment.requested_method} · estimate {experiment.plan.method}/{experiment.plan.precision} · {experiment.hardware?.gpu_name || "CPU"} · {formatTimestamp(experiment.created_at)}{experiment.tags.length ? " · tags: " + experiment.tags.join(", ") : ""}</small></span>
+        <StatusPill tone="neutral">PLANNED</StatusPill>
+        <button type="button" className="icon-button" aria-label={"Edit " + experiment.name + " metadata"} onClick={() => beginEdit(experiment)}><Pencil size={15} /></button>
+        <button type="button" className="icon-button danger-icon-button" aria-label={"Delete " + experiment.name + " plan"} onClick={() => setDeleting(experiment)}><Trash2 size={15} /></button>
+      </div>)}</div> : <EmptyState icon={CircleGauge} title="No saved experiments" description="Build a hardware-aware plan in Training, then save it here. Saved records describe plans only; they do not represent completed runs." action={<CliReference command="axiom experiment list" />} />}
+      {total > 20 && <div className="pagination-actions"><button type="button" className="button secondary-button" disabled={offset === 0 || loading} onClick={() => void refresh(Math.max(0, offset - 20))}>Previous</button><small>{offset + 1}–{Math.min(offset + experiments.length, total)} of {total}</small><button type="button" className="button secondary-button" disabled={offset + experiments.length >= total || loading} onClick={() => void refresh(offset + 20)}>Next</button></div>}
+    </Surface>
+    <Callout tone="info" title="Precomputed outputs only">Evaluation scores compare existing reference and prediction text. AXIOM does not execute a model, and these text metrics are not a substitute for task-specific human review.</Callout>
+    {editing && <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setEditing(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="edit-experiment-title"><div className="dialog-head"><div><p className="eyebrow">METADATA ONLY</p><h2 id="edit-experiment-title">Edit {editing.name}</h2></div><button type="button" className="icon-button" aria-label="Close edit dialog" onClick={() => setEditing(null)} disabled={saving}><X size={16} /></button></div><p className="quiet-note">Editing does not change the saved hardware-aware plan snapshot.</p><label className="field"><span className="field-label-row"><span>Name</span></span><input value={editName} onChange={(event) => setEditName(event.target.value)} maxLength={120} /></label><label className="field"><span className="field-label-row"><span>Notes</span></span><textarea value={editNotes} onChange={(event) => setEditNotes(event.target.value)} maxLength={1000} rows={3} /></label><label className="field"><span className="field-label-row"><span>Tags, comma separated</span></span><input value={editTags} onChange={(event) => setEditTags(event.target.value)} maxLength={1400} placeholder="baseline, review" /></label><div className="integration-form-actions"><button type="button" className="button secondary-button" onClick={() => setEditing(null)} disabled={saving}>Cancel</button><button type="button" className="button primary-button" onClick={() => void saveMetadata()} disabled={saving || !editName.trim()}>{saving ? "Saving…" : "Save metadata"}</button></div></section></div>}
+    {deleting && <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDeleting(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="delete-experiment-title"><div className="dialog-head"><div><p className="eyebrow">CONFIRM DELETION</p><h2 id="delete-experiment-title">Delete {deleting.name}?</h2></div><button type="button" className="icon-button" aria-label="Close delete confirmation" onClick={() => setDeleting(null)} disabled={saving}><X size={16} /></button></div><p className="quiet-note">This removes the saved plan record only. No model, dataset, or run artifacts are deleted.</p><div className="integration-form-actions"><button type="button" className="button secondary-button" onClick={() => setDeleting(null)} disabled={saving}>Cancel</button><button type="button" className="button danger-button" onClick={() => void removeExperiment()} disabled={saving}>{saving ? "Deleting…" : "Delete plan record"}</button></div></section></div>}
+    {deletingRun && <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDeletingRun(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="delete-evaluation-title"><div className="dialog-head"><div><p className="eyebrow">CONFIRM DELETION</p><h2 id="delete-evaluation-title">Delete {deletingRun.name}?</h2></div><button type="button" className="icon-button" aria-label="Close delete confirmation" onClick={() => setDeletingRun(null)} disabled={saving}><X size={16} /></button></div><p className="quiet-note">This removes only the saved aggregate report. The source dataset is unchanged.</p><div className="integration-form-actions"><button type="button" className="button secondary-button" onClick={() => setDeletingRun(null)} disabled={saving}>Cancel</button><button type="button" className="button danger-button" onClick={() => void removeEvaluationRun()} disabled={saving}>{saving ? "Deleting…" : "Delete report"}</button></div></section></div>}
   </FeaturePage>;
 }
 
-function Runtime({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
-  const checkRuntime = () => {
-    void fetch(`${API_BASE}/api/workspace/runtime`)
-      .then((response) => {
-        if (!response.ok) throw new Error("Runtime status request failed");
-        return response.json() as Promise<{ status: string }>;
-      })
-      .then((data) => onNotify(`Runtime status: ${data.status}.`))
-      .catch((error: unknown) => onNotify(error instanceof Error ? error.message : "Runtime status unavailable", "warning"));
+const workflowNodeLabels: Record<WorkflowNodeType, string> = {
+  "dataset.profile": "Profile dataset",
+  "model.inspect": "Inspect model",
+  "training.plan": "Create training plan",
+  "evaluation.run": "Evaluation step",
+  "report.export": "Export report",
+};
+
+function Workflows({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
+  const [workflows, setWorkflows] = useState<WorkspaceWorkflow[]>([]);
+  const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
+  const [workflowId, setWorkflowId] = useState<string | null>(null);
+  const [templateId, setTemplateId] = useState("");
+  const [name, setName] = useState("New local workflow");
+  const [nodes, setNodes] = useState<WorkflowNode[]>([]);
+  const [edges, setEdges] = useState<Array<{ source: string; target: string }>>([]);
+  const [nodeType, setNodeType] = useState<WorkflowNodeType>("dataset.profile");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [validation, setValidation] = useState("");
+  const [error, setError] = useState("");
+  const [dryRun, setDryRun] = useState<WorkflowDryRun | null>(null);
+  const [dryRunBusy, setDryRunBusy] = useState(false);
+  const [dryRunParameters, setDryRunParameters] = useState("7");
+  const [dryRunMethod, setDryRunMethod] = useState("auto");
+  const [dryRunSeed, setDryRunSeed] = useState("42");
+  const [autosaveEnabled, setAutosaveEnabled] = useState(true);
+  const selectedWorkflow = workflows.find((workflow) => workflow.id === workflowId);
+  const workflowDirty = Boolean(selectedWorkflow && (
+    name !== selectedWorkflow.name
+    || JSON.stringify(nodes) !== JSON.stringify(selectedWorkflow.nodes)
+    || JSON.stringify(edges) !== JSON.stringify(selectedWorkflow.edges)
+  ));
+
+  const refresh = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [savedWorkflows, availableTemplates] = await Promise.all([
+        axiomApi.workflows(),
+        axiomApi.workflowTemplates(),
+      ]);
+      setWorkflows(savedWorkflows);
+      setTemplates(availableTemplates);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Workflow list unavailable.");
+    } finally {
+      setLoading(false);
+    }
   };
-  return <FeaturePage page="runtime" actions={<button type="button" className="button secondary-button" onClick={checkRuntime}><RadioTower size={16} /> Connect runtime</button>}>
-    <div className="runtime-banner"><div className="runtime-state-icon"><RadioTower size={20} /></div><div><StatusPill tone="warning">OFFLINE</StatusPill><h2>Waiting for a local engine</h2><p>No frontend endpoint or serving process is defined in this repository. The UI is ready to show runtime state when one exists.</p></div><code>axiom mcp serve</code></div>
-    <div className="info-grid"><InfoCard icon={Activity} label="Requests" value="N/A" detail="No live feed" tone="neutral" /><InfoCard icon={Cpu} label="Memory" value="N/A" detail="No telemetry" tone="neutral" /><InfoCard icon={ServerCog} label="API" value="Unbound" detail="Contract required" tone="warning" /></div>
-    <Surface title="Request flow" eyebrow="LIVE TELEMETRY"><EmptyState icon={RadioTower} title="No requests to display" description="Request throughput, latency, and model selection will appear here after a real runtime connector is added." action={<button type="button" className="text-button" onClick={() => backendAction("runtime.explain_empty", onNotify, "No runtime request feed is connected yet.")}>Why is this empty? <ArrowRight size={15} /></button>} /></Surface>
+
+  useEffect(() => { void refresh(); }, []);
+
+  useEffect(() => {
+    if (!autosaveEnabled || !workflowId || !workflowDirty || saving) return;
+    const timeout = window.setTimeout(() => {
+      setSaving(true);
+      setError("");
+      void axiomApi.updateWorkflow(workflowId, { name, nodes, edges })
+        .then(({ workflow }) => {
+          setWorkflows((current) => current.map((item) => item.id === workflow.id ? workflow : item));
+          setValidation(`Autosaved · revision ${workflow.revision} · design only`);
+          setDryRun(null);
+        })
+        .catch((cause: unknown) => {
+          setError(cause instanceof Error ? cause.message : "Workflow autosave failed.");
+          setAutosaveEnabled(false);
+        })
+        .finally(() => setSaving(false));
+    }, 900);
+    return () => window.clearTimeout(timeout);
+  }, [autosaveEnabled, workflowId, workflowDirty, saving, name, nodes, edges]);
+
+  const startNew = () => {
+    setWorkflowId(null);
+    setName("New local workflow");
+    setNodes([]);
+    setEdges([]);
+    setValidation("");
+    setError("");
+    setDryRun(null);
+  };
+
+  const selectWorkflow = (id: string) => {
+    const selected = workflows.find((item) => item.id === id);
+    if (!selected) return;
+    setWorkflowId(selected.id);
+    setName(selected.name);
+    setNodes(selected.nodes);
+    setEdges(selected.edges);
+    setValidation("");
+    setError("");
+    setDryRun(null);
+  };
+
+  const loadTemplate = () => {
+    const template = templates.find((item) => item.id === templateId);
+    if (!template) return;
+    setWorkflowId(null);
+    setName(template.name);
+    setNodes(template.nodes.map((node) => ({ ...node })));
+    setEdges(template.edges.map((edge) => ({ ...edge })));
+    setValidation("");
+    setError("");
+    setDryRun(null);
+  };
+
+  const duplicateWorkflow = async () => {
+    if (!workflowId) return;
+    setSaving(true);
+    setError("");
+    try {
+      const result = await axiomApi.duplicateWorkflow(workflowId);
+      setWorkflowId(result.workflow.id);
+      setName(result.workflow.name);
+      setNodes(result.workflow.nodes);
+      setEdges(result.workflow.edges);
+      setValidation("Copied as a new revision-1 design");
+      setDryRun(null);
+      onNotify("Workflow duplicated locally.", "success");
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Workflow could not be duplicated.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addNode = () => {
+    if (nodes.length >= 64) return;
+    const id = `step-${crypto.randomUUID()}`;
+    const previous = nodes.at(-1);
+    setNodes((current) => [...current, { id, type: nodeType }]);
+    if (previous) setEdges((current) => [...current, { source: previous.id, target: id }]);
+    setValidation("");
+    setDryRun(null);
+  };
+
+  const removeNode = (id: string) => {
+    const remaining = nodes.filter((node) => node.id !== id);
+    setNodes(remaining);
+    setEdges(remaining.slice(1).map((node, index) => ({ source: remaining[index].id, target: node.id })));
+    setValidation("");
+    setDryRun(null);
+  };
+
+  const runDryRun = async () => {
+    if (!workflowId || workflowDirty) return;
+    const parameters = Number(dryRunParameters);
+    if (!Number.isFinite(parameters) || parameters <= 0 || parameters > 1000) {
+      onNotify("Model size must be between 0 and 1000 billion parameters.", "warning");
+      return;
+    }
+    const seed = Number(dryRunSeed);
+    if (!Number.isInteger(seed) || seed < 0 || seed > 4_294_967_295) {
+      onNotify("Seed must be an integer between 0 and 4,294,967,295.", "warning");
+      return;
+    }
+    setDryRunBusy(true);
+    setError("");
+    try {
+      const result = await axiomApi.dryRunWorkflow(workflowId, {
+        parameter_billions: parameters,
+        method: dryRunMethod,
+        seed,
+      });
+      setDryRun(result.dry_run);
+      onNotify("Workflow dry run completed. No job was created or executed.", "success");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Workflow dry run failed.");
+    } finally {
+      setDryRunBusy(false);
+    }
+  };
+
+  const validateGraph = async () => {
+    setError("");
+    setValidation("");
+    try {
+      const result = await axiomApi.validateWorkflow({ name, nodes, edges });
+      setValidation(`${result.node_count} steps · ${result.connection_count} connections · no cycles`);
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Workflow validation failed.");
+      return false;
+    }
+  };
+
+  const saveWorkflow = async () => {
+    setSaving(true);
+    const valid = await validateGraph();
+    if (!valid) {
+      setSaving(false);
+      return;
+    }
+    try {
+      const payload = { name, nodes, edges };
+      const result = workflowId
+        ? await axiomApi.updateWorkflow(workflowId, payload)
+        : await axiomApi.createWorkflow(payload);
+      setWorkflowId(result.workflow.id);
+      setDryRun(null);
+      setValidation("Saved · design only · execution is disabled");
+      onNotify("Workflow saved. It is validated but cannot execute yet.", "success");
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Workflow could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const exportReproducibilityManifest = () => {
+    if (!dryRun) return;
+    const blob = new Blob([JSON.stringify(dryRun.reproducibility_manifest, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `workflow-${dryRun.workflow_id}-reproducibility.json`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
+  return <FeaturePage page="workflows" actions={<><button type="button" className="button secondary-button" onClick={() => void duplicateWorkflow()} disabled={!workflowId || saving}><Copy size={15} /> Duplicate selected</button><button type="button" className="button secondary-button" onClick={startNew}><Plus size={16} /> New workflow</button></>}>
+    <div className="info-grid">
+      <InfoCard icon={GitBranch} label="Saved graphs" value={loading ? "—" : String(workflows.length)} detail="Persistent local workflows" tone={workflows.length ? "success" : "neutral"} />
+      <InfoCard icon={CircleCheck} label="Validation" value={validation ? "Passed" : "On demand"} detail={validation || "Backend checks graph structure"} tone={validation ? "success" : "neutral"} />
+      <InfoCard icon={TriangleAlert} label="Execution" value="Disabled" detail="No training runner is attached" tone="warning" />
+    </div>
+    <div className="two-column-grid workflow-layout">
+      <Surface title="Workflow graph" eyebrow="DESIGN / VALIDATE / SAVE" action={<StatusPill tone="neutral">NOT EXECUTABLE</StatusPill>}>
+        <div className="workflow-template-row">
+          <label className="field"><span className="field-label-row"><span>Start from template</span></span><select value={templateId} onChange={(event) => setTemplateId(event.target.value)}><option value="">Choose a template</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
+          <button type="button" className="button secondary-button" onClick={loadTemplate} disabled={!templateId}><FileCode2 size={15} /> Load template</button>
+        </div>
+        {templateId && <p className="quiet-note">{templates.find((template) => template.id === templateId)?.description}</p>}
+        <label className="field"><span className="field-label-row"><span>Workflow name</span></span><input value={name} maxLength={120} onChange={(event) => { setName(event.target.value); setValidation(""); setDryRun(null); }} /></label>
+        <div className="workflow-builder-controls">
+          <label className="field"><span className="field-label-row"><span>Add step</span></span><select value={nodeType} onChange={(event) => setNodeType(event.target.value as WorkflowNodeType)}>{Object.entries(workflowNodeLabels).map(([type, label]) => <option key={type} value={type}>{label}</option>)}</select></label>
+          <button type="button" className="button secondary-button" onClick={addNode} disabled={nodes.length >= 64}><Plus size={15} /> {nodes.length >= 64 ? "Step limit reached" : "Add step"}</button>
+        </div>
+        <div className="workflow-dry-run-controls">
+          <label className="field"><span className="field-label-row"><span>Estimate model size (billions)</span></span><input inputMode="decimal" value={dryRunParameters} onChange={(event) => { setDryRunParameters(event.target.value); setDryRun(null); }} maxLength={8} /></label>
+          <label className="field"><span className="field-label-row"><span>Planning method</span></span><select value={dryRunMethod} onChange={(event) => { setDryRunMethod(event.target.value); setDryRun(null); }}><option value="auto">Auto</option><option value="qlora">QLoRA</option><option value="lora">LoRA</option><option value="full">Full fine-tune</option></select></label>
+          <label className="field"><span className="field-label-row"><span>Planned seed</span></span><input inputMode="numeric" value={dryRunSeed} onChange={(event) => { setDryRunSeed(event.target.value); setDryRun(null); }} maxLength={10} /></label>
+        </div>
+        <label className="workflow-autosave-toggle"><input type="checkbox" checked={autosaveEnabled} onChange={(event) => setAutosaveEnabled(event.target.checked)} /><span><b>Autosave selected workflow</b><small>Existing saved designs update locally 900 ms after an edit; new workflows still require Save workflow.</small></span></label>
+        {nodes.length ? <div className="workflow-canvas" aria-label="Workflow steps">{nodes.map((node, index) => <Fragment key={node.id}>
+          {index > 0 && <div className="workflow-connector" aria-hidden="true"><ArrowRight size={16} /></div>}
+          <div className="workflow-node"><span className="workflow-node-number">{String(index + 1).padStart(2, "0")}</span><b>{workflowNodeLabels[node.type]}</b><button type="button" className="workflow-node-remove" onClick={() => removeNode(node.id)} aria-label={`Remove ${workflowNodeLabels[node.type]} step`}><X size={13} /></button><small>{node.type}</small></div>
+        </Fragment>)}</div> : <EmptyState icon={GitBranch} title="Start with a workflow step" description="Add typed steps and the builder will connect them in order. The backend checks IDs, references, duplicates, size, and cycles." />}
+        {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
+        {validation && <InlineAlert tone="success">{validation}</InlineAlert>}
+        <div className="integration-form-actions">
+          <button type="button" className="button secondary-button" onClick={() => void runDryRun()} disabled={!workflowId || workflowDirty || saving || dryRunBusy}>{dryRunBusy ? "Estimating…" : workflowDirty ? "Save to dry-run changes" : "Dry-run saved graph"}</button>
+          <button type="button" className="button secondary-button" onClick={() => void validateGraph()} disabled={saving}>Validate graph</button>
+          <button type="button" className="button primary-button" onClick={() => void saveWorkflow()} disabled={saving}>{saving ? "Saving…" : workflowId ? "Save changes" : "Save workflow"}</button>
+        </div>
+      </Surface>
+      <Surface title="Saved workflows" eyebrow="LOCAL WORKSPACE">
+        {loading ? <div className="loading-state" role="status">Loading workflows…</div> : error && !workflows.length ? <InlineAlert tone="warning" role="alert">{error}</InlineAlert> : workflows.length ? <div className="module-list">{workflows.map((workflow) => <button type="button" className={`module-row workflow-list-item ${workflow.id === workflowId ? "selected" : ""}`} key={workflow.id} onClick={() => selectWorkflow(workflow.id)}><span className="module-icon"><GitBranch size={17} /></span><span className="module-copy"><b>{workflow.name}</b><small>{workflow.nodes.length} steps · revision {workflow.revision} · updated {formatTimestamp(workflow.updated_at)}</small></span><StatusPill tone="neutral">DESIGN</StatusPill></button>)}</div> : <EmptyState icon={GitBranch} title="No saved workflows" description="Create and validate a workflow graph; saved graphs are local JSON metadata." />}
+        {selectedWorkflow && <details className="workflow-history"><summary>Revision history · {selectedWorkflow.versions.length} saved versions</summary><div className="workflow-version-list"><div><b>Current · r{selectedWorkflow.revision}</b><small>{selectedWorkflow.name} · {formatTimestamp(selectedWorkflow.updated_at)}</small></div>{[...selectedWorkflow.versions].reverse().map((version) => <div key={version.revision}><b>Revision {version.revision}</b><small>{version.name} · {formatTimestamp(version.updated_at)} · {version.nodes.length} steps</small></div>)}</div></details>}
+      </Surface>
+    </div>
+    {dryRun && <Surface title="Workflow dry-run summary" eyebrow={`PLANNING ONLY · REVISION ${dryRun.workflow_revision}`} action={<div className="dataset-page-actions"><button type="button" className="button secondary-button" onClick={exportReproducibilityManifest}><ArrowDownToLine size={15} /> Export manifest</button><StatusPill tone="warning">NOT EXECUTED</StatusPill></div>}>
+      <p className="quiet-note">No training, evaluation, or report job was created. This summary uses current hardware detection and the requested planning settings.</p>
+      <div className="info-grid">
+        <InfoCard icon={Gauge} label="Estimated VRAM" value={dryRun.resource_summary.estimated_vram_gb === null ? "Not needed" : `${dryRun.resource_summary.estimated_vram_gb.toFixed(1)} GB`} detail={dryRun.resource_summary.method || "No training-plan node"} tone="neutral" />
+        <InfoCard icon={CircleAlert} label="Hardware fit" value={dryRun.resource_summary.fits_hardware === null ? "N/A" : dryRun.resource_summary.fits_hardware ? "Estimated fit" : "May not fit"} detail={`${dryRun.resource_summary.available_hardware.ram_gb.toFixed(1)} GB system RAM · ${dryRun.resource_summary.available_hardware.vram_gb === null ? "No detected GPU VRAM" : `${dryRun.resource_summary.available_hardware.vram_gb.toFixed(1)} GB GPU VRAM`}`} tone={dryRun.resource_summary.fits_hardware === false ? "warning" : "success"} />
+        <InfoCard icon={GitBranch} label="Graph steps" value={String(dryRun.node_count)} detail={`${dryRun.unresolved_inputs.length} nodes need concrete inputs`} tone="neutral" />
+      </div>
+      {dryRun.resource_summary.estimated_training_plan && <div className="dataset-quality-check passed"><b>Training-plan estimate · {dryRun.resource_summary.parameters_billions}B · {dryRun.resource_summary.method}</b><small>{dryRun.resource_summary.estimated_training_plan.reason}</small></div>}
+      <div className="dataset-quality-check passed"><b>Reproducibility manifest · seed {dryRun.reproducibility_manifest.seed} (not applied)</b><small>Graph SHA-256: {dryRun.reproducibility_manifest.graph_sha256} · AXIOM {dryRun.reproducibility_manifest.software.axiom} · Python {dryRun.reproducibility_manifest.software.python}</small><small>Dependency versions and detected hardware are included in the downloaded JSON. Seed remains unapplied because execution is disabled.</small></div>
+      {dryRun.unresolved_inputs.map((input) => <p className="quiet-note" key={input.node_id}>{input.node_id} · {workflowNodeLabels[input.type]}: {input.reason}</p>)}
+      <div className="module-list">{dryRun.steps.map((step) => <div className="module-row" key={step.node_id}><span className="module-icon"><CircleCheck size={16} /></span><span className="module-copy"><b>{step.node_id} · {workflowNodeLabels[step.type]}</b><small>Design step only · state: {step.state}</small></span><StatusPill tone="neutral">NOT RUN</StatusPill></div>)}</div>
+      {dryRun.warnings.map((warning) => <p className="quiet-note" key={warning}>{warning}</p>)}
+    </Surface>}
+  </FeaturePage>;
+}
+
+function Runtime() {
+  const [snapshot, setSnapshot] = useState<RuntimeSnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const refresh = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      setSnapshot(await axiomApi.runtime());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Runtime status unavailable.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void refresh(); }, []);
+  const hardware = snapshot?.hardware;
+  const statusTone: Tone = snapshot?.status === "online" ? "success" : "warning";
+
+  return <FeaturePage page="runtime" actions={<button type="button" className="button secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCcw size={16} /> {loading ? "Checking" : "Refresh status"}</button>}>
+    <div className="runtime-banner"><div className="runtime-state-icon"><RadioTower size={20} /></div><div><StatusPill tone={statusTone}>{loading ? "CHECKING" : snapshot?.status === "online" ? "ONLINE" : "OFFLINE"}</StatusPill><h2>{snapshot?.status === "online" ? "Runtime connected" : "Inference runtime not connected"}</h2><p>{error || "Hardware detection is live. AXIOM does not currently expose a local inference-serving endpoint."}</p></div><code>axiom mcp serve</code></div>
+    <div className="info-grid"><InfoCard icon={Cpu} label="Processor" value={hardware?.architecture || "—"} detail={hardware ? `${hardware.cpu_cores} CPU cores` : loading ? "Checking" : "Unavailable"} tone={hardware ? "success" : "neutral"} /><InfoCard icon={HardDrive} label="System memory" value={hardware ? `${hardware.ram_gb.toFixed(1)} GB` : "—"} detail="Detected locally" tone={hardware ? "success" : "neutral"} /><InfoCard icon={Zap} label="GPU memory" value={hardware?.vram_gb === null || hardware?.vram_gb === undefined ? "Not detected" : `${hardware.vram_gb.toFixed(1)} GB`} detail={hardware?.gpu_name || "No compatible GPU reported"} tone={hardware?.cuda_available ? "success" : "warning"} /></div>
+    {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
+    <Surface title="Serving status" eyebrow="LOCAL INFERENCE"><EmptyState icon={RadioTower} title="No inference process reported" description="The runtime endpoint currently reports system hardware only. Request volume, latency, and model selection need a serving connector." /></Surface>
   </FeaturePage>;
 }
 
 function MCP({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
-  const servers = ["filesystem", "local-runtime", "developer-tools"];
-  return <FeaturePage page="mcp" actions={<button type="button" className="button primary-button" onClick={() => backendAction("mcp.add_server", onNotify, "MCP server registration requested. Connect a gateway to continue.")}><Plus size={16} /> Add server</button>}>
-    <div className="mcp-layout">
-      <Surface title="Servers" eyebrow="GATEWAY INVENTORY">
-        <div className="server-list">{servers.map((server) => <button type="button" className="server-row" key={server} onClick={() => backendAction("mcp.inspect", onNotify, `${server} inspection requested; the MCP gateway is not connected.`)}><span className="server-icon"><Network size={16} /></span><span><b>{server}</b><small>Waiting for gateway</small></span><StatusPill tone="neutral">OFFLINE</StatusPill></button>)}</div>
+  const [policy, setPolicy] = useState<McpToolPolicy | null>(null);
+  const [selectedProfile, setSelectedProfile] = useState("default");
+  const [allowedTools, setAllowedTools] = useState<string[]>([]);
+  const [newProfileName, setNewProfileName] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const refresh = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await axiomApi.mcpToolPolicy();
+      setPolicy(result);
+      setSelectedProfile(result.active_profile);
+      const active = result.profiles.find((profile) => profile.name === result.active_profile);
+      setAllowedTools(active?.allowed_tools || []);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "MCP permissions unavailable.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void refresh(); }, []);
+
+  const selectProfile = (name: string) => {
+    setSelectedProfile(name);
+    setAllowedTools(policy?.profiles.find((profile) => profile.name === name)?.allowed_tools || []);
+  };
+
+  const savePermissions = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const result = await axiomApi.saveMcpToolProfile(selectedProfile, allowedTools);
+      setPolicy((current) => current ? {
+        ...current,
+        profiles: current.profiles.map((profile) => profile.name === selectedProfile ? result.profile : profile),
+      } : current);
+      setAllowedTools(result.profile.allowed_tools);
+      onNotify(`Tool permissions saved for ${selectedProfile}.`, "success");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "MCP permissions could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const activateProfile = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const saved = await axiomApi.saveMcpToolProfile(selectedProfile, allowedTools);
+      await axiomApi.setActiveMcpProfile(selectedProfile);
+      setPolicy((current) => current ? {
+        ...current,
+        active_profile: selectedProfile,
+        profiles: current.profiles.map((profile) => profile.name === selectedProfile ? saved.profile : profile),
+      } : current);
+      setAllowedTools(saved.profile.allowed_tools);
+      onNotify(`MCP server now enforces ${selectedProfile}.`, "success");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Active MCP profile could not be changed.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createProfile = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const profileName = newProfileName.trim();
+      if (policy?.profiles.some((profile) => profile.name === profileName)) {
+        setError("A profile with that name already exists.");
+        return;
+      }
+      const result = await axiomApi.createMcpToolProfile(profileName);
+      setNewProfileName("");
+      setPolicy((current) => current ? { ...current, profiles: [...current.profiles, result.profile] } : current);
+      setSelectedProfile(profileName);
+      setAllowedTools([]);
+      onNotify(`Created default-deny profile ${profileName}.`, "success");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Profile could not be created.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleTool = (name: string, checked: boolean) => {
+    setAllowedTools((current) => checked
+      ? [...new Set([...current, name])]
+      : current.filter((tool) => tool !== name));
+  };
+
+  const activeProfile = policy?.active_profile || "—";
+  const profileNameExists = policy?.profiles.some((profile) => profile.name === newProfileName.trim()) || false;
+  return <FeaturePage page="mcp" actions={<button type="button" className="button secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCcw size={16} /> {loading ? "Loading" : "Refresh policy"}</button>}>
+    <div className="info-grid">
+      <InfoCard icon={Network} label="MCP server" value="CLI" detail="Policy enforced per tool call" tone="neutral" />
+      <InfoCard icon={ShieldCheck} label="Active profile" value={activeProfile} detail={`${policy?.profiles.find((profile) => profile.name === activeProfile)?.allowed_tools.length || 0} tools allowed`} tone={policy ? "success" : "neutral"} />
+      <InfoCard icon={LockKeyhole} label="Default access" value="Deny" detail="No tools granted until explicitly enabled" tone="warning" />
+    </div>
+    <div className="two-column-grid mcp-layout">
+      <Surface title="Tool permissions" eyebrow="BACKEND-ENFORCED">
+        {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
+        {loading || !policy ? <div className="loading-state" role="status">Loading local MCP policy…</div> : <>
+          <label className="field"><span className="field-label-row"><span>Edit profile</span><StatusPill tone={selectedProfile === activeProfile ? "success" : "neutral"}>{selectedProfile === activeProfile ? "ACTIVE" : "INACTIVE"}</StatusPill></span><select value={selectedProfile} onChange={(event) => selectProfile(event.target.value)}>{policy.profiles.map((profile) => <option key={profile.name} value={profile.name}>{profile.name}</option>)}</select></label>
+          <div className="permission-list">{policy.tools.map((tool) => <label className="permission-row" key={tool.name}>
+            <span><b>{tool.name}</b><small>{tool.description}{tool.name === "axiom_dataset_clean" ? " · writes a cleaned copy" : tool.name === "axiom_supercompress" ? " · may contact an external service" : ""}</small></span>
+            <input type="checkbox" checked={allowedTools.includes(tool.name)} onChange={(event) => toggleTool(tool.name, event.target.checked)} aria-label={`Allow ${tool.name}`} />
+          </label>)}</div>
+          <div className="integration-form-actions"><button type="button" className="button secondary-button" onClick={() => void activateProfile()} disabled={saving || selectedProfile === activeProfile}>Use this profile</button><button type="button" className="button primary-button" onClick={() => void savePermissions()} disabled={saving}>{saving ? "Saving…" : "Save permissions"}</button></div>
+        </>}
       </Surface>
-      <Surface title="Inspector" eyebrow="TOOLS / RESOURCES"><EmptyState icon={Network} title="Select a connected server" description="Tool schemas, resources, prompts, and execution traces will appear here when the MCP gateway reports them." action={<button type="button" className="text-button" onClick={() => backendAction("mcp.check_contract", onNotify, "MCP contract check recorded; no gateway is connected.")}>Check contract <ArrowRight size={15} /></button>} /></Surface>
+      <Surface title="Profiles" eyebrow="LOCAL POLICY">
+        <form className="profile-create-form" onSubmit={(event) => void createProfile(event)}>
+          <label className="field"><span className="field-label-row"><span>New profile name</span></span><input value={newProfileName} onChange={(event) => setNewProfileName(event.target.value)} minLength={1} maxLength={48} pattern="[A-Za-z0-9_-]+" placeholder="research-agent" required /></label>
+          <button type="submit" className="button secondary-button" disabled={saving || !newProfileName.trim() || profileNameExists}><Plus size={15} /> Create denied-by-default</button>
+        </form>
+        <div className="surface-divider" />
+        <Callout tone="warning" title="Enforced by the MCP backend">Changing a checkbox only changes the selected profile after saving. The MCP tool handler reads the active profile for every call; the GUI does not execute tools.</Callout>
+        <p className="quiet-note">Use `axiom mcp permissions` to inspect grants, `axiom mcp allow &lt;tool&gt;` to grant a tool, or `axiom mcp profile use &lt;name&gt;` to select a profile.</p>
+      </Surface>
     </div>
   </FeaturePage>;
 }
 
 function Diagnostics({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
-  const [scanState, setScanState] = useState<"idle" | "scanning" | "blocked">("idle");
-  const [health, setHealth] = useState<{ status: "checking" | "online" | "offline"; hardware?: { cpu_name?: string; ram_gb?: number | null; gpu_name?: string } }>({ status: "checking" });
+  const [scanState, setScanState] = useState<"idle" | "scanning" | "failed">("scanning");
+  const [health, setHealth] = useState<{ online: boolean; version?: string } | null>(null);
+  const [hardware, setHardware] = useState<HardwareStatus | null>(null);
+  const [modelCount, setModelCount] = useState<number | null>(null);
+  const [datasetCount, setDatasetCount] = useState<number | null>(null);
 
   const runScan = async () => {
     setScanState("scanning");
-    try {
-      const [healthResponse, hardwareResponse] = await Promise.all([
-        fetch(`${API_BASE}/api/health`),
-        fetch(`${API_BASE}/api/optimization/hardware`),
-      ]);
-      if (!healthResponse.ok || !hardwareResponse.ok) throw new Error("Backend check failed");
-      const healthData = await healthResponse.json() as { status?: string };
-      const hardware = await hardwareResponse.json() as { cpu_name?: string; ram_gb?: number | null; gpu_name?: string };
-      setHealth({ status: healthData.status === "ok" ? "online" : "offline", hardware });
-      setScanState("idle");
-    } catch {
-      setHealth({ status: "offline" });
-      setScanState("blocked");
-      onNotify("The AXIOM backend could not be reached. Start the API server and scan again.", "warning");
-    }
+    const [healthResult, hardwareResult, modelResult, datasetResult] = await Promise.allSettled([
+      axiomApi.health(),
+      axiomApi.optimizationHardware(),
+      axiomApi.models(),
+      axiomApi.datasets(),
+    ]);
+    const failures: string[] = [];
+    if (healthResult.status === "fulfilled") setHealth({ online: healthResult.value.status === "ok", version: healthResult.value.version });
+    else { setHealth({ online: false }); failures.push("API health"); }
+    if (hardwareResult.status === "fulfilled") setHardware(hardwareResult.value);
+    else { setHardware(null); failures.push("hardware"); }
+    if (modelResult.status === "fulfilled") setModelCount(modelResult.value.length);
+    else { setModelCount(null); failures.push("model registry"); }
+    if (datasetResult.status === "fulfilled") setDatasetCount(datasetResult.value.length);
+    else { setDatasetCount(null); failures.push("dataset inventory"); }
+    setScanState(failures.length ? "failed" : "idle");
+    if (failures.length) onNotify(`Some diagnostics could not complete: ${failures.join(", ")}.`, "warning");
   };
 
-  return <FeaturePage page="diagnostics" actions={<button type="button" className="button primary-button" onClick={runScan} disabled={scanState === "scanning"}><Wrench size={16} /> {scanState === "scanning" ? "Scanning..." : "Run full scan"}</button>}>
-    <div className="diagnostic-hero"><div><p className="eyebrow">WORKSPACE READINESS</p><strong>{scanState === "blocked" ? "Backend unavailable" : scanState === "scanning" ? "Checking backend..." : health.status === "online" ? "Backend connected" : "Ready to inspect"}</strong><p>{health.hardware ? `${health.hardware.cpu_name || "CPU"} · ${health.hardware.ram_gb ?? "Unknown"} GB RAM · ${health.hardware.gpu_name || "GPU unavailable"}` : "Check the API, hardware, and local session before running model workflows."}</p></div><div className={`diagnostic-ring ${scanState}`}><span>{scanState === "scanning" ? "..." : health.status === "online" ? "OK" : "N/A"}</span></div></div>
+  useEffect(() => { void runScan(); }, []);
+  const connected = health?.online === true;
+  const headline = scanState === "scanning" ? "Checking local services…" : connected ? "Workspace checks complete" : "Backend unavailable";
+  const systemDescription = hardware ? `${hardware.cpu_name} · ${hardware.ram_gb ?? "Unknown"} GB RAM · ${hardware.gpu_name || "No GPU reported"}` : "Hardware details unavailable";
+
+  return <FeaturePage page="diagnostics" actions={<button type="button" className="button primary-button" onClick={() => void runScan()} disabled={scanState === "scanning"}><Wrench size={16} /> {scanState === "scanning" ? "Scanning…" : "Run diagnostics"}</button>}>
+    <div className="diagnostic-hero"><div><p className="eyebrow">WORKSPACE READINESS</p><strong>{headline}</strong><p>{systemDescription}{health?.version ? ` · AXIOM ${health.version}` : ""}</p></div><div className={`diagnostic-ring ${scanState === "failed" ? "blocked" : scanState}`}><span>{scanState === "scanning" ? "…" : connected ? "OK" : "N/A"}</span></div></div>
     <div className="diag-list">
-      <DiagnosticRow icon={CircleCheck} title="Local administrator" detail="Authenticated session is active in this browser." state="PASS" tone="success" />
-      <DiagnosticRow icon={health.status === "online" ? CircleCheck : TriangleAlert} title="AXIOM backend" detail={health.status === "online" ? "Health and hardware endpoints responded successfully." : "Run a scan to check the FastAPI backend."} state={health.status === "online" ? "PASS" : "REVIEW"} tone={health.status === "online" ? "success" : "warning"} />
-      <DiagnosticRow icon={TriangleAlert} title="Model registry" detail="Use axiom model list until a real read contract is available." state="REVIEW" tone="warning" />
-      <DiagnosticRow icon={CircleCheck} title="Session timeout" detail="Automatic logout is enabled after 10 minutes of inactivity." state="PASS" tone="success" />
+      <DiagnosticRow icon={connected ? CircleCheck : TriangleAlert} title="AXIOM API" detail={connected ? `Health endpoint responded${health?.version ? ` · version ${health.version}` : ""}.` : scanState === "scanning" ? "Waiting for the local API response." : "Health endpoint did not respond."} state={connected ? "PASS" : scanState === "scanning" ? "CHECKING" : "FAILED"} tone={connected ? "success" : scanState === "scanning" ? "neutral" : "warning"} />
+      <DiagnosticRow icon={hardware ? CircleCheck : TriangleAlert} title="Hardware detection" detail={hardware ? `${hardware.cpu_name} · ${hardware.ram_gb ?? "Unknown"} GB RAM · ${hardware.gpu_name}` : "No hardware snapshot is available."} state={hardware ? "PASS" : scanState === "scanning" ? "CHECKING" : "FAILED"} tone={hardware ? "success" : scanState === "scanning" ? "neutral" : "warning"} />
+      <DiagnosticRow icon={modelCount !== null ? CircleCheck : TriangleAlert} title="Model registry" detail={modelCount === null ? "Registry endpoint unavailable." : `${modelCount} model${modelCount === 1 ? "" : "s"} registered.`} state={modelCount === null ? "FAILED" : "PASS"} tone={modelCount === null ? "warning" : "success"} />
+      <DiagnosticRow icon={datasetCount !== null ? CircleCheck : TriangleAlert} title="Dataset inventory" detail={datasetCount === null ? "Dataset endpoint unavailable." : `${datasetCount} JSONL file${datasetCount === 1 ? "" : "s"} found in data/.`} state={datasetCount === null ? "FAILED" : "PASS"} tone={datasetCount === null ? "warning" : "success"} />
     </div>
-    {scanState === "blocked" && <Callout tone="warning" title="Backend connection failed">Start the AXIOM API and verify <code>/api/health</code> before retrying the scan.</Callout>}
-    {scanState === "idle" && <button type="button" className="text-button" onClick={() => backendAction("dashboard.module_details", onNotify, "The scan checks backend health and hardware availability.")}>What does this check? <ArrowRight size={15} /></button>}
+    {!connected && scanState !== "scanning" && <Callout tone="warning" title="Start the local API">Open the AXIOM UI launcher or start the FastAPI service, then scan again.</Callout>}
   </FeaturePage>;
 }
 
-function LogsPage({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
-  const [eventCount, setEventCount] = useState(0);
-  const refresh = () => {
-    void fetch(`${API_BASE}/api/workspace/events`)
-      .then((response) => response.json() as Promise<{ events: unknown[] }>)
-      .then((data) => setEventCount(data.events.length))
-      .catch(() => onNotify("Could not load workspace events.", "warning"));
+function LogsPage() {
+  const [events, setEvents] = useState<WorkspaceEvent[]>([]);
+  const [filter, setFilter] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const refresh = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      setEvents(await axiomApi.events());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load workspace events.");
+    } finally {
+      setLoading(false);
+    }
   };
-  useEffect(refresh, []);
-  return <FeaturePage page="logs" actions={<button type="button" className="button secondary-button" onClick={() => { refresh(); backendAction("logs.filter", onNotify, "Workspace event stream refreshed."); }}><ListFilter size={16} /> Refresh</button>}>
-    <Surface title="Event stream" eyebrow="LIVE / LOCAL" action={<StatusPill tone={eventCount ? "success" : "neutral"}>{eventCount ? `${eventCount} EVENTS` : "EMPTY"}</StatusPill>}>{eventCount ? <div className="empty-copy"><h3>{eventCount} workspace actions recorded</h3><p>Refresh to retrieve the latest backend event count.</p></div> : <EmptyState icon={TerminalSquare} title="No events recorded" description="Backend-connected workspace actions will appear here." action={<button type="button" className="text-button" onClick={() => backendAction("logs.explain_empty", onNotify, "No backend workspace events have been recorded yet.")}>About the boundary <ArrowRight size={15} /></button>} />}</Surface>
-    <div className="log-contract"><span><FileCode2 size={15} /> Expected event sources</span><code>runtime · mcp · evaluation · axiom.core</code></div>
+
+  useEffect(() => { void refresh(); }, []);
+  const normalizedFilter = filter.trim().toLowerCase();
+  const visibleEvents = events.filter((event) => `${event.action} ${event.detail || ""}`.toLowerCase().includes(normalizedFilter));
+
+  return <FeaturePage page="logs" actions={<button type="button" className="button secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCcw size={16} /> {loading ? "Refreshing" : "Refresh"}</button>}>
+    <Surface title="Workspace event stream" eyebrow="LOCAL / RECENT" action={<StatusPill tone={events.length ? "success" : "neutral"}>{events.length} EVENTS</StatusPill>}>
+      <label className="event-filter"><Search size={15} /><input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Filter by action or detail" aria-label="Filter workspace events" /></label>
+      {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
+      {loading ? <div className="loading-state" role="status">Loading local events…</div> : visibleEvents.length ? <div className="event-list">{visibleEvents.map((event, index) => <div className="event-row" key={`${event.timestamp}-${index}`}><span className="event-marker" /><div><b>{event.action.replaceAll(".", " / ")}</b><small>{event.detail || "Completed"} · {formatTimestamp(event.timestamp)}</small></div></div>)}</div> : <EmptyState icon={TerminalSquare} title={events.length ? "No events match" : "No workspace events yet"} description={events.length ? "Try a different filter." : "Successful model registration, dataset profiling, and training plans appear here."} />}
+    </Surface>
+    <div className="log-contract"><span><FileCode2 size={15} /> Event retention</span><code>Recent local actions · in memory · bounded</code></div>
   </FeaturePage>;
 }
 
@@ -1766,12 +2976,10 @@ function SettingsPage({
   theme,
   setTheme,
   onChangePassword,
-  onNotify,
 }: {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   onChangePassword: () => void;
-  onNotify: (message: string, tone?: Tone) => void;
 }) {
   return <FeaturePage page="settings">
     <div className="settings-grid">
@@ -1786,8 +2994,7 @@ function SettingsPage({
         <div className="setting-row"><div><b>Session timeout</b><span>Automatic sign out after inactivity.</span></div><StatusPill tone="neutral">10 MINUTES</StatusPill></div>
       </Surface>
       <Surface title="Integration boundary" eyebrow="HONEST STATE">
-        <Callout tone="info" title="Backend connection is available">Health, hardware, optimization, and policy-audit requests use the AXIOM FastAPI contract. Model inventory, datasets, runtime, and logs still require their dedicated endpoints.</Callout>
-        <button type="button" className="text-button" onClick={() => backendAction("settings.integration_note", onNotify, "Health, hardware, inventory, training-plan, runtime, and event actions use the AXIOM backend.")}>Review integration note <ArrowRight size={15} /></button>
+        <Callout tone="info" title="Local API integration">The dashboard, model registry, dataset profiler, training planner, hardware snapshot, persistent plan history, diagnostics, and event log share the local FastAPI contract.</Callout>
       </Surface>
     </div>
   </FeaturePage>;
@@ -1819,14 +3026,6 @@ function Callout({ tone, title, children }: { tone: Tone; title: string; childre
 
 function CliReference({ command, disabled = false }: { command: string; disabled?: boolean }) {
   return <button type="button" className="cli-reference" disabled={disabled} onClick={() => navigator.clipboard?.writeText(command)}><TerminalSquare size={15} /><code>{command}</code><span>{disabled ? "Unavailable" : "Copy"}</span></button>;
-}
-
-function ContractNote({ command }: { command: string }) {
-  return <div className="contract-note"><span><FileCode2 size={15} /> Current integration path</span><code>{command}</code><small>CLI contract found in this repository; no frontend HTTP endpoint was found.</small></div>;
-}
-
-function StepList({ steps }: { steps: Array<{ label: string; detail: string; state: "ready" | "pending" }> }) {
-  return <div className="step-list">{steps.map((step, index) => <div className="step-list-row" key={step.label}><span className={`step-number ${step.state}`}>{step.state === "ready" ? <Check size={13} /> : String(index + 1).padStart(2, "0")}</span><div><b>{step.label}</b><small>{step.detail}</small></div><StatusPill tone={step.state === "ready" ? "success" : "neutral"}>{step.state === "ready" ? "READY" : "PENDING"}</StatusPill></div>)}</div>;
 }
 
 function DiagnosticRow({ icon: Icon, title, detail, state, tone }: { icon: LucideIcon; title: string; detail: string; state: string; tone: Tone }) {

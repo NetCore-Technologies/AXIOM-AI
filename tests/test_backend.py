@@ -18,6 +18,7 @@ from axiom.core.integrations import (
     IntegrationType,
 )
 from axiom.core.project import create_project
+from axiom.core.tool_permissions import TOOL_DESCRIPTIONS, ToolPermissionStore
 from axiom.datasets.cleaner import clean_jsonl
 from axiom.mcp import server as mcp_module
 from axiom.mcp.server import mcp
@@ -55,6 +56,9 @@ def test_mcp_schema_and_all_handlers(tmp_path: Path, monkeypatch: pytest.MonkeyP
     }
 
     monkeypatch.chdir(tmp_path)
+    permission_store = ToolPermissionStore(tmp_path / "mcp-permissions")
+    permission_store.save_profile("default", list(TOOL_DESCRIPTIONS))
+    monkeypatch.setattr(mcp_module, "ToolPermissionStore", lambda: permission_store)
     info, _ = _call_tool("axiom_info", {})
     assert info["name"] == "AXIOM"
 

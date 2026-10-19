@@ -1,45 +1,8 @@
 import React, { useState } from "react";
+import { axiomApi, type OptimizationPlan, type OptimizerProfile } from "../api/client";
 
-type Profile = {
-  number: number;
-  key: string;
-  name: string;
-  description: string;
-  context_tokens: number;
-  temperature: number;
-  preferred_quantization: string;
-};
-
-type Plan = {
-  profile: Profile;
-  model: {
-    source: string;
-    local_path: string;
-    parameter_billions: number;
-    estimated_fp16_gb: number;
-    files: number;
-    weights: string[];
-  };
-  system: {
-    os: string;
-    arch: string;
-    cpu_count: number;
-    ram_gb: number;
-    gpu_available: boolean;
-    gpu_name: string;
-    vram_gb: number;
-    disk_free_gb: number;
-  };
-  optimization: {
-    target_tokens_per_second: number;
-    recommended_quantization: string;
-    recommended_format: string;
-    runtime_bundle: boolean;
-    benchmark_required: boolean;
-  };
-};
-
-const API = import.meta.env?.VITE_AXIOM_API_URL || "";
+type Profile = OptimizerProfile;
+type Plan = OptimizationPlan;
 
 export default function AxiomOptimizer() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -52,10 +15,7 @@ export default function AxiomOptimizer() {
 
   async function loadProfiles() {
     try {
-      const r = await fetch(`${API}/api/optimizer/profiles`);
-      if (!r.ok) throw new Error("Could not load profiles");
-      const data = await r.json();
-      setProfiles(data.profiles);
+      setProfiles(await axiomApi.optimizerProfiles());
     } catch {
       setProfiles([]);
     }
@@ -73,21 +33,7 @@ export default function AxiomOptimizer() {
     setPlan(null);
 
     try {
-      const r = await fetch(`${API}/api/optimizer/plan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          profile,
-          target_tokens_per_second: target,
-        }),
-      });
-
-      if (!r.ok) {
-        throw new Error(`Optimizer request failed (${r.status})`);
-      }
-
-      setPlan(await r.json());
+      setPlan(await axiomApi.optimizationPlan(model, profile, target));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Optimizer failed");
     } finally {

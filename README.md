@@ -91,6 +91,25 @@ Do these in order. Each step is one command.
 Want the interactive mode? Run bare `axiom`. In an interactive terminal it
 prints the startup mark once per session, shows the useful command path,
 starts the local daemon on a free port, and stays attached until Ctrl-C.
+To open the graphical Control Center with the workspace API, run `axiom gui`;
+`axiom ui` is an alias. Both services bind to loopback and stop with Ctrl-C.
+The local API contract and compatibility policy are documented at
+[`docs/API.md`](docs/API.md); the live OpenAPI document is served at
+`/api/openapi.json` while the daemon runs.
+Saved training-plan snapshots are available in the GUI history and with
+`axiom experiment list` or `axiom experiment show <id>`; they are plans, not
+executed runs.
+To save an exact CLI plan snapshot, add `--save`; `--json` emits the plan and
+saved record for scripts:
+
+```bash
+axiom train plan 7 --method qlora --save --name "7B baseline" --tag baseline --json
+```
+Saved GUI workflow designs can be inspected and structurally validated from the
+same workspace store with `axiom workflow list`, `axiom workflow show <id>`,
+and `axiom workflow validate <id>`. These commands do not execute workflow steps.
+`axiom evaluation run ./data/eval.jsonl --prediction-field prediction --reference-field reference`
+scores precomputed outputs locally without model inference; see [the evaluation guide](docs/Evaluation.md) for metric definitions.
 
 ## 🧭 First 10 minutes
 
@@ -203,8 +222,10 @@ Ctrl-C.
 
 ## 🖥️ Web UI
 
-The release packages and the PyPI wheel bundle the web UI. Start the daemon
-(or bare `axiom`), then open the loopback URL it prints.
+The release packages and the PyPI wheel bundle the web UI. Run `axiom gui` to
+start the workspace API and open the Control Center in your browser. Use
+`axiom gui --no-open` to print the local URL without opening a browser. The
+separate `axiom daemon` command remains available for the read-only JSON API.
 
 <div align="center">
 
@@ -260,10 +281,26 @@ axiom dataset inspect ./data/train.jsonl
 axiom dataset validate ./data/train.jsonl
 axiom dataset stats ./data/train.jsonl
 axiom dataset clean ./data/train.jsonl ./data/train.cleaned.jsonl
+axiom dataset profile ./data/train.jsonl --duplicate-key id --duplicate-rate-threshold 0.05 --text-fields prompt,completion
+axiom dataset profile ./data/train.jsonl --scan-pii
+axiom dataset manifest ./data/train.jsonl
+axiom dataset manifest ./data/derived.jsonl --parent-manifest-sha256 <source-sha256>
+axiom dataset preview-clean ./data/train.jsonl
 ```
 
 The current dataset path supports `.jsonl`. Validation checks JSON objects and
 duplicates; it does not establish semantic quality or training readiness.
+Bounded profiling reports UTF-8/newline/malformed-record diagnostics, configurable
+duplicate-key rates, aggregate whitespace-token length bins, and sensitive-field
+name warnings. Optional `--sensitive-rule` values add substring rules, while
+`--ignore-sensitive-field` excludes exact names to manage false positives. Reports
+contain structural counts and field names only; they never contain row values.
+PII pattern checks are off unless `--scan-pii` is supplied (or the GUI opt-in is
+checked); their email, phone-like, and Luhn-valid card matches are heuristics, not
+a guarantee. `dataset manifest` hashes at most the configured limit and labels
+prefix hashes partial; `--parent-manifest-sha256` links a derived dataset to its
+source manifest. `dataset preview-clean` reports removal/normalization counts
+without writing any file; `dataset clean` remains a separate explicit command.
 
 ### Hardware and planning
 
@@ -279,6 +316,20 @@ axiom ai plan --model ./models/my-model
 The planner uses detected hardware and conservative assumptions. Its fit and
 VRAM values are planning estimates, not measured speed, memory usage, or a
 promise that a later runtime will succeed.
+
+### Experiment plans
+
+```bash
+axiom experiment list --query baseline --tag review --json
+axiom experiment show <experiment-id>
+axiom experiment update <experiment-id> --name "Reviewed plan" --tag baseline --tag approved
+axiom experiment delete <experiment-id> --yes
+```
+
+Experiment records are immutable plan snapshots with separately editable names,
+notes, and tags. Search, exact-tag filtering, and pagination are available in
+the Control Center and CLI. Deleting a record does not delete model or dataset
+files; AXIOM does not yet create run artifacts.
 
 ### Developer tools
 
@@ -323,6 +374,39 @@ axiom mcp serve
 
 It exposes local model, dataset, hardware, training-plan, and optional
 SuperCompress tools as a process. It is separate from the HTTP daemon.
+MCP tools are denied by default. Inspect the active policy, explicitly grant
+only the tools you need, or create and select a named profile:
+
+```bash
+axiom mcp permissions
+axiom mcp allow axiom_system_info --profile default
+axiom mcp profile create read-only
+axiom mcp allow axiom_model_list --profile read-only
+axiom mcp profile use read-only
+```
+
+The Control Center also edits those same local profiles. Dataset profiling in
+the GUI offers quick, standard, and deep bounded scan budgets; profile results
+include the effective limits. The dataset quality panel compares schemas
+across two or three files, checks required fields and expected JSON types, and
+downloads a values-free JSON report. It also exposes encoding/newline diagnostics,
+duplicate-key thresholds, token-length bins, and configurable privacy-name rules.
+PII scanning is an explicit opt-in and returns only category/field counts. Dataset
+manifests support full/partial checksums and parent-hash lineage links; cleaning previews never write
+files; the actual cleaner remains a separate CLI operation. Dataset reports exist
+only in the current GUI session and the page's Clear reports action removes them.
+Its Workflows page validates and saves
+versioned local graph designs, includes templates and revision history, and
+supports duplication. Saved workflows can be dry-run for resource estimates and
+an exportable software/seed manifest; all steps remain marked not-run and no job
+is created because workflow execution is not available. Existing saved designs
+autosave after edits by default (with a GUI toggle); new designs still require an
+explicit save.
+
+The Models page supports local-folder discovery under `models/`, bounded
+inspection summaries, stable registry IDs, tags, favorites, pagination, and
+versioned JSON import/export. Removing an entry removes only registry metadata;
+it never deletes model weights.
 
 ## ✅ What is shipped, and what is not
 
@@ -341,11 +425,11 @@ SuperCompress tools as a process. It is separate from the HTTP daemon.
 
 ### Not shipped by this product boundary
 
-- Training execution, job management, checkpoints, or experiment tracking.
+- Training execution, job management, checkpoints, or run/outcome tracking.
+  The GUI stores planning snapshots only; it does not claim they were run.
 - Model inference, production serving, streaming, batching, or an
   OpenAI-compatible server.
-- Live telemetry, background monitoring, hosted workspaces, accounts, or a
-  browser control center.
+- Live telemetry, background monitoring, hosted workspaces, or accounts.
 
 ## 🗂️ Repository shape
 

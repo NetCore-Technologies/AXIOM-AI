@@ -6,6 +6,7 @@ from pathlib import Path
 from mcp.server import MCPServer
 
 from axiom.core.hardware import detect_hardware
+from axiom.core.tool_permissions import ToolPermissionStore
 from axiom.datasets.cleaner import clean_jsonl
 from axiom.datasets.inspector import inspect_dataset
 from axiom.models.inspector import inspect_model
@@ -20,7 +21,8 @@ mcp = MCPServer(
         "AXIOM is an AI engineering platform. "
         "Use AXIOM tools to inspect models, inspect and clean datasets, "
         "inspect hardware, create training plans, and check optional "
-        "AI runtime integrations."
+        "AI runtime integrations. MCP tool access is denied by default and must "
+        "be explicitly granted in an AXIOM tool profile."
     ),
 )
 
@@ -28,6 +30,7 @@ mcp = MCPServer(
 @mcp.tool()
 def axiom_info() -> dict:
     """Return AXIOM release information."""
+    ToolPermissionStore().require("axiom_info")
     return {
         "name": "AXIOM",
         "version": __version__,
@@ -48,6 +51,7 @@ def axiom_info() -> dict:
 @mcp.tool()
 def axiom_model_list() -> list[dict]:
     """List models registered with AXIOM."""
+    ToolPermissionStore().require("axiom_model_list")
     registry = ModelRegistry(create=False)
 
     return [model.to_dict() for model in registry.list()]
@@ -56,6 +60,7 @@ def axiom_model_list() -> list[dict]:
 @mcp.tool()
 def axiom_model_info(path: str) -> dict:
     """Inspect a local AI model directory."""
+    ToolPermissionStore().require("axiom_model_info")
     if not isinstance(path, str) or not path.strip():
         raise ValueError("Model path cannot be empty.")
 
@@ -82,6 +87,7 @@ def axiom_model_info(path: str) -> dict:
 @mcp.tool()
 def axiom_dataset_inspect(path: str) -> dict:
     """Inspect an AXIOM-supported dataset."""
+    ToolPermissionStore().require("axiom_dataset_inspect")
     if not isinstance(path, str) or not path.strip():
         raise ValueError("Dataset path cannot be empty.")
 
@@ -106,6 +112,7 @@ def axiom_dataset_clean(
     output: str | None = None,
 ) -> dict:
     """Clean a JSONL dataset without modifying the original."""
+    ToolPermissionStore().require("axiom_dataset_clean")
     if not isinstance(path, str) or not path.strip():
         raise ValueError("Dataset path cannot be empty.")
     if output is not None and (not isinstance(output, str) or not output.strip()):
@@ -142,6 +149,7 @@ def axiom_dataset_clean(
 @mcp.tool()
 def axiom_system_info() -> dict:
     """Return detected system hardware."""
+    ToolPermissionStore().require("axiom_system_info")
     hardware = detect_hardware()
 
     return {
@@ -161,6 +169,7 @@ def axiom_training_plan(
     method: str = "auto",
 ) -> dict:
     """Generate a hardware-aware training plan."""
+    ToolPermissionStore().require("axiom_training_plan")
     if not isinstance(method, str) or not method.strip():
         raise ValueError("Training method cannot be empty.")
 
@@ -189,6 +198,7 @@ def axiom_training_plan(
 @mcp.tool()
 def axiom_supercompress_status() -> dict:
     """Check whether SuperCompress is configured."""
+    ToolPermissionStore().require("axiom_supercompress_status")
 
     return {
         "configured": bool(os.getenv("SUPERCOMPRESS_API_KEY")),
@@ -204,6 +214,7 @@ def axiom_supercompress(
     ccr: bool = False,
 ) -> dict:
     """Compress context through SuperCompress before inference."""
+    ToolPermissionStore().require("axiom_supercompress")
     result = compress_context(
         context,
         query,

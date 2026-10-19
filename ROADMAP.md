@@ -1,35 +1,169 @@
 # AXIOM Roadmap
 
 <!-- AXIOM-ROADMAP-UPDATE:START -->
-## Beta roadmap and implementation status
+## Product roadmap — 120 scoped deliverables
 
-### Current foundations
+This backlog expands the ten original priorities into concrete, reviewable
+deliverables. Preserve the existing Control Center navigation, visual language,
+responsive layout, and keyboard behavior while extending its workflows. Items
+are planned unless explicitly marked otherwise; scope is not a claim that the
+feature exists or a delivery-date promise.
 
-- [x] Bounded JSONL profiling with row, field and privacy-review statistics.
-- [x] Workspace API foundations for datasets, runtime information and training plans.
-- [x] Existing model inspection, registry, optimisation and quantization components.
-- [x] GUI sections for the principal engineering workflows.
+### 01 · Platform foundation
 
-### Planned feature priorities
+- [R001 · Implemented; tests passing] Publish a versioned API contract and compatibility policy.
+- [R002 · Planned] Add workspace discovery with explicit project-root rules.
+- [R003 · Planned] Make API configuration environment-backed and documented.
+- [R004 · Implemented; tests passing] Normalize validation and error response envelopes.
+- [R005 · Implemented; tests passing] Add request IDs and correlation across CLI, API, and GUI.
+- [R006 · In progress; validation pending] Add bounded pagination to every collection endpoint.
+- [R007 · In progress; validation pending] Define stable resource IDs and schema migration behavior.
+- [R008 · Planned] Add cancellation and timeout semantics to long operations.
+- [R009 · Planned] Separate read-only plans from side-effecting jobs in API scopes.
+- [R010 · Planned] Add workspace health checks for filesystem and permissions.
+- [R011 · Planned] Document data retention, local storage, and deletion behavior.
+- [R012 · Planned] Add release compatibility checks for Python, Node, and OS targets.
 
-| Priority | Feature | Goal |
-|---|---|---|
-| 1 | Visual training workflow builder | Connect and validate training steps visually. |
-| 2 | Agent profiles and tool permissions | Add explicit permissions and auditable tool usage. |
-| 3 | Model registry and compatibility | Improve discovery, metadata and hardware/runtime checks. |
-| 4 | Quantization comparison lab | Compare options with documented assumptions. |
-| 5 | Dataset profiling and privacy checks | Expand bounded validation and privacy signals. |
-| 6 | Persistent experiment history | Save settings, outcomes and run history. |
-| 7 | Evaluation and regression reports | Repeat evaluations and compare results. |
-| 8 | Local API playground | Exercise supported endpoints and inspect responses. |
-| 9 | Hardware telemetry and resource history | Record resource snapshots and performance trends. |
-| 10 | Security and configuration audit | Provide actionable local diagnostics. |
+### 02 · CLI experience
 
-### Delivery standard
+- [R013 · Implemented; tests passing] Add discoverable command groups for workflow and evaluation.
+- [R014 · Planned] Add consistent JSON output to every list and inspect command.
+- [R015 · Planned] Add shell completion for Bash, Zsh, Fish, and PowerShell.
+- [R016 · Planned] Add interactive prompts only where a non-interactive flag exists.
+- [R017 · Planned] Add global verbosity, quiet, and machine-readable error modes.
+- [R018 · Planned] Add operation progress and cancellation for downloads and scans.
+- [R019 · Planned] Add workspace-aware `axiom status` summaries.
+- [R020 · Planned] Add import/export commands for workspace metadata.
+- [R021 · Planned] Add plan diff and reproducible plan printing.
+- [R022 · Planned] Add configuration validation and safe repair suggestions.
+- [R023 · Planned] Add clear exit-code documentation and stable failure codes.
+- [R024 · Planned] Keep CLI/API feature parity documented in the command reference.
 
-A feature should not be marked shipped until the applicable backend, GUI,
-CLI, validation, tests and documentation have been verified. Roadmap entries
-remain planned work until that evidence exists.
+### 03 · Control Center GUI
+
+- [R025 · Planned] Preserve current sidebar, topbar, theme, and page transitions.
+- [R026 · Planned] Add shared accessible form, table, dialog, and empty-state patterns.
+- [R027 · In progress; validation pending] Add a global command palette with page and action search.
+- [R028 · In progress; validation pending] Add deep links and browser-history navigation for workspace pages.
+- [R029 · Planned] Add global loading, retry, stale-data, and offline indicators.
+- [R030 · In progress; validation pending] Add pagination, sorting, and saved filters to large inventories.
+- [R031 · In progress; validation pending] Add consistent confirmation for destructive and irreversible actions.
+- [R032 · Planned] Add keyboard navigation and screen-reader status announcements.
+- [R033 · Planned] Add responsive compact layouts for narrow and touch screens.
+- [R034 · Planned] Add user-controlled refresh cadence and reduced-motion handling.
+- [R035 · In progress; validation pending] Add export/download affordances with clear local-file boundaries.
+- [R036 · Planned] Add frontend error reporting that redacts secrets and data values.
+
+### 04 · Model lifecycle and compatibility
+
+- [R037 · In progress; validation pending] Expand registry metadata with architecture, size, source, and license.
+- [R038 · In progress; validation pending] Add safe local-folder discovery without following symlinks.
+- [R039 · In progress; validation pending] Add model inspection summaries in the GUI.
+- [R040 · In progress; validation pending] Add duplicate detection by source and content metadata.
+- [R041 · In progress; validation pending] Add model tags, favorites, and workspace labels.
+- [R042 · Planned] Add format/runtime compatibility matrices with version evidence.
+- [R043 · Planned] Add estimated RAM/VRAM fit with explicit uncertainty ranges.
+- [R044 · Planned] Add hardware compatibility warnings before plan generation.
+- [R045 · Planned] Add model source attribution and license review state.
+- [R046 · Planned] Add optional Hugging Face metadata lookup with consent and timeout.
+- [R047 · In progress; validation pending] Add safe model removal that never deletes weights implicitly.
+- [R048 · In progress; validation pending] Add registry import/export with schema validation and migration.
+
+### 05 · Dataset quality and privacy
+
+- [R049 · Implemented; tests passing] Add selectable bounded scan budgets and visible truncation causes.
+- [R050 · Implemented; tests passing] Add schema comparison across train, validation, and test datasets.
+- [R051 · Implemented; tests passing] Add configurable required-field and type checks.
+- [R052 · Implemented; tests passing] Report UTF-8 errors, newline styles, malformed/non-object records, and JSONL delimiter applicability.
+- [R053 · Implemented; tests passing] Configure duplicate-key fields and alert thresholds.
+- [R054 · Implemented; tests passing] Show aggregate whitespace-token length bins without returning text values.
+- [R055 · Implemented; tests passing] Configure sensitive-name substring rules and exact-name false-positive exclusions.
+- [R056 · Implemented; tests passing] Add bounded, explicit-opt-in local PII heuristics that return redacted counts only.
+- [R057 · Implemented; tests passing] Add optional parent-manifest SHA-256 lineage links to bounded provenance manifests.
+- [R058 · Implemented; tests passing] Add no-write cleaning previews with explainable row-change counts.
+- [R059 · Implemented; tests passing] Add exportable validation reports with scan-limit metadata.
+- [R060 · Implemented; tests passing] Add explicit deletion controls for in-memory dataset reports; no disk cache is retained.
+
+### 06 · Training plans and visual workflows
+
+- [R061 · In progress; validation pending] Add a visual workflow graph using the existing GUI design system.
+- [R062 · In progress; validation pending] Define a versioned workflow schema for nodes, ports, and edges.
+- [R063 · In progress; validation pending] Add validated dataset, model, plan, evaluation, and export nodes.
+- [R064 · In progress; validation pending] Detect missing inputs, invalid edges, and dependency cycles.
+- [R065 · In progress; validation pending] Add workflow templates for common supervised fine-tuning paths.
+- [R066 · In progress; validation pending] Add autosave, rename, duplicate, and version history for workflows.
+- [R067 · In progress; validation pending] Add backend-owned workflow validation before execution is possible.
+- [R068 · Implemented; tests passing] Add planning-only dry-run summaries with estimated resource requirements.
+- [R069 · Planned] Add explicit job execution states and cancellation contracts.
+- [R070 · Planned] Add checkpoint, resume, and output-path policy controls.
+- [R071 · In progress] Export seed and software-version manifests; seeds remain unapplied until an execution runner exists.
+- [R072 · Implemented; tests passing] Keep planning-only states visually distinct from executed training.
+
+### 07 · Experiment tracking and evaluation
+
+- [R073 · Implemented; tests passing] Add editable experiment metadata and user-defined tags without mutating saved plans.
+- [R074 · Implemented; tests passing] Add immutable offline evaluation records with input and output manifests.
+- [R075 · Implemented; tests passing] Persist exact plan snapshots across API, GUI, and CLI; reject stale GUI snapshots.
+- [R076 · Implemented; tests passing] Add experiment search, exact-tag filters, pagination, and deletion controls.
+- [R077 · Implemented; tests passing] Add evaluation dataset selection and split provenance.
+- [R078 · Planned] Add benchmark adapters with explicit model/runtime requirements.
+- [R079 · Implemented; tests passing] Add documented exact-match and micro token-overlap metrics for precomputed text outputs.
+- [R080 · Implemented; tests passing] Add immutable baseline creation, selection, and comparison.
+- [R081 · Implemented; tests passing] Add configurable score-drop thresholds and regression gates.
+- [R082 · Implemented; tests passing] Add side-by-side report scores, Wilson confidence intervals, and sample counts.
+- [R083 · Implemented; tests passing] Add exportable evaluation reports with input/output hashes and software metadata.
+- [R084 · Implemented; tests passing] Add explicit deletion controls for saved plan and evaluation records.
+
+### 08 · Runtime, optimization, and quantization
+
+- [R085 · Planned] Add runtime connector discovery and capability negotiation.
+- [R086 · Planned] Add explicit connect/disconnect controls with secret-safe storage.
+- [R087 · Planned] Add runtime status, model identity, and readiness checks.
+- [R088 · Planned] Add measured inference latency and throughput benchmarks.
+- [R089 · Planned] Add warm-up, prompt, concurrency, and output-token benchmark controls.
+- [R090 · Planned] Add quantization estimates with formulas and overhead assumptions.
+- [R091 · Planned] Compare quantization candidates against selected memory budgets.
+- [R092 · Planned] Keep estimated fit separate from measured quality and speed.
+- [R093 · Planned] Add runtime logs and request traces with privacy-safe redaction.
+- [R094 · Planned] Add model load/unload lifecycle and resource cleanup handling.
+- [R095 · Planned] Add adapter compatibility checks for CPU, CUDA, Metal, and ROCm.
+- [R096 · Planned] Add runtime failure recovery and actionable connector diagnostics.
+
+### 09 · Agent profiles, MCP, and security
+
+- [R097 · Planned] Add versioned agent profiles with explicit task capabilities.
+- [R098 · In progress; validation pending] Enforce default-deny tool permissions in the backend boundary.
+- [R099 · Planned] Add per-tool read, write, network, and execution scopes.
+- [R100 · Planned] Add auditable allow/deny decisions with redacted arguments.
+- [R101 · Planned] Add MCP server inventory and protocol handshake inspection.
+- [R102 · Planned] Add tool/resource schema browsing without tool execution by default.
+- [R103 · Planned] Add per-server trust, ownership, and connection state.
+- [R104 · Planned] Add safe secret references and never render stored secret values.
+- [R105 · Planned] Add config, permissions, and exposed-network security audits.
+- [R106 · Planned] Add path traversal and symlink threat-model regression coverage.
+- [R107 · Planned] Add dependency, package, and release-artifact security checks.
+- [R108 · Planned] Add security event export and administrator review workflows.
+
+### 10 · API, telemetry, diagnostics, and delivery
+
+- [R109 · Planned] Add an allowlisted API playground with bounded payloads and timeouts.
+- [R110 · Planned] Add typed API examples generated from the supported contract.
+- [R111 · Planned] Add local hardware snapshot history with opt-in retention.
+- [R112 · Planned] Add sampled CPU, memory, GPU, and disk telemetry where available.
+- [R113 · Planned] Add benchmark-linked resource trend charts with missing-data labels.
+- [R114 · Planned] Add telemetry export, clear-history, and privacy controls.
+- [R115 · Planned] Add diagnostic checks for config, paths, dependencies, and storage.
+- [R116 · Planned] Add copyable support bundles with explicit secret/data redaction.
+- [R117 · Planned] Add release smoke checks for CLI, API, and bundled UI together.
+- [R118 · Planned] Add cross-platform packaging verification for supported targets.
+- [R119 · Planned] Add migration/rollback notes for every persisted-data schema change.
+- [R120 · Planned] Add end-to-end acceptance coverage for each shipped workflow.
+
+### Delivery gates
+
+An item is shipped only when its backend validation and security boundaries,
+GUI states, CLI surface where appropriate, tests, and user documentation are
+verified. Items marked in progress are not complete until those gates pass.
 <!-- AXIOM-ROADMAP-UPDATE:END -->
 
 ## Beta.5 — released
@@ -98,8 +232,8 @@ The release workflow packages separate macOS Apple Silicon (arm64) and Intel (x8
 - [x] Web UI bundled into every release package and the PyPI wheel
 - [x] Automatic PyPI publishing on version tags
 
-### Next
+### Remaining follow-on work
 
-- Connect every GUI page to the daemon routes
-- Measured runtime benchmarking across supported backends
-- Broader model format and accelerator coverage
+- Finish connecting intentionally disconnected GUI views through validated APIs.
+- Add measured runtime benchmarking across supported backends.
+- Broaden model format and accelerator coverage.

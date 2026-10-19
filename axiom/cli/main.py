@@ -1,7 +1,15 @@
 import json
 import os
+import socket
 import sys
+import time
+import urllib.error
+import urllib.request
+import webbrowser
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
+from threading import Thread
 
 import typer
 from huggingface_hub import HfApi, login, logout, snapshot_download, whoami
@@ -14,13 +22,17 @@ from axiom.cli.optimizer import optimizer_app
 from axiom.cli.startup import show_startup, suppress_for_arguments
 from axiom.cli.tools import register as register_tools_cli
 from axiom.cli.headroom import register as register_headroom_cli
+from axiom.cli.workflows import register_workflow_cli
+from axiom.cli.evaluation import register_evaluation_cli
 from axiom.core.hardware import detect_hardware, estimate_model_fit
+from axiom.core.experiments import ExperimentStore
 from axiom.core.integrations import (
     AgentIntegration,
     IntegrationRegistry,
     IntegrationType,
 )
 from axiom.core.project import create_project
+from axiom.core.tool_permissions import TOOL_DESCRIPTIONS, ToolPermissionStore
 from axiom.daemon import LOCAL_ACTIONS, run_daemon
 from axiom.datasets.cleaner import clean_jsonl
 from axiom.datasets.inspector import inspect_dataset
@@ -45,6 +57,7 @@ hf_app = typer.Typer(help="Authenticate and manage Hugging Face access.")
 supercompress_app = typer.Typer(help="Use SuperCompress before inference.")
 integration_app = typer.Typer(help="Connect AXIOM to AI agents and runtimes.")
 mcp_app = typer.Typer(help="Run AXIOM as an MCP server.")
+mcp_profile_app = typer.Typer(help="Manage named default-deny MCP tool profiles.", no_args_is_help=True)
 tools_app = typer.Typer(help="Discover and safely set up developer tools.")
 
 app.add_typer(model_app, name="model")
@@ -54,12 +67,21 @@ app.add_typer(hf_app, name="hf")
 app.add_typer(supercompress_app, name="supercompress")
 app.add_typer(integration_app, name="integration")
 app.add_typer(mcp_app, name="mcp")
+mcp_app.add_typer(mcp_profile_app, name="profile")
 app.add_typer(tools_app, name="tools")
 
 app.add_typer(ai_app, name="ai")
 train_app = typer.Typer(help="Plan and manage AI training jobs.")
+experiment_app = typer.Typer(help="Review saved local experiment plans.", no_args_is_help=True)
+workflow_app = typer.Typer(help="Inspect saved local workflow designs.", no_args_is_help=True)
+evaluation_app = typer.Typer(help="Run and inspect local offline evaluation reports.", no_args_is_help=True)
 
 app.add_typer(train_app, name="train")
+app.add_typer(experiment_app, name="experiment")
+app.add_typer(workflow_app, name="workflow")
+app.add_typer(evaluation_app, name="evaluation")
+register_workflow_cli(workflow_app)
+register_evaluation_cli(evaluation_app)
 
 # Extended AXIOM CLI
 from axiom.cli.dataset_profile import register as register_dataset_profile
@@ -147,6 +169,264 @@ def _run_default_session(*, show_banner: bool = True) -> None:
 def version():
     """Show AXIOM version."""
     console.print(f"[bold cyan]AXIOM[/bold cyan] v{__version__}")
+
+
+@mcp_app.command("permissions")
+def mcp_permissions() -> None:
+    """Show active MCP profile and per-tool access decisions."""
+    try:
+        policy = ToolPermissionStore().list()
+    except (OSError, ValueError) as exc:
+        _cli_error(str(exc))
+    profiles = {profile["name"]: profile for profile in policy["profiles"]}
+    active = policy["active_profile"]
+    allowed = set(profiles[active]["allowed_tools"])
+    table = Table(title=f"MCP permissions · active profile: {active}")
+    table.add_column("Tool", style="cyan")
+    table.add_column("Access")
+    table.add_column("Purpose")
+    for tool_name, description in TOOL_DESCRIPTIONS.items():
+        table.add_row(tool_name, "ALLOW" if tool_name in allowed else "DENY", description)
+    console.print(table)
+
+
+@mcp_app.command("allow")
+def mcp_allow(
+    tool_name: str,
+    profile: str = typer.Option("default", "--profile", help="Profile to update."),
+) -> None:
+    """Explicitly allow one MCP tool in a profile."""
+    try:
+        policy = ToolPermissionStore()
+        current = next((item for item in policy.list()["profiles"] if item["name"] == profile), None)
+        if current is None:
+            _cli_error(f"Unknown MCP profile: {profile}")
+        allowed = sorted(set(current["allowed_tools"]) | {tool_name})
+        policy.save_profile(profile, allowed)
+    except (OSError, ValueError) as exc:
+        _cli_error(str(exc))
+    console.print(f"[green]Allowed[/green] {tool_name} in profile {profile}.")
+
+
+@mcp_app.command("revoke")
+def mcp_revoke(
+    tool_name: str,
+    profile: str = typer.Option("default", "--profile", help="Profile to update."),
+) -> None:
+    """Revoke one MCP tool from a profile."""
+    try:
+        policy = ToolPermissionStore()
+        current = next((item for item in policy.list()["profiles"] if item["name"] == profile), None)
+        if current is None:
+            _cli_error(f"Unknown MCP profile: {profile}")
+        allowed = [item for item in current["allowed_tools"] if item != tool_name]
+        policy.save_profile(profile, allowed)
+    except (OSError, ValueError) as exc:
+        _cli_error(str(exc))
+    console.print(f"[yellow]Revoked[/yellow] {tool_name} from profile {profile}.")
+
+
+@mcp_profile_app.command("create")
+def mcp_profile_create(profile: str) -> None:
+    """Create a profile with no allowed tools."""
+    try:
+        ToolPermissionStore().create_profile(profile)
+    except (OSError, ValueError) as exc:
+        _cli_error(str(exc))
+    console.print(f"Created default-deny MCP profile [cyan]{profile}[/cyan].")
+
+
+@mcp_profile_app.command("use")
+def mcp_profile_use(profile: str) -> None:
+    """Select the profile enforced by the MCP server."""
+    try:
+        ToolPermissionStore().set_active(profile)
+    except (OSError, ValueError) as exc:
+        _cli_error(str(exc))
+    console.print(f"Active MCP profile is now [cyan]{profile}[/cyan].")
+
+
+@experiment_app.command("list")
+def experiment_list(
+    limit: int = typer.Option(20, min=1, max=1000, help="Maximum records to display."),
+    offset: int = typer.Option(0, min=0, max=1_000_000, help="Number of matching records to skip."),
+    query: str | None = typer.Option(None, "--query", help="Search names, models, datasets, notes, and tags."),
+    tag: str | None = typer.Option(None, "--tag", help="Filter by an exact tag."),
+    json_output: bool = typer.Option(False, "--json", help="Print records as JSON."),
+) -> None:
+    """List saved training plans without claiming they were executed."""
+    try:
+        records = ExperimentStore().list_page(limit=limit, offset=offset, query=query, tag=tag)["experiments"]
+    except (OSError, ValueError) as exc:
+        _cli_error(str(exc))
+    if json_output:
+        console.print_json(json.dumps(records, ensure_ascii=False))
+        return
+    if not records:
+        console.print("No saved experiments. Create a plan in the GUI to start history.")
+        return
+
+    table = Table(title="Saved experiment plans")
+    table.add_column("ID", style="cyan")
+    table.add_column("Name")
+    table.add_column("Method")
+    table.add_column("Status")
+    table.add_column("Created")
+    for record in records:
+        plan = record.get("plan") if isinstance(record.get("plan"), dict) else {}
+        table.add_row(
+            str(record.get("id", ""))[:12],
+            str(record.get("name", "Unnamed")),
+            str(plan.get("method", record.get("requested_method", "unknown"))),
+            str(record.get("status", "planned")),
+            str(record.get("created_at", "")),
+        )
+    console.print(table)
+
+
+@experiment_app.command("show")
+def experiment_show(experiment_id: str) -> None:
+    """Show a saved experiment plan by its full ID."""
+    try:
+        record = ExperimentStore().get(experiment_id)
+    except (OSError, ValueError) as exc:
+        _cli_error(str(exc))
+    if record is None:
+        _cli_error(f"Experiment not found: {experiment_id}")
+    console.print_json(json.dumps(record, ensure_ascii=False))
+
+
+@experiment_app.command("update")
+def experiment_update(
+    experiment_id: str,
+    name: str | None = typer.Option(None, "--name"),
+    notes: str | None = typer.Option(None, "--notes"),
+    clear_notes: bool = typer.Option(False, "--clear-notes", help="Remove saved notes."),
+    tags: list[str] | None = typer.Option(None, "--tag", help="Replace tags; repeat the option for multiple tags."),
+) -> None:
+    """Update experiment labels without changing the saved plan snapshot."""
+    store = ExperimentStore()
+    try:
+        current = store.get(experiment_id)
+        if current is None:
+            _cli_error(f"Experiment not found: {experiment_id}")
+        updated = store.update_metadata(
+            experiment_id,
+            name=name if name is not None else current.get("name", ""),
+            notes=None if clear_notes else notes if notes is not None else current.get("notes"),
+            tags=tags if tags is not None else current.get("tags", []),
+        )
+    except (OSError, ValueError) as exc:
+        _cli_error(str(exc))
+    if updated is None:
+        _cli_error(f"Experiment not found: {experiment_id}")
+    console.print_json(json.dumps({"experiment": updated, "plan_immutable": True}, ensure_ascii=False))
+
+
+@experiment_app.command("delete")
+def experiment_delete(
+    experiment_id: str,
+    yes: bool = typer.Option(False, "--yes", help="Delete without an interactive confirmation."),
+) -> None:
+    """Delete one saved plan record; no run artifacts are removed."""
+    if not yes and not typer.confirm(f"Delete saved plan {experiment_id}?", default=False):
+        console.print("Cancelled.")
+        return
+    try:
+        removed = ExperimentStore().delete(experiment_id)
+    except (OSError, ValueError) as exc:
+        _cli_error(str(exc))
+    if removed is None:
+        _cli_error(f"Experiment not found: {experiment_id}")
+    console.print_json(json.dumps({"deleted": removed, "run_artifacts_deleted": False}, ensure_ascii=False))
+
+
+@app.command("gui")
+@app.command("ui")
+def start_gui(
+    port: int = typer.Option(
+        0,
+        "--port",
+        min=0,
+        max=65535,
+        help="Local port to use; 0 selects an available port.",
+    ),
+    open_browser: bool = typer.Option(
+        True,
+        "--open/--no-open",
+        help="Open the local Control Center in your browser.",
+    ),
+) -> None:
+    """Start the local API and open the AXIOM Control Center."""
+    webui_dir = Path(__file__).resolve().parent.parent / "webui"
+    if not (webui_dir / "index.html").is_file():
+        _cli_error("The bundled Control Center is missing. Build the web UI before running axiom gui.")
+
+    try:
+        import uvicorn
+    except ImportError as exc:
+        _cli_error(f"The local API server dependency is unavailable: {exc}")
+
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", port))
+        listener.listen(128)
+    except OSError as exc:
+        listener.close()
+        _cli_error(f"Could not start the local Control Center: {exc}")
+
+    selected_port = listener.getsockname()[1]
+    base_url = f"http://127.0.0.1:{selected_port}"
+    config = uvicorn.Config(
+        "axiom.api.server:create_app",
+        factory=True,
+        host="127.0.0.1",
+        port=selected_port,
+        access_log=False,
+        log_level="warning",
+    )
+    server = uvicorn.Server(config)
+    thread = Thread(target=server.run, kwargs={"sockets": [listener]}, name="axiom-gui", daemon=True)
+    thread.start()
+
+    deadline = time.monotonic() + 15
+    ready = False
+    last_request_id = "not available"
+    while thread.is_alive() and time.monotonic() < deadline:
+        last_request_id = uuid.uuid4().hex
+        health_request = urllib.request.Request(
+            f"{base_url}/api/health",
+            headers={"X-Request-ID": last_request_id},
+        )
+        try:
+            with urllib.request.urlopen(health_request, timeout=0.5) as response:
+                ready = response.status == 200
+                if ready:
+                    break
+        except (OSError, urllib.error.URLError):
+            time.sleep(0.1)
+
+    if not ready:
+        server.should_exit = True
+        thread.join(timeout=5)
+        listener.close()
+        _cli_error(f"The local API did not become ready. Check the AXIOM installation and try again (request ID {last_request_id}).")
+
+    ui_url = f"{base_url}/ui/"
+    console.print(f"[bold green]AXIOM Control Center ready[/bold green]  {ui_url}")
+    console.print("The local API is bound to loopback. Press Ctrl-C to stop it.")
+    if open_browser:
+        webbrowser.open(ui_url, new=2)
+
+    try:
+        thread.join()
+    except KeyboardInterrupt:
+        console.print("\nStopping the AXIOM Control Center…")
+        server.should_exit = True
+        thread.join(timeout=5)
+    finally:
+        listener.close()
 
 
 @app.command()
@@ -572,8 +852,18 @@ def train_plan(
         "--method",
         help="Training method: auto, qlora, lora, or full.",
     ),
+    save: bool = typer.Option(False, "--save", help="Save this exact planning snapshot to local experiment history."),
+    name: str | None = typer.Option(None, "--name", help="Saved plan name; requires --save."),
+    model: str | None = typer.Option(None, "--model", help="Optional model label to save with the plan."),
+    dataset: str | None = typer.Option(None, "--dataset", help="Optional dataset path or label to save with the plan."),
+    notes: str | None = typer.Option(None, "--notes", help="Optional note to save with the plan."),
+    tags: list[str] | None = typer.Option(None, "--tag", help="Saved tag; repeat for multiple tags. Requires --save."),
+    json_output: bool = typer.Option(False, "--json", help="Emit the planning result and optional saved snapshot as JSON."),
 ):
-    """Generate a hardware-aware training plan."""
+    """Generate and optionally save a hardware-aware plan without starting training."""
+    if not save and any(value is not None for value in (name, model, dataset, notes, tags)):
+        _cli_error("--name, --model, --dataset, --notes, and --tag require --save.")
+
     hardware = detect_hardware()
 
     try:
@@ -583,8 +873,39 @@ def train_plan(
             method=method.lower(),
         )
     except ValueError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=1)
+        _cli_error(str(exc))
+
+    saved_record = None
+    if save:
+        saved_record = {
+            "schema_version": 1,
+            "id": uuid.uuid4().hex,
+            "name": name or f"{parameters:g}B {plan.method} plan",
+            "created_at": datetime.now(UTC).isoformat(),
+            "model": model,
+            "dataset": dataset,
+            "notes": notes,
+            "tags": tags or [],
+            "parameter_billions": parameters,
+            "requested_method": method.lower(),
+            "status": "planned",
+            "hardware": hardware.__dict__,
+            "plan": plan.__dict__,
+        }
+        try:
+            ExperimentStore().add(saved_record)
+        except (OSError, TimeoutError, ValueError) as exc:
+            _cli_error(f"Plan could not be saved: {exc}")
+
+    if json_output:
+        console.print_json(json.dumps({
+            "status": "planning_only",
+            "executed": False,
+            "hardware": hardware.__dict__,
+            "plan": plan.__dict__,
+            "experiment": saved_record,
+        }, ensure_ascii=False, allow_nan=False))
+        return
 
     if hardware.gpu_name:
         gpu = hardware.gpu_name
@@ -618,6 +939,8 @@ def train_plan(
             title="AXIOM",
         )
     )
+    if saved_record:
+        console.print(f"Saved plan snapshot [cyan]{saved_record['id']}[/cyan]. No training job was started.")
 
 
 @model_app.command("list")

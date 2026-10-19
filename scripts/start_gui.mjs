@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 
 const python = process.env.AXIOM_PYTHON || "python";
-const apiUrl = "http://127.0.0.1:8000/api/health";
+const apiUrl = "http://127.0.0.1:33855/api/health";
 const children = [];
 
 function start(command, args, name) {
@@ -53,11 +53,11 @@ process.on("SIGTERM", stopAll);
 try {
   start(
     python,
-    ["-m", "uvicorn", "axiom.api.server:create_app", "--factory", "--host", "127.0.0.1", "--port", "8000"],
+    ["-m", "uvicorn", "axiom.api.server:create_app", "--factory", "--host", "127.0.0.1", "--port", "33855"],
     "api",
   );
   await waitForApi();
-  console.log("[api] ready at http://127.0.0.1:8000");
+  console.log("[api] ready at http://127.0.0.1:33855");
   start("npm", ["run", "dev"], "gui");
 } catch (error) {
   console.error(`[gui] ${error instanceof Error ? error.message : String(error)}`);
