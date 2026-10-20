@@ -408,6 +408,16 @@ inspection summaries, stable registry IDs, tags, favorites, pagination, and
 versioned JSON import/export. Removing an entry removes only registry metadata;
 it never deletes model weights.
 
+## Read-only API Playground, runtime discovery and agent profiles
+
+The Control Center's API Playground exposes a small allowlist of `GET` endpoints only. It uses the shared 15-second API timeout, bounded inventory reads, and a capped JSON preview; it does not accept arbitrary URLs, request bodies, or mutation methods. See [the Playground safety contract](docs/Api-Playground.md).
+
+The Runtime page detects known local runtime executables and Python packages passively. It does not start processes, contact endpoints, load models, or certify readiness. See [runtime discovery semantics](docs/Runtime-Discovery.md).
+
+Agent Profiles offers versioned task-intent labels and a default-deny profile stored locally in `.axiom/agent-profiles.json`. These labels are descriptive metadata only; MCP permissions remain enforced separately. See [the Agent Profiles contract](docs/Agent-Profiles.md).
+
+Before a release, run `python scripts/release_smoke.py`, `python -m pytest -q`, `npm run lint`, `npm run build`, and `npm run e2e`. Static smoke checks complement but do not replace execution tests.
+
 ## ✅ What is shipped, and what is not
 
 ### Shipped in the beta

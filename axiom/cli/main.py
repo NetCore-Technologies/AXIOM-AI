@@ -86,9 +86,11 @@ register_evaluation_cli(evaluation_app)
 # Extended AXIOM CLI
 from axiom.cli.dataset_profile import register as register_dataset_profile
 from axiom.cli.extended import register as register_extended_cli
+from axiom.cli.agent_profiles import register as register_agent_profiles
 
 register_extended_cli(app, model_app, dataset_app)
 register_dataset_profile(dataset_app)
+register_agent_profiles(app)
 register_tools_cli(app, tools_app)
 register_headroom_cli(app)
 

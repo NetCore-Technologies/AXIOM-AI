@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { ensureAuthenticated } from "./helpers/auth";
 
 const evaluationReport = {
   metric_schema_version: 1,
@@ -43,6 +44,7 @@ const evaluationReport = {
 };
 
 test("evaluation form submits selected fields and displays persisted aggregate results", async ({ page }) => {
+  await ensureAuthenticated(page);
   let runs: Array<Record<string, unknown>> = [];
   let submitted: Record<string, unknown> | null = null;
 
@@ -89,5 +91,5 @@ test("evaluation form submits selected fields and displays persisted aggregate r
     baseline: false,
   });
   await expect(page.getByText(/2 samples · exact 0.500/)).toBeVisible();
-  await expect(page.getByText("precomputed", { exact: false })).toBeVisible();
+  await expect(page.getByText("Precomputed outputs only", { exact: true })).toBeVisible();
 });

@@ -67,7 +67,8 @@ def test_evaluation_store_is_immutable_except_explicit_deletion(tmp_path):
     store.add(run)
     assert store.get("run-one") == run
     assert store.list_page(limit=1)["runs"] == [run]
-    assert store.delete("run-one") == run
+    deleted = store.delete("run-one")
+    assert deleted == run
     assert store.get("run-one") is None
 
 

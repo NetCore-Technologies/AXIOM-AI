@@ -5,7 +5,6 @@ import hashlib
 import importlib.metadata
 import json
 import platform
-import sys
 from datetime import UTC, datetime
 from typing import Any, Literal
 
