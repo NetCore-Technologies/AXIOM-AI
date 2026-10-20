@@ -1,0 +1,22 @@
+{
+  "repository": "NetCore-Technologies/AXIOM-AI",
+  "branch": "main",
+  "captured_at": "2026-10-20",
+  "source_file": "ROADMAP.md",
+  "source_blob_sha": "873b35c1eade5c6c401add7c982436b5d423f806",
+  "repository_tree_sha": "2282337ab7fd795e3ad57b7e16e8380c69fc6ed7",
+  "deliverables": 120,
+  "source_status_labels": {
+    "Implemented; tests passing": 29,
+    "In progress; validation pending": 22,
+    "In progress": 1,
+    "Planned": 68
+  },
+  "normalized_statuses": {
+    "implemented": 29,
+    "in_progress": 23,
+    "planned": 68,
+    "unknown": 0
+  },
+  "note": "Status labels were read from the live source roadmap. These are maintainer labels, not independent verification that every item works today."
+}
