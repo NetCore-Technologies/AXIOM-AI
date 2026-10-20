@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { ensureAuthenticated } from "./helpers/auth";
 
 const workflow = {
   id: "workflow-1",
@@ -17,6 +18,7 @@ const workflow = {
 };
 
 test("workflow autosave and dry-run stay planning-only", async ({ page }) => {
+  await ensureAuthenticated(page);
   let currentWorkflow = {
     ...workflow,
     versions: [] as Array<{
@@ -29,7 +31,7 @@ test("workflow autosave and dry-run stay planning-only", async ({ page }) => {
   };
   let createdJob = false;
 
-  await page.route("**/api/workflows", async (route) => {
+  await page.route("**/api/workflows**", async (route) => {
     const request = route.request();
     if (request.method() === "GET") {
       await route.fulfill({ json: { workflows: [currentWorkflow] } });
@@ -152,12 +154,12 @@ test("workflow autosave and dry-run stay planning-only", async ({ page }) => {
   );
   await page.getByLabel("Workflow name").fill("Autosaved plan");
   await updateResponse;
-  await expect(page.getByText("Autosaved · revision 2 · design only")).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Autosaved · revision 2 · design only" })).toBeVisible();
 
   await page.getByRole("button", { name: "Dry-run saved graph" }).click();
   await expect(page.getByText("Workflow dry-run summary")).toBeVisible();
   await expect(page.getByText("NOT EXECUTED")).toBeVisible();
   await expect(page.locator("body")).toContainText("8.2 GB");
-  await expect(page.getByText(/Seed 42 (not applied)/)).toBeVisible();
+  await expect(page.getByText(/Seed 42 \(not applied\)/)).toBeVisible();
   expect(createdJob).toBe(false);
 });

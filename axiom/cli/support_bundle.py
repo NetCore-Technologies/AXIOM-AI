@@ -56,6 +56,7 @@ def register(app: typer.Typer) -> None:
                 try:
                     os.close(descriptor)
                 except OSError:
+                    # Preserve the original write error if descriptor cleanup also fails.
                     pass
                 raise
         except FileExistsError:

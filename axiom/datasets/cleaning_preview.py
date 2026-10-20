@@ -42,7 +42,6 @@ def preview_jsonl_cleaning(
         remaining = max_bytes - read_bytes
         if remaining <= 0:
             truncated = True
-            scan_budget_exhausted = True
             truncation_reasons.add("max_bytes")
             break
         raw = stream.readline(min(max_line_bytes + 1, remaining + 1))
@@ -51,7 +50,6 @@ def preview_jsonl_cleaning(
         if len(raw) > remaining:
             read_bytes += remaining
             truncated = True
-            scan_budget_exhausted = True
             truncation_reasons.add("max_bytes")
             break
 

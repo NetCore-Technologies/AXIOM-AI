@@ -18,7 +18,8 @@ def _write_roadmap(path: Path, rows: list[str]) -> Path:
     return path
 
 
-def test_audit_parses_all_120_known_statuses_and_group_names(tmp_path: Path):
+def test_audit_parses_all_120_known_statuses_and_group_names(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
     rows = []
     for number in range(1, 121):
         status = "Implemented; tests passing" if number <= 30 else "In progress; validation pending" if number <= 50 else "Planned"
@@ -32,7 +33,8 @@ def test_audit_parses_all_120_known_statuses_and_group_names(tmp_path: Path):
     json.dumps(report)
 
 
-def test_audit_reports_missing_duplicate_and_unknown_statuses(tmp_path: Path):
+def test_audit_reports_missing_duplicate_and_unknown_statuses(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
     rows = ["- [R001 · Implemented; tests passing] One", "- [R001 · Mystery] Duplicate"]
     report = audit_roadmap(_write_roadmap(tmp_path / "ROADMAP.md", rows))
     assert report["integrity"]["ok"] is False
@@ -41,7 +43,8 @@ def test_audit_reports_missing_duplicate_and_unknown_statuses(tmp_path: Path):
     assert report["integrity"]["unknown_status_ids"] == ["R001"]
 
 
-def test_audit_rejects_bad_markers_and_symlink(tmp_path: Path):
+def test_audit_rejects_bad_markers_and_symlink(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
     bad = tmp_path / "ROADMAP.md"
     bad.write_text("# no markers", encoding="utf-8")
     with pytest.raises(ValueError, match="marker pair"):
@@ -55,7 +58,35 @@ def test_audit_rejects_bad_markers_and_symlink(tmp_path: Path):
         audit_roadmap(link)
 
 
-def test_audit_preserves_the_four_repository_status_classes(tmp_path: Path):
+def test_audit_rejects_paths_outside_workspace_and_symlinked_parent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    workspace = tmp_path / "workspace"
+    external = tmp_path / "external"
+    workspace.mkdir()
+    external.mkdir()
+    outside_roadmap = _write_roadmap(external / "ROADMAP.md", [])
+    monkeypatch.chdir(workspace)
+
+    with pytest.raises(ValueError, match="inside the current workspace or AXIOM source checkout"):
+        audit_roadmap(outside_roadmap)
+
+    linked_directory = workspace / "external-link"
+    try:
+        linked_directory.symlink_to(external, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symlink creation unavailable")
+    with pytest.raises(ValueError, match="inside the current workspace or AXIOM source checkout"):
+        audit_roadmap(linked_directory / "ROADMAP.md")
+
+
+def test_audit_requires_the_canonical_roadmap_filename(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
+    other_file = _write_roadmap(tmp_path / "NOT-ROADMAP.md", [])
+    with pytest.raises(ValueError, match="named ROADMAP.md"):
+        audit_roadmap(other_file)
+
+
+def test_audit_preserves_the_four_repository_status_classes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
     rows = []
     for number in range(1, 121):
         if number <= 29:
@@ -72,7 +103,8 @@ def test_audit_preserves_the_four_repository_status_classes(tmp_path: Path):
     assert report["counts"] == {"implemented": 29, "in_progress": 23, "planned": 68, "unknown": 0}
 
 
-def test_roadmap_cli_emits_machine_readable_audit(tmp_path: Path):
+def test_roadmap_cli_emits_machine_readable_audit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
     import typer
     from typer.testing import CliRunner
 

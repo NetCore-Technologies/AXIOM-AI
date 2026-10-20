@@ -71,7 +71,8 @@ def test_experiment_store_search_metadata_edit_and_deletion(tmp_path):
     assert updated["plan"] == second["plan"]
     assert updated["name"] == "candidate v2"
     assert store.list_page(tag="ready")["total"] == 1
-    assert store.delete("second")["id"] == "second"
+    deleted = store.delete("second")
+    assert deleted["id"] == "second"
     assert store.get("second") is None
 
 

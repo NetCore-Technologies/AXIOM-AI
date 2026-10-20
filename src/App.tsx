@@ -1,5 +1,8 @@
 import AxiomOptimizer from "./components/AxiomOptimizer";
 import AxiomQuantizer from "./components/AxiomQuantizer";
+import ApiPlayground from "./components/ApiPlayground";
+import RuntimeConnectorPanel from "./components/RuntimeConnectorPanel";
+import AgentProfiles from "./components/AgentProfiles";
 import {
   axiomApi,
   type DatasetCleaningPreview,
@@ -108,6 +111,8 @@ type Page =
   | "runtime"
   | "mcp"
   | "diagnostics"
+  | "api-playground"
+  | "agent-profiles"
   | "roadmap"
   | "modules"
   | "logs"
@@ -203,6 +208,18 @@ const navItems: NavItem[] = [
     icon: Wrench,
   },
   {
+    id: "api-playground",
+    label: "API Playground",
+    description: "Inspect allowlisted GET endpoints",
+    icon: Network,
+  },
+  {
+    id: "agent-profiles",
+    label: "Agent Profiles",
+    description: "Versioned task-intent metadata",
+    icon: ShieldCheck,
+  },
+  {
     id: "roadmap",
     label: "Roadmap",
     description: "Scoped feature status and integrity",
@@ -288,6 +305,16 @@ const pageMeta: Record<
     kicker: "OBSERVABILITY",
     description: "Find configuration drift and local blockers before they become confusing failures.",
   },
+  "api-playground": {
+    label: "API Playground",
+    kicker: "API INSPECTION / READ-ONLY",
+    description: "Inspect a fixed list of safe GET endpoints with bounded timeouts and response previews.",
+  },
+  "agent-profiles": {
+    label: "Agent Profiles",
+    kicker: "VERSIONED TASK METADATA",
+    description: "Create local task profiles while keeping tool permissions and execution scopes separate.",
+  },
   roadmap: {
     label: "Roadmap",
     kicker: "DELIVERY STATUS / R001–R120",
@@ -313,6 +340,7 @@ const pageMeta: Record<
 function pageFromLocation(): Page {
   if (typeof window === "undefined") return "dashboard";
   const requested = new URLSearchParams(window.location.search).get("page");
+  if (requested === "api-playground") return "api-playground";
   return navItems.some((item) => item.id === requested) ? requested as Page : "dashboard";
 }
 
@@ -1435,6 +1463,10 @@ function WorkspacePage({
       return <RoadmapPage />;
     case "diagnostics":
       return <Diagnostics onNotify={onNotify} />;
+    case "api-playground":
+      return <FeaturePage page="api-playground"><ApiPlayground /></FeaturePage>;
+    case "agent-profiles":
+      return <FeaturePage page="agent-profiles"><AgentProfiles /></FeaturePage>;
     case "logs":
       return <LogsPage />;
     case "settings":
@@ -2790,6 +2822,7 @@ function Runtime() {
     <div className="info-grid"><InfoCard icon={Cpu} label="Processor" value={hardware?.architecture || "—"} detail={hardware ? `${hardware.cpu_cores} CPU cores` : loading ? "Checking" : "Unavailable"} tone={hardware ? "success" : "neutral"} /><InfoCard icon={HardDrive} label="System memory" value={hardware ? `${hardware.ram_gb.toFixed(1)} GB` : "—"} detail="Detected locally" tone={hardware ? "success" : "neutral"} /><InfoCard icon={Zap} label="GPU memory" value={hardware?.vram_gb === null || hardware?.vram_gb === undefined ? "Not detected" : `${hardware.vram_gb.toFixed(1)} GB`} detail={hardware?.gpu_name || "No compatible GPU reported"} tone={hardware?.cuda_available ? "success" : "warning"} /></div>
     {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
     <Surface title="Serving status" eyebrow="LOCAL INFERENCE"><EmptyState icon={RadioTower} title="No inference process reported" description="The runtime endpoint currently reports system hardware only. Request volume, latency, and model selection need a serving connector." /></Surface>
+    <RuntimeConnectorPanel />
   </FeaturePage>;
 }
 
@@ -3034,6 +3067,8 @@ function ModulesPage({ setPage }: { setPage: (page: Page) => void }) {
     { id: "runtime", title: "Runtime connections", description: "Inspect runtime connection state. A GUI panel does not mean a local inference server is installed or running.", scope: "Operations", availability: "Connection-dependent", tone: "warning", icon: RadioTower, page: "runtime" },
     { id: "mcp", title: "MCP tools and permission profiles", description: "Inspect tool policy, named profiles, and supported local MCP surfaces. Tools remain deny-by-default until configured.", scope: "Integrations", availability: "GUI + CLI", tone: "success", icon: Network, page: "mcp", command: "axiom mcp --help" },
     { id: "diagnostics", title: "Diagnostics and support", description: "Check API and machine connectivity and access workspace warnings and support actions that are enabled.", scope: "Operations", availability: "GUI", tone: "success", icon: Wrench, page: "diagnostics", command: "axiom doctor --help" },
+    { id: "api-playground", title: "API Playground", description: "Inspect a bounded allowlist of read-only HTTP endpoints and copy JSON responses.", scope: "Developer API", availability: "GUI · GET only", tone: "success", icon: Network, page: "api-playground" },
+    { id: "agent-profiles", title: "Agent task profiles", description: "Version descriptive task labels without changing MCP grants or execution permissions.", scope: "Agent engineering", availability: "GUI + CLI metadata", tone: "success", icon: ShieldCheck, page: "agent-profiles", command: "axiom agent-profile --help" },
     { id: "logs", title: "Workspace event stream", description: "Filter recent workspace actions; this is not a claim of full OS or process telemetry.", scope: "Observability", availability: "GUI", tone: "success", icon: TerminalSquare, page: "logs" },
     { id: "settings", title: "Preferences and local security", description: "Manage available GUI preferences and administrator-session settings.", scope: "System", availability: "GUI", tone: "success", icon: Settings, page: "settings" },
     { id: "tools", title: "Developer tool catalog", description: "Discover supported external developer tools and review setup plans before explicit installs.", scope: "CLI extensions", availability: "CLI surface", tone: "neutral", icon: Wrench, command: "axiom tools --help" },
@@ -3049,8 +3084,11 @@ function ModulesPage({ setPage }: { setPage: (page: Page) => void }) {
     { id: "api", title: "HTTP API reference", description: "Open the running service's OpenAPI explorer to inspect the endpoints actually exposed by this build.", scope: "Developer API", availability: "API docs", tone: "neutral", icon: Network, href: "/api/docs" },
     { id: "roadmap", title: "120-item product roadmap", description: "Inspect delivery labels from ROADMAP.md, search backlog items, and check ID/status integrity.", scope: "Governance", availability: "Source audit", tone: "neutral", icon: FileCode2, page: "roadmap", command: "axiom roadmap audit --json" },
   ];
-  const normalized = query.trim().toLowerCase();
-  const filtered = entries.filter((entry) => `${entry.title} ${entry.description} ${entry.scope} ${entry.availability} ${entry.command ?? ""}`.toLowerCase().includes(normalized));
+  const queryTerms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const filtered = entries.filter((entry) => {
+    const searchable = `${entry.title} ${entry.description} ${entry.scope} ${entry.availability} ${entry.command ?? ""}`.toLowerCase();
+    return queryTerms.every((term) => searchable.includes(term));
+  });
   const copyCommand = async (entry: Entry) => {
     if (!entry.command) return;
     try {

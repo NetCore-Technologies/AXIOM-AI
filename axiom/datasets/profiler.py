@@ -191,7 +191,6 @@ def profile_jsonl_stream(
         remaining = max_bytes - read_bytes
         if remaining <= 0:
             truncated = True
-            scan_budget_exhausted = True
             truncation_reasons.add("max_bytes")
             break
 
@@ -201,7 +200,6 @@ def profile_jsonl_stream(
         if len(raw) > remaining:
             read_bytes += remaining
             truncated = True
-            scan_budget_exhausted = True
             truncation_reasons.add("max_bytes")
             break
 

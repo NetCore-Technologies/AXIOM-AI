@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import ipaddress
 import json
-import mimetypes
 import os
 import shutil
 import sys

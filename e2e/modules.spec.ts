@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { ensureAuthenticated } from "./helpers/auth";
 
 test.describe("AXIOM module explorer", () => {
+  test.beforeEach(async ({ page }) => {
+    await ensureAuthenticated(page);
+  });
+
   test("lists existing GUI surfaces and honestly labels CLI-only entry points", async ({ page }) => {
     await page.goto("/?page=modules");
 
@@ -23,6 +28,29 @@ test.describe("AXIOM module explorer", () => {
     await datasetModule.getByRole("button", { name: "Open" }).click();
     await expect(page).toHaveURL(/page=datasets/);
     await expect(page.locator(".page-header h1")).toContainText("Datasets");
+  });
+
+  test("opens the new wired GUI pages from the module directory", async ({ page }) => {
+    await page.route("**/api/agent-profiles**", (route) => route.fulfill({ json: {
+      schema_version: 1,
+      profiles: [{ id: "default", name: "default", version: 1, task_capabilities: [], created_at: "2026-10-20T00:00:00Z", updated_at: "2026-10-20T00:00:00Z", built_in: true }],
+      capability_catalog: ["model.inspect", "dataset.profile", "training.plan", "evaluation.review", "runtime.inspect", "mcp.inspect"],
+      authorization_note: "Task capabilities are descriptive metadata and do not grant MCP/tool permissions.",
+    } }));
+
+    await page.goto("/?page=modules");
+    const apiEntry = page.getByRole("group", { name: "API Playground" });
+    await expect(apiEntry).toContainText("GUI · GET only");
+    await apiEntry.getByRole("button", { name: "Open" }).click();
+    await expect(page).toHaveURL(/page=api-playground/);
+    await expect(page.locator(".page-header h1")).toHaveText("API Playground");
+
+    await page.goto("/?page=modules");
+    const profilesEntry = page.getByRole("group", { name: "Agent task profiles" });
+    await expect(profilesEntry).toContainText("GUI + CLI metadata");
+    await profilesEntry.getByRole("button", { name: "Open" }).click();
+    await expect(page).toHaveURL(/page=agent-profiles/);
+    await expect(page.locator(".page-header h1")).toHaveText("Agent Profiles");
   });
 
   test("does not imply that roadmap planning work is already delivered", async ({ page }) => {

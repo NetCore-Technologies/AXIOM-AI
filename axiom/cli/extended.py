@@ -569,7 +569,6 @@ def register(app, model_app, dataset_app) -> None:
         """Validate a local YAML mapping without echoing configuration values."""
         config = Path(path)
         status = "invalid"
-        message = "Configuration validation failed."
         valid = False
         if config.is_symlink():
             message = "Configuration path must not be a symbolic link."

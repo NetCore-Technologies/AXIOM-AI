@@ -1914,3 +1914,68 @@ button,
 .pagination-actions { display: flex; justify-content: center; margin-top: 16px; }
 .danger-button { border-color: var(--danger); background: var(--danger); color: var(--bg-deep); }
 .danger-button:hover:not(:disabled) { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+
+/* AXIOM API Playground / bounded read-only request output */
+.api-playground-layout { display: grid; grid-template-columns: minmax(250px, .72fr) minmax(0, 1.28fr); gap: 28px; align-items: start; }
+.api-playground-intro, .api-playground-description { color: var(--muted); font-size: 11px; line-height: 1.65; }
+.api-playground-field { display: block; margin-top: 20px; }
+.api-playground-field select { width: 100%; min-height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 2px; background: var(--surface); color: var(--ink); font: inherit; font-size: 11px; }
+.api-playground-field select:focus { outline: 1px solid var(--accent); outline-offset: 1px; }
+.api-playground-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 19px 0; padding: 13px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.api-playground-facts > div { min-width: 0; display: grid; gap: 5px; }
+.api-playground-facts span, .api-playground-result-meta > span { color: var(--faint); font-size: 8px; font-weight: 700; letter-spacing: .09em; }
+.api-playground-facts b { color: var(--ink); font-size: 10px; font-weight: 650; }
+.api-playground-empty { min-height: 250px; }
+.api-playground-result-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.api-playground-result-meta code { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: 10px; }
+.api-playground-result-meta .text-button { flex: 0 0 auto; }
+.api-playground-json { max-height: min(68vh, 720px); overflow: auto; margin: 0; padding: 16px; border: 1px solid var(--line); background: var(--surface-raised, var(--surface)); color: var(--ink); font: 10px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre; tab-size: 2; }
+.api-playground-json:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.api-playground-response .loading-state { display: flex; align-items: center; gap: 8px; }
+@media (max-width: 860px) { .api-playground-layout { grid-template-columns: 1fr; gap: 8px; } }
+@media (max-width: 520px) { .api-playground-facts { grid-template-columns: 1fr; } .api-playground-json { max-height: 48vh; padding: 11px; font-size: 9px; } }
+@media (prefers-reduced-motion: reduce) { .api-playground-layout *, .api-playground-layout *::before, .api-playground-layout *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+/* AXIOM Runtime connectors / passive discovery */
+.runtime-connectors-disclaimer { max-width: 780px; color: var(--muted); font-size: 10px; line-height: 1.65; }
+.runtime-connector-list { display: grid; margin-top: 12px; }
+.runtime-connector-row { display: flex; align-items: center; gap: 11px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.runtime-connector-row:last-child { border-bottom: 0; }
+.runtime-connector-mark { display: grid; flex: 0 0 auto; place-items: center; }
+.runtime-connector-mark.present { color: var(--success); }
+.runtime-connector-mark.missing { color: var(--faint); }
+.runtime-connector-copy { min-width: 0; flex: 1; }
+.runtime-connector-copy b, .runtime-connector-copy small { display: block; }
+.runtime-connector-copy b { color: var(--ink); font-size: 11px; font-weight: 680; }
+.runtime-connector-copy small { margin-top: 4px; color: var(--faint); font-size: 9px; overflow-wrap: anywhere; }
+.runtime-connectors .quiet-note { display: flex; align-items: center; gap: 6px; }
+@media (max-width: 520px) { .runtime-connector-row { align-items: flex-start; flex-wrap: wrap; } .runtime-connector-row .status-pill { margin-left: 27px; } }
+
+/* AXIOM Agent Profiles / versioned task-intent metadata */
+.agent-profiles-layout { display: grid; grid-template-columns: minmax(260px, .85fr) minmax(0, 1.15fr); gap: 28px; align-items: start; }
+.agent-profile-disclaimer { color: var(--muted); font-size: 10px; line-height: 1.65; }
+.agent-profile-create { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; margin: 18px 0; }
+.agent-profile-create .button { min-height: 39px; }
+.agent-profile-list { display: grid; }
+.agent-profile-row { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
+.agent-profile-row.selected { border-left: 2px solid var(--accent); padding-left: 8px; }
+.agent-profile-select { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 13px 0; border: 0; background: transparent; color: var(--ink); text-align: left; }
+.agent-profile-row-name { min-width: 0; flex: 1; }
+.agent-profile-row-name b, .agent-profile-row-name small { display: block; }
+.agent-profile-row-name b { font-size: 11px; font-weight: 700; }
+.agent-profile-row-name small { margin-top: 4px; color: var(--faint); font-size: 9px; }
+.agent-profile-delete { flex: 0 0 auto; }
+.agent-profile-facts { display: grid; gap: 7px; margin: 0 0 18px; padding: 12px 0; border-block: 1px solid var(--line); }
+.agent-profile-facts span { color: var(--faint); font-size: 8px; font-weight: 700; letter-spacing: .08em; }
+.agent-profile-facts code { overflow-wrap: anywhere; color: var(--muted); font-size: 10px; }
+.agent-profile-facts b { color: var(--ink); font-size: 11px; }
+.agent-profile-capabilities { display: grid; gap: 0; min-width: 0; margin: 0; padding: 0; border: 0; }
+.agent-profile-capabilities legend { margin-bottom: 10px; color: var(--muted); font-size: 10px; font-weight: 700; }
+.agent-profile-capability { display: flex; align-items: center; gap: 11px; padding: 11px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.agent-profile-capability input { accent-color: var(--accent); }
+.agent-profile-capability span { min-width: 0; display: grid; gap: 4px; }
+.agent-profile-capability b { color: var(--ink); font-size: 10px; font-weight: 650; }
+.agent-profile-capability small { color: var(--faint); font-size: 9px; }
+.agent-profile-editor-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 13px; margin-top: 18px; }
+@media (max-width: 860px) { .agent-profiles-layout { grid-template-columns: 1fr; gap: 6px; } }
+@media (max-width: 520px) { .agent-profile-create { grid-template-columns: 1fr; } }

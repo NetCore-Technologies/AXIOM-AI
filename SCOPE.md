@@ -1,20 +1,17 @@
-# Roadmap scope notes
+# Phase 2 scope and roadmap mapping
 
-This pack is deliberately small relative to the 120-item backlog. It advances foundations and creates a trustworthy GUI status surface; it does not complete all unchecked items.
+## Added, wired, and locally tested
 
-| Related item | How this pack advances it | Status treatment |
-|---|---|---|
-| R002 — workspace discovery | `discover_workspace_root` supports explicit workspace, `AXIOM_WORKSPACE`, nearest project marker, then current directory; it rejects a symlink target. | Partial integration; do not mark complete until workspace discovery is consistently reused across all CLI/API paths. |
-| R010 — workspace health checks | Read-only checks cover config structure, project paths/symlinks, read/write access, disk headroom, Python version, and required modules. | Partial, tested in isolation; verify behavior in supported platform environments. |
-| R011 — retention/storage/deletion documentation | The guide documents local, read-only diagnostics and support-bundle exclusions. | Partial documentation; does not replace a complete retention/deletion policy for all stores. |
-| R014 — JSON output parity | `doctor`, `status`, `config validate`, roadmap audit, and support-bundle creation provide machine-readable results. | Partial; other existing list/inspect commands still need consistent JSON contracts. |
-| R019 — workspace-aware status | `axiom status --json` includes diagnostics and Git metadata. | Partially implemented; validate from a real nested project checkout before marking complete. |
-| R022 — config validation | Validation checks bounded YAML parsing and section types without echoing configuration values. | Partial; safe repair suggestions remain a broader follow-up. |
-| R023 — stable failure codes/documentation | New CLI commands use stable JSON envelope fields and distinct non-zero exit conditions. | Partial; a repo-wide exit-code contract remains unfinished. |
-| R025 — preserve the Control Center | The Roadmap page and Diagnostics additions use the current page/layout primitives and existing CSS; `src/styles.css` is not edited. | Styling preservation intent is implemented in the patch, but screenshot/browser regression validation remains outstanding. |
-| R035 — export/download affordances | The GUI downloads a named support ZIP, with no-store response headers and documented privacy boundaries. | Partial; this covers support bundles rather than every export surface. |
-| R115 — configuration/path/dependency/storage diagnostics | Structured, stable-ID diagnostics cover these local checks. | Partial; broader package, API, and runtime checks remain. |
-| R116 — support bundle | API and CLI export only allow-listed diagnostics/environment metadata with explicit exclusions. | Implemented in this feature slice, pending full-repository/platform validation. |
-| R120 — E2E acceptance coverage | Focused API/core/CLI tests were added. | Not complete; Playwright E2E and cross-workflow acceptance still need a real checkout. |
+| Feature | Backend/API | GUI | CLI / docs | QA in this environment | Roadmap mapping |
+|---|---|---|---|---|---|
+| Read-only API Playground | Uses a closed client allowlist and current typed API routes; GET only | New page reuses current nav/page-header/theme system | Endpoint catalog, safety docs and release docs | E2E assertions authored; TS/TSX syntax parsed; full Playwright not run here | R109; partial R110/R120 |
+| Runtime connector discovery | New passive inventory function and `GET /api/diagnostics/runtime-connectors`; router registered in API app | New panel embedded into Runtime page | Discovery contract documented | Core + API unit tests; TS/TSX syntax parsed; full GUI suite not run here | Partial R085, R096, R117, R120 |
+| Versioned Agent Profiles | Bounded local JSON store, schema validation, atomic write, symlink checks, CRUD API | New GUI page with create/edit/version/delete | `axiom agent-profile list/create/set-capabilities/delete`; docs | Core, API and CLI focused tests | Partial R097; does not complete R099 or replace MCP policy |
+| Release smoke checker | Checks project/runtime version, roadmap IDs/statuses, router wiring and typed client endpoints | Checks GUI Page union/nav/pageMeta/render switch and styling | Shell runner and README | Unit test plus mock-checkout execution | Supports R012/R117/R118/R120 |
+| E2E auth setup | Not applicable | Reusable Playwright helper exercises welcome/setup/sign-in using UI | No test bypass or seeded password hashes | Spec syntax checked; browser execution still required | Supports R120 |
 
-No `ROADMAP.md` item label is changed by this pack. This prevents unchecked items from appearing complete before the full release gates pass.
+## Explicit non-claims
+
+This is not completion of all 91 roadmap items still open. Inference/training is not executed by this pack. Runtime discovery is passive presence detection, not endpoint connection, compatibility negotiation, load/unload, performance measurement or recovery. Agent Profiles are task-intent metadata, not enforcement scopes; existing MCP server-side permissions remain authoritative. Cross-platform CI static checks are not the same as testing released installer artifacts on each OS. Roadmap status labels are left unchanged.
+
+The full repository pytest suite, ESLint, TypeScript production build, and Playwright E2E suite were not run in this environment because a full local checkout with its Node dependencies was not available. The workflow added in the pack runs these gates in GitHub Actions after application.

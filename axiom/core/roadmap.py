@@ -33,13 +33,29 @@ def default_roadmap_path() -> Path:
 
 def audit_roadmap(path: str | Path | None = None) -> dict[str, Any]:
     """Return the 120 roadmap rows, a status roll-up and integrity diagnostics."""
-    source = default_roadmap_path() if path is None else Path(path).expanduser()
-    if source.is_symlink():
-        raise ValueError("Roadmap path must not be a symbolic link.")
+    if path is None:
+        source = default_roadmap_path()
+    else:
+        source = Path(path).expanduser()
+        if source.is_symlink():
+            raise ValueError("Roadmap path must not be a symbolic link.")
     try:
         source = source.resolve(strict=True)
     except (OSError, RuntimeError) as exc:
         raise FileNotFoundError("ROADMAP.md could not be resolved.") from exc
+
+    # Resolve before checking containment so symlinked parent directories cannot
+    # escape the workspace. Only read the known roadmap file inside a trusted root.
+    workspace_root = Path.cwd().resolve()
+    package_root = Path(__file__).resolve().parents[2]
+    filesystem_root = Path(workspace_root.anchor)
+    allowed_roots = tuple(
+        root for root in (workspace_root, package_root) if root != filesystem_root
+    )
+    if not any(source.is_relative_to(root) for root in allowed_roots):
+        raise ValueError("Roadmap path must stay inside the current workspace or AXIOM source checkout.")
+    if source.name != "ROADMAP.md":
+        raise ValueError("Roadmap path must point to a file named ROADMAP.md.")
     if not source.is_file() or source.stat().st_size > 2 * 1024 * 1024:
         raise ValueError("ROADMAP.md must be a regular file no larger than 2 MiB.")
     try:

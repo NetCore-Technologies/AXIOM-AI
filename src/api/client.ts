@@ -1,5 +1,38 @@
 const API_BASE = import.meta.env.VITE_AXIOM_API_URL || "";
 
+
+export const playgroundEndpoints = [
+  { path: "/api/health", label: "Health", description: "Process liveness and API version." },
+  { path: "/api/meta", label: "Contract metadata", description: "API contract version and compatibility policy." },
+  { path: "/api/workspace/runtime", label: "Runtime snapshot", description: "Current hardware snapshot and runtime readiness." },
+  { path: "/api/workspace/models?offset=0&limit=5", label: "Models (first 5)", description: "A small, bounded page of registered model metadata." },
+  { path: "/api/workspace/datasets", label: "Dataset inventory", description: "Workspace JSONL inventory; no row values are requested." },
+  { path: "/api/workspace/events", label: "Recent events", description: "Recent workspace actions for local troubleshooting." },
+  { path: "/api/diagnostics/workspace", label: "Workspace diagnostics", description: "Redacted checks for workspace paths, config shape, and dependencies." },
+  { path: "/api/diagnostics/roadmap", label: "Roadmap audit", description: "The source roadmap status and scope-integrity report." },
+  { path: "/api/diagnostics/runtime-connectors", label: "Runtime connector discovery", description: "Passive local discovery; no runtime process is launched." },
+] as const;
+
+export type PlaygroundEndpoint = (typeof playgroundEndpoints)[number]["path"];
+const playgroundEndpointPaths = new Set<string>(playgroundEndpoints.map((endpoint) => endpoint.path));
+
+export type RuntimeConnector = {
+  id: string; name: string; kind: "executable" | "python-package"; present: boolean;
+  status: "discovered_not_connected" | "not_detected"; potential_capabilities: string[];
+  evidence: string; connection_checked: false; note: string;
+};
+export type RuntimeConnectorReport = {
+  schema_version: 1; discovery_mode: "passive_local_discovery"; checked_at: string;
+  connectors: RuntimeConnector[]; scope_note: string;
+};
+export type AgentProfile = {
+  id: string; name: string; version: number; task_capabilities: string[];
+  created_at: string; updated_at: string; built_in: boolean;
+};
+export type AgentProfileReport = {
+  schema_version: 1; profiles: AgentProfile[]; capability_catalog: string[]; authorization_note: string;
+};
+
 export type WorkspaceModel = {
   id: string;
   name: string;
@@ -916,4 +949,21 @@ export const axiomApi = {
     }),
 
   optimizationHardware: () => requestJson<HardwareStatus>("/api/optimization/hardware"),
+
+  runtimeConnectors: () => requestJson<RuntimeConnectorReport>("/api/diagnostics/runtime-connectors"),
+  agentProfiles: () => requestJson<AgentProfileReport>("/api/agent-profiles"),
+  createAgentProfile: (input: { name: string; task_capabilities: string[] }) =>
+    requestJson<{ profile: AgentProfile }>("/api/agent-profiles", { method: "POST", body: JSON.stringify(input) }),
+  updateAgentProfile: (id: string, taskCapabilities: string[]) =>
+    requestJson<{ profile: AgentProfile }>(`/api/agent-profiles/${encodeURIComponent(id)}`, {
+      method: "PUT", body: JSON.stringify({ task_capabilities: taskCapabilities }),
+    }),
+  deleteAgentProfile: (id: string) =>
+    requestJson<{ deleted_id: string; remaining: number }>(`/api/agent-profiles/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  playgroundRead: (endpoint: PlaygroundEndpoint) => {
+    if (!playgroundEndpointPaths.has(endpoint)) {
+      throw new Error("This endpoint is not in the read-only API Playground allowlist.");
+    }
+    return requestJson<unknown>(endpoint, { method: "GET" });
+  },
 };
