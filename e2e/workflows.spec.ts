@@ -160,6 +160,6 @@ test("workflow autosave and dry-run stay planning-only", async ({ page }) => {
   await expect(page.getByText("Workflow dry-run summary")).toBeVisible();
   await expect(page.getByText("NOT EXECUTED")).toBeVisible();
   await expect(page.locator("body")).toContainText("8.2 GB");
-  await expect(page.getByText(/Seed 42 \(not applied\)/)).toBeVisible();
+  await expect(page.getByText(/seed 42 \(not applied\)/i)).toBeVisible();
   expect(createdJob).toBe(false);
 });
