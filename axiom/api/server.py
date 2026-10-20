@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from axiom.api.evaluation import router as evaluation_router
+from axiom.api.diagnostics import router as diagnostics_router
 from axiom.api.server_optimizer_routes import register_optimizer_routes
 from axiom.api.security import router as security_router
 from axiom.api.workspace import router as workspace_router
@@ -140,6 +141,7 @@ def create_app() -> Any:
     app.include_router(workflows_router)
     app.include_router(security_router)
     app.include_router(evaluation_router)
+    app.include_router(diagnostics_router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

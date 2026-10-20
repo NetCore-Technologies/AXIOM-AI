@@ -39,7 +39,7 @@ def test_support_bundle_endpoint_returns_zip_with_no_config_values(tmp_path: Pat
     assert b"DONT_EXPORT_ME" not in content
 
 
-def test_roadmap_audit_endpoint_returns_live_source_statuses(tmp_path: Path):
+def test_roadmap_audit_endpoint_returns_live_source_statuses(tmp_path: Path, monkeypatch):
     roadmap = tmp_path / "ROADMAP.md"
     rows = [
         "# Roadmap",
@@ -51,10 +51,11 @@ def test_roadmap_audit_endpoint_returns_live_source_statuses(tmp_path: Path):
         rows.append(f"- [R{number:03d} · {status}] Example deliverable {number}.")
     rows.append("<!-- AXIOM-ROADMAP-UPDATE:END -->")
     roadmap.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
 
     app = FastAPI()
     app.include_router(router)
-    response = TestClient(app).get("/api/diagnostics/roadmap", params={"path": str(roadmap)})
+    response = TestClient(app).get("/api/diagnostics/roadmap")
     assert response.status_code == 200
     payload = response.json()
     assert payload["integrity"]["ok"] is True
@@ -64,16 +65,26 @@ def test_roadmap_audit_endpoint_returns_live_source_statuses(tmp_path: Path):
     assert payload["items"][-1]["id"] == "R120"
 
 
-def test_roadmap_audit_endpoint_rejects_symbolic_link(tmp_path: Path):
-    real = tmp_path / "ROADMAP.md"
-    real.write_text("not a roadmap", encoding="utf-8")
-    link = tmp_path / "linked.md"
-    try:
-        link.symlink_to(real)
-    except OSError:
-        import pytest
-        pytest.skip("symlink creation unavailable")
+def test_roadmap_audit_endpoint_does_not_accept_arbitrary_file_paths(tmp_path: Path, monkeypatch):
+    current = tmp_path / "ROADMAP.md"
+    current.write_text("""# Roadmap
+<!-- AXIOM-ROADMAP-UPDATE:START -->
+### Current workspace
+- [R001 · Planned] Local workspace marker
+<!-- AXIOM-ROADMAP-UPDATE:END -->
+""", encoding="utf-8")
+    other = tmp_path / "private.md"
+    other.write_text("""# Private
+<!-- AXIOM-ROADMAP-UPDATE:START -->
+### Private file
+- [R001 · Planned] Must never be returned from arbitrary path input
+<!-- AXIOM-ROADMAP-UPDATE:END -->
+""", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
     app = FastAPI()
     app.include_router(router)
-    response = TestClient(app).get("/api/diagnostics/roadmap", params={"path": str(link)})
-    assert response.status_code == 400
+    response = TestClient(app).get("/api/diagnostics/roadmap", params={"path": str(other)})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"][0]["title"] == "Local workspace marker"
+    assert payload["items"][0]["group"] == "Current workspace"

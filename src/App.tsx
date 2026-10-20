@@ -14,6 +14,8 @@ import {
   type WorkspaceExperiment,
   type WorkspaceEvaluationRun,
   type WorkspaceEvent,
+  type WorkspaceDiagnostics,
+  type RoadmapAudit,
   type WorkspaceModel,
   type WorkspaceWorkflow,
   type WorkflowNode,
@@ -106,6 +108,8 @@ type Page =
   | "runtime"
   | "mcp"
   | "diagnostics"
+  | "roadmap"
+  | "modules"
   | "logs"
   | "settings"
   | "optimizer"
@@ -199,6 +203,18 @@ const navItems: NavItem[] = [
     icon: Wrench,
   },
   {
+    id: "roadmap",
+    label: "Roadmap",
+    description: "Scoped feature status and integrity",
+    icon: FileCode2,
+  },
+  {
+    id: "modules",
+    label: "Module Explorer",
+    description: "Find GUI surfaces, CLI command families, and API reference",
+    icon: Network,
+  },
+  {
     id: "logs",
     label: "Logs",
     description: "Runtime event stream",
@@ -271,6 +287,16 @@ const pageMeta: Record<
     label: "Diagnostics",
     kicker: "OBSERVABILITY",
     description: "Find configuration drift and local blockers before they become confusing failures.",
+  },
+  roadmap: {
+    label: "Roadmap",
+    kicker: "DELIVERY STATUS / R001–R120",
+    description: "Read the source roadmap, inspect unchecked work, and verify the 120-item scope without guessing status.",
+  },
+  modules: {
+    label: "Module Explorer",
+    kicker: "PLATFORM DIRECTORY / GUI · CLI · API",
+    description: "A searchable map of AXIOM capabilities, where each one lives, and how to open the available interface.",
   },
   logs: {
     label: "Logs",
@@ -1403,6 +1429,10 @@ function WorkspacePage({
       return <Runtime />;
     case "mcp":
       return <MCP onNotify={onNotify} />;
+    case "modules":
+      return <ModulesPage setPage={setPage} />;
+    case "roadmap":
+      return <RoadmapPage />;
     case "diagnostics":
       return <Diagnostics onNotify={onNotify} />;
     case "logs":
@@ -1524,7 +1554,7 @@ function Dashboard({
           <div className="inline-meta"><span><TerminalSquare size={14} /> CLI companion</span><code>{models?.length ? "axiom train plan 7 --method qlora" : "axiom model list"}</code></div>
         </Surface>
 
-        <Surface className="module-surface" title="Platform map" eyebrow="WORKSPACE VIEWS" action={<button type="button" className="text-button" onClick={() => setPage("diagnostics")}>Diagnostics <ArrowRight size={15} /></button>}>
+        <Surface className="module-surface" title="Platform map" eyebrow="WORKSPACE VIEWS" action={<button type="button" className="text-button" onClick={() => setPage("modules")}>All modules <ArrowRight size={15} /></button>}>
           <div className="module-list">{platformModules.map((module) => <ModuleRow key={module.page} module={module} onClick={() => setPage(module.page)} />)}</div>
         </Surface>
 
@@ -2901,14 +2931,38 @@ function Diagnostics({ onNotify }: { onNotify: (message: string, tone?: Tone) =>
   const [hardware, setHardware] = useState<HardwareStatus | null>(null);
   const [modelCount, setModelCount] = useState<number | null>(null);
   const [datasetCount, setDatasetCount] = useState<number | null>(null);
+  const [workspaceDiagnostics, setWorkspaceDiagnostics] = useState<WorkspaceDiagnostics | null>(null);
+  const [bundleBusy, setBundleBusy] = useState(false);
+
+
+  const downloadBundle = async () => {
+    setBundleBusy(true);
+    try {
+      const blob = await axiomApi.downloadSupportBundle();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "axiom-support-bundle.zip";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+      onNotify("Privacy-safe support bundle downloaded. Review it before sharing.", "success");
+    } catch (cause) {
+      onNotify(cause instanceof Error ? cause.message : "Could not download the support bundle.", "warning");
+    } finally {
+      setBundleBusy(false);
+    }
+  };
 
   const runScan = async () => {
     setScanState("scanning");
-    const [healthResult, hardwareResult, modelResult, datasetResult] = await Promise.allSettled([
+    const [healthResult, hardwareResult, modelResult, datasetResult, workspaceDiagnosticsResult] = await Promise.allSettled([
       axiomApi.health(),
       axiomApi.optimizationHardware(),
       axiomApi.models(),
       axiomApi.datasets(),
+      axiomApi.workspaceDiagnostics(),
     ]);
     const failures: string[] = [];
     if (healthResult.status === "fulfilled") setHealth({ online: healthResult.value.status === "ok", version: healthResult.value.version });
@@ -2919,6 +2973,8 @@ function Diagnostics({ onNotify }: { onNotify: (message: string, tone?: Tone) =>
     else { setModelCount(null); failures.push("model registry"); }
     if (datasetResult.status === "fulfilled") setDatasetCount(datasetResult.value.length);
     else { setDatasetCount(null); failures.push("dataset inventory"); }
+    if (workspaceDiagnosticsResult.status === "fulfilled") setWorkspaceDiagnostics(workspaceDiagnosticsResult.value);
+    else { setWorkspaceDiagnostics(null); failures.push("workspace diagnostics"); }
     setScanState(failures.length ? "failed" : "idle");
     if (failures.length) onNotify(`Some diagnostics could not complete: ${failures.join(", ")}.`, "warning");
   };
@@ -2928,7 +2984,10 @@ function Diagnostics({ onNotify }: { onNotify: (message: string, tone?: Tone) =>
   const headline = scanState === "scanning" ? "Checking local services…" : connected ? "Workspace checks complete" : "Backend unavailable";
   const systemDescription = hardware ? `${hardware.cpu_name} · ${hardware.ram_gb ?? "Unknown"} GB RAM · ${hardware.gpu_name || "No GPU reported"}` : "Hardware details unavailable";
 
-  return <FeaturePage page="diagnostics" actions={<button type="button" className="button primary-button" onClick={() => void runScan()} disabled={scanState === "scanning"}><Wrench size={16} /> {scanState === "scanning" ? "Scanning…" : "Run diagnostics"}</button>}>
+  return <FeaturePage page="diagnostics" actions={<>
+    <button type="button" className="button secondary-button" onClick={() => void downloadBundle()} disabled={bundleBusy}><ArrowDownToLine size={16} /> {bundleBusy ? "Preparing bundle…" : "Download support bundle"}</button>
+    <button type="button" className="button primary-button" onClick={() => void runScan()} disabled={scanState === "scanning"}><Wrench size={16} /> {scanState === "scanning" ? "Scanning…" : "Run diagnostics"}</button>
+  </>}>
     <div className="diagnostic-hero"><div><p className="eyebrow">WORKSPACE READINESS</p><strong>{headline}</strong><p>{systemDescription}{health?.version ? ` · AXIOM ${health.version}` : ""}</p></div><div className={`diagnostic-ring ${scanState === "failed" ? "blocked" : scanState}`}><span>{scanState === "scanning" ? "…" : connected ? "OK" : "N/A"}</span></div></div>
     <div className="diag-list">
       <DiagnosticRow icon={connected ? CircleCheck : TriangleAlert} title="AXIOM API" detail={connected ? `Health endpoint responded${health?.version ? ` · version ${health.version}` : ""}.` : scanState === "scanning" ? "Waiting for the local API response." : "Health endpoint did not respond."} state={connected ? "PASS" : scanState === "scanning" ? "CHECKING" : "FAILED"} tone={connected ? "success" : scanState === "scanning" ? "neutral" : "warning"} />
@@ -2936,7 +2995,146 @@ function Diagnostics({ onNotify }: { onNotify: (message: string, tone?: Tone) =>
       <DiagnosticRow icon={modelCount !== null ? CircleCheck : TriangleAlert} title="Model registry" detail={modelCount === null ? "Registry endpoint unavailable." : `${modelCount} model${modelCount === 1 ? "" : "s"} registered.`} state={modelCount === null ? "FAILED" : "PASS"} tone={modelCount === null ? "warning" : "success"} />
       <DiagnosticRow icon={datasetCount !== null ? CircleCheck : TriangleAlert} title="Dataset inventory" detail={datasetCount === null ? "Dataset endpoint unavailable." : `${datasetCount} JSONL file${datasetCount === 1 ? "" : "s"} found in data/.`} state={datasetCount === null ? "FAILED" : "PASS"} tone={datasetCount === null ? "warning" : "success"} />
     </div>
+    {workspaceDiagnostics && <Surface title="Workspace checks" eyebrow="READ-ONLY BACKEND DIAGNOSTICS" action={<StatusPill tone={workspaceDiagnostics.status === "pass" ? "success" : workspaceDiagnostics.status === "fail" ? "danger" : "warning"}>{workspaceDiagnostics.status.toUpperCase()}</StatusPill>}>
+      <p className="quiet-note">{workspaceDiagnostics.summary.passed} passed · {workspaceDiagnostics.summary.warnings} warning(s) · {workspaceDiagnostics.summary.failed} failed. Checks are read-only; no repair actions are run automatically.</p>
+      <div className="diag-list">{workspaceDiagnostics.checks.map((check) => {
+        const tone: Tone = check.status === "pass" ? "success" : check.status === "fail" ? "danger" : check.status === "warn" ? "warning" : "neutral";
+        const Icon = check.status === "pass" ? CircleCheck : check.status === "fail" ? CircleAlert : TriangleAlert;
+        return <DiagnosticRow key={check.id} icon={Icon} title={check.title} detail={`${check.detail}${check.remediation ? ` Next: ${check.remediation}` : ""}`} state={check.status.toUpperCase()} tone={tone} />;
+      })}</div>
+    </Surface>}
     {!connected && scanState !== "scanning" && <Callout tone="warning" title="Start the local API">Open the AXIOM UI launcher or start the FastAPI service, then scan again.</Callout>}
+  </FeaturePage>;
+}
+
+function ModulesPage({ setPage }: { setPage: (page: Page) => void }) {
+  const [query, setQuery] = useState("");
+  const [copiedCommand, setCopiedCommand] = useState("");
+  type Entry = {
+    id: string;
+    title: string;
+    description: string;
+    scope: string;
+    availability: string;
+    tone: Tone;
+    icon: LucideIcon;
+    page?: Page;
+    command?: string;
+    href?: string;
+  };
+  const entries: Entry[] = [
+    { id: "dashboard", title: "Control center", description: "Workspace overview, recent events, and entry points to major product surfaces.", scope: "Workspace", availability: "GUI", tone: "success", icon: LayoutDashboard, page: "dashboard" },
+    { id: "optimizer", title: "Agent Optimizer", description: "Questionnaire-driven workload sizing, hardware-aware recommendations, and optimization plans.", scope: "Optimization", availability: "GUI", tone: "success", icon: Zap, page: "optimizer" },
+    { id: "quantizer", title: "Quantization Lab", description: "Compare quantization choices and review estimated memory fit before runtime work.", scope: "Optimization", availability: "GUI", tone: "success", icon: SlidersHorizontal, page: "quantizer" },
+    { id: "models", title: "Model registry and inspection", description: "Discover local folders, inspect metadata, register entries, manage tags/favorites, and import/export registry data.", scope: "Model engineering", availability: "GUI + CLI", tone: "success", icon: BrainCircuit, page: "models", command: "axiom model --help" },
+    { id: "datasets", title: "Dataset engineering and quality", description: "Inspect and validate JSONL, profile schema and duplicates, compare datasets, preview cleaning, and review manifests/privacy checks.", scope: "Data engineering", availability: "GUI + CLI", tone: "success", icon: Database, page: "datasets", command: "axiom dataset --help" },
+    { id: "training", title: "Training planner and experiments", description: "Estimate hardware-aware plans and manage saved plan snapshots. Training execution is not implied by a plan.", scope: "Planning", availability: "Planning only", tone: "warning", icon: Hammer, page: "training", command: "axiom train --help" },
+    { id: "workflows", title: "Workflow builder", description: "Create and validate graph designs, use templates, inspect revisions, duplicate designs, and run planning-only dry-runs.", scope: "Orchestration", availability: "Design only", tone: "warning", icon: GitBranch, page: "workflows", command: "axiom workflow --help" },
+    { id: "evaluation", title: "Offline evaluation and regressions", description: "Score already-produced predictions, compare baselines, and review evaluation reports without model inference.", scope: "Quality gates", availability: "GUI + CLI", tone: "success", icon: CircleGauge, page: "evaluation", command: "axiom evaluation --help" },
+    { id: "runtime", title: "Runtime connections", description: "Inspect runtime connection state. A GUI panel does not mean a local inference server is installed or running.", scope: "Operations", availability: "Connection-dependent", tone: "warning", icon: RadioTower, page: "runtime" },
+    { id: "mcp", title: "MCP tools and permission profiles", description: "Inspect tool policy, named profiles, and supported local MCP surfaces. Tools remain deny-by-default until configured.", scope: "Integrations", availability: "GUI + CLI", tone: "success", icon: Network, page: "mcp", command: "axiom mcp --help" },
+    { id: "diagnostics", title: "Diagnostics and support", description: "Check API and machine connectivity and access workspace warnings and support actions that are enabled.", scope: "Operations", availability: "GUI", tone: "success", icon: Wrench, page: "diagnostics", command: "axiom doctor --help" },
+    { id: "logs", title: "Workspace event stream", description: "Filter recent workspace actions; this is not a claim of full OS or process telemetry.", scope: "Observability", availability: "GUI", tone: "success", icon: TerminalSquare, page: "logs" },
+    { id: "settings", title: "Preferences and local security", description: "Manage available GUI preferences and administrator-session settings.", scope: "System", availability: "GUI", tone: "success", icon: Settings, page: "settings" },
+    { id: "tools", title: "Developer tool catalog", description: "Discover supported external developer tools and review setup plans before explicit installs.", scope: "CLI extensions", availability: "CLI surface", tone: "neutral", icon: Wrench, command: "axiom tools --help" },
+    { id: "integrations", title: "Agent integration adapters", description: "Inspect configured local agent integration families without assuming a provider account is authenticated.", scope: "CLI extensions", availability: "CLI surface", tone: "neutral", icon: Network, command: "axiom integration --help" },
+    { id: "headroom", title: "Headroom context proxy integration", description: "Check the optional Headroom integration or its separate status/doctor commands; AXIOM does not silently start the proxy.", scope: "CLI extensions", availability: "CLI surface", tone: "neutral", icon: Network, command: "axiom headroom status" },
+    { id: "supercompress", title: "SuperCompress context utilities", description: "Review local context-compression commands. External endpoints or model calls require explicit configuration.", scope: "CLI extensions", availability: "CLI surface", tone: "neutral", icon: SlidersHorizontal, command: "axiom supercompress --help" },
+    { id: "ai-features", title: "AI helper commands and policy audit", description: "Access AI planning, Hugging Face search, and model policy-audit command families.", scope: "CLI extensions", availability: "CLI surface", tone: "neutral", icon: BrainCircuit, command: "axiom ai --help" },
+    { id: "huggingface", title: "Hugging Face access", description: "Manage CLI authentication, inspect account state, and invoke metadata/download actions only when explicitly requested.", scope: "Model providers", availability: "CLI surface", tone: "neutral", icon: Database, command: "axiom hf --help" },
+    { id: "hardware", title: "System and hardware inspection", description: "Inspect OS/CPU/RAM/GPU facts used by hardware-aware planning, with estimated fit kept distinct from benchmark results.", scope: "System information", availability: "CLI surface", tone: "neutral", icon: Cpu, command: "axiom system info" },
+    { id: "cli-optimizer", title: "CLI optimizer", description: "Run or inspect the terminal optimizer workflows and optimizer-profile commands.", scope: "CLI extensions", availability: "CLI surface", tone: "neutral", icon: Zap, command: "axiom optimizer --help" },
+    { id: "project", title: "Project and configuration tools", description: "Initialize and validate local project structure, inspect config mappings, and review environment summaries.", scope: "CLI foundations", availability: "CLI surface", tone: "neutral", icon: FileCode2, command: "axiom project --help" },
+    { id: "session", title: "Interactive CLI session tools", description: "Inspect the local CLI session-command family; the browser deliberately does not launch shell processes.", scope: "CLI foundations", availability: "CLI surface", tone: "neutral", icon: TerminalSquare, command: "axiom session --help" },
+    { id: "api", title: "HTTP API reference", description: "Open the running service's OpenAPI explorer to inspect the endpoints actually exposed by this build.", scope: "Developer API", availability: "API docs", tone: "neutral", icon: Network, href: "/api/docs" },
+    { id: "roadmap", title: "120-item product roadmap", description: "Inspect delivery labels from ROADMAP.md, search backlog items, and check ID/status integrity.", scope: "Governance", availability: "Source audit", tone: "neutral", icon: FileCode2, page: "roadmap", command: "axiom roadmap audit --json" },
+  ];
+  const normalized = query.trim().toLowerCase();
+  const filtered = entries.filter((entry) => `${entry.title} ${entry.description} ${entry.scope} ${entry.availability} ${entry.command ?? ""}`.toLowerCase().includes(normalized));
+  const copyCommand = async (entry: Entry) => {
+    if (!entry.command) return;
+    try {
+      await navigator.clipboard.writeText(entry.command);
+      setCopiedCommand(entry.id);
+    } catch {
+      setCopiedCommand("");
+    }
+  };
+  return <FeaturePage page="modules">
+    <Surface title="Platform module directory" eyebrow="DISCOVER · OPEN · VERIFY" action={<StatusPill tone="neutral">{filtered.length} / {entries.length} modules</StatusPill>}>
+      <p className="quiet-note">This directory maps product capabilities to their current entry points. “GUI” means a page exists; “CLI surface” means the current entry point is the terminal, not a fake in-browser executor. Planning-only and connection-dependent boundaries remain explicit.</p>
+      <label className="event-filter"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search modules, capabilities, or commands" aria-label="Search AXIOM modules" /></label>
+      <div className="module-list">
+        {filtered.map((entry) => {
+          const Icon = entry.icon;
+          return <div className="module-row" key={entry.id} role="group" aria-label={entry.title}>
+            <span className="module-icon"><Icon size={17} /></span>
+            <span className="module-copy"><b>{entry.title}</b><small>{entry.description}</small><small>{entry.scope}{entry.command ? ` · ${entry.command}` : ""}</small></span>
+            <StatusPill tone={entry.tone}>{entry.availability}</StatusPill>
+            <span className="module-row-actions">
+              {entry.page && <button type="button" className="button secondary-button" onClick={() => setPage(entry.page!)}>Open</button>}
+              {entry.href && <a className="button secondary-button" href={entry.href} target="_blank" rel="noreferrer">Open API</a>}
+              {entry.command && !entry.page && <button type="button" className="button secondary-button" onClick={() => void copyCommand(entry)}>{copiedCommand === entry.id ? "Copied" : "Copy command"}</button>}
+            </span>
+          </div>;
+        })}
+      </div>
+      {filtered.length === 0 && <EmptyState icon={Search} title="No modules match" description="Try another capability name or command family." />}
+    </Surface>
+    <Callout tone="info" title="Feature boundaries are intentional">The directory improves discoverability; it does not mark planned roadmap items as implemented or create execution support that is not in the backend.</Callout>
+  </FeaturePage>;
+}
+
+function RoadmapPage() {
+  const [report, setReport] = useState<RoadmapAudit | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | "open" | "implemented">("all");
+
+  const refresh = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      setReport(await axiomApi.roadmapAudit());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load the roadmap audit.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void refresh(); }, []);
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleItems = (report?.items ?? []).filter((item) => {
+    const matchesQuery = !normalizedQuery || `${item.id} ${item.title} ${item.group} ${item.status_label}`.toLowerCase().includes(normalizedQuery);
+    const matchesStatus = filter === "all" || (filter === "implemented" ? item.status === "implemented" : item.status !== "implemented");
+    return matchesQuery && matchesStatus;
+  });
+
+  return <FeaturePage page="roadmap" actions={<button type="button" className="button secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCcw size={16} /> {loading ? "Auditing…" : "Refresh roadmap"}</button>}>
+    {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
+    {report && <div className="summary-grid">
+      <SummaryCard icon={Check} label="Implemented" value={String(report.counts.implemented)} detail="Source roadmap marks these as tested" tone={report.counts.implemented === 120 ? "success" : "neutral"} />
+      <SummaryCard icon={Clock3} label="In progress" value={String(report.counts.in_progress)} detail="Validation or implementation remains" tone={report.counts.in_progress ? "warning" : "success"} />
+      <SummaryCard icon={CircleAlert} label="Planned" value={String(report.counts.planned)} detail="Not marked as delivered" tone={report.counts.planned ? "warning" : "success"} />
+      <SummaryCard icon={FileCode2} label="Scope integrity" value={report.integrity.ok ? `${report.total}/120` : "REVIEW"} detail={report.integrity.ok ? "IDs are complete and unique" : "Missing, duplicate, or unknown roadmap entries"} tone={report.integrity.ok ? "success" : "danger"} />
+    </div>}
+    {report && <Surface title="Scoped product roadmap" eyebrow="SOURCE-OF-TRUTH STATUS">
+      <p className="quiet-note">Statuses are read from ROADMAP.md and are not inferred from file presence. {report.counts.implemented} of {report.total} entries are currently marked “Implemented; tests passing”.</p>
+      {!report.integrity.ok && <Callout tone="warning" title="Roadmap integrity needs review">Missing IDs: {report.integrity.missing_ids.join(", ") || "none"}. Duplicates: {report.integrity.duplicate_ids.join(", ") || "none"}. Unknown statuses: {report.integrity.unknown_status_ids.join(", ") || "none"}.</Callout>}
+      <label className="event-filter"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter by ID, title, group, or status" aria-label="Search roadmap items" /></label>
+      <div className="segmented-control" role="group" aria-label="Roadmap status filter">
+        <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All</button>
+        <button type="button" className={filter === "open" ? "active" : ""} onClick={() => setFilter("open")}>Open work</button>
+        <button type="button" className={filter === "implemented" ? "active" : ""} onClick={() => setFilter("implemented")}>Implemented</button>
+      </div>
+      {loading ? <div className="loading-state" role="status">Reading ROADMAP.md…</div> : <div className="event-list">{visibleItems.map((item) => {
+        const tone: Tone = item.status === "implemented" ? "success" : item.status === "in_progress" ? "warning" : item.status === "unknown" ? "danger" : "neutral";
+        return <div className="event-row" key={item.id}><span className="event-marker" /><div><b>{item.id} · {item.title}</b><small>{item.group} · {item.status_label}</small></div><StatusPill tone={tone}>{item.status_label.toUpperCase()}</StatusPill></div>;
+      })}{visibleItems.length === 0 && <EmptyState icon={Search} title="No roadmap items match" description="Change the search or status filter to see more entries." />}</div>}
+      <p className="quiet-note">Showing {visibleItems.length} of {report.total} source entries · generated {formatTimestamp(report.generated_at)}.</p>
+    </Surface>}
   </FeaturePage>;
 }
 

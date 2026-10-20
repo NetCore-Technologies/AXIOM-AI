@@ -475,3 +475,7 @@ Built by [Manit Arora](https://github.com/manit6752025) and
 [Rangan V Balaji](https://github.com/TaxCollector23).
 
 [Website](https://netcore-technologies.github.io/AXIOM-AI/)
+
+## Module explorer, diagnostics, roadmap audit, and support bundles
+
+The Control Center **Module Explorer** maps current GUI pages, CLI-only command families, and the live OpenAPI reference so capabilities are discoverable without pretending every command can safely run inside a browser. Run `axiom doctor --json` for machine-readable diagnostics, `axiom roadmap audit --json` to validate the 120 roadmap IDs and status roll-up, or `axiom support-bundle --output ./axiom-support-bundle.zip` to export a privacy-minimized support archive. The archive excludes configuration values, environment variables, credentials, model weights, datasets, logs, and absolute paths. The Control Center Roadmap page reads statuses directly from `ROADMAP.md`. Inspect support bundles before sharing. See [the diagnostics and support guide](docs/Diagnostics-and-Support.md).

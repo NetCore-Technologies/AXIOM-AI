@@ -17,6 +17,9 @@ from rich.panel import Panel
 from rich.table import Table
 
 from axiom.daemon import local_summary
+from axiom.core.diagnostics import diagnose_workspace
+from axiom.cli.support_bundle import register as register_support_bundle_cli
+from axiom.cli.roadmap import roadmap_app as roadmap_cli_app
 from axiom.version import __version__
 
 AXIOM_VERSION = __version__
@@ -109,37 +112,42 @@ def print_next_commands(commands: tuple[str, ...]) -> None:
 def register(app, model_app, dataset_app) -> None:
 
     @app.command("doctor")
-    def doctor() -> None:
-        """Inspect common local tools and AXIOM package metadata."""
-        typer.echo(f"AXIOM Doctor — {AXIOM_VERSION}")
-        typer.echo("")
-
-        checks = [
-            ("Python", shutil.which("python3") or shutil.which("python")),
-            ("Git", shutil.which("git")),
-            ("Node.js", shutil.which("node")),
-            ("npm", shutil.which("npm")),
+    def doctor(
+        json_output: bool = typer.Option(False, "--json", help="Emit stable machine-readable diagnostics."),
+        workspace: str | None = typer.Option(None, "--workspace", help="Workspace directory to inspect."),
+    ) -> None:
+        """Inspect the current workspace, Python dependencies, and common tools."""
+        try:
+            report = diagnose_workspace(workspace)
+        except (OSError, ValueError):
+            message = {"schema_version": 1, "status": "error", "message": "Workspace could not be resolved safely."}
+            typer.echo(json.dumps(message, sort_keys=True) if json_output else "Error: workspace could not be resolved safely.", err=not json_output)
+            raise typer.Exit(code=2)
+        tool_checks = [
+            {"name": name, "available": bool(shutil.which(command)), "path": shutil.which(command)}
+            for name, command in (("Python", "python3"), ("Python fallback", "python"), ("Git", "git"), ("Node.js", "node"), ("npm", "npm"))
         ]
+        payload = {"schema_version": 1, "version": AXIOM_VERSION, "workspace": report, "tools": tool_checks}
+        if json_output:
+            typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+            if report["summary"]["failed"]:
+                raise typer.Exit(code=1)
+            return
 
-        warnings = 0
-
-        for name, executable in checks:
-            if executable:
-                typer.echo(f"[OK]   {name}: {executable}")
-            else:
-                typer.echo(f"[WARN] {name}: not found")
-                warnings += 1
-
-        installed = package_version()
-
-        if installed == "development":
-            typer.echo("[WARN] AXIOM package metadata not installed")
-            warnings += 1
-        else:
-            typer.echo(f"[OK]   AXIOM package: {installed}")
-
-        typer.echo("")
-        typer.echo(f"Doctor complete: {warnings} warning(s)")
+        typer.echo(f"AXIOM Doctor — {AXIOM_VERSION}")
+        typer.echo(f"Workspace: {report['workspace']['name']}")
+        for check in report["checks"]:
+            marker = "OK" if check["status"] == "pass" else "FAIL" if check["status"] == "fail" else "WARN" if check["status"] == "warn" else "INFO"
+            typer.echo(f"[{marker:<4}] {check['title']}: {check['detail']}")
+            if check["remediation"]:
+                typer.echo(f"       Next: {check['remediation']}")
+        for item in tool_checks:
+            marker = "OK" if item["available"] else "WARN"
+            typer.echo(f"[{marker:<4}] Tool {item['name']}: {item['path'] or 'not found'}")
+        summary = report["summary"]
+        typer.echo(f"Doctor complete: {summary['passed']} passed, {summary['warnings']} warning(s), {summary['failed']} failed")
+        if summary["failed"]:
+            raise typer.Exit(code=1)
 
     @app.command("info")
     def info() -> None:
@@ -163,30 +171,44 @@ def register(app, model_app, dataset_app) -> None:
         )
 
     @app.command("status")
-    def status() -> None:
-        """Show local AXIOM config and Git working-tree information."""
-        cwd = Path.cwd()
+    def status(
+        json_output: bool = typer.Option(False, "--json", help="Emit stable machine-readable status."),
+        workspace: str | None = typer.Option(None, "--workspace", help="Workspace directory to inspect."),
+    ) -> None:
+        """Show workspace health and local Git status without running jobs."""
+        try:
+            report = diagnose_workspace(workspace)
+        except (OSError, ValueError):
+            message = {"schema_version": 1, "status": "error", "message": "Workspace could not be resolved safely."}
+            typer.echo(json.dumps(message, sort_keys=True) if json_output else "Error: workspace could not be resolved safely.", err=not json_output)
+            raise typer.Exit(code=2)
         dirty = bool(git_output("status", "--porcelain"))
+        payload = {
+            "schema_version": 1,
+            "version": AXIOM_VERSION,
+            "workspace": report["workspace"],
+            "health": {"status": report["status"], "summary": report["summary"]},
+            "git": {
+                "branch": git_output("branch", "--show-current") or None,
+                "commit": git_output("rev-parse", "--short", "HEAD") or None,
+                "dirty": dirty,
+            },
+        }
+        if json_output:
+            typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+            return
 
         table = Table(title="AXIOM STATUS")
         table.add_column("Item")
         table.add_column("Value")
-
         table.add_row("Version", AXIOM_VERSION)
-        table.add_row(
-            "Project config",
-            "found" if (cwd / "axiom.yaml").exists() else "not found",
-        )
-        table.add_row(
-            "Git branch",
-            git_output("branch", "--show-current") or "n/a",
-        )
-        table.add_row(
-            "Git commit",
-            git_output("rev-parse", "--short", "HEAD") or "n/a",
-        )
+        table.add_row("Workspace", report["workspace"]["name"])
+        table.add_row("Project config", "found" if report["workspace"]["project_config_present"] else "not found")
+        table.add_row("Workspace health", report["status"].upper())
+        table.add_row("Checks", f"{report['summary']['passed']} passed / {report['summary']['warnings']} warnings / {report['summary']['failed']} failed")
+        table.add_row("Git branch", payload["git"]["branch"] or "n/a")
+        table.add_row("Git commit", payload["git"]["commit"] or "n/a")
         table.add_row("Working tree", "modified" if dirty else "clean")
-
         console.print(table)
 
     @app.command("summary")
@@ -541,34 +563,45 @@ def register(app, model_app, dataset_app) -> None:
 
     @config_app.command("validate")
     def config_validate(
-        path: str = typer.Option(
-            "axiom.yaml",
-            "--path",
-            help="Path to a local axiom.yaml file",
-        ),
+        path: str = typer.Option("axiom.yaml", "--path", help="Path to a local axiom.yaml file"),
+        json_output: bool = typer.Option(False, "--json", help="Emit a stable machine-readable result."),
     ) -> None:
-        """Validate a local axiom.yaml as a non-empty YAML mapping."""
+        """Validate a local YAML mapping without echoing configuration values."""
         config = Path(path)
+        status = "invalid"
+        message = "Configuration validation failed."
+        valid = False
+        if config.is_symlink():
+            message = "Configuration path must not be a symbolic link."
+        elif not config.is_file():
+            message = "Configuration file was not found."
+        else:
+            try:
+                if config.stat().st_size > 256 * 1024:
+                    raise ValueError("configuration exceeds the 256 KiB validation limit")
+                contents = config.read_text(encoding="utf-8")
+                parsed = yaml.safe_load(contents)
+                if not contents.strip() or not isinstance(parsed, dict):
+                    raise ValueError("configuration must be a non-empty YAML mapping")
+                bad_sections = [key for key in ("project", "model", "dataset", "training", "evaluation", "deployment") if key in parsed and parsed[key] is not None and not isinstance(parsed[key], dict)]
+                if bad_sections:
+                    raise ValueError("known configuration sections must be YAML mappings")
+            except (OSError, UnicodeError, yaml.YAMLError, ValueError):
+                message = "invalid axiom.yaml: invalid axiom.yaml: Configuration could not be parsed as a bounded, compatible YAML mapping; values are withheld."
+            else:
+                valid = True
+                status = "valid"
+                message = "Configuration is valid YAML and known sections have compatible types."
 
-        if not config.is_file():
-            console.print(f"[red]Error:[/red] config not found: {config}")
+        result = {"schema_version": 1, "status": status, "valid": valid, "path": str(config), "message": message}
+        if json_output:
+            typer.echo(json.dumps(result, indent=2, sort_keys=True))
+        elif valid:
+            console.print(f"[green]✓ {message}[/green]")
+        else:
+            console.print(f"[red]Error:[/red] {message}")
+        if not valid:
             raise typer.Exit(code=1)
 
-        try:
-            contents = config.read_text(encoding="utf-8")
-            parsed = yaml.safe_load(contents)
-        except (OSError, UnicodeError, yaml.YAMLError) as exc:
-            console.print(f"[red]Error:[/red] invalid axiom.yaml: {exc}")
-            raise typer.Exit(code=1)
-
-        if not contents.strip():
-            console.print("[red]Error:[/red] axiom.yaml is empty")
-            raise typer.Exit(code=1)
-
-        if not isinstance(parsed, dict):
-            console.print("[red]Error:[/red] axiom.yaml must contain a mapping")
-            raise typer.Exit(code=1)
-
-        console.print(
-            "[green]✓ axiom.yaml is valid YAML and contains a mapping.[/green]"
-        )
+    app.add_typer(roadmap_cli_app, name="roadmap")
+    register_support_bundle_cli(app)

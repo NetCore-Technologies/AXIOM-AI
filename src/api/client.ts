@@ -449,6 +449,50 @@ export type HardwareStatus = {
   vram_gb: number | null;
 };
 
+export type WorkspaceDiagnosticCheck = {
+  id: string;
+  title: string;
+  status: "pass" | "warn" | "fail" | "info";
+  severity: "info" | "warning" | "error";
+  detail: string;
+  remediation: string | null;
+};
+
+export type WorkspaceDiagnostics = {
+  schema_version: number;
+  generated_at: string;
+  status: "pass" | "warn" | "fail";
+  workspace: { name: string; project_config_present: boolean; is_project: boolean };
+  summary: { passed: number; warnings: number; failed: number; informational: number; missing_dependencies: string[] };
+  checks: WorkspaceDiagnosticCheck[];
+};
+
+export type RoadmapAuditItem = {
+  id: string;
+  status: "implemented" | "in_progress" | "planned" | "unknown";
+  status_label: string;
+  title: string;
+  group: string;
+};
+
+export type RoadmapAudit = {
+  schema_version: number;
+  generated_at: string;
+  source: string;
+  integrity: {
+    ok: boolean;
+    expected_items: number;
+    parsed_items: number;
+    missing_ids: string[];
+    duplicate_ids: string[];
+    unexpected_ids: string[];
+    unknown_status_ids: string[];
+  };
+  total: number;
+  counts: { implemented: number; in_progress: number; planned: number; unknown: number };
+  items: RoadmapAuditItem[];
+};
+
 type ApiErrorBody = {
   request_id?: unknown;
   detail?: unknown;
@@ -668,6 +712,39 @@ export const axiomApi = {
       { method: "POST" },
     );
     return result.plan;
+  },
+
+  workspaceDiagnostics: () => requestJson<WorkspaceDiagnostics>("/api/diagnostics/workspace"),
+
+  roadmapAudit: () => requestJson<RoadmapAudit>("/api/diagnostics/roadmap"),
+
+  downloadSupportBundle: async (): Promise<Blob> => {
+    const requestId = globalThis.crypto?.randomUUID?.()
+      ?? `ui-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+    try {
+      const response = await fetch(`${API_BASE}/api/diagnostics/support-bundle`, {
+        headers: { Accept: "application/zip", "X-Request-ID": requestId },
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        const raw = await response.text();
+        let payload: unknown = raw;
+        try { payload = raw ? JSON.parse(raw) as unknown : null; } catch { /* keep safe text fallback */ }
+        const responseRequestId = response.headers.get("X-Request-ID") || requestId;
+        throw new Error(`${messageFromPayload(payload, `Support bundle request failed (${response.status})`)} (request ID ${responseRequestId})`);
+      }
+      return await response.blob();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new Error(`Support bundle request timed out (request ID ${requestId}).`, { cause: error });
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeout);
+    }
   },
 
   runtime: () => requestJson<RuntimeSnapshot>("/api/workspace/runtime"),
