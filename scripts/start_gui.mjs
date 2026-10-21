@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-const python = process.env.AXIOM_PYTHON || "python";
+const python = process.env.AXIOM_PYTHON || (process.platform === "win32" ? "python" : "python3");
 const apiUrl = "http://127.0.0.1:33855/api/health";
 const children = [];
 

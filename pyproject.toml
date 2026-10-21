@@ -49,4 +49,4 @@ Changelog = "https://github.com/NetCore-Technologies/AXIOM-AI/blob/main/docs/CHA
 include = ["axiom*"]
 
 [tool.setuptools.package-data]
-axiom = ["webui/**/*"]
+axiom = ["webui/*", "webui/**/*"]

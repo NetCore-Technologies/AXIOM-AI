@@ -2,7 +2,6 @@ import { expect, test } from "@playwright/test";
 import { ensureAuthenticated } from "./helpers/auth";
 
 test("API Playground exposes bounded read-only endpoint choices", async ({ page }) => {
-  await ensureAuthenticated(page);
   const requests: Array<{ url: string; method: string; postData: string | null }> = [];
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -29,6 +28,7 @@ test("API Playground exposes bounded read-only endpoint choices", async ({ page 
     }
   });
 
+  await ensureAuthenticated(page);
   await page.goto("/?page=api-playground");
   await expect(page.getByRole("heading", { name: "Choose an endpoint" })).toBeVisible();
   const select = page.getByLabel("Endpoint");
