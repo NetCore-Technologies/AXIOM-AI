@@ -948,7 +948,16 @@ export const axiomApi = {
       }),
     }),
 
-  optimizationHardware: () => requestJson<HardwareStatus>("/api/optimization/hardware"),
+  optimizationHardware: async (): Promise<HardwareStatus> => {
+    const runtime = await requestJson<RuntimeSnapshot>("/api/workspace/runtime");
+    const hardware = runtime.hardware;
+    return {
+      cpu_name: `${hardware.os_name} ${hardware.architecture} · ${hardware.cpu_cores} cores`,
+      ram_gb: hardware.ram_gb,
+      gpu_name: hardware.gpu_name ?? "CPU only (no GPU detected)",
+      vram_gb: hardware.vram_gb,
+    };
+  },
 
   runtimeConnectors: () => requestJson<RuntimeConnectorReport>("/api/diagnostics/runtime-connectors"),
   agentProfiles: () => requestJson<AgentProfileReport>("/api/agent-profiles"),

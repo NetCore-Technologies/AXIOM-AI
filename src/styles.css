@@ -1979,3 +1979,58 @@ button,
 .agent-profile-editor-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 13px; margin-top: 18px; }
 @media (max-width: 860px) { .agent-profiles-layout { grid-template-columns: 1fr; gap: 6px; } }
 @media (max-width: 520px) { .agent-profile-create { grid-template-columns: 1fr; } }
+
+/* AXIOM verified patch: auth alignment, remembered sign-in, and dashboard overflow */
+.auth-layout,
+.app-shell { max-width: 100%; }
+.auth-layout { overflow-x: clip; }
+.login-shell {
+  width: min(1040px, 100%);
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  gap: clamp(32px, 6vw, 72px);
+}
+.login-form { width: 100%; min-width: 0; }
+.remember-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 17px 0 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--ink);
+  cursor: pointer;
+}
+.remember-row input { flex: 0 0 auto; width: 15px; height: 15px; margin: 2px 0 0; accent-color: var(--accent); }
+.remember-row span, .remember-row b, .remember-row small { display: block; min-width: 0; }
+.remember-row b { color: var(--ink); font-size: 11px; font-weight: 700; }
+.remember-row small { margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.form-note { line-height: 1.6; }
+html, body { width: 100%; max-width: 100%; overflow-x: clip; }
+#root { min-width: 320px; max-width: 100%; overflow-x: clip; }
+.app-shell, .main-shell, .page-wrap, .dashboard-grid, .dashboard-grid > *,
+.status-strip, .status-strip-item, .summary-grid, .info-grid { min-width: 0; }
+.dashboard-grid { grid-template-columns: minmax(0, 1.35fr) minmax(0, .9fr); }
+.module-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) max-content 15px;
+  align-items: center;
+  gap: 10px;
+  width: 100%; min-width: 0; max-width: 100%;
+  padding-inline: 0;
+}
+.module-copy { min-width: 0; }
+.module-copy small { white-space: normal; overflow-wrap: anywhere; }
+.module-row > .status-pill { justify-self: end; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.module-row > svg:last-child { flex: 0 0 auto; min-width: 15px; }
+@media (max-width: 780px) {
+  .login-shell {
+    width: min(560px, 100%);
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+    margin: 45px auto 55px;
+  }
+  .module-row { grid-template-columns: 18px minmax(0, 1fr) 15px; }
+  .module-row > .status-pill { grid-column: 2; justify-self: start; }
+  .module-row > svg:last-child { grid-column: 3; grid-row: 1 / span 2; }
+}

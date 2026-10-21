@@ -26,8 +26,10 @@ def test_agent_profile_api_create_update_delete(monkeypatch, tmp_path) -> None:
     assert updated.status_code == 200
     assert updated.json()["profile"]["version"] == 2
 
-    assert client.delete("/api/agent-profiles/default").status_code == 400
-    assert client.delete(f"/api/agent-profiles/{profile['id']}").status_code == 200
+    default_delete = client.delete("/api/agent-profiles/default")
+    assert default_delete.status_code == 400
+    profile_delete = client.delete(f"/api/agent-profiles/{profile['id']}")
+    assert profile_delete.status_code == 200
 
 
 def test_agent_profile_api_rejects_unknown_capability(monkeypatch, tmp_path) -> None:

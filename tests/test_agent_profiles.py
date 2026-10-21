@@ -26,7 +26,8 @@ def test_create_update_delete_profile_and_versioning(tmp_path: Path) -> None:
     assert updated["version"] == 2
     assert updated["task_capabilities"] == ["dataset.profile", "model.inspect"]
     assert store.load()["profiles"][-1]["version"] == 2
-    assert store.delete(profile["id"])["deleted_id"] == profile["id"]
+    deleted = store.delete(profile["id"])
+    assert deleted["deleted_id"] == profile["id"]
     assert [item["id"] for item in store.load()["profiles"]] == ["default"]
 
 

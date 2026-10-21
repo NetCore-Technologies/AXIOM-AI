@@ -172,6 +172,7 @@ class AgentProfileStore:
                 try:
                     os.unlink(temporary)
                 except OSError:
+                    # Cleanup must not hide the original save failure.
                     pass
 
     def create(self, name: str, capabilities: list[str] | None = None) -> dict[str, Any]:
