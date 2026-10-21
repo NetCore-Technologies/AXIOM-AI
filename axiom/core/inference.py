@@ -114,7 +114,7 @@ def runtime_status() -> dict[str, Any]:
                         continue
         base.update(status="online", models=names)
     except InferenceRuntimeError:
-        base["error"] = "Local inference runtime is unavailable."
+        base["error"] = f"Local inference runtime is unavailable at {OLLAMA_ENDPOINT}."
     return base
 
 
