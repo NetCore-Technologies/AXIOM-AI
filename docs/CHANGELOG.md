@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.0-beta.4
+
+### Added
+
+- Added a searchable Control Center Module Explorer across GUI pages, CLI command families, and API surfaces.
+- Added workspace diagnostics with machine-readable CLI output using `axiom doctor --json`.
+- Added a roadmap audit command, `axiom roadmap audit --json`, and GUI roadmap integrity reporting.
+- Added privacy-minimized support archive generation with `axiom support-bundle`.
+- Expanded the read-only API Playground with a fixed GET-only allowlist, request timeouts, bounded reads, and capped response previews.
+- Expanded saved workflow design tooling with templates, revision history, duplication, validation, and dry-run resource estimates.
+
+### Changed
+
+- Improved local Control Center page navigation and administrator remembered-session behaviour.
+- Improved request/error diagnostics and discoverability across the local CLI, API, and GUI.
+- Updated the README release badge and highlights for beta.4.
+
+### Scope and execution boundary
+
+- Workflow validation and dry-run estimates do not execute training.
+- Evaluation scores precomputed predictions; it does not run model inference.
+- Runtime discovery reports locally detected candidates and readiness evidence; it does not claim a runtime is connected when it is not.
+- No hosted workspace or cloud inference service is introduced by this release.
+
+
 ## 0.2.0-beta.9
 
 ### Added
