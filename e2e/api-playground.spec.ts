@@ -10,7 +10,7 @@ test("API Playground exposes bounded read-only endpoints and Deep Analysis", asy
     postData: string | null;
   }> = [];
 
-  await page.route("**/api/**", async (route) => {
+  await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     requests.push({
@@ -38,7 +38,13 @@ test("API Playground exposes bounded read-only endpoints and Deep Analysis", asy
     } else if (path.endsWith("/events")) {
       await route.fulfill({ json: { events: [] } });
     } else if (path.endsWith("/diagnostics/workspace")) {
-      await route.fulfill({ json: { checks: [], status: "ok" } });
+      await route.fulfill({
+        json: {
+          checks: [],
+          summary: { passed: 0, warnings: 0, failed: 0 },
+          status: "pass",
+        },
+      });
     } else if (path.endsWith("/diagnostics/roadmap")) {
       await route.fulfill({
         json: { integrity: { ok: true }, total: 120, counts: {}, items: [] },
@@ -60,12 +66,18 @@ test("API Playground exposes bounded read-only endpoints and Deep Analysis", asy
 
   await ensureAuthenticated(page);
 
-  const response = await page.goto("/?page=api-playground");
-  expect(response?.status()).toBe(200);
+
+
+  // ensureAuthenticated() already opened the authenticated Control Center.
+  // Do not reload the page here; navigate using the existing session.
+  const navigation = page.getByLabel("Primary navigation");
+  await expect(navigation).toBeVisible({ timeout: 10_000 });
+  await navigation.getByText("API Playground", { exact: true }).click();
 
   await expect(
-    page.getByRole("heading", { name: "Choose an endpoint" }),
-  ).toBeVisible();
+    page.getByRole("heading", { name: /API Playground/i }),
+  ).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByLabel("Endpoint")).toBeVisible({ timeout: 10_000 });
 
   const select = page.getByLabel("Endpoint");
   const options = await select
@@ -110,7 +122,37 @@ test("API Playground exposes bounded read-only endpoints and Deep Analysis", asy
   ).toBe(true);
 
   // Confirm the authenticated session survives a reload on the same origin.
+  console.log("[AXIOM E2E] storage BEFORE reload", await page.evaluate(() => ({
+    flags: Object.fromEntries(
+      Object.keys(localStorage)
+        .filter((key) => /remember|session|setup|booted/i.test(key) && !/admin/i.test(key))
+        .map((key) => [key, localStorage.getItem(key)]),
+    ),
+    testAdminPresent: Boolean(localStorage.getItem("axiom-admin-v2")),
+    tabSessionFlags: Object.fromEntries(
+      Object.keys(sessionStorage)
+        .filter((key) => /remember|session/i.test(key))
+        .map((key) => [key, sessionStorage.getItem(key)]),
+    ),
+  })));
   await page.reload();
+
+  await page.waitForTimeout(300);
+  console.log("[AXIOM E2E] state AFTER reload", await page.evaluate(() => ({
+    url: location.href,
+    bodyText: document.body?.innerText?.slice(0, 500) ?? "",
+    flags: Object.fromEntries(
+      Object.keys(localStorage)
+        .filter((key) => /remember|session|setup|booted/i.test(key) && !/admin/i.test(key))
+        .map((key) => [key, localStorage.getItem(key)]),
+    ),
+    testAdminPresent: Boolean(localStorage.getItem("axiom-admin-v2")),
+    tabSessionFlags: Object.fromEntries(
+      Object.keys(sessionStorage)
+        .filter((key) => /remember|session/i.test(key))
+        .map((key) => [key, sessionStorage.getItem(key)]),
+    ),
+  })));
   await expect(page.getByLabel("Primary navigation")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByLabel("Endpoint")).toBeVisible();
 
