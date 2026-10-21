@@ -519,9 +519,15 @@ function getStoredTheme(): Theme {
 }
 
 function isAuthenticated(): boolean {
+  // An authenticated session must always belong to an existing administrator.
   if (!readAdmin()) return false;
-  return sessionStorage.getItem(SESSION_KEY) === "1"
-    || localStorage.getItem(REMEMBERED_SESSION_KEY) === "1";
+
+  // The tab session supports ordinary sign-in. The separate persistent marker
+  // is written only when the user explicitly enables Remember me.
+  return (
+    sessionStorage.getItem(SESSION_KEY) === "1" ||
+    localStorage.getItem(REMEMBERED_SESSION_KEY) === "1"
+  );
 }
 
 function getAdministratorName(): string {
