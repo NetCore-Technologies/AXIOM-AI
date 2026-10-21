@@ -1,0 +1,51 @@
+# Local LoRA fine-tuning
+
+AXIOM includes an opt-in local training path using Hugging Face Transformers and PEFT. It creates a LoRA adapter; it does not update or overwrite the base model.
+
+## Requirements
+
+Install the optional training dependencies in the same Python environment used to run AXIOM:
+
+```bash
+python3 -m pip install -e '.[training]'
+```
+
+Prepare a Transformers model directory on disk that already contains `config.json`, model weights, and tokenizer files. AXIOM sets `local_files_only=True` when loading the model/tokenizer and does not run remote custom model code. A GGUF file is not a Transformers model directory.
+
+Create a UTF-8 JSONL file. Each non-empty line must be an object containing a string field such as `text`:
+
+```jsonl
+{"text":"User: What is 2 + 2?\nAssistant: 4."}
+{"text":"User: Name a primary color.\nAssistant: Blue."}
+```
+
+Records using string `prompt` and `completion` fields, or a `messages` array containing `content` strings, are also accepted. The default text field is `text`.
+
+## CLI
+
+```bash
+axiom --no-banner train --help
+axiom --no-banner train run \
+  --model-path "$HOME/models/my-transformers-model" \
+  --dataset "$HOME/data/train.jsonl" \
+  --output-dir "$HOME/runs/my-lora-adapter" \
+  --max-steps 20 --sequence-length 512 --lora-rank 8
+axiom --no-banner train jobs
+axiom --no-banner train status JOB_ID
+```
+
+`train run` is an actual training operation and runs until completion or failure. Progress, loss when available, and the final adapter directory are recorded. The history is stored under `${AXIOM_FINETUNE_HOME:-~/.local/share/axiom/fine-tuning}/jobs`.
+
+## Control Center and API
+
+Open **Training** in the Control Center. The **Local LoRA fine-tuning** panel lets you supply local paths and bounded training settings, start a job, and inspect progress. The API endpoints are `GET /api/fine-tuning/runtime`, `GET /api/fine-tuning/jobs`, `GET /api/fine-tuning/jobs/{job_id}`, and `POST /api/fine-tuning/jobs`.
+
+## Limits and honest scope
+
+- Base model path must be a local Transformers model directory; no model is downloaded by AXIOM.
+- Dataset is limited to 50 MiB, 10,000 rows, and 1 MiB per line; individual text values are limited to 300,000 characters.
+- Steps: 1–1,000; sequence length: 32–2,048 tokens; LoRA rank: 1–64; learning rate: 0.000001–0.01.
+- A single local fine-tuning job is allowed at a time to avoid accidental competing CPU/GPU workloads.
+- The output must be new or empty. Only the generated adapter and tokenizer files are written to the output directory; the base-model directory and dataset are inputs.
+- These limits do not guarantee that a model fits available memory. Start with a small model, short sequence length, and a few steps. GPU capability and architecture-specific LoRA compatibility are checked by the installed runtime, not inferred from the planning estimate.
+- This is supervised causal-LM LoRA fine-tuning, not full-weight training, QLoRA, preference training, or a general workflow executor.

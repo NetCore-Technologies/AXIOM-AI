@@ -4,6 +4,8 @@ import ApiPlayground from "./components/ApiPlayground";
 import RuntimeConnectorPanel from "./components/RuntimeConnectorPanel";
 import LocalInferencePanel from "./components/LocalInferencePanel";
 import AgentProfiles from "./components/AgentProfiles";
+import ModelStudioPanel from "./components/ModelStudioPanel";
+import LocalFineTuningPanel from "./components/LocalFineTuningPanel";
 import {
   axiomApi,
   type DatasetCleaningPreview,
@@ -279,7 +281,7 @@ const pageMeta: Record<
   training: {
     label: "Training",
     kicker: "MODEL OPTIMIZATION",
-    description: "Shape a reproducible training plan around the hardware you actually have.",
+    description: "Build a hardware-aware plan and launch bounded local LoRA fine-tuning when optional Transformers/PEFT dependencies are installed.",
   },
   workflows: {
     label: "Workflows",
@@ -380,8 +382,8 @@ const platformModules: Array<{
   {
     page: "training",
     title: "Training",
-    description: "Hardware-aware planning and fit estimates",
-    state: "Plan only",
+    description: "Hardware-aware planning and optional local LoRA fine-tuning",
+    state: "Optional LoRA execution",
     tone: "warning",
     icon: Hammer,
   },
@@ -1884,6 +1886,7 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
       {loading ? <div className="loading-state" role="status">Loading model registry…</div> : models.length ? <><div className="module-list">{models.map((model) => <div className="module-row model-registry-row" key={model.id}><span className="module-icon"><BrainCircuit size={17} /></span><span className="module-copy"><b>{model.name}</b><small>{model.source} · {model.format}{model.parameters ? ` · ${model.parameters}` : ""}{model.quantization ? ` · ${model.quantization}` : ""}{model.architecture ? ` · ${model.architecture}` : ""}{model.license ? ` · ${model.license}` : ""}{model.tags?.length ? ` · ${model.tags.join(", ")}` : ""}</small></span><button type="button" className="icon-button" aria-label={`${model.favorite ? "Remove" : "Add"} ${model.name} ${model.favorite ? "favorite" : "to favorites"}`} title={model.favorite ? "Remove favorite" : "Add favorite"} onClick={() => void toggleFavorite(model)}><Star size={15} fill={model.favorite ? "currentColor" : "none"} /></button><button type="button" className="icon-button danger-icon-button" aria-label={`Remove ${model.name} from registry`} title="Remove registry entry" onClick={() => setRemoving(model)}><Trash2 size={15} /></button></div>)}</div>{hasMore && <div className="pagination-actions"><button type="button" className="button secondary-button" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load more models"}</button></div>}</> : <EmptyState icon={BrainCircuit} title="Registry is empty" description="Register model metadata here or use the CLI. Model files remain where they are." action={<CliReference command="axiom model add my-model local safetensors" />} />}
     </Surface>
     {removing && <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !removingBusy) setRemoving(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="remove-model-title"><div className="dialog-head"><div><p className="eyebrow">CONFIRM REGISTRY CHANGE</p><h2 id="remove-model-title">Remove {removing.name}?</h2></div><button type="button" className="icon-button" aria-label="Close confirmation" onClick={() => setRemoving(null)} disabled={removingBusy}><X size={16} /></button></div><p className="quiet-note">This removes only its AXIOM registry metadata. Local model weights will not be deleted.</p><div className="integration-form-actions"><button type="button" className="button secondary-button" onClick={() => setRemoving(null)} disabled={removingBusy}>Cancel</button><button type="button" className="button danger-button" onClick={() => void removeModel()} disabled={removingBusy}>{removingBusy ? "Removing…" : "Remove registry entry"}</button></div></section></div>}
+    <ModelStudioPanel />
   </FeaturePage>;
 }
 
@@ -2266,13 +2269,13 @@ function Training({ onNotify }: { onNotify: (message: string, tone?: Tone) => vo
     <div className="info-grid">
       <InfoCard icon={Zap} label="Method" value={plan?.method.toUpperCase() || method.toUpperCase()} detail={plan ? plan.precision : "Choose a planning method"} tone={plan?.fits_hardware ? "success" : "neutral"} />
       <InfoCard icon={Cpu} label="Detected hardware" value={hardware?.hardware.gpu_name || "CPU only"} detail={hardware ? `${hardware.hardware.ram_gb.toFixed(1)} GB RAM · ${hardware.hardware.vram_gb ?? 0} GB VRAM` : "Hardware unavailable"} tone={hardware?.hardware.cuda_available ? "success" : "warning"} />
-      <InfoCard icon={TimerReset} label="Execution" value="Plan only" detail="No training job is started" tone="neutral" />
+              <InfoCard icon={TimerReset} label="Execution" value="Plan + LoRA" detail="Optional local fine-tuning panel below" tone="info" />
     </div>
     <div className="two-column-grid">
       <Surface title="Plan inputs" eyebrow="HARDWARE-AWARE ESTIMATE">
         <label className="field"><span className="field-label-row"><span>Model size (billions of parameters)</span></span><input type="number" min="0.1" max="1000" step="0.1" value={parameterBillions} onChange={(event) => { setParameterBillions(event.target.value); setPlan(null); setSavedExperimentId(""); }} /></label>
         <label className="field"><span className="field-label-row"><span>Training method</span></span><select value={method} onChange={(event) => { setMethod(event.target.value); setPlan(null); setSavedExperimentId(""); }}><option value="auto">Automatic</option><option value="qlora">QLoRA</option><option value="lora">LoRA</option><option value="full">Full fine-tuning</option></select></label>
-        <p className="quiet-note">The estimate uses detected GPU memory when available. AXIOM never starts a training run from this page.</p>
+        <p className="quiet-note">The estimate uses detected GPU memory when available. Actual LoRA execution is available below when the optional Transformers/PEFT runtime is installed.</p>
         {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
         <button type="button" className="button primary-button" onClick={() => void createPlan()} disabled={busy}><Play size={15} /> {busy ? "Building plan…" : "Generate plan"}</button>
       </Surface>
@@ -2297,6 +2300,7 @@ function Training({ onNotify }: { onNotify: (message: string, tone?: Tone) => vo
         </> : <EmptyState icon={Hammer} title="No plan generated" description="Choose a model size and method to receive a reproducible hardware-aware starting point." action={<CliReference command="axiom train plan 7 --method qlora" />} />}
       </Surface>
     </div>
+    <LocalFineTuningPanel />
   </FeaturePage>;
 }
 
@@ -3087,7 +3091,7 @@ function ModulesPage({ setPage }: { setPage: (page: Page) => void }) {
     { id: "quantizer", title: "Quantization Lab", description: "Compare quantization choices and review estimated memory fit before runtime work.", scope: "Optimization", availability: "GUI", tone: "success", icon: SlidersHorizontal, page: "quantizer" },
     { id: "models", title: "Model registry and inspection", description: "Discover local folders, inspect metadata, register entries, manage tags/favorites, and import/export registry data.", scope: "Model engineering", availability: "GUI + CLI", tone: "success", icon: BrainCircuit, page: "models", command: "axiom model --help" },
     { id: "datasets", title: "Dataset engineering and quality", description: "Inspect and validate JSONL, profile schema and duplicates, compare datasets, preview cleaning, and review manifests/privacy checks.", scope: "Data engineering", availability: "GUI + CLI", tone: "success", icon: Database, page: "datasets", command: "axiom dataset --help" },
-    { id: "training", title: "Training planner and experiments", description: "Estimate hardware-aware plans and manage saved plan snapshots. Training execution is not implied by a plan.", scope: "Planning", availability: "Planning only", tone: "warning", icon: Hammer, page: "training", command: "axiom train --help" },
+    { id: "training", title: "Training planner and experiments", description: "Estimate hardware-aware plans and manage saved plan snapshots. Training execution is not implied by a plan.", scope: "Planning", availability: "Planning + local LoRA", tone: "warning", icon: Hammer, page: "training", command: "axiom train --help" },
     { id: "workflows", title: "Workflow builder", description: "Create and validate graph designs, use templates, inspect revisions, duplicate designs, and run planning-only dry-runs.", scope: "Orchestration", availability: "Design only", tone: "warning", icon: GitBranch, page: "workflows", command: "axiom workflow --help" },
     { id: "evaluation", title: "Offline evaluation and regressions", description: "Score already-produced predictions, compare baselines, and review evaluation reports without model inference.", scope: "Quality gates", availability: "GUI + CLI", tone: "success", icon: CircleGauge, page: "evaluation", command: "axiom evaluation --help" },
     { id: "runtime", title: "Runtime and local inference", description: "Check the local Ollama endpoint and run bounded prompts against models already installed on this machine.", scope: "Operations", availability: "GUI + CLI · local runtime required", tone: "warning", icon: RadioTower, page: "runtime", command: "axiom infer --help" },

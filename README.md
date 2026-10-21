@@ -176,6 +176,32 @@ The local Control Center brings key inspection and planning functions into a bro
 
 The Module Explorer is a discovery layer, not proof that every roadmap item is implemented. CLI-only commands are shown as CLI-only rather than silently run in the browser.
 
+## 🧠 Local fine-tuning
+
+AXIOM supports real local supervised LoRA fine-tuning with Transformers + PEFT when the optional training dependencies are installed. Base weights must already be present in a local Transformers model directory; AXIOM does not download weights during a run.
+
+```bash
+python3 -m pip install -e '.[training]'
+axiom --no-banner train run --model-path "$HOME/models/my-transformers-model" --dataset "$HOME/data/train.jsonl" --output-dir "$HOME/runs/my-lora-adapter" --max-steps 20
+axiom --no-banner train jobs
+axiom --no-banner train status JOB_ID
+```
+
+See [Local fine-tuning](docs/Local-Fine-Tuning.md) for the JSONL schema, resource bounds, and runtime behavior. Model compatibility and memory fit are not guaranteed by the planning estimate.
+
+## 🧰 Model Studio: search, install, and create GGUF models
+
+Model Studio adds an interactive installer questionnaire, public Hugging Face GGUF catalogue search, Ollama library pulls, GGUF downloads, local Transformers-to-GGUF conversion using a local `llama.cpp` checkout, and an optional explicit-consent connector for public OpenAI-compatible HTTPS providers. Local Ollama inference remains loopback-only; remote prompts go to the provider you configure.
+
+```bash
+axiom --no-banner model studio wizard
+axiom --no-banner model studio search "Qwen instruct GGUF"
+axiom --no-banner model studio files author/model-GGUF
+axiom --no-banner model studio pull qwen3.5:0.8b
+```
+
+See [Model Studio](docs/Model-Studio.md) for conversion requirements, disk bounds, privacy, and model licensing guidance. GGUF conversion converts an existing model; it does not train a new base model.
+
 ## 🛠️ CLI by job
 
 ### Project and environment
