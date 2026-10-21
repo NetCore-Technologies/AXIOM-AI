@@ -1,41 +1,37 @@
 # Changelog
 
-## [0.3.0-beta.1] — release preparation
-
-- Align Python package metadata with the beta.1 version (`0.3.0b1`).
-- Add an explicit feature implementation plan and acceptance criteria.
-- Clarify which workflow improvements are foundations versus planned work.
-- Preserve the existing Control Center UI; no redesign is included in this documentation/version-preparation change.
-- Distribution publication and feature completion remain gated on passing CI and successful registry workflows.
-
-
-
 ## 0.2.0-beta.9
-
-### Changed
-
-- Optimizer, Quantization Lab and Beta.5 panels share the app theme tokens in dark and light mode.
-- Quantization Lab shows an FP16, INT8 and INT4 size comparison against detected memory (rough estimate).
 
 ### Added
 
 - Read-only daemon routes for the local workspace: `/api/models`, `/api/files`,
   `/api/model/inspect`, `/api/dataset/inspect`, `/api/train/plan`,
   `/api/ai/plan`, and `/api/headroom`.
-- The daemon serves a bundled web UI at `/ui/` when `axiom/webui` is present.
-- Release workflows build the web UI and bundle it into the Windows, Linux,
-  macOS, and PyPI packages.
-- PyPI publishing on version tags with a version-consistency check.
+- The daemon serves the bundled web UI at `/ui/` when `axiom/webui` is present.
+- Quantization Lab comparison table showing FP16, INT8, and INT4 weight sizes
+  against detected VRAM or RAM. Sizes are rough estimates, not benchmarks.
+- Automatic PyPI publishing on version tags, with a check that the tag,
+  `pyproject.toml`, and `axiom/version.py` agree before anything is uploaded.
+
+### Changed
+
+- Windows, Linux, macOS, and PyPI release builds now build the web UI and
+  bundle it into every package format.
+- Optimizer, Quantization Lab, and Beta.5 panels use the shared app theme
+  tokens, so they match the rest of the UI in dark and light mode.
 
 ### Security
 
 - Daemon workspace paths must resolve inside the working directory.
-- Requests with a non-loopback `Host` header are refused unless the daemon was
+- The daemon refuses requests with a non-loopback `Host` header unless it was
   started with `--allow-network`.
 
 ### Fixed
 
-- CodeQL alerts for modules imported with both `import` and `import from`.
+- CodeQL alerts for modules imported with both `import` and `import from` in
+  the daemon and product contract tests.
+- Local `npm run build` failures caused by a missing `rolldown` native binding
+  after an incomplete optional-dependency install.
 
 ## 0.2.0-beta.8 — release preparation
 
