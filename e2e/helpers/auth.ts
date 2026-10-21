@@ -1,57 +1,104 @@
+import { webcrypto } from "node:crypto";
 import { expect, type Page } from "@playwright/test";
 
 const E2E_USERNAME = "axiom-e2e-admin";
 const E2E_PASSWORD = "AxiomTest123";
 
+function arrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.slice().buffer as ArrayBuffer;
+}
+
+async function makeTestAdminRecord() {
+  const salt = webcrypto.getRandomValues(new Uint8Array(16));
+  const iv = webcrypto.getRandomValues(new Uint8Array(12));
+
+  const passwordKey = await webcrypto.subtle.importKey(
+    "raw",
+    arrayBuffer(new TextEncoder().encode(E2E_PASSWORD)),
+    "PBKDF2",
+    false,
+    ["deriveKey"],
+  );
+
+  const key = await webcrypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: arrayBuffer(salt),
+      iterations: 310000,
+      hash: "SHA-256",
+    },
+    passwordKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt"],
+  );
+
+  const ciphertext = await webcrypto.subtle.encrypt(
+    { name: "AES-GCM", iv: arrayBuffer(iv) },
+    key,
+    arrayBuffer(new TextEncoder().encode("AXIOM-ADMIN-VERIFIER-V1")),
+  );
+
+  return {
+    version: 1,
+    username: E2E_USERNAME,
+    salt: Buffer.from(salt).toString("base64"),
+    iv: Buffer.from(iv).toString("base64"),
+    ciphertext: Buffer.from(ciphertext).toString("base64"),
+    updatedAt: Date.now(),
+  };
+}
+
 export async function ensureAuthenticated(page: Page): Promise<void> {
-  // Open the app origin, then reset only this test browser's AXIOM auth state.
-  await page.goto("/");
-
-  await page.evaluate(() => {
-    for (const key of [
-      "axiom-booted",
-      "axiom-setup",
-      "axiom-admin-v2",
-      "axiom-admin",
-    ]) {
-      localStorage.removeItem(key);
-    }
-    sessionStorage.removeItem("axiom-session");
-  });
-
-  // Reload once with predictable first-boot state.
-  await page.reload();
-
   page.on("pageerror", (error) => {
     console.error("[AXIOM browser error]", error.message);
   });
 
-  const beginSetup = page.getByRole("button", { name: /Begin setup/i });
-  await expect(beginSetup).toBeVisible({ timeout: 15_000 });
-  await beginSetup.click();
+  const response = await page.goto("/");
+  if (response?.status() !== 200) {
+    throw new Error(
+      `AXIOM dev server returned HTTP ${response?.status() ?? "no response"} for /`,
+    );
+  }
 
-  await expect(page.locator("#setup-username")).toBeVisible();
-  await page.locator("#setup-username").fill(E2E_USERNAME);
-  await page.locator("#setup-password").fill(E2E_PASSWORD);
-  await page.locator("#setup-confirm").fill(E2E_PASSWORD);
+  // Isolated Playwright context: seed only this test's administrator.
+  const adminRecord = await makeTestAdminRecord();
+  await page.evaluate((record) => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("axiom-booted", "1");
+    localStorage.setItem("axiom-setup", "1");
+    localStorage.setItem("axiom-admin-v2", JSON.stringify(record));
+  }, adminRecord);
 
-  const createButton = page.getByRole("button", {
-    name: /Create administrator/i,
-  });
-  await expect(createButton).toBeEnabled();
-  await createButton.click();
+  await page.reload();
 
-  await expect(
-    page.getByRole("heading", { name: "Administrator created." }),
-  ).toBeVisible({ timeout: 10_000 });
+  const username = page.locator("#login-username");
+  try {
+    await expect(username).toBeVisible({ timeout: 10_000 });
+  } catch {
+    const state = await page.evaluate(() => ({
+      url: location.href,
+      title: document.title,
+      bodyText: document.body.innerText.slice(0, 1000),
+      rootHtml: document.querySelector("#root")?.innerHTML.slice(0, 2000) ?? null,
+    })).catch(() => null);
 
-  const signInHeading = page.getByRole("heading", { name: "Sign in" });
-  await expect(signInHeading).toBeVisible({ timeout: 15_000 });
+    throw new Error(
+      `AXIOM login form did not render after seeding test admin. State: ${JSON.stringify(state)}`,
+    );
+  }
 
-  await page.locator("#login-username").fill(E2E_USERNAME);
+  await username.fill(E2E_USERNAME);
   await page.locator("#login-password").fill(E2E_PASSWORD);
-  await page.getByRole("button", { name: /^Sign in$/i }).click();
 
+  const remember = page.getByRole("checkbox", {
+    name: /Remember me on this browser/i,
+  });
+  await expect(remember).toBeVisible();
+  await remember.check();
+
+  await page.getByRole("button", { name: /^Sign in$/i }).click();
   await expect(page.getByLabel("Primary navigation")).toBeVisible({
     timeout: 15_000,
   });

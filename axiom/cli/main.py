@@ -347,11 +347,11 @@ def experiment_delete(
 @app.command("ui")
 def start_gui(
     port: int = typer.Option(
-        0,
+        40507,
         "--port",
         min=0,
         max=65535,
-        help="Local port to use; 0 selects an available port.",
+        help="Local port to use (default 40507); use 0 for an ephemeral port. Keep the port stable to retain this browser origin's local account and sign-in state.",
     ),
     open_browser: bool = typer.Option(
         True,

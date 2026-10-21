@@ -416,6 +416,8 @@ type StoredAdminRecord = {
 const ADMIN_KEY = "axiom-admin-v2";
 const LEGACY_ADMIN_KEY = "axiom-admin";
 const SESSION_KEY = "axiom-session";
+const REMEMBERED_SESSION_KEY = "axiom-remembered-session";
+const REMEMBER_PREFERENCE_KEY = "axiom-remember-me";
 const THEME_KEY = "axiom-theme";
 
 const ADMIN_VERIFIER = "AXIOM-ADMIN-VERIFIER-V1";
@@ -517,7 +519,9 @@ function getStoredTheme(): Theme {
 }
 
 function isAuthenticated(): boolean {
-  return sessionStorage.getItem(SESSION_KEY) === "1";
+  if (!readAdmin()) return false;
+  return sessionStorage.getItem(SESSION_KEY) === "1"
+    || localStorage.getItem(REMEMBERED_SESSION_KEY) === "1";
 }
 
 function getAdministratorName(): string {
@@ -593,7 +597,7 @@ function App() {
     () => localStorage.getItem("axiom-booted") === "1",
   );
   const [setupDone, setSetupDone] = useState(
-    () => localStorage.getItem("axiom-setup") === "1" && Boolean(localStorage.getItem(ADMIN_KEY)),
+    () => localStorage.getItem("axiom-setup") === "1" && Boolean(readAdmin()),
   );
   const [authenticated, setAuthenticated] = useState(isAuthenticated);
   const [page, setPage] = useState<Page>(pageFromLocation);
@@ -625,13 +629,14 @@ function App() {
   }, [notice]);
 
   useEffect(() => {
-    if (!authenticated) {
+    if (!authenticated || localStorage.getItem(REMEMBERED_SESSION_KEY) === "1") {
       return;
     }
 
     let timeout: number | undefined;
     const logoutForInactivity = () => {
       sessionStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(REMEMBERED_SESSION_KEY);
       setAuthenticated(false);
       setChangePasswordOpen(false);
       setNotice({ message: "Your session expired after 10 minutes of inactivity.", tone: "warning" });
@@ -716,6 +721,7 @@ function App() {
           localStorage.setItem("axiom-setup", "1");
           setUsername(username.trim());
           sessionStorage.removeItem(SESSION_KEY);
+          localStorage.removeItem(REMEMBERED_SESSION_KEY);
 
           window.setTimeout(() => {
             setSetupDone(true);
@@ -731,8 +737,14 @@ function App() {
       <LoginScreen
         theme={theme}
         setTheme={setAndPersistTheme}
-        onLogin={() => {
+        onLogin={(rememberMe) => {
           sessionStorage.setItem(SESSION_KEY, "1");
+          localStorage.setItem(REMEMBER_PREFERENCE_KEY, rememberMe ? "1" : "0");
+          if (rememberMe) {
+            localStorage.setItem(REMEMBERED_SESSION_KEY, "1");
+          } else {
+            localStorage.removeItem(REMEMBERED_SESSION_KEY);
+          }
           setAuthenticated(true);
         }}
       />
@@ -741,6 +753,7 @@ function App() {
 
   const logout = () => {
     sessionStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(REMEMBERED_SESSION_KEY);
     setAuthenticated(false);
     setChangePasswordOpen(false);
   };
@@ -794,6 +807,7 @@ function App() {
           onClose={() => setChangePasswordOpen(false)}
           onSuccess={() => {
             sessionStorage.removeItem(SESSION_KEY);
+            localStorage.removeItem(REMEMBERED_SESSION_KEY);
             setChangePasswordOpen(false);
             setAuthenticated(false);
             setNotice({ message: "Password changed. Sign in again to continue.", tone: "success" });
@@ -1119,10 +1133,11 @@ function LoginScreen({
 }: {
   theme: Theme;
   setTheme: (theme: Theme) => void;
-  onLogin: () => void;
+  onLogin: (rememberMe: boolean) => void;
 }) {
   const [username, setUsername] = useState(getAdministratorName() === "Administrator" ? "" : getAdministratorName());
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(() => localStorage.getItem(REMEMBER_PREFERENCE_KEY) !== "0");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [reveal, setReveal] = useState(false);
@@ -1140,7 +1155,7 @@ function LoginScreen({
         return;
       }
 
-      onLogin();
+      onLogin(rememberMe);
     } catch {
       setError("Unable to authenticate with the local AXIOM account.");
     } finally {
@@ -1159,7 +1174,7 @@ function LoginScreen({
           <div className="login-facts">
             <div><ShieldCheck size={16} /><span>Local administrator session</span></div>
             <div><HardDrive size={16} /><span>No cloud account required</span></div>
-            <div><Clock3 size={16} /><span>10-minute inactivity timeout</span></div>
+            <div><Clock3 size={16} /><span>10-minute timeout when remember me is off</span></div>
           </div>
         </section>
 
@@ -1200,13 +1215,18 @@ function LoginScreen({
             />
           </Field>
 
+          <label className="remember-row">
+            <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} />
+            <span><b>Remember me on this browser</b><small>Stay signed in on this local browser profile until you sign out.</small></span>
+          </label>
+
           {error && <InlineAlert tone="danger" role="alert">{error}</InlineAlert>}
 
           <button className="button primary-button full-width" type="submit" disabled={loading || !username.trim() || !password}>
             {loading ? "Authenticating..." : "Sign in"}
             <ArrowRight size={17} />
           </button>
-          <p className="form-note"><ShieldCheck size={14} /> The active session stays in this browser; credentials are not stored in clear text.</p>
+          <p className="form-note"><ShieldCheck size={14} /> Passwords are never stored. Remembered sign-in stays in this local browser profile; uncheck the option to use the inactivity timeout.</p>
         </form>
       </div>
       <div className="auth-footer"><span>AXIOM / CONTROL CENTER</span><span>LOCAL · PRIVATE · INSPECTABLE</span></div>
@@ -1267,7 +1287,6 @@ function Sidebar({
               >
                 <Icon size={17} strokeWidth={1.8} />
                 <span>{item.label}</span>
-                {item.id === "diagnostics" && <StatusPill tone="warning">2</StatusPill>}
               </button>
             </div>
           );
