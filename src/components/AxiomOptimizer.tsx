@@ -123,19 +123,22 @@ export default function AxiomOptimizer() {
               <b>{plan.model.source}</b>
 
               <span>Parameters</span>
-              <b>{plan.model.parameter_billions}B</b>
+              <b>{plan.model.parameter_billions === null ? "Unknown" : `${plan.model.parameter_billions}B`}</b>
+
+              <span>Parameter basis</span>
+              <b>{plan.model.parameter_source}</b>
 
               <span>FP16 estimate</span>
-              <b>{plan.model.estimated_fp16_gb} GB</b>
+              <b>{plan.model.estimated_fp16_gb === null ? "Unknown" : `${plan.model.estimated_fp16_gb} GB`}</b>
 
               <span>Recommended quantization</span>
               <b>{plan.optimization.recommended_quantization}</b>
 
               <span>RAM</span>
-              <b>{plan.system.ram_gb} GB</b>
+              <b>{plan.system.ram_gb === null ? "Unknown" : `${plan.system.ram_gb} GB`}</b>
 
               <span>VRAM</span>
-              <b>{plan.system.vram_gb || "N/A"} GB</b>
+              <b>{plan.system.vram_gb === null ? "Unknown" : `${plan.system.vram_gb} GB`}</b>
 
               <span>Target</span>
               <b>{plan.optimization.target_tokens_per_second} tok/s</b>

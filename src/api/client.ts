@@ -265,8 +265,8 @@ export type TrainingPlan = {
   gradient_accumulation: number;
   sequence_length: number;
   learning_rate: number;
-  estimated_vram_gb: number;
-  fits_hardware: boolean;
+  estimated_vram_gb: number | null;
+  fits_hardware: boolean | null;
   reason: string;
 };
 
@@ -495,20 +495,21 @@ export type OptimizationPlan = {
   model: {
     source: string;
     local_path: string;
-    parameter_billions: number;
-    estimated_fp16_gb: number;
+    parameter_billions: number | null;
+    estimated_fp16_gb: number | null;
+    parameter_source: string;
     files: number;
     weights: string[];
   };
   system: {
     os: string;
     arch: string;
-    cpu_count: number;
-    ram_gb: number;
-    gpu_available: boolean;
-    gpu_name: string;
-    vram_gb: number;
-    disk_free_gb: number;
+    cpu_count: number | null;
+    ram_gb: number | null;
+    gpu_available: boolean | null;
+    gpu_name: string | null;
+    vram_gb: number | null;
+    disk_free_gb: number | null;
   };
   optimization: {
     target_tokens_per_second: number;

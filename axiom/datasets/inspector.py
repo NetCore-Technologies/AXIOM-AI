@@ -18,6 +18,7 @@ class DatasetInspection:
         duplicates: int,
         fields: list[str],
         estimated_tokens: int,
+        errors: list[tuple[int, str]],
     ):
         self.path = path
         self.format = format
@@ -28,6 +29,7 @@ class DatasetInspection:
         self.duplicates = duplicates
         self.fields = fields
         self.estimated_tokens = estimated_tokens
+        self.errors = errors
 
 
 def _reject_non_json_constant(value: str) -> None:
@@ -48,9 +50,10 @@ def inspect_jsonl(path: Path) -> DatasetInspection:
     token_estimate = 0
     field_counter: Counter[str] = Counter()
     fingerprints: Counter[str] = Counter()
+    errors: list[tuple[int, str]] = []
 
     with path.open("r", encoding="utf-8") as file:
-        for raw_line in file:
+        for line_number, raw_line in enumerate(file, start=1):
             total += 1
             line = raw_line.strip()
 
@@ -63,12 +66,16 @@ def inspect_jsonl(path: Path) -> DatasetInspection:
                     line,
                     parse_constant=_reject_non_json_constant,
                 )
-            except (json.JSONDecodeError, ValueError):
+            except (json.JSONDecodeError, ValueError) as exc:
                 invalid += 1
+                if len(errors) < 50:
+                    errors.append((line_number, str(exc)))
                 continue
 
             if not isinstance(item, dict):
                 invalid += 1
+                if len(errors) < 50:
+                    errors.append((line_number, "record is not a JSON object"))
                 continue
 
             valid += 1
@@ -90,6 +97,7 @@ def inspect_jsonl(path: Path) -> DatasetInspection:
         duplicates=duplicates,
         fields=sorted(field_counter),
         estimated_tokens=token_estimate,
+        errors=errors,
     )
 
 

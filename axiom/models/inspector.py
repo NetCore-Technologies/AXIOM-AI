@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from axiom.models.analysis import estimate_parameters_from_config
+
 
 @dataclass
 class ModelInspection:
@@ -11,6 +13,7 @@ class ModelInspection:
     architecture: str | None
     model_type: str | None
     parameter_count: int | None
+    parameter_source: str
     model_format: str
     weight_size_bytes: int
     has_config: bool
@@ -21,37 +24,6 @@ class ModelInspection:
     capabilities: list[str]
     estimated_vram_gb: float | None
     status: str
-
-
-def _estimate_parameters(config: dict, weight_size_bytes: int) -> int | None:
-    for key in ("num_parameters", "parameter_count", "n_parameters"):
-        value = config.get(key)
-        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-            return value
-
-    hidden = config.get("hidden_size")
-    layers = config.get("num_hidden_layers")
-    vocab = config.get("vocab_size")
-    intermediate = config.get("intermediate_size")
-
-    if all(
-        isinstance(value, int) and not isinstance(value, bool) and value > 0
-        for value in (hidden, layers, vocab)
-    ):
-        if (
-            isinstance(intermediate, int)
-            and not isinstance(intermediate, bool)
-            and intermediate > 0
-        ):
-            return int(
-                layers * (4 * hidden * intermediate + 4 * hidden * hidden)
-                + vocab * hidden
-            )
-
-        if weight_size_bytes > 0:
-            return int(weight_size_bytes)
-
-    return None
 
 
 def _detect_capabilities(config: dict) -> list[str]:
@@ -179,10 +151,7 @@ def inspect_model(path: str) -> ModelInspection:
         else None
     )
 
-    parameter_count = _estimate_parameters(
-        config,
-        weight_size,
-    )
+    parameter_count, parameter_source = estimate_parameters_from_config(config)
 
     estimated_vram_gb = None
 
@@ -204,6 +173,7 @@ def inspect_model(path: str) -> ModelInspection:
         architecture=architecture,
         model_type=config.get("model_type"),
         parameter_count=parameter_count,
+        parameter_source=parameter_source,
         model_format=model_format,
         weight_size_bytes=weight_size,
         has_config=config_path.is_file(),

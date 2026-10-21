@@ -1,6 +1,6 @@
 <div align="center">
 
-![AXIOM. Build AI. Own AI.](docs/assets/banner.svg)
+![AXIOM. Know what fits before you train.](docs/assets/banner.svg)
 
 [![Status](https://img.shields.io/badge/status-active%20development-22c55e?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI)
 [![Version](https://img.shields.io/badge/version-v0.3.0--beta.4-f59e0b?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
@@ -10,15 +10,11 @@
 
 # AXIOM AI
 
-### Build AI. Own AI.
-
-**Know your model, your data, and your machine before you spend a single GPU hour.**
-
 [Quick start](#-quick-start) · [Beta.4 highlights](#-whats-new-in-v030-beta4) · [Install](#-install) · [CLI](#-cli-by-job) · [Wiki](https://github.com/NetCore-Technologies/AXIOM-AI/wiki) · [Report a bug](https://github.com/NetCore-Technologies/AXIOM-AI/issues)
 
 ![AXIOM terminal demo](docs/assets/terminal.svg)
 
-<sub>Planning output and resource estimates are not benchmark results.</sub>
+<sub>Estimates help you plan; they are not measured results.</sub>
 
 </div>
 
@@ -26,18 +22,20 @@
 
 ## What is AXIOM?
 
-AXIOM is a **local-first AI project inspection and planning toolkit**. It helps you answer practical questions before committing compute, downloading large artifacts, or changing a workspace:
+AXIOM runs on your computer. Check model files, find training-data problems, and see what your computer may handle before you run a model. Training estimates are guidance, not measured results, and AXIOM does not start training.
 
-- What is inside this model directory, and what can be identified from its files and metadata?
-- Is this JSONL dataset structurally valid, and what quality or privacy signals should I review?
-- What CPU, RAM, GPU, and VRAM are visible on this machine?
-- What is a conservative starting plan for a model and the hardware available?
-- Which local tools and runtime candidates can be discovered, and what still needs to be configured?
-- Is the AXIOM workspace configuration healthy, and how can I produce a small support bundle?
+Use it to:
 
-AXIOM combines a CLI, a local Control Center GUI, a loopback-first API, workspace metadata, and planning utilities. Project configuration lives in `axiom.yaml`; the local model registry lives in `.axiom`. Core inspection and planning do not require an AXIOM account.
+- Check what AXIOM can read in a model folder.
+- Find broken lines and repeated records in training data.
+- See the memory, processor, and graphics card detected on your computer.
+- Estimate whether a model may fit before you start training.
+- See which local tools are ready and what still needs setup.
+- Check your project setup and create a file to inspect before asking for help.
 
-> **Product boundary:** AXIOM's planning and workflow-design features do not mean that training or inference is running. AXIOM does not provide a hosted workspace or claim a runtime is connected unless it has been detected and verified.
+Use AXIOM in a terminal or in its local browser interface. Project settings live in `axiom.yaml`, and its model list lives in `.axiom`. You do not need an AXIOM account for the core checks.
+
+AXIOM can also generate text through Ollama running on your computer. It reports a local service as ready only after it has been detected.
 
 ## 🚀 What's new in v0.3.0-beta.4
 

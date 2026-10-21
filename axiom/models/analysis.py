@@ -26,7 +26,7 @@ def _find_number(config: dict, keys: tuple[str, ...]) -> int | None:
     return None
 
 
-def _estimate_parameters(config: dict) -> tuple[int | None, str]:
+def estimate_parameters_from_config(config: dict) -> tuple[int | None, str]:
     direct_keys = (
         "num_parameters",
         "parameter_count",
@@ -48,8 +48,33 @@ def _estimate_parameters(config: dict) -> tuple[int | None, str]:
         isinstance(value, int) and not isinstance(value, bool) and value > 0
         for value in (hidden, layers, vocab, intermediate)
     ):
+        attention_heads = _find_number(config, ("num_attention_heads",))
+        kv_heads = _find_number(config, ("num_key_value_heads",))
+        if (
+            attention_heads
+            and kv_heads
+            and kv_heads <= attention_heads
+            and hidden % attention_heads == 0
+        ):
+            kv_width = (hidden // attention_heads) * kv_heads
+        else:
+            kv_width = hidden
+
+        model_type = str(config.get("model_type") or "").lower()
+        hidden_act = str(config.get("hidden_act") or "").lower()
+        gated_mlp = hidden_act in {"silu", "swish"} or model_type in {
+            "gemma", "gemma2", "llama", "mistral", "mixtral", "qwen2", "qwen3"
+        }
+        mlp_projections = 3 if gated_mlp else 2
+        embedding_matrices = 1 if config.get("tie_word_embeddings") is True else 2
+
+        attention_parameters = 2 * hidden * hidden + 2 * hidden * kv_width
+        mlp_parameters = mlp_projections * hidden * intermediate
+        norm_parameters = 2 * hidden
         estimate = int(
-            layers * (4 * hidden * intermediate + 4 * hidden * hidden) + vocab * hidden
+            layers * (attention_parameters + mlp_parameters + norm_parameters)
+            + hidden  # final layer normalization
+            + embedding_matrices * vocab * hidden
         )
         return estimate, "architecture estimate"
 
@@ -82,7 +107,7 @@ def analyze_config(
 
     model_type = str(config.get("model_type") or "Unknown")
 
-    parameters, parameter_source = _estimate_parameters(config)
+    parameters, parameter_source = estimate_parameters_from_config(config)
 
     context_length = _find_number(
         config,

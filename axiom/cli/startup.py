@@ -189,7 +189,7 @@ def render_startup(stream: TextIO, *, include_next_steps: bool = False) -> None:
     console.print(Text("  AXIOM", style=f"bold {AMBER}"))
     console.print(
         Text(
-            "Inspect models, validate data, and plan local AI work around your machine.",
+            "Know what fits before you train.",
             style=CREAM,
         )
     )

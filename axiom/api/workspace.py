@@ -121,8 +121,8 @@ class WorkspaceTrainingPlanInput(BaseModel):
     gradient_accumulation: int
     sequence_length: int
     learning_rate: float
-    estimated_vram_gb: float
-    fits_hardware: bool
+    estimated_vram_gb: float | None
+    fits_hardware: bool | None
     reason: str
 
 
@@ -316,6 +316,7 @@ def workspace_inspect_model(request: WorkspaceModelInspectInput) -> dict[str, An
             "architecture": inspection.architecture,
             "model_type": inspection.model_type,
             "parameter_count": inspection.parameter_count,
+            "parameter_source": inspection.parameter_source,
             "model_format": inspection.model_format,
             "weight_size_bytes": inspection.weight_size_bytes,
             "has_config": inspection.has_config,

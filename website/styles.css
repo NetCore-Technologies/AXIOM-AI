@@ -109,8 +109,8 @@ a {
 
 .brand-mark {
   display: block;
-  width: 30px;
-  height: 30px;
+  width: 38px;
+  height: 38px;
 }
 
 .brand-name {
@@ -191,7 +191,6 @@ a {
   min-height: min(900px, 100svh);
   align-items: center;
   overflow: hidden;
-  border-bottom: 1px solid var(--line);
   background: var(--workflow-bg);
 }
 
@@ -283,149 +282,64 @@ h1 em {
   transform: translateY(-2px);
 }
 
-.hero-terminal {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px 16px;
-  max-width: 510px;
-  margin-top: 42px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
-}
-
-.hero-terminal-line {
-  display: flex;
-  gap: 10px;
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.8rem;
-  font-weight: 500;
-}
-
-.hero-terminal-line span {
-  color: var(--ink);
-}
-
-.hero-terminal p {
-  max-width: 330px;
-  margin-bottom: 0;
-  color: var(--muted);
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
-
-.daemon-preview {
-  max-width: 510px;
-  margin-top: 18px;
-  border: 1px solid var(--line);
-  background: rgba(255, 246, 237, 0.22);
-}
-
-.daemon-preview-heading,
-.daemon-preview-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.daemon-preview-heading {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--line);
-  color: var(--ink);
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.64rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.daemon-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 0.58rem;
-}
-
-.daemon-state i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--coffee);
-}
-
-.daemon-preview-row {
-  padding: 14px;
-}
-
-.daemon-preview-row code {
-  min-width: 0;
-  overflow-x: auto;
-  color: var(--ink);
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.72rem;
-  white-space: nowrap;
-}
-
-.daemon-preview-note {
-  margin: 0;
-  padding: 0 14px 14px;
-  color: var(--muted);
-  font-size: 0.74rem;
-  line-height: 1.5;
-}
-
-.hero-visual {
+.hero-cli {
   width: 100%;
-  max-width: 710px;
+  max-width: 720px;
   margin: 0;
   justify-self: end;
 }
 
-.image-frame {
-  position: relative;
-  aspect-ratio: 986 / 614;
+.cli-window {
   overflow: hidden;
-  border: 1px solid var(--ink);
-  background: #050505;
+  border: 1px solid rgba(222, 194, 170, 0.28);
+  background: #171310;
+  color: #f4e9df;
+  box-shadow: 14px 18px 0 rgba(23, 19, 16, 0.12);
 }
 
-.image-frame::before,
-.image-frame::after {
-  position: absolute;
-  z-index: 1;
-  width: 17px;
-  height: 17px;
-  border-color: var(--coffee-soft);
-  content: "";
-  pointer-events: none;
+.cli-window-body {
+  padding: clamp(22px, 3.2vw, 40px);
 }
 
-.image-frame::before {
-  top: 18px;
-  left: 18px;
-  border-top: 1px solid;
-  border-left: 1px solid;
+.cli-startup {
+  padding-bottom: 24px;
 }
 
-.image-frame::after {
-  right: 18px;
-  bottom: 18px;
-  border-right: 1px solid;
-  border-bottom: 1px solid;
+.cli-art {
+  overflow: hidden;
+  margin: 0;
+  color: #c9b6a8;
+  border: 0;
+  background: transparent;
+  font: 600 clamp(0.46rem, 0.95vw, 0.8rem)/1.3 "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre;
 }
 
-.image-frame img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  filter: grayscale(1) contrast(1.08);
-  transition: transform 800ms var(--ease), filter 300ms ease;
+.cli-command-list code b {
+  color: #c69b7d;
+  font-weight: 600;
 }
 
-.hero-visual:hover .image-frame img {
-  filter: grayscale(1) contrast(1.16);
-  transform: scale(1.035);
+.cli-command-list {
+  display: grid;
+  gap: 0;
+  padding-top: 7px;
+}
+
+.cli-command-list > div {
+  display: grid;
+  gap: 7px;
+  padding: 13px 0;
+}
+
+.cli-command-list > div:last-child {
+  padding-bottom: 0;
+}
+
+.cli-command-list code {
+  overflow-wrap: anywhere;
+  color: #f4e9df;
+  font: 0.72rem/1.5 "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .band {
@@ -475,7 +389,6 @@ h1 em {
   align-items: center;
   gap: 13px;
   margin-top: 32px;
-  border-bottom: 1px solid currentColor;
   padding-bottom: 7px;
   color: var(--ink);
   font-size: 0.78rem;
@@ -490,49 +403,21 @@ h1 em {
 }
 
 .workflow-steps {
+  display: grid;
+  gap: 30px;
   margin: 0;
   padding: 0;
   list-style: none;
-  border-top: 1px solid var(--line);
 }
 
 .workflow-steps li {
-  display: grid;
-  grid-template-columns: 66px minmax(0, 1fr);
-  gap: 24px;
-  padding: 30px 0 34px;
-  border-bottom: 1px solid var(--line);
-  transition: padding 180ms ease, border-color 180ms ease;
-}
-
-.workflow-steps li:hover {
-  padding-left: 12px;
-  border-color: var(--coffee);
-}
-
-.step-index {
-  color: var(--ink);
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.68rem;
-  letter-spacing: 0.04em;
+  display: block;
 }
 
 .workflow-steps h3 {
   margin-bottom: 11px;
   font-size: clamp(1.75rem, 3vw, 2.45rem);
   letter-spacing: -0.06em;
-}
-
-.step-command {
-  display: inline-block;
-  max-width: 100%;
-  margin-bottom: 12px;
-  overflow-x: auto;
-  color: var(--ink);
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.76rem;
-  line-height: 1.5;
-  white-space: nowrap;
 }
 
 .workflow-steps li p {
@@ -549,52 +434,20 @@ h1 em {
   letter-spacing: -0.08em;
 }
 
-.install-tip {
-  margin-top: 24px !important;
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.75rem !important;
-  line-height: 1.7 !important;
-}
-
-.install-tip code {
-  color: var(--ink);
-}
-
-.install-optional {
-  max-width: 500px;
-  margin: 20px 0 0 !important;
-  color: var(--muted);
-  font-size: 0.78rem !important;
-  line-height: 1.6 !important;
-}
-
-.install-optional code {
-  color: var(--ink);
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.install-optional a {
-  border-bottom: 1px solid currentColor;
-  color: var(--ink);
-  text-decoration: none;
-}
-
 .install-commands {
   align-self: center;
 }
 
 .install-switcher {
   display: inline-flex;
-  gap: 0;
+  gap: 8px;
   margin-bottom: 12px;
-  border: 1px solid var(--line-strong);
 }
 
 .platform-button {
   min-height: 34px;
   padding: 0 13px;
   border: 0;
-  border-right: 1px solid var(--line-strong);
   background: transparent;
   color: var(--muted);
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -604,33 +457,14 @@ h1 em {
   transition: background-color 180ms ease, color 180ms ease;
 }
 
-.platform-button:last-child {
-  border-right: 0;
-}
-
 .platform-button:hover,
 .platform-button.is-active {
   background: var(--coffee-soft);
   color: var(--ink);
 }
 
-.platform-note {
-  max-width: 560px;
-  min-height: 38px;
-  margin: 0 0 16px;
-  color: var(--muted);
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.68rem;
-  line-height: 1.55;
-}
-
 .command-block {
   padding: 18px 0 20px;
-  border-top: 1px solid var(--line);
-}
-
-.command-block:last-of-type {
-  border-bottom: 1px solid var(--line);
 }
 
 .command-heading {
@@ -691,7 +525,6 @@ pre code {
 }
 
 .site-footer {
-  border-top: 1px solid var(--line);
   background: var(--workflow-bg);
 }
 
@@ -703,12 +536,6 @@ pre code {
   width: min(var(--max-width), calc(100% - 48px));
   min-height: 104px;
   margin: 0 auto;
-}
-
-.footer-inner p {
-  margin: 0 auto 0 0;
-  color: var(--muted);
-  font-size: 0.72rem;
 }
 
 @keyframes reveal-up {
@@ -748,7 +575,7 @@ html.js [data-reveal].is-visible {
     max-width: 700px;
   }
 
-  .hero-visual {
+  .hero-cli {
     width: min(100%, 760px);
     justify-self: start;
   }
@@ -820,7 +647,7 @@ html.js [data-reveal].is-visible {
   }
 
   h1 {
-    font-size: clamp(3.15rem, 15vw, 5.4rem);
+    font-size: clamp(3rem, 13vw, 4.6rem);
   }
 
   .hero-lead {
@@ -836,18 +663,28 @@ html.js [data-reveal].is-visible {
     justify-content: space-between;
   }
 
-  .hero-terminal {
-    grid-template-columns: 1fr;
-    gap: 8px;
+  .hero {
+    min-height: auto;
   }
 
-  .daemon-preview-row {
-    align-items: flex-start;
-    flex-direction: column;
+  .hero-inner {
+    gap: 42px;
   }
 
-  .daemon-preview-row .copy-button {
-    align-self: flex-start;
+  .cli-window {
+    box-shadow: 7px 9px 0 rgba(23, 19, 16, 0.12);
+  }
+
+  .cli-window-body {
+    padding: 22px 16px;
+  }
+
+  .cli-art {
+    font-size: clamp(0.36rem, 1.55vw, 0.62rem);
+  }
+
+  .cli-command-list code {
+    font-size: 0.65rem;
   }
 
   .band {
@@ -859,26 +696,12 @@ html.js [data-reveal].is-visible {
     font-size: clamp(2.8rem, 14vw, 4.6rem);
   }
 
-  .workflow-steps li {
-    grid-template-columns: 44px minmax(0, 1fr);
-    gap: 12px;
-    padding: 25px 0 28px;
-  }
-
-  .workflow-steps li:hover {
-    padding-left: 0;
-  }
-
   .footer-inner {
     align-items: flex-start;
     flex-wrap: wrap;
     padding: 26px 0;
   }
 
-  .footer-inner p {
-    width: 100%;
-    order: 3;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1248,8 +1071,7 @@ main :is(h1, h2, h3, p, code),
   color: var(--ink);
 }
 
-main :is(.hero-lead, .hero-terminal p, .daemon-preview-note, .workflow-intro > p, .install-copy > p, .workflow-steps li p, .platform-note),
-.site-footer p {
+main :is(.hero-lead, .workflow-intro > p, .install-copy > p, .workflow-steps li p) {
   color: var(--muted);
 }
 
