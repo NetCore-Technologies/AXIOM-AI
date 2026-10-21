@@ -39,6 +39,7 @@ def _ram_gb() -> float | None:
         if pages > 0 and page_size > 0:
             return pages * page_size / (1024**3)
     except (AttributeError, OSError, ValueError):
+        # Some platforms do not expose these counters; try the Linux source next.
         pass
 
     path = Path("/proc/meminfo")
@@ -47,6 +48,7 @@ def _ram_gb() -> float | None:
             if line.startswith("MemTotal:"):
                 return int(line.split()[1]) / 1024 / 1024
     except (OSError, ValueError, IndexError):
+        # procfs is unavailable or malformed on this system, so RAM is unknown.
         pass
 
     return None
