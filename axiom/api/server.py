@@ -10,6 +10,8 @@ from typing import Any
 from pydantic import BaseModel
 
 from axiom.api.evaluation import router as evaluation_router
+from axiom.api.model_studio import router as model_studio_router
+from axiom.api.fine_tuning import router as fine_tuning_router
 from axiom.api.diagnostics import router as diagnostics_router
 from axiom.api.runtime_discovery import router as runtime_discovery_router
 from axiom.api.agent_profiles import router as agent_profiles_router
@@ -144,6 +146,8 @@ def create_app() -> Any:
     app.include_router(workflows_router)
     app.include_router(security_router)
     app.include_router(evaluation_router)
+    app.include_router(model_studio_router)
+    app.include_router(fine_tuning_router)
     app.include_router(diagnostics_router)
     app.include_router(runtime_discovery_router)
     app.include_router(agent_profiles_router)

@@ -35,6 +35,13 @@ export type LocalInferenceResult = {
   generated_at: string;
 };
 
+export type ModelStudioModel = { id: string; author: string; downloads: number; likes: number; pipeline_tag: string; last_modified: string; tags: string[]; url: string };
+export type ModelStudioFile = { filename: string; size_bytes: number | null; quantization: string };
+export type ModelStudioStatus = { schema_version: number; ollama_installed: boolean; ollama_endpoint: string; download_limit_bytes: number; gguf_directory: string; catalogue: string; network_search_is_explicit: boolean };
+export type ModelStudioJob = { schema_version: 1; id: string; status: "queued" | "running" | "completed" | "failed"; operation: string; created_at: string; updated_at: string; started_at?: string | null; finished_at?: string | null; config: Record<string, unknown>; progress_bytes: number; total_bytes: number | null; logs: string[]; error: string | null; result: Record<string, unknown> | null };
+export type RemoteModelCatalog = { provider: string; base_url: string; models: string[]; count: number; credential_storage: "not_saved"; note: string };
+export type RemoteModelResponse = { provider: string; base_url: string; model: string; response: string; prompt_tokens: number | null; completion_tokens: number | null; credential_storage: "not_saved"; generated_at: string };
+
 export type RuntimeConnector = {
   id: string; name: string; kind: "executable" | "python-package"; present: boolean;
   status: "discovered_not_connected" | "not_detected"; potential_capabilities: string[];
@@ -261,6 +268,24 @@ export type TrainingPlan = {
   estimated_vram_gb: number;
   fits_hardware: boolean;
   reason: string;
+};
+
+export type FineTuningRuntime = {
+  backend: string;
+  can_start: boolean;
+  packages: Record<string, boolean>;
+  model_loading: "local_files_only";
+  scope_note: string;
+};
+export type FineTuningConfig = {
+  model_path: string; dataset_path: string; output_dir: string; text_field: string;
+  max_steps: number; sequence_length: number; learning_rate: number; lora_rank: number;
+};
+export type FineTuningJob = {
+  schema_version: 1; id: string; status: "queued" | "running" | "completed" | "failed";
+  created_at: string; updated_at: string; started_at: string | null; finished_at: string | null;
+  config: FineTuningConfig; completed_steps: number; loss: number | null; error: string | null;
+  logs: string[]; result?: { output_dir: string; adapter_files: string[]; target_modules: string[]; dataset_rows: number; max_steps: number };
 };
 
 export type WorkspaceEvent = {
@@ -754,6 +779,13 @@ export const axiomApi = {
     }),
   }),
 
+  fineTuningRuntime: () => requestJson<FineTuningRuntime>("/api/fine-tuning/runtime"),
+  fineTuningJobs: (limit = 20) => requestJson<{ jobs: FineTuningJob[] }>(`/api/fine-tuning/jobs?limit=${limit}`),
+  fineTuningJob: (id: string) => requestJson<FineTuningJob>(`/api/fine-tuning/jobs/${encodeURIComponent(id)}`),
+  startFineTuningJob: (config: FineTuningConfig) => requestJson<FineTuningJob>("/api/fine-tuning/jobs", {
+    method: "POST", body: JSON.stringify(config),
+  }),
+
   trainingPlan: async (parameterBillions: number, method: string) => {
     const query = new URLSearchParams({
       parameter_billions: String(parameterBillions),
@@ -983,6 +1015,15 @@ export const axiomApi = {
     requestJson<LocalInferenceResult>("/api/inference/generate", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
+  modelStudioStatus: () => requestJson<ModelStudioStatus>("/api/models/studio/status"),
+  modelStudioSearch: (q: string, limit = 12) => requestJson<{ provider: string; query: string; count: number; results: ModelStudioModel[]; note: string }>(`/api/models/studio/search?${new URLSearchParams({ q, limit: String(limit) })}`),
+  modelStudioFiles: (repoId: string) => requestJson<{ repo_id: string; files: ModelStudioFile[]; count: number; url: string; note: string }>(`/api/models/studio/files?${new URLSearchParams({ repo_id: repoId })}`),
+  testRemoteModelConnection: (input: { base_url: string; api_key: string }) => requestJson<RemoteModelCatalog>("/api/models/studio/remote/models", { method: "POST", body: JSON.stringify(input) }),
+  remoteModelChat: (input: { base_url: string; api_key: string; model: string; prompt: string; max_tokens: number; temperature: number }) => requestJson<RemoteModelResponse>("/api/models/studio/remote/chat", { method: "POST", body: JSON.stringify(input) }),
+  modelStudioJobs: (limit = 20) => requestJson<{ jobs: ModelStudioJob[] }>(`/api/models/studio/jobs?limit=${limit}`),
+  modelStudioJob: (id: string) => requestJson<ModelStudioJob>(`/api/models/studio/jobs/${encodeURIComponent(id)}`),
+  startModelStudioJob: (config: { operation: "pull" | "install_gguf" | "convert_gguf"; [key: string]: unknown }) => requestJson<ModelStudioJob>("/api/models/studio/jobs", { method: "POST", body: JSON.stringify(config) }),
+
   runtimeConnectors: () => requestJson<RuntimeConnectorReport>("/api/diagnostics/runtime-connectors"),
   agentProfiles: () => requestJson<AgentProfileReport>("/api/agent-profiles"),
   createAgentProfile: (input: { name: string; task_capabilities: string[] }) =>
