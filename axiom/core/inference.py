@@ -113,8 +113,8 @@ def runtime_status() -> dict[str, Any]:
                     except ValueError:
                         continue
         base.update(status="online", models=names)
-    except InferenceRuntimeError as exc:
-        base["error"] = str(exc)
+    except InferenceRuntimeError:
+        base["error"] = "Local inference runtime is unavailable."
     return base
 
 
