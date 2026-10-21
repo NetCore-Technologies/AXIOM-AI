@@ -253,6 +253,16 @@ axiom mcp serve
 
 MCP is a separate stdio integration path. MCP tools are denied by default; inspect and explicitly configure permissions before enabling tools for a client. Tool discovery does not prove that a vendor account is authenticated.
 
+## Local inference
+
+AXIOM can run actual text generation through an Ollama service on `127.0.0.1:11434`. It does not download models or call a cloud inference API. See [Local inference](docs/Local-Inference.md) for setup and safety limits.
+
+```bash
+axiom --no-banner infer status
+axiom --no-banner infer models
+axiom --no-banner infer run qwen2.5:0.5b --prompt "Say hello in one sentence." --num-predict 128
+```
+
 ## 🔌 Local API and security model
 
 Run the standalone daemon when a local script needs HTTP responses:

@@ -2,6 +2,7 @@ import AxiomOptimizer from "./components/AxiomOptimizer";
 import AxiomQuantizer from "./components/AxiomQuantizer";
 import ApiPlayground from "./components/ApiPlayground";
 import RuntimeConnectorPanel from "./components/RuntimeConnectorPanel";
+import LocalInferencePanel from "./components/LocalInferencePanel";
 import AgentProfiles from "./components/AgentProfiles";
 import {
   axiomApi,
@@ -293,7 +294,7 @@ const pageMeta: Record<
   runtime: {
     label: "Runtime",
     kicker: "LOCAL RUNTIME",
-    description: "See serving readiness and request flow once the local runtime is connected.",
+    description: "Check the local Ollama service and generate text from models already installed on this machine.",
   },
   mcp: {
     label: "MCP inspector",
@@ -1594,7 +1595,7 @@ function Dashboard({
         <SummaryCard icon={BrainCircuit} label="Model registry" value={models === null ? "—" : String(models.length)} detail={models === null ? "Loading inventory" : models.length ? "Registered locally" : "No models registered"} tone={models?.length ? "success" : "neutral"} />
         <SummaryCard icon={Database} label="Datasets" value={datasets === null ? "—" : String(datasets.length)} detail={datasets === null ? "Loading inventory" : "JSONL files in workspace"} tone={datasets?.length ? "success" : "neutral"} />
         <SummaryCard icon={Cpu} label="Hardware" value={runtime?.hardware.gpu_name || "CPU"} detail={runtime ? `${runtime.hardware.ram_gb.toFixed(1)} GB RAM · ${runtime.hardware.cpu_cores} cores` : "Checking local system"} tone={runtime ? "success" : "neutral"} />
-        <SummaryCard icon={RadioTower} label="Inference runtime" value={runtimeLabel} detail="Planning is available; serving is not connected" tone={runtime?.status === "online" ? "success" : "warning"} />
+        <SummaryCard icon={RadioTower} label="Inference runtime" value={runtimeLabel} detail="Open Runtime to check local inference readiness" tone={runtime?.status === "online" ? "success" : "warning"} />
       </div>
 
       <div className="dashboard-grid">
@@ -2840,13 +2841,13 @@ function Runtime() {
 
   useEffect(() => { void refresh(); }, []);
   const hardware = snapshot?.hardware;
-  const statusTone: Tone = snapshot?.status === "online" ? "success" : "warning";
+  const statusTone: Tone = hardware ? "success" : "warning";
 
   return <FeaturePage page="runtime" actions={<button type="button" className="button secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCcw size={16} /> {loading ? "Checking" : "Refresh status"}</button>}>
-    <div className="runtime-banner"><div className="runtime-state-icon"><RadioTower size={20} /></div><div><StatusPill tone={statusTone}>{loading ? "CHECKING" : snapshot?.status === "online" ? "ONLINE" : "OFFLINE"}</StatusPill><h2>{snapshot?.status === "online" ? "Runtime connected" : "Inference runtime not connected"}</h2><p>{error || "Hardware detection is live. AXIOM does not currently expose a local inference-serving endpoint."}</p></div><code>axiom mcp serve</code></div>
+    <div className="runtime-banner"><div className="runtime-state-icon"><RadioTower size={20} /></div><div><StatusPill tone={statusTone}>{loading ? "CHECKING" : hardware ? "HARDWARE READY" : "HARDWARE UNAVAILABLE"}</StatusPill><h2>Local runtime and inference</h2><p>{error || "Hardware detection is live. Use the Local model inference panel below to check Ollama and run prompts."}</p></div><code>axiom mcp serve</code></div>
     <div className="info-grid"><InfoCard icon={Cpu} label="Processor" value={hardware?.architecture || "—"} detail={hardware ? `${hardware.cpu_cores} CPU cores` : loading ? "Checking" : "Unavailable"} tone={hardware ? "success" : "neutral"} /><InfoCard icon={HardDrive} label="System memory" value={hardware ? `${hardware.ram_gb.toFixed(1)} GB` : "—"} detail="Detected locally" tone={hardware ? "success" : "neutral"} /><InfoCard icon={Zap} label="GPU memory" value={hardware?.vram_gb === null || hardware?.vram_gb === undefined ? "Not detected" : `${hardware.vram_gb.toFixed(1)} GB`} detail={hardware?.gpu_name || "No compatible GPU reported"} tone={hardware?.cuda_available ? "success" : "warning"} /></div>
     {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
-    <Surface title="Serving status" eyebrow="LOCAL INFERENCE"><EmptyState icon={RadioTower} title="No inference process reported" description="The runtime endpoint currently reports system hardware only. Request volume, latency, and model selection need a serving connector." /></Surface>
+    <LocalInferencePanel />
     <RuntimeConnectorPanel />
   </FeaturePage>;
 }
@@ -3089,7 +3090,7 @@ function ModulesPage({ setPage }: { setPage: (page: Page) => void }) {
     { id: "training", title: "Training planner and experiments", description: "Estimate hardware-aware plans and manage saved plan snapshots. Training execution is not implied by a plan.", scope: "Planning", availability: "Planning only", tone: "warning", icon: Hammer, page: "training", command: "axiom train --help" },
     { id: "workflows", title: "Workflow builder", description: "Create and validate graph designs, use templates, inspect revisions, duplicate designs, and run planning-only dry-runs.", scope: "Orchestration", availability: "Design only", tone: "warning", icon: GitBranch, page: "workflows", command: "axiom workflow --help" },
     { id: "evaluation", title: "Offline evaluation and regressions", description: "Score already-produced predictions, compare baselines, and review evaluation reports without model inference.", scope: "Quality gates", availability: "GUI + CLI", tone: "success", icon: CircleGauge, page: "evaluation", command: "axiom evaluation --help" },
-    { id: "runtime", title: "Runtime connections", description: "Inspect runtime connection state. A GUI panel does not mean a local inference server is installed or running.", scope: "Operations", availability: "Connection-dependent", tone: "warning", icon: RadioTower, page: "runtime" },
+    { id: "runtime", title: "Runtime and local inference", description: "Check the local Ollama endpoint and run bounded prompts against models already installed on this machine.", scope: "Operations", availability: "GUI + CLI · local runtime required", tone: "warning", icon: RadioTower, page: "runtime", command: "axiom infer --help" },
     { id: "mcp", title: "MCP tools and permission profiles", description: "Inspect tool policy, named profiles, and supported local MCP surfaces. Tools remain deny-by-default until configured.", scope: "Integrations", availability: "GUI + CLI", tone: "success", icon: Network, page: "mcp", command: "axiom mcp --help" },
     { id: "diagnostics", title: "Diagnostics and support", description: "Check API and machine connectivity and access workspace warnings and support actions that are enabled.", scope: "Operations", availability: "GUI", tone: "success", icon: Wrench, page: "diagnostics", command: "axiom doctor --help" },
     { id: "api-playground", title: "API Playground", description: "Inspect a bounded allowlist of read-only HTTP endpoints and copy JSON responses.", scope: "Developer API", availability: "GUI · GET only", tone: "success", icon: Network, page: "api-playground" },

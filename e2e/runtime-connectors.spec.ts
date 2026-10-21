@@ -12,6 +12,10 @@ test("Runtime page displays passive connector discovery without claiming connect
       },
     },
   }));
+  await page.route("**/api/inference/status", (route) => route.fulfill({ json: {
+    backend: "ollama", endpoint: "http://127.0.0.1:11434", runtime_installed: false,
+    status: "offline", models: [], error: "Ollama is offline for this test.", checked_at: "2026-10-21T00:00:00Z",
+  } }));
   await page.route("**/api/diagnostics/runtime-connectors", (route) => route.fulfill({
     json: {
       schema_version: 1,
