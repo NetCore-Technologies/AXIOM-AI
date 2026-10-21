@@ -2034,3 +2034,38 @@ html, body { width: 100%; max-width: 100%; overflow-x: clip; }
   .module-row > .status-pill { grid-column: 2; justify-self: start; }
   .module-row > svg:last-child { grid-column: 3; grid-row: 1 / span 2; }
 }
+
+/* AXIOM auth screens: keep the brand centered consistently on welcome, setup, and login. */
+.auth-layout > .auth-topline {
+  position: relative;
+  min-height: 42px;
+}
+.auth-layout > .auth-topline > .brand-lockup {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+.auth-layout > .auth-topline > :not(.brand-lockup) {
+  margin-left: auto;
+}
+@media (max-width: 520px) {
+  .auth-layout > .auth-topline > .brand-lockup {
+    position: static;
+    transform: none;
+    margin: 0 auto;
+  }
+  .auth-layout > .auth-topline {
+    justify-content: center;
+    gap: 12px;
+  }
+  .auth-layout > .auth-topline > :not(.brand-lockup) {
+    position: absolute;
+    right: 0;
+    top: 0;
+  }
+  .auth-layout > .auth-topline .brand-lockup span {
+    display: none;
+  }
+}
