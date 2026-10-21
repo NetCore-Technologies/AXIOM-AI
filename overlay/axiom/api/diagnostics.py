@@ -38,10 +38,10 @@ def download_support_bundle() -> Response:
 
 
 @router.get("/roadmap")
-def roadmap_audit(path: str | None = None) -> dict:
+def roadmap_audit() -> dict:
     """Return the real scoped-roadmap statuses for the Control Center."""
     try:
-        return audit_roadmap(path)
+        return audit_roadmap()
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="ROADMAP.md was not found in the current workspace or source checkout.") from exc
     except (OSError, ValueError) as exc:
