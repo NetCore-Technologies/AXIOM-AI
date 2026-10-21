@@ -47,3 +47,6 @@ build/
 
 # Generated web UI bundle
 axiom/webui/
+
+# Local patch backup snapshots (never source files)
+.axiom-patch-backups/
