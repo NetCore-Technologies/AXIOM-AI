@@ -3,7 +3,7 @@
 ![AXIOM. Build AI. Own AI.](docs/assets/banner.svg)
 
 [![Status](https://img.shields.io/badge/status-active%20development-22c55e?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI)
-[![Version](https://img.shields.io/badge/version-v0.3.0--beta.3-f59e0b?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
+[![Version](https://img.shields.io/badge/version-v0.3.0--beta.4-f59e0b?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
 [![License](https://img.shields.io/badge/license-MIT-7c3aed?style=flat-square&labelColor=0f172a)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&labelColor=0f172a&logo=python&logoColor=white)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-475569?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
@@ -43,11 +43,18 @@ Project configuration lives in `axiom.yaml`; the local model registry lives in
 > AXIOM does not execute training, run model inference, or provide a hosted
 > workspace. Estimates and plans are labeled as estimates and plans.
 
-## What is new in v0.3.0-beta.1
+## What is new in v0.3.0-beta.4
 
-- Version bumped to `v0.3.0-beta.1` across the package, badges, and docs.
-- Refreshed README with an animated banner and a terminal walkthrough.
-- Step-by-step quick start and a first-10-minutes guide below.
+- Expanded the Control Center's Module Explorer to make GUI pages, CLI command families, and API surfaces easier to discover.
+- Added workspace diagnostics and machine-readable reports via `axiom doctor --json`.
+- Added roadmap integrity auditing via `axiom roadmap audit --json` and the Control Center Roadmap page.
+- Added privacy-minimized support bundles via `axiom support-bundle --output ./axiom-support-bundle.zip`.
+- Expanded the read-only API Playground with a fixed GET-only endpoint allowlist, bounded requests, and capped response previews.
+- Improved local workflow design management with templates, versioned saves, duplication, revision history, validation, and dry-run resource estimates.
+- Improved local GUI navigation and administrator remembered-session behaviour.
+- Continued tightening API error/request correlation and workspace diagnostics across CLI, API, and GUI.
+
+AXIOM remains explicit about its execution boundary: workflow validation and dry runs are not training jobs, model inference, or production model serving. Use supported external runtimes for execution; AXIOM reports discovery/readiness where available rather than pretending a backend is connected.
 
 ## 🚀 Quick start
 
