@@ -45,16 +45,23 @@ Project configuration lives in `axiom.yaml`; the local model registry lives in
 
 ## What is new in v0.3.0-beta.4
 
-- Expanded the Control Center's Module Explorer to make GUI pages, CLI command families, and API surfaces easier to discover.
-- Added workspace diagnostics and machine-readable reports via `axiom doctor --json`.
-- Added roadmap integrity auditing via `axiom roadmap audit --json` and the Control Center Roadmap page.
-- Added privacy-minimized support bundles via `axiom support-bundle --output ./axiom-support-bundle.zip`.
-- Expanded the read-only API Playground with a fixed GET-only endpoint allowlist, bounded requests, and capped response previews.
-- Improved local workflow design management with templates, versioned saves, duplication, revision history, validation, and dry-run resource estimates.
-- Improved local GUI navigation and administrator remembered-session behaviour.
-- Continued tightening API error/request correlation and workspace diagnostics across CLI, API, and GUI.
+This beta focuses on making the existing local-first workflows easier to discover, inspect, validate, and support:
 
-AXIOM remains explicit about its execution boundary: workflow validation and dry runs are not training jobs, model inference, or production model serving. Use supported external runtimes for execution; AXIOM reports discovery/readiness where available rather than pretending a backend is connected.
+- **Module Explorer:** discover GUI pages, CLI command families, and API surfaces from the Control Center.
+- **Workspace diagnostics:** run `axiom doctor` or `axiom doctor --json` for structured, read-only checks of workspace configuration, filesystem access, disk space, Python compatibility, and required imports.
+- **Roadmap auditing:** run `axiom roadmap audit --json` to check the scoped 120-item roadmap for missing, duplicate, unexpected, or unknown IDs/statuses; the Control Center also exposes the roadmap view.
+- **Support bundles:** generate a privacy-minimized bundle with `axiom support-bundle --output ./axiom-support-bundle.zip`. Inspect the archive before sharing it.
+- **Read-only API Playground:** a fixed GET-only endpoint allowlist, bounded requests, and capped response previews; arbitrary URLs and mutating methods are not supported.
+- **Workflow design management:** templates, versioned saves, duplication, revision history, validation, and dry-run resource estimates.
+- **Control Center usability:** improved local navigation and remembered administrator sessions, plus more consistent API errors and request correlation.
+
+### Execution boundary
+
+AXIOM's core remains a local-first inspection, validation, and planning tool. A workflow validation or dry run is **not** a training run, inference session, checkpoint manager, or production model server. Use a supported external runtime/framework for execution; AXIOM must not imply that a backend is installed or connected unless it has actually detected and verified it.
+
+### Release verification
+
+The `v0.3.0-beta.4` tag is a beta release candidate, not a claim that every planned roadmap item is complete. Check the [release page](https://github.com/NetCore-Technologies/AXIOM-AI/releases/tag/v0.3.0-beta.4) and [Actions](https://github.com/NetCore-Technologies/AXIOM-AI/actions/workflows/release-assets.yml) for the published artifacts and build status.
 
 ## 🚀 Quick start
 
