@@ -13,6 +13,7 @@ from axiom.api.evaluation import router as evaluation_router
 from axiom.api.diagnostics import router as diagnostics_router
 from axiom.api.runtime_discovery import router as runtime_discovery_router
 from axiom.api.agent_profiles import router as agent_profiles_router
+from axiom.api.inference import router as inference_router
 from axiom.api.server_optimizer_routes import register_optimizer_routes
 from axiom.api.security import router as security_router
 from axiom.api.workspace import router as workspace_router
@@ -146,6 +147,7 @@ def create_app() -> Any:
     app.include_router(diagnostics_router)
     app.include_router(runtime_discovery_router)
     app.include_router(agent_profiles_router)
+    app.include_router(inference_router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

@@ -24,6 +24,7 @@ from axiom.cli.tools import register as register_tools_cli
 from axiom.cli.headroom import register as register_headroom_cli
 from axiom.cli.workflows import register_workflow_cli
 from axiom.cli.evaluation import register_evaluation_cli
+from axiom.cli.inference import infer_app
 from axiom.core.hardware import detect_hardware, estimate_model_fit
 from axiom.core.experiments import ExperimentStore
 from axiom.core.integrations import (
@@ -80,6 +81,7 @@ app.add_typer(train_app, name="train")
 app.add_typer(experiment_app, name="experiment")
 app.add_typer(workflow_app, name="workflow")
 app.add_typer(evaluation_app, name="evaluation")
+app.add_typer(infer_app, name="infer")
 register_workflow_cli(workflow_app)
 register_evaluation_cli(evaluation_app)
 

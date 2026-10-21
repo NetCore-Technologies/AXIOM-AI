@@ -16,6 +16,25 @@ export const playgroundEndpoints = [
 export type PlaygroundEndpoint = (typeof playgroundEndpoints)[number]["path"];
 const playgroundEndpointPaths = new Set<string>(playgroundEndpoints.map((endpoint) => endpoint.path));
 
+export type LocalInferenceStatus = {
+  backend: "ollama";
+  endpoint: string;
+  runtime_installed: boolean;
+  status: "online" | "offline";
+  models: string[];
+  error: string | null;
+  checked_at: string;
+};
+export type LocalInferenceResult = {
+  model: string;
+  response: string;
+  done: boolean;
+  prompt_eval_count: number | null;
+  eval_count: number | null;
+  total_duration_ms: number | null;
+  generated_at: string;
+};
+
 export type RuntimeConnector = {
   id: string; name: string; kind: "executable" | "python-package"; present: boolean;
   status: "discovered_not_connected" | "not_detected"; potential_capabilities: string[];
@@ -558,11 +577,11 @@ function messageFromPayload(payload: unknown, fallback: string): string {
   return fallback;
 }
 
-async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function requestJson<T>(path: string, init: RequestInit = {}, timeoutMs = 15_000): Promise<T> {
   const requestId = globalThis.crypto?.randomUUID?.()
     ?? `ui-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 15_000);
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
   headers.set("X-Request-ID", requestId);
@@ -959,6 +978,11 @@ export const axiomApi = {
     };
   },
 
+  inferenceStatus: () => requestJson<LocalInferenceStatus>("/api/inference/status"),
+  runLocalInference: (input: { model: string; prompt: string; num_predict: number; temperature: number }) =>
+    requestJson<LocalInferenceResult>("/api/inference/generate", {
+      method: "POST", body: JSON.stringify(input),
+    }, 300_000),
   runtimeConnectors: () => requestJson<RuntimeConnectorReport>("/api/diagnostics/runtime-connectors"),
   agentProfiles: () => requestJson<AgentProfileReport>("/api/agent-profiles"),
   createAgentProfile: (input: { name: string; task_capabilities: string[] }) =>
