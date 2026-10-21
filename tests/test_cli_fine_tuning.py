@@ -15,7 +15,7 @@ def test_train_help_exposes_real_fine_tuning_commands():
 
 
 def test_train_run_help_is_actionable():
-    result = CliRunner().invoke(app, ["train", "run", "--help"])
+    result = CliRunner().invoke(app, ["train", "run", "--help"], terminal_width=120)
     assert result.exit_code == 0, result.output
     assert "--model-path" in result.output
     assert "--dataset" in result.output
