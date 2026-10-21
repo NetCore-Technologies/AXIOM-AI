@@ -59,3 +59,21 @@ def test_module_explorer_requires_new_gui_pages_in_the_catalog() -> None:
     assert release_smoke.module_catalog_issues(complete) == []
     incomplete = "function ModulesPage() { const entries = [{ id: \"api-playground\" }]; }"
     assert any("agent-profiles" in issue for issue in release_smoke.module_catalog_issues(incomplete))
+
+
+def test_api_playground_smoke_checks_typed_get_only_contract() -> None:
+    component = (
+        "playgroundRead allowlist GET only Arbitrary URLs mutating methods"
+    )
+    client = (
+        "PlaygroundEndpoint playgroundEndpointPaths playgroundRead method: \"GET\""
+    )
+    assert release_smoke.api_playground_issues(component, client) == []
+
+
+def test_api_playground_smoke_rejects_unbounded_client_or_missing_disclosure() -> None:
+    component = "playgroundRead allowlist"
+    client = "playgroundRead fetch(any_url)"
+    issues = release_smoke.api_playground_issues(component, client)
+    assert any("typed endpoint allowlist" in issue for issue in issues)
+    assert any("disclose the allowlist" in issue for issue in issues)
