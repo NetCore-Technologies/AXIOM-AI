@@ -7,16 +7,62 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing release tag to build"
+        description: "Package version/asset prefix to build"
         required: true
         type: string
         default: "v0.3.0-beta.3"
+      source_ref:
+        description: "Optional source branch or ref; defaults to the package tag"
+        required: false
+        type: string
+        default: ""
+      release_tag:
+        description: "Optional GitHub release tag; defaults to the package tag"
+        required: false
+        type: string
+        default: ""
+  workflow_call:
+    inputs:
+      tag:
+        description: "Package version and asset filename prefix"
+        required: true
+        type: string
+      source_ref:
+        description: "Branch, tag, or commit to package"
+        required: true
+        type: string
+      release_tag:
+        description: "GitHub release tag to publish"
+        required: true
+        type: string
+      main_sha:
+        description: "Main branch SHA included in the integration"
+        required: false
+        type: string
+        default: ""
+      development_sha:
+        description: "Latest development branch SHA included in the integration"
+        required: false
+        type: string
+        default: ""
+      integration_sha:
+        description: "Verified integrated source SHA"
+        required: false
+        type: string
+        default: ""
+      verification_summary:
+        description: "Verified source quality-gate summary"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
 
 env:
-  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  TAG: ${{ inputs.tag || github.ref_name }}
+  SOURCE_REF: ${{ inputs.source_ref || inputs.tag || github.ref_name }}
+  RELEASE_TAG: ${{ inputs.release_tag || inputs.tag || github.ref_name }}
 
 jobs:
   windows:
@@ -27,7 +73,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ env.SOURCE_REF }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -87,7 +133,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ env.SOURCE_REF }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -202,7 +248,7 @@ jobs:
       - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ env.SOURCE_REF }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -529,48 +575,28 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.TAG }}
-          name: AXIOM ${{ env.TAG }} — CLI, Local Daemon & Release Packaging
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ env.SOURCE_REF }}
+          name: AXIOM ${{ env.RELEASE_TAG }} — Verified Cross-platform Release
           body: |
-            # AXIOM ${{ env.TAG }}
+            # AXIOM ${{ env.RELEASE_TAG }}
 
-            AXIOM is a terminal-first local AI engineering toolkit with a small loopback daemon and cross-platform release packaging.
+            **Package version / asset prefix:** `${{ env.TAG }}`
+            **Source ref:** `${{ env.SOURCE_REF }}`
+            **Main source SHA:** `${{ inputs.main_sha || 'not supplied for this build' }}`
+            **Latest development SHA:** `${{ inputs.development_sha || 'not supplied for this build' }}`
+            **Verified integration SHA:** `${{ inputs.integration_sha || github.sha }}`
 
-            ## Highlights
-
-            - Interactive AXIOM startup welcome with local next steps
-            - Model, dataset, hardware, and training-plan CLI workflows
-            - Dependency-free daemon with a free loopback port by default
-            - Cross-platform release packaging
-            - Local web UI bundled inside every package (exe, msi, deb, AppImage, tar.gz, elf, dmg)
-
-            ## Downloads
-
-            ### Windows
-            - `.exe` — portable executable
-            - `.msi` — Windows installer
-            - `.ps1` — PowerShell installer
-            - `.bat` — Windows launcher
-
-            ### Linux
-            - `.deb` — Debian package
-            - `.AppImage` — portable desktop package
-            - `.tar.gz` — recommended fast-start terminal bundle
-            - `.sh` — local installer
-            - `.elf` — single-file Linux executable
-
-            ### macOS
-            - `macos-arm64.dmg` / `.tar.gz` — Apple Silicon package
-            - `macos-x64.dmg` / `.tar.gz` — Intel package
-            - `SHA256SUMS-macos-*.txt` — per-architecture checksums
+            ## Included packages
+            - **Windows x64:** portable `.exe`, `.msi`, PowerShell `.ps1`, and `.bat` launcher.
+            - **Linux x64:** `.elf`, `.deb`, `.AppImage`, `.sh` installer, and `.tar.gz` bundle.
+            - **macOS:** Apple Silicon (`arm64`) and Intel (`x64`) `.dmg` and `.tar.gz` packages.
+            - **Integrity:** `SHA256SUMS` and per-architecture macOS checksum files.
 
             ## Verification
+            ${{ inputs.verification_summary || 'The release workflow requires successful platform packaging, artifact validation, checksum generation, and the published-installer smoke test. See the linked Actions run for per-platform results.' }}
 
-            `SHA256SUMS` contains checksums for all release binaries.
-
-            ## Beta
-
-            AXIOM is still under active development. The CLI and local daemon are the supported product surface; deeper runtime integration continues in upcoming releases.
+            The release is published only after the required build and asset-validation jobs succeed. Review the workflow run and checksums before installing.
 
             **Build AI. Own AI.**
 
@@ -578,7 +604,7 @@ jobs:
           files: release/*
           fail_on_unmatched_files: true
           overwrite_files: true
-          prerelease: ${{ contains(env.TAG, '-beta.') || contains(env.TAG, '-b.') }}
+          prerelease: ${{ startsWith(env.RELEASE_TAG, 'nightly-') || contains(env.RELEASE_TAG, '-beta.') || contains(env.RELEASE_TAG, '-b.') }}
           generate_release_notes: false
 
   installer-smoke:
@@ -590,7 +616,7 @@ jobs:
       - name: Checkout release tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ env.SOURCE_REF }}
 
       - name: Install pinned release into user-scoped paths
         env:

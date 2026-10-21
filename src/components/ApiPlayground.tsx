@@ -133,8 +133,9 @@ export default function ApiPlayground() {
         </div>
 
         <p className="quiet-note">
-          Requests use the predefined API allowlist and the API client timeout.
-          Arbitrary URLs and mutating methods are not supported.
+          Requests use the predefined API allowlist, support GET only, and use the
+          shared API client timeout. Arbitrary URLs and mutating methods are not
+          supported.
         </p>
 
         <div className="field">

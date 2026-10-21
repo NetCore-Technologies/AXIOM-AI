@@ -2,7 +2,7 @@ name: AXIOM quality gates
 
 on:
   push:
-    branches: [main]
+    branches: [main, "latest/development", "latest/nightly"]
   pull_request:
   workflow_dispatch:
 

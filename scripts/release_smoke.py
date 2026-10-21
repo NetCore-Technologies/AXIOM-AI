@@ -68,6 +68,31 @@ def module_catalog_issues(app_source: str, page_ids: tuple[str, ...] = ("api-pla
     ]
 
 
+def api_playground_issues(component: str, client: str) -> list[str]:
+    """Validate the Playground's actual typed GET-only client contract and disclosure."""
+    issues: list[str] = []
+    client_is_bounded_get = all(
+        token in client
+        for token in (
+            "PlaygroundEndpoint",
+            "playgroundEndpointPaths",
+            "playgroundRead",
+            'method: "GET"',
+        )
+    )
+    if "playgroundRead" not in component or not client_is_bounded_get:
+        issues.append(
+            "API playground must use the typed endpoint allowlist and GET-only API client."
+        )
+    if not all(
+        token in component
+        for token in ("allowlist", "GET only", "Arbitrary URLs", "mutating methods")
+    ):
+        issues.append(
+            "API playground must disclose the allowlist, GET-only boundary, and rejected arbitrary/mutating requests."
+        )
+    return issues
+
 def inspect(root: Path) -> dict[str, Any]:
     failures: list[str] = []
     warnings: list[str] = []
@@ -77,7 +102,7 @@ def inspect(root: Path) -> dict[str, Any]:
         "axiom/api/server.py", "axiom/api/diagnostics.py", "axiom/api/runtime_discovery.py", "axiom/api/agent_profiles.py", "axiom/core/runtime_discovery.py", "axiom/core/agent_profiles.py", "axiom/cli/agent_profiles.py", "scripts/release_smoke.py",
         "tests/test_release_smoke.py", "e2e/helpers/auth.ts", "e2e/modules.spec.ts", "e2e/workflows.spec.ts", "e2e/evaluation.spec.ts",
         "tests/test_runtime_discovery.py", "tests/test_runtime_discovery_api.py", "tests/test_agent_profiles.py", "tests/test_agent_profiles_api.py", "tests/test_agent_profiles_cli.py", "e2e/api-playground.spec.ts", "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
-        "docs/Runtime-Discovery.md", "docs/Agent-Profiles.md", "docs/Api-Playground.md", ".github/workflows/quality-gates.yml",
+        "docs/Runtime-Discovery.md", "docs/Agent-Profiles.md", "docs/Api-Playground.md", ".github/workflows/quality-gates.yml", ".github/workflows/nightly-build.yml",
     ]
     for relative in required:
         if not (root / relative).is_file():
@@ -115,8 +140,7 @@ def inspect(root: Path) -> dict[str, Any]:
     ):
         if path not in client:
             failures.append(f"API playground allowlist is missing {path}.")
-    if "playgroundRead" not in component or "GET only" not in component:
-        failures.append("API playground must be wired to the typed GET-only client and disclose the safe boundary.")
+    failures.extend(api_playground_issues(component, client))
     if "15_000" not in client:
         failures.append("The shared API client timeout is missing or has changed; review timeout policy.")
     styles_source = (root / "src/styles.css").read_text(encoding="utf-8")
