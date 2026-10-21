@@ -155,8 +155,10 @@ class AgentProfileStore:
                 os.fsync(handle.fileno())
             try:
                 os.chmod(temporary, 0o600)
-            except OSError:
-                pass
+            except OSError as exc:
+                raise AgentProfileError(
+                    "Could not secure agent-profile file permissions."
+                ) from exc
             if self.path.is_symlink():
                 raise AgentProfileError("The agent-profile file must not be a symbolic link.")
             os.replace(temporary, self.path)

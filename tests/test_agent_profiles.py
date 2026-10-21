@@ -64,3 +64,26 @@ def test_catalog_is_a_small_explicit_allowlist() -> None:
     assert TASK_CAPABILITIES
     assert len(TASK_CAPABILITIES) == len(set(TASK_CAPABILITIES))
     assert "shell.execute" not in TASK_CAPABILITIES
+
+
+def test_store_fails_closed_when_permissions_cannot_be_restricted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from axiom.core import agent_profiles
+
+    store = AgentProfileStore(tmp_path)
+
+    def fail_chmod(*args, **kwargs):
+        raise OSError("permission change denied")
+
+    monkeypatch.setattr(agent_profiles.os, "chmod", fail_chmod)
+
+    with pytest.raises(
+        AgentProfileError,
+        match="Could not secure agent-profile file permissions",
+    ):
+        store.create("Private profile")
+
+    assert not store.path.exists()
+    assert not list(store.directory.glob(".agent-profiles-*.tmp"))
+    
