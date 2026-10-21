@@ -1464,7 +1464,7 @@ function WorkspacePage({
     case "diagnostics":
       return <Diagnostics onNotify={onNotify} />;
     case "api-playground":
-      return <FeaturePage page="api-playground"><ApiPlayground /></FeaturePage>;
+      return <ApiPlayground />;
     case "agent-profiles":
       return <FeaturePage page="agent-profiles"><AgentProfiles /></FeaturePage>;
     case "logs":

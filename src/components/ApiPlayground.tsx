@@ -1,87 +1,99 @@
 import { useState } from "react";
-
-const endpoints = [
-  { value: "/api/health", description: "Local service health and readiness." },
-  { value: "/api/workspace/models", description: "Browse registered model metadata." },
-  { value: "/api/workspace/datasets", description: "Browse dataset metadata." },
-  { value: "/api/workspace/runtime", description: "Inspect local runtime status." },
-  { value: "/api/workspace/events", description: "Inspect recent workspace events." },
-  { value: "/api/workspace/diagnostics", description: "Inspect workspace diagnostics." },
-  { value: "/api/workspace/workflows", description: "Inspect saved workflow designs." },
-  { value: "/api/workspace/evaluations", description: "Inspect evaluation results." },
-] as const;
+import { axiomApi, playgroundEndpoints, type PlaygroundEndpoint } from "../api/client";
 
 export default function ApiPlayground() {
-  const [selected, setSelected] = useState<string>(endpoints[0].value);
-  const endpoint = endpoints.find((item) => item.value === selected) ?? endpoints[0];
+  const [selected, setSelected] = useState<PlaygroundEndpoint>(
+    playgroundEndpoints[0].path,
+  );
+  const [response, setResponse] = useState<unknown>(null);
+  const [hasResponse, setHasResponse] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const endpoint = playgroundEndpoints.find((item) => item.path === selected)
+    ?? playgroundEndpoints[0];
+
+  async function runRequest() {
+    setLoading(true);
+    setError("");
+    setHasResponse(false);
+
+    try {
+      const result = await axiomApi.playgroundRead(selected);
+      setResponse(result);
+      setHasResponse(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The API request failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <section className="feature-page">
-      <header className="page-header">
+    <section className="surface api-playground">
+      <div className="surface-head">
         <div>
-          <p className="eyebrow">API REFERENCE / READ-ONLY</p>
-          <h1>API Playground</h1>
-          <p className="page-description">
-            Browse supported local API routes and their intended use.
-            This reference does not send requests or change workspace data.
-          </p>
+          <p className="surface-eyebrow">API INSPECTION / ALLOWLISTED GET</p>
+          <h2>Choose an endpoint</h2>
         </div>
-      </header>
+      </div>
 
-      <section className="surface">
-        <div className="surface-head">
-          <div>
-            <p className="surface-eyebrow">ENDPOINT CATALOGUE</p>
-            <h2>Choose an endpoint</h2>
-          </div>
-        </div>
+      <p className="quiet-note">
+        Requests are restricted to the predefined read-only endpoint allowlist.
+        Responses are bounded by the API client's timeout.
+      </p>
 
-        <div className="field">
-          <label htmlFor="api-endpoint">Endpoint</label>
-          <div className="input-shell">
-            <select
-              id="api-endpoint"
-              aria-label="Endpoint"
-              value={selected}
-              onChange={(event) => setSelected(event.target.value)}
-            >
-              {endpoints.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.value}
-                </option>
-              ))}
-            </select>
-          </div>
+      <div className="field">
+        <label htmlFor="api-endpoint">Endpoint</label>
+        <div className="input-shell">
+          <select
+            id="api-endpoint"
+            aria-label="Endpoint"
+            value={selected}
+            onChange={(event) => {
+              setSelected(event.target.value as PlaygroundEndpoint);
+              setHasResponse(false);
+              setError("");
+            }}
+          >
+            {playgroundEndpoints.map((item) => (
+              <option key={item.path} value={item.path}>
+                {item.path} — {item.label}
+              </option>
+            ))}
+          </select>
         </div>
+        <small>{endpoint.description}</small>
+      </div>
 
-        <div className="event-list">
-          <div className="event-row">
-            <div>
-              <b>Method</b>
-              <small>GET · read-only reference</small>
-            </div>
-            <span className="status-pill success"><i />READ-ONLY</span>
-          </div>
-          <div className="event-row">
-            <div>
-              <b>Path</b>
-              <small>{endpoint.value}</small>
-            </div>
-          </div>
-          <p className="quiet-note">{endpoint.description}</p>
-        </div>
+      <div className="page-actions">
+        <button
+          type="button"
+          className="button primary-button"
+          onClick={() => void runRequest()}
+          disabled={loading}
+        >
+          {loading ? "Requesting…" : "Run read-only request"}
+        </button>
+      </div>
 
-        <div className="callout info">
-          <div className="callout-icon">i</div>
-          <div>
-            <b>No request executed</b>
-            <p>
-              Selecting an endpoint only changes this reference view.
-              It does not execute requests or mutate data.
-            </p>
-          </div>
+      {error && <div className="inline-alert danger" role="alert">{error}</div>}
+
+      {loading && <p role="status">Waiting for the local API…</p>}
+
+      {hasResponse && (
+        <div>
+          <p className="surface-eyebrow">RESPONSE / JSON</p>
+          <pre className="api-playground-json">
+            {JSON.stringify(response, null, 2)}
+          </pre>
         </div>
-      </section>
+      )}
+
+      <p className="quiet-note">
+        Only allowlisted GET requests are supported. Mutating methods and
+        arbitrary endpoint URLs are not exposed.
+      </p>
     </section>
   );
 }
