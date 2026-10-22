@@ -5,9 +5,12 @@ model directory and all from_pretrained calls set local_files_only=True.
 """
 from __future__ import annotations
 
+import importlib.metadata
 import importlib.util
 import json
+import math
 import os
+import random
 import re
 import threading
 import uuid
@@ -48,19 +51,38 @@ def _lock_path() -> Path:
     return jobs_directory().parent / ".active-fine-tuning-job.json"
 
 
+def _version_key(value: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in re.findall(r"\\d+", value)[:3])
+
+
 def runtime_status() -> dict[str, Any]:
     packages: dict[str, bool] = {}
+    versions: dict[str, str | None] = {}
+    minimum_versions = {"torch": "2.2.0", "transformers": "5.0.0", "peft": "0.20.0", "accelerate": "1.1.0"}
+    problems: list[str] = []
     for label, module in _PACKAGES.items():
         try:
             packages[label] = importlib.util.find_spec(module) is not None
         except (ImportError, ModuleNotFoundError, ValueError):
             packages[label] = False
+        try:
+            versions[label] = importlib.metadata.version(module)
+        except importlib.metadata.PackageNotFoundError:
+            versions[label] = None
+        if not packages[label]:
+            problems.append(f"{label} is not installed")
+        elif versions[label] is not None and _version_key(versions[label]) < _version_key(minimum_versions[label]):
+            problems.append(f"{label} {versions[label]} is too old (need >= {minimum_versions[label]})")
     return {
-        "backend": "transformers-peft-local-lora",
-        "can_start": all(packages.values()),
+        "backend": "axiom-lora-engine",
+        "can_start": not problems,
         "packages": packages,
+        "versions": versions,
+        "minimum_versions": minimum_versions,
+        "problems": problems,
+        "setup_note": ("Ready for local LoRA training." if not problems else "Training setup required: " + "; ".join(problems) + ". Install or upgrade with: python -m pip install -e '.[training]'"),
         "model_loading": "local_files_only",
-        "scope_note": "Optional package presence is not a compatibility or hardware-fit guarantee. The base model must already exist locally.",
+        "scope_note": "AXIOM runs its own bounded PyTorch training loop over a local causal language model with PEFT LoRA adapters. Package readiness does not guarantee the model fits available memory.",
     }
 
 
@@ -357,15 +379,14 @@ def _load_training_texts(config: dict[str, Any]) -> list[str]:
 
 
 def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | None], None]) -> dict[str, Any]:
-    """Load local model weights and perform bounded causal-LM LoRA training."""
+    """Train a local causal-LM LoRA adapter with AXIOM's own bounded PyTorch loop."""
     try:
         import torch
         from peft import LoraConfig, TaskType, get_peft_model
-        from torch.utils.data import Dataset
-        from transformers import AutoModelForCausalLM, AutoTokenizer, DataCollatorForLanguageModeling, Trainer, TrainerCallback, TrainingArguments
-    except (ImportError, OSError) as exc:
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+    except (ImportError, OSError):
         raise FineTuningError(
-            "Transformers/PEFT training dependencies could not be imported. Install them with: python -m pip install -e '.[training]'"
+            "Local LoRA dependencies could not be imported. Upgrade the optional training tools with: python -m pip install -e '.[training]'"
         ) from None
 
     texts = _load_training_texts(config)
@@ -373,96 +394,158 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
     output_dir = Path(config["output_dir"])
     if output_dir.exists() and any(output_dir.iterdir()):
         raise FineTuningError("Adapter output directory is no longer empty; refusing to overwrite existing files.")
-    output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Explicit local_files_only blocks implicit downloads from Hugging Face.
-    tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True, trust_remote_code=False)
-    if tokenizer.pad_token is None:
-        if tokenizer.eos_token is None:
+    # Every model/tokenizer load is pinned to the existing local directory.
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True, trust_remote_code=False)
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path, local_files_only=True, trust_remote_code=False
+        )
+    except Exception as exc:
+        message = str(exc).replace("\\r", " ").replace("\\n", " ").strip()[:300]
+        raise FineTuningError(
+            "Could not load the local base model/tokenizer. Confirm model weights and tokenizer files exist "
+            "and are compatible with the installed Transformers version." + (f" Detail: {message}" if message else "")
+        ) from None
+
+    if tokenizer.pad_token_id is None:
+        if tokenizer.eos_token_id is None:
             raise FineTuningError("Tokenizer needs an existing pad_token or eos_token to train safely.")
         tokenizer.pad_token = tokenizer.eos_token
 
-    model = AutoModelForCausalLM.from_pretrained(model_path, local_files_only=True, trust_remote_code=False)
     model.config.use_cache = False
     leaf_names = {
         module_name.rsplit(".", 1)[-1]
         for module_name, module in model.named_modules()
         if (isinstance(module, torch.nn.Linear) or module.__class__.__name__ == "Conv1D") and module_name
     }
-    preferred = [
+    preferred = (
         "q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj",
         "c_attn", "c_proj", "query_key_value", "Wqkv", "query", "value",
-    ]
+    )
     targets = [name for name in preferred if name in leaf_names]
     if not targets:
         raise FineTuningError(
-            "This model architecture exposes no recognised linear projection names for automatic LoRA targeting. "
-            "Supported common names include q_proj/v_proj and c_attn; no model code was downloaded or executed."
+            "No supported attention/MLP projection layers were found for LoRA. "
+            "AXIOM supports common Llama-style q_proj/k_proj/v_proj/o_proj and several other known projection layouts."
         )
-    lora = LoraConfig(
-        task_type=TaskType.CAUSAL_LM,
-        r=config["lora_rank"],
-        lora_alpha=max(8, config["lora_rank"] * 2),
-        lora_dropout=0.05,
-        target_modules=targets,
-        bias="none",
-    )
-    model = get_peft_model(model, lora)
 
-    class TextDataset(Dataset):
-        def __len__(self) -> int:
-            return len(texts)
+    try:
+        model = get_peft_model(
+            model,
+            LoraConfig(
+                task_type=TaskType.CAUSAL_LM,
+                r=config["lora_rank"],
+                lora_alpha=max(8, config["lora_rank"] * 2),
+                lora_dropout=0.05,
+                target_modules=targets,
+                bias="none",
+            ),
+        )
+    except Exception as exc:
+        message = str(exc).replace("\\r", " ").replace("\\n", " ").strip()[:300]
+        raise FineTuningError(
+            "PEFT could not attach a LoRA adapter to this model architecture." + (f" Detail: {message}" if message else "")
+        ) from None
 
-        def __getitem__(self, index: int) -> dict[str, Any]:
+    trainable_parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
+    if not trainable_parameters:
+        raise FineTuningError("PEFT attached no trainable LoRA parameters; training was stopped before updating weights.")
+
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif getattr(getattr(torch.backends, "mps", None), "is_available", lambda: False)():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+
+    try:
+        model.to(device)
+    except Exception as exc:
+        message = str(exc).replace("\\r", " ").replace("\\n", " ").strip()[:240]
+        raise FineTuningError(
+            f"Could not place the local model on {device}. The model may exceed available memory." + (f" Detail: {message}" if message else "")
+        ) from None
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    optimizer = torch.optim.AdamW(trainable_parameters, lr=config["learning_rate"])
+    rng = random.Random(AXIOM_TRAINING_SEED)
+    order: list[int] = []
+    position = 0
+    model.train()
+    optimizer.zero_grad(set_to_none=True)
+
+    # One example per optimization step keeps memory use predictable. The
+    # dataset is reshuffled each pass; padding is masked out of the loss.
+    for step in range(1, config["max_steps"] + 1):
+        if position >= len(order):
+            order = list(range(len(texts)))
+            rng.shuffle(order)
+            position = 0
+        text_index = order[position]
+        position += 1
+        try:
             encoded = tokenizer(
-                texts[index],
+                texts[text_index],
                 truncation=True,
                 max_length=config["sequence_length"],
                 padding="max_length",
                 return_tensors="pt",
             )
-            return {key: value.squeeze(0) for key, value in encoded.items()}
+            input_ids = encoded["input_ids"].to(device)
+            attention_mask = encoded.get("attention_mask")
+            if attention_mask is None:
+                attention_mask = torch.ones_like(input_ids)
+            else:
+                attention_mask = attention_mask.to(device)
+            labels = input_ids.clone()
+            labels[attention_mask == 0] = -100
+            if not bool((labels != -100).any().item()):
+                raise FineTuningError("A training record produced no unmasked tokens after tokenization.")
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+            loss = outputs.loss
+            loss_value = float(loss.detach().item())
+            if not math.isfinite(loss_value):
+                raise FineTuningError(f"Training produced a non-finite loss at step {step}; the update was stopped.")
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(trainable_parameters, max_norm=1.0)
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+        except FineTuningError:
+            raise
+        except Exception as exc:
+            message = str(exc).replace("\\r", " ").replace("\\n", " ").strip()[:300]
+            raise FineTuningError(
+                f"Local LoRA training failed at step {step} on {device}. Check available memory and model compatibility."
+                + (f" Detail: {message}" if message else "")
+            ) from None
+        progress(step, loss_value)
 
-    class ReportProgress(TrainerCallback):
-        def on_log(self, args: Any, state: Any, control: Any, logs: dict[str, Any] | None = None, **kwargs: Any) -> Any:
-            values = logs or {}
-            try:
-                loss = float(values["loss"]) if values.get("loss") is not None else None
-            except (TypeError, ValueError):
-                loss = None
-            progress(int(getattr(state, "global_step", 0)), loss)
-            return control
+    try:
+        model.save_pretrained(str(output_dir), safe_serialization=True)
+        tokenizer.save_pretrained(str(output_dir))
+    except Exception as exc:
+        message = str(exc).replace("\\r", " ").replace("\\n", " ").strip()[:300]
+        raise FineTuningError("Training completed, but saving the adapter/tokenizer failed." + (f" Detail: {message}" if message else "")) from None
 
-    training_args = TrainingArguments(
-        output_dir=str(output_dir),
-        max_steps=config["max_steps"],
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=1,
-        learning_rate=config["learning_rate"],
-        logging_steps=1,
-        save_strategy="no",
-        report_to=[],
-        fp16=bool(torch.cuda.is_available()),
-        dataloader_num_workers=0,
-        disable_tqdm=True,
-        remove_unused_columns=False,
-        optim="adamw_torch",
-    )
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=TextDataset(),
-        data_collator=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
-        callbacks=[ReportProgress()],
-    )
-    trainer.train()
-    trainer.save_model(str(output_dir))
-    tokenizer.save_pretrained(str(output_dir))
     adapter_files = sorted(path.name for path in output_dir.iterdir() if path.is_file())
     if not any(name in adapter_files for name in ("adapter_model.safetensors", "adapter_model.bin")):
         raise FineTuningError("Training finished but a PEFT adapter weight file was not produced.")
-    return {"output_dir": str(output_dir), "adapter_files": adapter_files, "target_modules": targets, "dataset_rows": len(texts), "max_steps": config["max_steps"]}
+    if "adapter_config.json" not in adapter_files:
+        raise FineTuningError("Training finished but adapter_config.json was not produced.")
+    return {
+        "output_dir": str(output_dir),
+        "adapter_files": adapter_files,
+        "target_modules": targets,
+        "dataset_rows": len(texts),
+        "max_steps": config["max_steps"],
+        "device": str(device),
+        "engine": "axiom-lora-engine",
+        "trainable_parameters": sum(parameter.numel() for parameter in trainable_parameters),
+    }
 
+
+AXIOM_TRAINING_SEED = 1729
 
 def execute_finetuning_job(job_id: str, on_progress: Callable[[dict[str, Any]], None] | None = None) -> None:
     job = _read_job(job_id)
