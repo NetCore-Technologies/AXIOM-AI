@@ -68,6 +68,54 @@ def module_catalog_issues(app_source: str, page_ids: tuple[str, ...] = ("api-pla
     ]
 
 
+def model_registry_filter_issues(api_source: str, client_source: str, app_source: str, e2e_source: str) -> list[str]:
+    """Check the model registry filter path from its API through GUI and browser tests."""
+    issues: list[str] = []
+    for token in (
+        'search: str = Query(default="", max_length=160)',
+        "favorite_only: bool = False",
+        "format: str | None = Query",
+        "tag: str | None = Query",
+        'sort_by: Literal["name", "source", "format", "parameters", "quantization", "favorite"]',
+        'sort_order: Literal["asc", "desc"]',
+        '"has_more": offset + limit < total',
+    ):
+        if token not in api_source:
+            issues.append("Model registry API is missing a supported filter/sort/pagination contract: " + token)
+    for token in (
+        'query.set("search"',
+        'query.set("favorite_only"',
+        'query.set("format"',
+        'query.set("tag"',
+        'query.set("sort_by"',
+        'query.set("sort_order"',
+    ):
+        if token not in client_source:
+            issues.append("Typed API client is missing model registry query serialization: " + token)
+    for token in (
+        'aria-label="Search model registry"',
+        'aria-label="Exact model format"',
+        'aria-label="Exact model tag"',
+        'aria-label="Favorites only"',
+        "SAVED_MODEL_FILTERS_KEY",
+        "localStorage.setItem(SAVED_MODEL_FILTERS_KEY",
+        "const appliedFilters",
+        "modelsPage(models.length, 25, appliedFilters)",
+    ):
+        if token not in app_source:
+            issues.append("Models GUI is missing integrated filter/preset behavior: " + token)
+    for token in (
+        "model registry filters and saved presets",
+        'searchParams.get("favorite_only")',
+        'searchParams.get("sort_by")',
+        "Save current filters",
+        "Apply saved filters",
+    ):
+        if token not in e2e_source:
+            issues.append("Model registry browser acceptance coverage is missing: " + token)
+    return issues
+
+
 def api_playground_issues(component: str, client: str) -> list[str]:
     """Validate the Playground's actual typed GET-only client contract and disclosure."""
     issues: list[str] = []
@@ -99,7 +147,7 @@ def inspect(root: Path) -> dict[str, Any]:
     required = [
         "pyproject.toml", "axiom/version.py", "ROADMAP.md", "src/App.tsx",
         "src/api/client.ts", "src/components/ApiPlayground.tsx", "src/components/RuntimeConnectorPanel.tsx", "src/components/AgentProfiles.tsx", "src/styles.css",
-        "axiom/api/server.py", "axiom/api/diagnostics.py", "axiom/api/runtime_discovery.py", "axiom/api/agent_profiles.py", "axiom/core/runtime_discovery.py", "axiom/core/agent_profiles.py", "axiom/cli/agent_profiles.py", "scripts/release_smoke.py",
+        "axiom/api/server.py", "axiom/api/workspace.py", "axiom/api/diagnostics.py", "axiom/api/runtime_discovery.py", "axiom/api/agent_profiles.py", "axiom/core/runtime_discovery.py", "axiom/core/agent_profiles.py", "axiom/cli/agent_profiles.py", "scripts/release_smoke.py",
         "tests/test_release_smoke.py", "e2e/helpers/auth.ts", "e2e/modules.spec.ts", "e2e/workflows.spec.ts", "e2e/evaluation.spec.ts",
         "e2e/model-registry-filters.spec.ts", "tests/test_workspace_model_registry_filters.py",
         "tests/test_runtime_discovery.py", "tests/test_runtime_discovery_api.py", "tests/test_agent_profiles.py", "tests/test_agent_profiles_api.py", "tests/test_agent_profiles_cli.py", "e2e/api-playground.spec.ts", "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
@@ -133,6 +181,9 @@ def inspect(root: Path) -> dict[str, Any]:
     failures.extend(module_catalog_issues(app_source))
     component = (root / "src/components/ApiPlayground.tsx").read_text(encoding="utf-8")
     client = (root / "src/api/client.ts").read_text(encoding="utf-8")
+    workspace_api = (root / "axiom/api/workspace.py").read_text(encoding="utf-8")
+    model_registry_e2e = (root / "e2e/model-registry-filters.spec.ts").read_text(encoding="utf-8")
+    failures.extend(model_registry_filter_issues(workspace_api, client, app_source, model_registry_e2e))
     for path in (
         "/api/health", "/api/meta", "/api/workspace/runtime",
         "/api/workspace/models?offset=0&limit=5", "/api/workspace/datasets",
