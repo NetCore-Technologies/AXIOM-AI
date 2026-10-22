@@ -1,6 +1,7 @@
 """HTTP API for AXIOM's direct local model engine."""
 from __future__ import annotations
 
+from pathlib import PurePath
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -17,6 +18,25 @@ class GenerateRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=12000)
     max_new_tokens: int = Field(default=256, ge=1, le=2048)
     temperature: float = Field(default=0.7, ge=0, le=2)
+
+    @field_validator("model_path", "adapter_path", mode="before")
+    @classmethod
+    def paths_must_be_safe_relative(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("Path must be a string.")
+        candidate = value.strip()
+        if not candidate:
+            raise ValueError("Path must not be blank.")
+        if any(ch in candidate for ch in ("\x00", "\r", "\n")):
+            raise ValueError("Path contains invalid control characters.")
+        pure = PurePath(candidate)
+        if pure.is_absolute():
+            raise ValueError("Absolute paths are not allowed.")
+        if ".." in pure.parts:
+            raise ValueError("Path traversal is not allowed.")
+        return candidate
 
     @field_validator("prompt")
     @classmethod
