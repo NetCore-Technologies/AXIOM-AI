@@ -139,6 +139,30 @@ def test_inference_benchmark_smoke_detects_disconnected_button() -> None:
     assert any("Benchmark this prompt" in issue for issue in issues)
 
 
+def test_runtime_trace_history_is_wired_across_api_client_gui_and_browser_tests() -> None:
+    trace_core = (ROOT / "axiom" / "core" / "runtime_traces.py").read_text(encoding="utf-8")
+    inference_api = (ROOT / "axiom" / "api" / "inference.py").read_text(encoding="utf-8")
+    diagnostics_api = (ROOT / "axiom" / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+    panel_source = (ROOT / "src" / "components" / "RuntimeTracePanel.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "runtime-traces.spec.ts").read_text(encoding="utf-8")
+    assert release_smoke.runtime_trace_issues(trace_core, inference_api, diagnostics_api, client_source, app_source, panel_source, e2e_source) == []
+
+
+def test_runtime_trace_smoke_detects_missing_clear_route() -> None:
+    trace_core = (ROOT / "axiom" / "core" / "runtime_traces.py").read_text(encoding="utf-8")
+    inference_api = (ROOT / "axiom" / "api" / "inference.py").read_text(encoding="utf-8")
+    diagnostics_api = (ROOT / "axiom" / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+    panel_source = (ROOT / "src" / "components" / "RuntimeTracePanel.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "runtime-traces.spec.ts").read_text(encoding="utf-8")
+    broken_api = diagnostics_api.replace('@router.delete("/runtime-traces")', '@router.post("/runtime-traces-clear")', 1)
+    issues = release_smoke.runtime_trace_issues(trace_core, inference_api, broken_api, client_source, app_source, panel_source, e2e_source)
+    assert any("Runtime trace history API is missing" in issue for issue in issues)
+
+
 def test_api_playground_smoke_checks_typed_get_only_contract() -> None:
     component = (
         "playgroundRead allowlist GET only Arbitrary URLs mutating methods"
