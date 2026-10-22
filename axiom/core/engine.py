@@ -140,6 +140,14 @@ def _path_is_within_root(path: Path, root: Path) -> bool:
 
 
 @lru_cache(maxsize=8)
+def _trusted_file_entry(path: str, root_text: str) -> bool:
+    try:
+        resolved = os.path.realpath(path)
+        return os.path.isfile(resolved) and os.path.commonpath((resolved, root_text)) == root_text
+    except (OSError, ValueError):
+        return False
+
+
 def _trusted_directory_index(
     root_strings: tuple[str, ...],
     freshness_bucket: int,
@@ -187,7 +195,9 @@ def _trusted_directory_index(
             if not model_config and not adapter_config:
                 continue
             marker_names = (("config.json",) if model_config else ()) + (("adapter_config.json",) if adapter_config else ())
-            if any(os.path.islink(os.path.join(directory, marker)) for marker in marker_names):
+            # HF cache metadata may be symlinked to blobs. Only accept targets
+            # whose canonical path remains below this root.
+            if any(not _trusted_file_entry(os.path.join(directory, marker), root_text) for marker in marker_names):
                 continue
             try:
                 canonical = os.path.realpath(directory)
@@ -247,9 +257,14 @@ def resolve_local_model_directory(value: str, label: str = "Model") -> str:
 def _inspect_model_config(model_dir: Path) -> dict[str, Any]:
     config_path = model_dir / "config.json"
     try:
-        if config_path.is_symlink() or not config_path.is_file() or config_path.stat().st_size > _MAX_CONFIG_BYTES:
-            raise ValueError("Base model directory must contain a config.json no larger than 1 MiB.")
-        config = json.loads(config_path.read_text(encoding="utf-8"))
+        resolved_config = config_path.resolve(strict=True)
+        if (
+            not resolved_config.is_file()
+            or resolved_config.stat().st_size > _MAX_CONFIG_BYTES
+            or not any(_path_is_within_root(resolved_config, root) for root in _allowed_model_roots())
+        ):
+            raise ValueError("Base model directory must contain a config.json inside a trusted root and no larger than 1 MiB.")
+        config = json.loads(resolved_config.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
         raise ValueError("Local model config.json could not be read as valid UTF-8 JSON.") from None
     if not isinstance(config, dict) or not isinstance(config.get("model_type"), str):
@@ -324,7 +339,7 @@ def _load_local_model(model_path: str, adapter_path: str | None):
     from axiom.core.native_engine import NativeDependencyError, NativeEngineError, load_native_runtime
     try:
         model, tokenizer, native_details = load_native_runtime(
-            base_dir, torch, device, adapter_dir=resolved_adapter
+            base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots()
         )
     except NativeDependencyError as exc:
         raise AxiomEngineError(str(exc)) from None
