@@ -14,6 +14,10 @@ AXIOM's first executable inference adapter uses an Ollama service bound to the l
 
 Model download is an explicit user command, not an AXIOM side effect. The exact model available depends on your hardware and the models you've downloaded.
 
+## Benchmarking
+
+The Runtime page can run a bounded benchmark against the same local Ollama service. It supports up to two excluded warm-up generations, up to ten measured requests across configurable concurrency, output limits up to 512 tokens per benchmark request, per-request latency statistics, wall time, and completion-token throughput when Ollama supplies token counts. The benchmark neither saves prompts/responses nor returns generated text in its result payload. See the [Inference Benchmarking guide](Inference-Benchmarking.md) for endpoint fields, limits, and measurement caveats.
+
 ## CLI
 
 Run commands from the AXIOM environment:
