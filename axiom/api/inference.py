@@ -68,15 +68,23 @@ def inference_status() -> dict[str, Any]:
 
 @router.post("/benchmark")
 def inference_benchmark(request: BenchmarkRequest, response: Response) -> dict[str, Any]:
-    if request.iterations * request.concurrency > 10:
-        raise HTTPException(
-            status_code=422,
-            detail="Benchmark iterations × concurrency may not exceed 10 measured requests.",
-        )
     request_id = uuid.uuid4().hex
     response.headers["X-Request-ID"] = request_id
     started_at = datetime.now(UTC).isoformat()
     started = perf_counter()
+    if request.iterations * request.concurrency > 10:
+        record_runtime_trace(
+            request_id=request_id, operation="inference.benchmark", model=request.model,
+            status="error", started_at=started_at, duration_ms=(perf_counter() - started) * 1000.0,
+            prompt_characters=len(request.prompt), requested_output_tokens=request.num_predict,
+            temperature=request.temperature, warmup_runs=request.warmup_runs,
+            iterations=request.iterations, concurrency=request.concurrency,
+            error_code="request_limit_exceeded",
+        )
+        raise HTTPException(
+            status_code=422,
+            detail="Benchmark iterations × concurrency may not exceed 10 measured requests.",
+        )
     try:
         result = run_local_inference_benchmark(
             request.model,
