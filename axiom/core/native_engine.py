@@ -19,8 +19,11 @@ _MAX_INDEX_BYTES = 64 * 1024 * 1024
 _MAX_WEIGHT_SHARDS = 512
 _SUPPORTED_MODEL_TYPES = {"llama", "mistral"}
 
-class NativeEngineError(RuntimeError):
+class NativeEngineError(ValueError):
     """An unsupported, unsafe, or invalid native-engine checkpoint."""
+
+class NativeDependencyError(RuntimeError):
+    """A required runtime dependency for the native engine is unavailable."""
 
 @dataclass(frozen=True)
 class NativeLlamaConfig:
@@ -131,7 +134,7 @@ def _safetensor_keys(files: list[Path]) -> dict[str, str]:
     try:
         from safetensors import safe_open
     except (ImportError, OSError):
-        raise NativeEngineError("AXIOM Native Engine requires safetensors. Install the native-inference extra.") from None
+        raise NativeDependencyError("AXIOM Native Engine requires safetensors. Install the native-inference extra.") from None
     result: dict[str, str] = {}
     for path in files:
         try:
@@ -187,7 +190,7 @@ class NativeLlamaRuntime:
         try:
             from safetensors import safe_open
         except (ImportError, OSError):
-            raise NativeEngineError("AXIOM Native Engine requires safetensors; install the native-inference extra.") from None
+            raise NativeDependencyError("AXIOM Native Engine requires safetensors; install the native-inference extra.") from None
         weights: dict[str, Any] = {}
         try:
             with ExitStack() as stack:
@@ -404,7 +407,7 @@ def load_native_runtime(model_dir: Path, torch_module: Any, device: Any, *, adap
     try:
         from tokenizers import Tokenizer
     except (ImportError, OSError):
-        raise NativeEngineError("AXIOM Native Engine requires tokenizers. Install the native-inference extra.") from None
+        raise NativeDependencyError("AXIOM Native Engine requires tokenizers. Install the native-inference extra.") from None
     model = NativeLlamaRuntime.from_directory(model_dir, torch_module, device, adapter_dir=adapter_dir)
     try:
         tokenizer = Tokenizer.from_file(str(model_dir / "tokenizer.json"))
