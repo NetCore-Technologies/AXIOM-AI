@@ -398,10 +398,11 @@ def inspect(root: Path) -> dict[str, Any]:
     trace_e2e = (root / "e2e/runtime-traces.spec.ts").read_text(encoding="utf-8")
     failures.extend(runtime_trace_issues(trace_core, inference_api, diagnostics_api, client, app_source, trace_panel, trace_e2e))
     engine_source = (root / "axiom/core/engine.py").read_text(encoding="utf-8")
+    native_source = (root / "axiom/core/native_engine.py").read_text(encoding="utf-8")
     engine_api = (root / "axiom/api/engine.py").read_text(encoding="utf-8")
     engine_panel = (root / "src/components/LocalAxiomEnginePanel.tsx").read_text(encoding="utf-8")
     engine_e2e = (root / "e2e/axiom-engine.spec.ts").read_text(encoding="utf-8")
-    failures.extend(engine_security_and_lifecycle_issues(engine_source, engine_api, client, engine_panel, engine_e2e))
+    failures.extend(engine_security_and_lifecycle_issues(engine_source, native_source, engine_api, client, engine_panel, engine_e2e))
     for path in (
         "/api/health", "/api/meta", "/api/workspace/runtime",
         "/api/workspace/models?offset=0&limit=5", "/api/workspace/datasets",
