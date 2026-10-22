@@ -105,7 +105,7 @@ test.describe("AXIOM local AI Toolkit", () => {
 
     await page.getByRole("textbox", { name: "Search toolkit utilities" }).fill("Support-text redactor");
     await page.getByRole("button", { name: /Support-text redactor/ }).click();
-    await page.getByRole("textbox", { name: "Text A" }).fill("C:\\Users\\alice\\private.txt\\nAPI_TOKEN=SECRET_SENTINEL");
+    await page.getByRole("textbox", { name: "Text A" }).fill("C:\\Users\\alice\\private.txt\nAPI_TOKEN=SECRET_SENTINEL");
     await page.getByRole("button", { name: "Run utility" }).click();
     await expect(page.locator(".api-playground-json")).not.toContainText("SECRET_SENTINEL");
     await expect(page.locator(".api-playground-json")).toContainText("[REDACTED");
