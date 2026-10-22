@@ -299,17 +299,25 @@ def workspace_models(
         wanted_tag = tag.strip().casefold()
         models = [model for model in models if any(item.casefold() == wanted_tag for item in model.tags)]
 
-    def sort_key(model: Model) -> tuple[Any, ...]:
-        if sort_by == "parameters":
-            missing, amount = _model_parameter_sort_key(model.parameters)
-            return missing, amount, model.name.casefold()
-        if sort_by == "favorite":
-            return model.favorite, model.name.casefold()
-        value = getattr(model, sort_by)
-        normalized = value.casefold() if isinstance(value, str) else ""
-        return normalized, model.name.casefold()
+    if sort_by == "parameters":
+        sized_models = [model for model in models if not _model_parameter_sort_key(model.parameters)[0]]
+        unsized_models = [model for model in models if _model_parameter_sort_key(model.parameters)[0]]
+        sized_models.sort(
+            key=lambda model: (_model_parameter_sort_key(model.parameters)[1], model.name.casefold()),
+            reverse=sort_order == "desc",
+        )
+        unsized_models.sort(key=lambda model: model.name.casefold())
+        # Unknown parameter metadata stays last for both sort directions.
+        models = [*sized_models, *unsized_models]
+    else:
+        def sort_key(model: Model) -> tuple[Any, ...]:
+            if sort_by == "favorite":
+                return model.favorite, model.name.casefold()
+            value = getattr(model, sort_by)
+            normalized = value.casefold() if isinstance(value, str) else ""
+            return normalized, model.name.casefold()
 
-    models.sort(key=sort_key, reverse=sort_order == "desc")
+        models.sort(key=sort_key, reverse=sort_order == "desc")
     total = len(models)
     return {
         "models": [model.to_dict() for model in models[offset:offset + limit]],
