@@ -4,7 +4,6 @@ from collections import deque
 from datetime import UTC, datetime
 from threading import Lock
 from typing import Any, Literal
-import uuid
 
 MAX_RUNTIME_TRACES = 200
 TraceOperation = Literal["inference.generate", "inference.benchmark"]
@@ -20,6 +19,7 @@ def record_runtime_trace(
     operation: TraceOperation,
     model: str,
     status: TraceStatus,
+    started_at: str,
     duration_ms: float,
     prompt_characters: int,
     requested_output_tokens: int,
@@ -47,7 +47,8 @@ def record_runtime_trace(
         "operation": operation,
         "model": str(model)[:120],
         "status": status,
-        "started_at": datetime.now(UTC).isoformat(),
+        "started_at": str(started_at)[:40],
+        "completed_at": datetime.now(UTC).isoformat(),
         "duration_ms": round(max(0.0, float(duration_ms)), 2),
         "prompt_characters": max(0, int(prompt_characters)),
         "requested_output_tokens": max(0, int(requested_output_tokens)),
