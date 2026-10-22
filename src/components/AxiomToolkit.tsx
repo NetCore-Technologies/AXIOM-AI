@@ -735,7 +735,7 @@ export default function AxiomToolkit() {
           <h2 style={{ marginTop: 0 }}>Utility catalog</h2>
           <div style={{ display: "grid", gap: 8, maxHeight: 700, overflowY: "auto" }}>
             {visibleTools.map((tool) => (
-              <button key={tool.id} type="button" onClick={() => { setSelectedId(tool.id); setResult(""); setError(""); setRanId(""); }} aria-pressed={selectedId === tool.id} className={selectedId === tool.id ? "toolkit-tool is-selected" : "toolkit-tool"} style={{ textAlign: "left", padding: 12, borderRadius: 10, border: "1px solid var(--border-color, #394150)", background: selectedId === tool.id ? "var(--surface-raised, rgba(100,120,160,.12))" : "transparent", color: "inherit", cursor: "pointer" }}>
+              <button key={tool.id} type="button" data-tool-id={tool.id} data-tool-kind={tool.kind} onClick={() => { setSelectedId(tool.id); setResult(""); setError(""); setRanId(""); }} aria-pressed={selectedId === tool.id} className={selectedId === tool.id ? "toolkit-tool is-selected" : "toolkit-tool"} style={{ textAlign: "left", padding: 12, borderRadius: 10, border: "1px solid var(--border-color, #394150)", background: selectedId === tool.id ? "var(--surface-raised, rgba(100,120,160,.12))" : "transparent", color: "inherit", cursor: "pointer" }}>
                 <span style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
                   <strong>{tool.title}</strong><small style={{ opacity: 0.7 }}>{tool.id}</small>
                 </span>
