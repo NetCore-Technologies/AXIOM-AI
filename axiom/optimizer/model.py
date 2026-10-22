@@ -116,7 +116,11 @@ def _copy_without_following_symlinks(source: Path, destination: Path) -> None:
 def _config(path: Path) -> dict[str, Any]:
     trusted_path = validate_model_path(path)
     root_str = os.path.realpath(trusted_path)
-    if not root_str.startswith(os.path.realpath(MODEL_ROOT)):
+    model_root_real = os.path.realpath(MODEL_ROOT)
+    try:
+        if os.path.commonpath((root_str, model_root_real)) != model_root_real:
+            return {}
+    except ValueError:
         return {}
     if not os.path.isdir(root_str):
         return {}
@@ -174,7 +178,7 @@ def inspect_model(source: str) -> ModelInfo:
         )
 
     root = path if path.is_dir() else path.parent
-    root = validate_model_path(root)
+    root = validate_model_path(os.fspath(root))
     cfg = _config(root)
 
     parameter_count, parameter_source = estimate_parameters_from_config(cfg)
