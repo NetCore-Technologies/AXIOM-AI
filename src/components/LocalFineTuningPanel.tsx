@@ -83,7 +83,7 @@ export default function LocalFineTuningPanel() {
         <div><b>Transformers + PEFT</b><span>{runtime?.can_start ? "Optional packages detected; model compatibility is checked at launch." : "Install the optional training dependencies in your active Python environment."}</span></div>
       </div>
     </div>
-    {runtime && !runtime.can_start && <div className="inline-alert warning" role="status">Missing packages: {Object.entries(runtime.packages).filter(([, found]) => !found).map(([name]) => name).join(", ")}. Run <code>python3 -m pip install -e '.[training]'</code> from the repository using your active environment.</div>}
+    {runtime && !runtime.can_start && <div className="inline-alert warning" role="status">{runtime.setup_note || <>Missing packages: {Object.entries(runtime.packages).filter(([, found]) => !found).map(([name]) => name).join(", ")}. Run <code>python3 -m pip install -e '.[training]'</code> from the repository using your active environment.</>}</div>}
     <form onSubmit={(event) => void run(event)}>
       <div className="two-column-grid">
         <label className="field"><span className="field-label-row"><span>Local base model directory</span></span><input value={modelPath} onChange={(event) => setModelPath(event.target.value)} required maxLength={4096} placeholder="/home/user/models/my-transformers-model" /><small>Folder must contain config.json and local model/tokenizer files.</small></label>
