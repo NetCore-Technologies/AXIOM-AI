@@ -24,6 +24,7 @@ from axiom.datasets.manifest import DEFAULT_MANIFEST_MAX_BYTES, create_dataset_m
 from axiom.datasets.cleaning_preview import preview_jsonl_cleaning
 from axiom.datasets.quality import compare_dataset_schemas, validate_dataset_profile
 from axiom.models.registry import Model, ModelRegistry
+from axiom.models.compatibility import estimate_model_compatibility
 from axiom.models.discovery import discover_local_model_folders
 from axiom.models.inspector import inspect_model
 from axiom.api.model_paths import validate_model_path
@@ -419,6 +420,22 @@ def workspace_model(model_id: str) -> dict[str, Any]:
     if model is None:
         raise HTTPException(status_code=404, detail="Model not found.")
     return {"model": model.to_dict()}
+
+
+@router.get("/models/{model_id}/compatibility")
+def workspace_model_compatibility(model_id: str) -> dict[str, Any]:
+    """Estimate memory fit and report metadata-backed compatibility guidance."""
+    try:
+        model = ModelRegistry().get(model_id)
+        if model is None:
+            raise HTTPException(status_code=404, detail="Model not found.")
+        report = estimate_model_compatibility(model, detect_hardware())
+    except HTTPException:
+        raise
+    except (OSError, TimeoutError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail="Model compatibility report could not be generated.") from exc
+    record_workspace_event("models.compatibility", f"Checked fit metadata for {model.name}")
+    return {"report": report}
 
 
 @router.patch("/models/{model_id}")
