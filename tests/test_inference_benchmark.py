@@ -83,7 +83,7 @@ def test_benchmark_validates_model_prompt_and_temperature_before_generating(monk
     monkeypatch.setattr(inference, "run_local_inference", should_not_run)
     with pytest.raises(ValueError, match="[Mm]odel name"):
         inference.run_local_inference_benchmark("http://remote/model", "hello")
-    with pytest.raises(ValueError, match="prompt"):
+    with pytest.raises(ValueError, match="[Pp]rompt"):
         inference.run_local_inference_benchmark("test-model", "   ")
     with pytest.raises(ValueError, match="Temperature"):
         inference.run_local_inference_benchmark("test-model", "hello", temperature=3)
