@@ -3103,6 +3103,7 @@ function ModulesPage({ setPage }: { setPage: (page: Page) => void }) {
   };
   const entries: Entry[] = [
     { id: "dashboard", title: "Control center", description: "Workspace overview, recent events, and entry points to major product surfaces.", scope: "Workspace", availability: "GUI", tone: "success", icon: LayoutDashboard, page: "dashboard" },
+    { id: "toolkit", title: "AI Toolkit", description: "Run 120 browser-local calculators and validators for model sizing, data quality, evaluation, security, workflows, prompts, and release operations.", scope: "AI engineering utilities", availability: "GUI · 120 utilities", tone: "success", icon: Wrench, page: "toolkit" },
     { id: "optimizer", title: "Agent Optimizer", description: "Questionnaire-driven workload sizing, hardware-aware recommendations, and optimization plans.", scope: "Optimization", availability: "GUI", tone: "success", icon: Zap, page: "optimizer" },
     { id: "quantizer", title: "Quantization Lab", description: "Compare quantization choices and review estimated memory fit before runtime work.", scope: "Optimization", availability: "GUI", tone: "success", icon: SlidersHorizontal, page: "quantizer" },
     { id: "models", title: "Model registry and inspection", description: "Discover local folders, inspect metadata, register entries, manage tags/favorites, and import/export registry data.", scope: "Model engineering", availability: "GUI + CLI", tone: "success", icon: BrainCircuit, page: "models", command: "axiom model --help" },
