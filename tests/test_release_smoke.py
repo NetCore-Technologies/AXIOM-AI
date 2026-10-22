@@ -192,7 +192,7 @@ def test_native_engine_smoke_rejects_missing_kv_cache_mechanics() -> None:
     client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
     panel_source = (ROOT / "src" / "components" / "LocalAxiomEnginePanel.tsx").read_text(encoding="utf-8")
     e2e_source = (ROOT / "e2e" / "axiom-engine.spec.ts").read_text(encoding="utf-8")
-    broken_native = native_source.replace("past_key_values", "discarded_cache", 1)
+    broken_native = native_source.replace("past_key_values", "discarded_cache")
     issues = release_smoke.engine_security_and_lifecycle_issues(engine_source, broken_native, api_source, client_source, panel_source, e2e_source)
     assert any("past_key_values" in issue for issue in issues)
 
