@@ -74,7 +74,7 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
   await expect(engine.getByLabel("Local Llama / Mistral model directory")).toHaveValue("/models/llama-test");
   await engine.getByLabel("Select discovered LoRA adapter").selectOption("/runs/my-lora-adapter");
   await expect(engine.getByLabel("Optional LoRA adapter directory")).toHaveValue("/runs/my-lora-adapter");
-  await engine.getByLabel("Prompt").fill("Say hello.");
+  await engine.getByLabel("AXIOM Native Engine prompt").fill("Say hello.");
   await engine.getByRole("button", { name: "Run with AXIOM Engine" }).click();
 
   await expect(engine.getByTestId("axiom-engine-output")).toContainText("AXIOM local engine test response.");
