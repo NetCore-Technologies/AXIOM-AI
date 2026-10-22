@@ -10,7 +10,7 @@ test.describe("Measured local inference benchmark", () => {
       endpoint: "http://127.0.0.1:11434",
       model: "test-model",
       configuration: {
-        prompt_characters: 21,
+        prompt_characters: 25,
         num_predict: 64,
         temperature: 0.2,
         warmup_runs: 1,
@@ -85,6 +85,7 @@ test.describe("Measured local inference benchmark", () => {
 
     await page.getByPlaceholder("Ask your local model to do something…").fill("Describe local inference.");
     await page.getByRole("spinbutton").first().fill("64");
+    await page.getByRole("spinbutton").nth(1).fill("0.2");
     await page.getByRole("combobox", { name: "Benchmark warm-up generations" }).selectOption("1");
     await page.getByRole("combobox", { name: "Benchmark iterations" }).selectOption("2");
     await page.getByRole("combobox", { name: "Benchmark concurrency" }).selectOption("1");
