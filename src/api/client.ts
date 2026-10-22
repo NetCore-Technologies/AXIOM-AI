@@ -123,6 +123,13 @@ export type AxiomEngineResult = {
   prompt_tokens: number; completion_tokens: number; elapsed_ms: number; generated_at: string; local_only: true;
 };
 
+export type AxiomEngineStreamEvent =
+  | { type: "token"; response: string; completion_tokens: number }
+  | { type: "complete"; result: AxiomEngineResult }
+  | { type: "error"; code: string; message: string };
+
+
+
 export type ModelStudioModel = { id: string; author: string; downloads: number; likes: number; pipeline_tag: string; last_modified: string; tags: string[]; url: string };
 export type ModelStudioFile = { filename: string; size_bytes: number | null; quantization: string };
 export type ModelStudioStatus = { schema_version: number; ollama_installed: boolean; ollama_endpoint: string; download_limit_bytes: number; gguf_directory: string; catalogue: string; network_search_is_explicit: boolean };
@@ -784,6 +791,72 @@ async function requestJson<T>(path: string, init: RequestInit = {}, timeoutMs = 
   }
 }
 
+async function streamAxiomEngineRequest(
+  input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number },
+  onEvent: (event: AxiomEngineStreamEvent) => void,
+  signal: AbortSignal,
+): Promise<AxiomEngineResult> {
+  const requestId = globalThis.crypto?.randomUUID?.()
+    ?? \`ui-\${Date.now().toString(36)}-\${Math.random().toString(36).slice(2, 12)}\`;
+  const headers = new Headers({
+    Accept: "application/x-ndjson",
+    "Content-Type": "application/json",
+    "X-Request-ID": requestId,
+  });
+  const response = await fetch(\`\${API_BASE}/api/engine/generate/stream\`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(input),
+    signal,
+  });
+  if (!response.ok) {
+    const raw = await response.text();
+    let payload: unknown = raw;
+    try { payload = raw ? JSON.parse(raw) as unknown : null; } catch { /* retain raw safe error text */ }
+    const rid = response.headers.get("X-Request-ID") || requestId;
+    throw new Error(\`\${messageFromPayload(payload, \`AXIOM stream request failed (\${response.status})\`)} (request ID \${rid})\`);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("AXIOM streaming response did not expose a readable body.");
+  const decoder = new TextDecoder();
+  let pending = "";
+  let completed: AxiomEngineResult | null = null;
+
+  const consumeLine = (line: string): AxiomEngineResult | null => {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+    let event: AxiomEngineStreamEvent;
+    try {
+      event = JSON.parse(trimmed) as AxiomEngineStreamEvent;
+    } catch {
+      throw new Error("AXIOM returned an invalid newline-delimited streaming event.");
+    }
+    if (event.type === "error") throw new Error(event.message || "AXIOM Native Engine stream failed.");
+    onEvent(event);
+    return event.type === "complete" ? event.result : null;
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (value) pending += decoder.decode(value, { stream: !done });
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      for (const line of lines) completed = consumeLine(line) ?? completed;
+      if (done) break;
+    }
+    if (pending.trim()) completed = consumeLine(pending) ?? completed;
+  } finally {
+    if (!signal.aborted) {
+      try { await reader.cancel(); } catch { /* stream may already be closed */ }
+    }
+    reader.releaseLock();
+  }
+  if (!completed) throw new Error("AXIOM stream ended without a final completion event.");
+  return completed;
+}
+
+
 export const axiomApi = {
   health: () => requestJson<{ status: string; version: string }>("/api/health"),
 
@@ -1165,6 +1238,11 @@ export const axiomApi = {
     requestJson<AxiomEngineResult>("/api/engine/generate", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
+  streamAxiomEngine: (
+    input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number },
+    onEvent: (event: AxiomEngineStreamEvent) => void,
+    signal: AbortSignal,
+  ) => streamAxiomEngineRequest(input, onEvent, signal),
   unloadAxiomEngine: () =>
     requestJson<{ schema_version: number; unloaded: boolean; loaded: false; scope_note: string }>("/api/engine/unload", {
       method: "POST", body: JSON.stringify({}),
