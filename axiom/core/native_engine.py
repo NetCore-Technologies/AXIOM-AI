@@ -88,11 +88,38 @@ class NativeLlamaConfig:
             raise NativeEngineError("Configured BOS/EOS token ID is outside vocab_size.")
         return cls(model_type, hidden, intermediate, layers, heads, kv_heads, vocab, max_positions, rms_eps, theta, bos, eos, value.get("tie_word_embeddings") is True, sliding)
 
-def _read_json_object(path: Path, max_bytes: int, label: str) -> dict[str, Any]:
+def _within_trusted_roots(path: Path, trusted_roots: tuple[Path, ...]) -> bool:
+    for root in trusted_roots:
+        try:
+            path.relative_to(root)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+def _resolve_trusted_file(path: Path, trusted_roots: tuple[Path, ...], label: str) -> Path:
+    """Resolve a model asset and allow symlinks only when the final target remains trusted."""
     try:
-        if path.is_symlink() or not path.is_file() or path.stat().st_size > max_bytes:
-            raise NativeEngineError(f"{label} must be a regular local file within its size limit.")
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        resolved = path.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise NativeEngineError(f"{label} must be an existing local file.") from None
+    if not resolved.is_file() or not _within_trusted_roots(resolved, trusted_roots):
+        raise NativeEngineError(f"{label} resolves outside the configured trusted model roots.")
+    return resolved
+
+def _read_json_object(
+    path: Path,
+    max_bytes: int,
+    label: str,
+    trusted_roots: tuple[Path, ...] | None = None,
+) -> dict[str, Any]:
+    roots = trusted_roots or (path.parent.resolve(),)
+    safe_path = _resolve_trusted_file(path, roots, label)
+    try:
+        if safe_path.stat().st_size > max_bytes:
+            raise NativeEngineError(f"{label} exceeds its size limit.")
+        payload = json.loads(safe_path.read_text(encoding="utf-8"))
     except NativeEngineError:
         raise
     except (OSError, UnicodeError, json.JSONDecodeError):
@@ -101,10 +128,10 @@ def _read_json_object(path: Path, max_bytes: int, label: str) -> dict[str, Any]:
         raise NativeEngineError(f"{label} must contain a JSON object.")
     return payload
 
-def _resolve_safetensor_files(model_dir: Path) -> tuple[list[Path], dict[str, str]]:
+def _resolve_safetensor_files(model_dir: Path, trusted_roots: tuple[Path, ...]) -> tuple[list[Path], dict[str, str]]:
     index_path, single_path = model_dir / "model.safetensors.index.json", model_dir / "model.safetensors"
-    if index_path.is_file() and not index_path.is_symlink():
-        index = _read_json_object(index_path, _MAX_INDEX_BYTES, "Safetensors shard index")
+    if index_path.is_file():
+        index = _read_json_object(index_path, _MAX_INDEX_BYTES, "Safetensors shard index", trusted_roots)
         weight_map = index.get("weight_map")
         if not isinstance(weight_map, dict) or not weight_map:
             raise NativeEngineError("Safetensors index must contain a non-empty weight_map object.")
@@ -121,16 +148,17 @@ def _resolve_safetensor_files(model_dir: Path) -> tuple[list[Path], dict[str, st
         if len(shards) > _MAX_WEIGHT_SHARDS:
             raise NativeEngineError("Checkpoint has more than 512 safetensors shards.")
         files = [model_dir / name for name in sorted(shards)]
-        if any(path.is_symlink() or not path.is_file() for path in files):
-            raise NativeEngineError("Every indexed safetensors shard must be a regular file, not a symlink.")
+        for path in files:
+            _resolve_trusted_file(path, trusted_roots, "Safetensors shard")
         return files, normalized
-    if single_path.is_file() and not single_path.is_symlink():
+    if single_path.is_file():
+        _resolve_trusted_file(single_path, trusted_roots, "Safetensors checkpoint")
         return [single_path], {}
     if (model_dir / "pytorch_model.bin").exists() or any(model_dir.glob("pytorch_model-*.bin")):
         raise NativeEngineError("Pickle-based .bin weights are unsupported; use safetensors. AXIOM will not load arbitrary pickle payloads.")
     raise NativeEngineError("No model.safetensors or model.safetensors.index.json was found in the model directory.")
 
-def _safetensor_keys(files: list[Path]) -> dict[str, str]:
+def _safetensor_keys(files: list[Path], trusted_roots: tuple[Path, ...]) -> dict[str, str]:
     try:
         from safetensors import safe_open
     except (ImportError, OSError):
@@ -138,7 +166,7 @@ def _safetensor_keys(files: list[Path]) -> dict[str, str]:
     result: dict[str, str] = {}
     for path in files:
         try:
-            with safe_open(str(path), framework="pt", device="cpu") as handle:
+            with safe_open(str(_resolve_trusted_file(path, trusted_roots, "Safetensors shard")), framework="pt", device="cpu") as handle:
                 keys = list(handle.keys())
         except Exception:
             raise NativeEngineError(f"Safetensors shard {path.name!r} could not be inspected safely.") from None
@@ -173,13 +201,14 @@ class NativeLlamaRuntime:
         return names
 
     @classmethod
-    def from_directory(cls, model_dir: Path, torch_module: Any, device: Any, *, adapter_dir: Path | None = None) -> "NativeLlamaRuntime":
-        config = NativeLlamaConfig.from_mapping(_read_json_object(model_dir / "config.json", _MAX_CONFIG_BYTES, "Model config.json"))
-        tokenizer_path = model_dir / "tokenizer.json"
-        if tokenizer_path.is_symlink() or not tokenizer_path.is_file() or tokenizer_path.stat().st_size > _MAX_TOKENIZER_BYTES:
+    def from_directory(cls, model_dir: Path, torch_module: Any, device: Any, *, adapter_dir: Path | None = None, trusted_roots: tuple[Path, ...] | None = None) -> "NativeLlamaRuntime":
+        roots = trusted_roots or (model_dir.resolve(),)
+        config = NativeLlamaConfig.from_mapping(_read_json_object(model_dir / "config.json", _MAX_CONFIG_BYTES, "Model config.json", roots))
+        tokenizer_path = _resolve_trusted_file(model_dir / "tokenizer.json", roots, "Tokenizer file")
+        if tokenizer_path.stat().st_size > _MAX_TOKENIZER_BYTES:
             raise NativeEngineError("AXIOM Native Engine requires a local tokenizer.json of at most 64 MiB.")
-        files, indexed_map = _resolve_safetensor_files(model_dir)
-        discovered = _safetensor_keys(files)
+        files, indexed_map = _resolve_safetensor_files(model_dir, roots)
+        discovered = _safetensor_keys(files, roots)
         weight_map = indexed_map or discovered
         if indexed_map and set(discovered) != set(indexed_map):
             raise NativeEngineError("Safetensors index and actual shard contents do not agree.")
@@ -194,7 +223,7 @@ class NativeLlamaRuntime:
         weights: dict[str, Any] = {}
         try:
             with ExitStack() as stack:
-                handles = {p.name: stack.enter_context(safe_open(str(p), framework="pt", device="cpu")) for p in files}
+                handles = {p.name: stack.enter_context(safe_open(str(_resolve_trusted_file(p, roots, "Safetensors shard")), framework="pt", device="cpu")) for p in files}
                 embedding = handles[weight_map["model.embed_tokens.weight"]].get_tensor("model.embed_tokens.weight")
                 dtype = embedding.dtype
                 weights["model.embed_tokens.weight"] = embedding.to(device=device, dtype=dtype)
@@ -243,7 +272,7 @@ class NativeLlamaRuntime:
         adapters: dict[str, dict[str, Any]] = {}
         scaling: dict[str, float] = {}
         if adapter_dir is not None:
-            adapters, scaling = cls._load_lora_adapter(adapter_dir, config, torch_module, device, dtype)
+            adapters, scaling = cls._load_lora_adapter(adapter_dir, config, torch_module, device, dtype, roots)
             for path, pair in adapters.items():
                 base = weights.get(path + ".weight")
                 if base is None or pair["A"].shape[1] != base.shape[1] or pair["B"].shape != (base.shape[0], pair["A"].shape[0]):
@@ -251,8 +280,8 @@ class NativeLlamaRuntime:
         return cls(config, weights, torch_module, device, adapter=adapters, adapter_scaling=scaling)
 
     @classmethod
-    def _load_lora_adapter(cls, adapter_dir: Path, config: NativeLlamaConfig, torch_module: Any, device: Any, dtype: Any) -> tuple[dict[str, dict[str, Any]], dict[str, float]]:
-        c = _read_json_object(adapter_dir / "adapter_config.json", _MAX_CONFIG_BYTES, "LoRA adapter config")
+    def _load_lora_adapter(cls, adapter_dir: Path, config: NativeLlamaConfig, torch_module: Any, device: Any, dtype: Any, trusted_roots: tuple[Path, ...]) -> tuple[dict[str, dict[str, Any]], dict[str, float]]:
+        c = _read_json_object(adapter_dir / "adapter_config.json", _MAX_CONFIG_BYTES, "LoRA adapter config", trusted_roots)
         for flag in ("use_dora", "use_qalora", "use_rslora"):
             if c.get(flag) is True:
                 raise NativeEngineError(f"LoRA option {flag} is not supported by AXIOM Native Engine.")
@@ -268,11 +297,12 @@ class NativeLlamaRuntime:
         if c.get("task_type") not in (None, "CAUSAL_LM"):
             raise NativeEngineError("Only CAUSAL_LM LoRA adapters are supported.")
         path = adapter_dir / "adapter_model.safetensors"
-        if path.is_symlink() or not path.is_file():
+        if not path.is_file():
             raise NativeEngineError("LoRA adapter requires adapter_model.safetensors; pickle adapter files are unsupported.")
+        safe_adapter_path = _resolve_trusted_file(path, trusted_roots, "LoRA safetensors checkpoint")
         try:
             from safetensors import safe_open
-            with safe_open(str(path), framework="pt", device="cpu") as handle:
+            with safe_open(str(safe_adapter_path), framework="pt", device="cpu") as handle:
                 adapters: dict[str, dict[str, Any]] = {}
                 for key in handle.keys():
                     match = re.fullmatch(r"(.+)\.lora_([AB])(?:\.default)?\.weight", key)
@@ -404,23 +434,24 @@ class NativeLlamaRuntime:
         self.last_generation = {"prompt_tokens": len(prompt_token_ids), "completion_tokens": len(generated), "cache_layers": len(cache), "decoder": "axiom-autoregressive-kv-cache"}
         return generated
 
-def load_native_runtime(model_dir: Path, torch_module: Any, device: Any, *, adapter_dir: Path | None = None) -> tuple[NativeLlamaRuntime, Any, dict[str, Any]]:
+def load_native_runtime(model_dir: Path, torch_module: Any, device: Any, *, adapter_dir: Path | None = None, trusted_roots: tuple[Path, ...] | None = None) -> tuple[NativeLlamaRuntime, Any, dict[str, Any]]:
     """Load a supported local checkpoint/tokenizer without Transformers."""
     try:
         from tokenizers import Tokenizer
     except (ImportError, OSError):
         raise NativeDependencyError("AXIOM Native Engine requires tokenizers. Install the native-inference extra.") from None
-    model = NativeLlamaRuntime.from_directory(model_dir, torch_module, device, adapter_dir=adapter_dir)
+    roots = trusted_roots or (model_dir.resolve(),)
+    model = NativeLlamaRuntime.from_directory(model_dir, torch_module, device, adapter_dir=adapter_dir, trusted_roots=roots)
     try:
-        tokenizer = Tokenizer.from_file(str(model_dir / "tokenizer.json"))
+        tokenizer = Tokenizer.from_file(str(_resolve_trusted_file(model_dir / "tokenizer.json", roots, "Tokenizer file")))
     except Exception:
         raise NativeEngineError("tokenizer.json is not compatible with AXIOM's native tokenizer adapter.") from None
     if tokenizer.get_vocab_size(with_added_tokens=True) > model.config.vocab_size:
         raise NativeEngineError("tokenizer.json vocabulary is larger than the model embedding table.")
     tokenizer_config = model_dir / "tokenizer_config.json"
     add_bos = model.config.bos_token_id is not None
-    if tokenizer_config.exists() and not tokenizer_config.is_symlink():
-        add_bos = _read_json_object(tokenizer_config, _MAX_CONFIG_BYTES, "Tokenizer config").get("add_bos_token") is not False and add_bos
+    if tokenizer_config.exists():
+        add_bos = _read_json_object(tokenizer_config, _MAX_CONFIG_BYTES, "Tokenizer config", roots).get("add_bos_token") is not False and add_bos
     details = {
         "model_type": model.config.model_type,
         "architecture": "LlamaForCausalLM" if model.config.model_type == "llama" else "MistralForCausalLM",
