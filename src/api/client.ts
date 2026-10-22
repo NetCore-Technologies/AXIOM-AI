@@ -26,6 +26,7 @@ export type LocalInferenceStatus = {
   checked_at: string;
 };
 export type LocalInferenceResult = {
+  request_id?: string;
   model: string;
   response: string;
   done: boolean;
@@ -36,6 +37,7 @@ export type LocalInferenceResult = {
 };
 
 export type LocalInferenceBenchmark = {
+  request_id: string;
   schema_version: number;
   backend: "ollama";
   endpoint: string;
@@ -61,6 +63,36 @@ export type LocalInferenceBenchmark = {
   };
   privacy: { prompt_returned: false; responses_returned: false; results_persisted: false };
   scope_note: string;
+};
+
+export type RuntimeTrace = {
+  request_id: string;
+  operation: "inference.generate" | "inference.benchmark";
+  model: string;
+  status: "success" | "error";
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  prompt_characters: number;
+  requested_output_tokens: number;
+  temperature: number;
+  warmup_runs: number | null;
+  iterations: number | null;
+  concurrency: number | null;
+  measured_requests: number | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  completion_tokens_known: number | null;
+  completion_tokens_per_second: number | null;
+  error_code: string | null;
+};
+export type RuntimeTraceReport = {
+  schema_version: number;
+  traces: RuntimeTrace[];
+  total_retained: number;
+  limit: number;
+  max_retained: number;
+  privacy: { prompt_bodies_stored: false; response_bodies_stored: false; disk_persistence: false };
 };
 export type AxiomEngineStatus = {
   engine: string; ready: boolean; packages: Record<string, boolean>; versions: Record<string, string | null>;
@@ -1123,6 +1155,8 @@ export const axiomApi = {
   startModelStudioJob: (config: { operation: "pull" | "install_gguf" | "convert_gguf"; [key: string]: unknown }) => requestJson<ModelStudioJob>("/api/models/studio/jobs", { method: "POST", body: JSON.stringify(config) }),
 
   runtimeConnectors: () => requestJson<RuntimeConnectorReport>("/api/diagnostics/runtime-connectors"),
+  runtimeTraces: (limit = 50) => requestJson<RuntimeTraceReport>(`/api/diagnostics/runtime-traces?limit=${Math.min(200, Math.max(1, Math.floor(limit)))}`),
+  clearRuntimeTraces: () => requestJson<{ cleared: number; remaining: 0; disk_persistence: false }>("/api/diagnostics/runtime-traces", { method: "DELETE" }),
   agentProfiles: () => requestJson<AgentProfileReport>("/api/agent-profiles"),
   createAgentProfile: (input: { name: string; task_capabilities: string[] }) =>
     requestJson<{ profile: AgentProfile }>("/api/agent-profiles", { method: "POST", body: JSON.stringify(input) }),
