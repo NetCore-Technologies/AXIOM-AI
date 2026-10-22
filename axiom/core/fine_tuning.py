@@ -9,11 +9,8 @@ from __future__ import annotations
 import importlib.metadata
 import importlib.util
 import json
-<<<<<<< HEAD
-import math
-=======
 import logging
->>>>>>> 6e933d6 (fix: remove the codeql errors by adding a failsfe system)
+import math
 import os
 import random
 import re
@@ -34,6 +31,7 @@ _MAX_SEQUENCE_LENGTH = 2_048
 _TEXT_FIELD = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
 _PACKAGES = {"torch": "torch", "transformers": "transformers", "peft": "peft", "accelerate": "accelerate"}
 _LOCAL_LOCK = threading.RLock()
+AXIOM_TRAINING_SEED = 1729
 
 
 class FineTuningError(RuntimeError):
@@ -48,6 +46,10 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _clip(exc: BaseException, limit: int) -> str:
+    return str(exc).replace("\r", " ").replace("\n", " ").strip()[:limit]
+
+
 def jobs_directory() -> Path:
     configured = os.environ.get("AXIOM_FINETUNE_HOME", "").strip()
     base = Path(configured).expanduser() if configured else Path.home() / ".local" / "share" / "axiom" / "fine-tuning"
@@ -58,9 +60,8 @@ def _lock_path() -> Path:
     return jobs_directory().parent / ".active-fine-tuning-job.json"
 
 
-def _version_key(value: str) -> tuple[int, int, int]:
-    parts = [int(part) for part in re.findall(r"\d+", value)[:3]]
-    return tuple((parts + [0, 0, 0])[:3])
+def _version_key(value: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in re.findall(r"\d+", value)[:3])
 
 
 def runtime_status() -> dict[str, Any]:
@@ -390,12 +391,7 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
     try:
         import torch
         from peft import LoraConfig, TaskType, get_peft_model
-<<<<<<< HEAD
         from transformers import AutoModelForCausalLM, AutoTokenizer
-=======
-        from torch.utils.data import Dataset
-        from transformers import AutoModelForCausalLM, AutoTokenizer, DataCollatorForLanguageModeling, Trainer, TrainerCallback, TrainingArguments
->>>>>>> 6e933d6 (fix: remove the codeql errors by adding a failsfe system)
     except (ImportError, OSError):
         raise FineTuningError(
             "Local LoRA dependencies could not be imported. Upgrade the optional training tools with: python -m pip install -e '.[training]'"
@@ -407,15 +403,13 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
     if output_dir.exists() and any(output_dir.iterdir()):
         raise FineTuningError("Adapter output directory is no longer empty; refusing to overwrite existing files.")
 
-<<<<<<< HEAD
-    # Every model/tokenizer load is pinned to the existing local directory.
     try:
         tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True, trust_remote_code=False)
         model = AutoModelForCausalLM.from_pretrained(
             model_path, local_files_only=True, trust_remote_code=False
         )
     except Exception as exc:
-        message = str(exc).replace("\r", " ").replace("\n", " ").strip()[:300]
+        message = _clip(exc, 300)
         raise FineTuningError(
             "Could not load the local base model/tokenizer. Confirm model weights and tokenizer files exist "
             "and are compatible with the installed Transformers version." + (f" Detail: {message}" if message else "")
@@ -423,11 +417,6 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
 
     if tokenizer.pad_token_id is None:
         if tokenizer.eos_token_id is None:
-=======
-    tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True, trust_remote_code=False)
-    if tokenizer.pad_token is None:
-        if tokenizer.eos_token is None:
->>>>>>> 6e933d6 (fix: remove the codeql errors by adding a failsfe system)
             raise FineTuningError("Tokenizer needs an existing pad_token or eos_token to train safely.")
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -448,9 +437,6 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
             "AXIOM supports common Llama-style q_proj/k_proj/v_proj/o_proj and several other known projection layouts."
         )
 
-    torch.manual_seed(AXIOM_TRAINING_SEED)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(AXIOM_TRAINING_SEED)
     try:
         model = get_peft_model(
             model,
@@ -464,7 +450,7 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
             ),
         )
     except Exception as exc:
-        message = str(exc).replace("\r", " ").replace("\n", " ").strip()[:300]
+        message = _clip(exc, 300)
         raise FineTuningError(
             "PEFT could not attach a LoRA adapter to this model architecture." + (f" Detail: {message}" if message else "")
         ) from None
@@ -483,14 +469,10 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
     try:
         model.to(device)
     except Exception as exc:
-        message = str(exc).replace("\r", " ").replace("\n", " ").strip()[:240]
+        message = _clip(exc, 240)
         raise FineTuningError(
             f"Could not place the local model on {device}. The model may exceed available memory." + (f" Detail: {message}" if message else "")
         ) from None
-
-    trainable_parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
-    if not trainable_parameters:
-        raise FineTuningError("No trainable LoRA parameters remain after model placement.")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     optimizer = torch.optim.AdamW(trainable_parameters, lr=config["learning_rate"])
@@ -500,8 +482,6 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
     model.train()
     optimizer.zero_grad(set_to_none=True)
 
-    # One example per optimization step keeps memory use predictable. The
-    # dataset is reshuffled each pass; padding is masked out of the loss.
     for step in range(1, config["max_steps"] + 1):
         if position >= len(order):
             order = list(range(len(texts)))
@@ -539,7 +519,7 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
         except FineTuningError:
             raise
         except Exception as exc:
-            message = str(exc).replace("\r", " ").replace("\n", " ").strip()[:300]
+            message = _clip(exc, 300)
             raise FineTuningError(
                 f"Local LoRA training failed at step {step} on {device}. Check available memory and model compatibility."
                 + (f" Detail: {message}" if message else "")
@@ -550,7 +530,7 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
         model.save_pretrained(str(output_dir), safe_serialization=True)
         tokenizer.save_pretrained(str(output_dir))
     except Exception as exc:
-        message = str(exc).replace("\r", " ").replace("\n", " ").strip()[:300]
+        message = _clip(exc, 300)
         raise FineTuningError("Training completed, but saving the adapter/tokenizer failed." + (f" Detail: {message}" if message else "")) from None
 
     adapter_files = sorted(path.name for path in output_dir.iterdir() if path.is_file())
@@ -569,8 +549,6 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
         "trainable_parameters": sum(parameter.numel() for parameter in trainable_parameters),
     }
 
-
-AXIOM_TRAINING_SEED = 1729
 
 def execute_finetuning_job(job_id: str, on_progress: Callable[[dict[str, Any]], None] | None = None) -> None:
     job = _read_job(job_id)
@@ -605,7 +583,7 @@ def execute_finetuning_job(job_id: str, on_progress: Callable[[dict[str, Any]], 
             logs=[*current.get("logs", []), "Training completed; PEFT adapter files were written to the selected output directory."][-80:],
         )
     except Exception as exc:
-        reason = str(exc).replace("\r", " ").replace("\n", " ").strip()[:500] or type(exc).__name__
+        reason = _clip(exc, 500) or type(exc).__name__
         try:
             current = _read_job(job_id) or job
             _update_job(
