@@ -72,6 +72,9 @@ class NativeLlamaConfig:
             raise NativeEngineError("Checkpoint layer/head counts exceed native safety limits.")
         if hidden % heads or (hidden // heads) % 2:
             raise NativeEngineError("hidden_size must be divisible into even-sized attention heads.")
+        configured_head_dim = value.get("head_dim")
+        if configured_head_dim is not None and configured_head_dim != hidden // heads:
+            raise NativeEngineError("Custom head_dim values are not supported unless they equal hidden_size / num_attention_heads.")
         if not (1 <= kv_heads <= heads) or heads % kv_heads:
             raise NativeEngineError("num_key_value_heads must divide num_attention_heads.")
         if not (1 <= vocab <= 1_000_000 and 1 <= max_positions <= 1_000_000):
@@ -414,7 +417,7 @@ class NativeLlamaRuntime:
         tokens = torch.tensor([prompt_token_ids], device=self.device, dtype=torch.long)
         generated = []
         logits, cache = self.forward(tokens)
-        for _ in range(max_new_tokens):
+        for step in range(max_new_tokens):
             if temperature == 0:
                 next_token = torch.argmax(logits, dim=-1)
             else:
@@ -434,7 +437,10 @@ class NativeLlamaRuntime:
             if token_id in eos:
                 break
             generated.append(token_id)
-            logits, cache = self.forward(next_token.view(1, 1), cache)
+            # Do not evaluate a needless next-token step after the output limit;
+            # in particular, the last token may exactly fill the context window.
+            if step + 1 < max_new_tokens:
+                logits, cache = self.forward(next_token.view(1, 1), cache)
         self.last_generation = {"prompt_tokens": len(prompt_token_ids), "completion_tokens": len(generated), "cache_layers": len(cache), "decoder": "axiom-autoregressive-kv-cache"}
         return generated
 
