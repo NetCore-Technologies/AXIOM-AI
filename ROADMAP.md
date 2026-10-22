@@ -46,7 +46,7 @@ feature exists or a delivery-date promise.
 - [R027 · In progress; validation pending] Add a global command palette with page and action search.
 - [R028 · In progress; validation pending] Add deep links and browser-history navigation for workspace pages.
 - [R029 · Planned] Add global loading, retry, stale-data, and offline indicators.
-- [R030 · In progress; validation pending] Add pagination, sorting, and saved filters to large inventories.
+- [R030 · In progress; validation pending] Add server-side search, sorting, and saved filter presets alongside bounded pagination for large inventories.
 - [R031 · In progress; validation pending] Add consistent confirmation for destructive and irreversible actions.
 - [R032 · Planned] Add keyboard navigation and screen-reader status announcements.
 - [R033 · Planned] Add responsive compact layouts for narrow and touch screens.
