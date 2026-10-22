@@ -81,7 +81,7 @@ def test_benchmark_validates_model_prompt_and_temperature_before_generating(monk
         raise AssertionError("invalid benchmark input called the runtime")
 
     monkeypatch.setattr(inference, "run_local_inference", should_not_run)
-    with pytest.raises(ValueError, match="model name"):
+    with pytest.raises(ValueError, match="[Mm]odel name"):
         inference.run_local_inference_benchmark("http://remote/model", "hello")
     with pytest.raises(ValueError, match="prompt"):
         inference.run_local_inference_benchmark("test-model", "   ")
