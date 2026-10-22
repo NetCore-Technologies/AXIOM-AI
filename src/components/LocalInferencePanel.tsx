@@ -148,7 +148,7 @@ export default function LocalInferencePanel() {
     </form>
     {error && <div className="inline-alert warning" role="alert">{error}</div>}
     {result && <section className="local-inference-result" aria-label="Generated response">
-      <div className="surface-head"><div><p className="surface-eyebrow">GENERATED ON THIS MACHINE</p><h3>{result.model}</h3></div><span className="status-pill success"><i />COMPLETED</span></div>
+      <div className="surface-head"><div><p className="surface-eyebrow">GENERATED ON THIS MACHINE</p><h3>{result.model}</h3><small className="quiet-note">Request ID: {result.request_id || "unavailable"}</small></div><span className="status-pill success"><i />COMPLETED</span></div>
       <pre data-testid="local-inference-output" className="local-inference-output">{result.response || "(The model returned an empty response.)"}</pre>
     </section>}
     <section className="surface" aria-labelledby="inference-benchmark-title" style={{ marginTop: 18, padding: 18, border: "1px solid var(--line-strong)", borderRadius: 2, background: "var(--surface)" }}>
@@ -168,7 +168,7 @@ export default function LocalInferencePanel() {
       {benchmarkError && <div className="inline-alert warning" role="alert">{benchmarkError}</div>}
       {benchmark && <div className="local-inference-benchmark-result" aria-label="Inference benchmark result" style={{ marginTop: 18 }}>
         <div className="status-strip" aria-label="Benchmark status">
-          <div className="status-strip-item"><span className="status-pill success"><i />MEASURED</span><div><b>{benchmark.model}</b><span>{benchmark.configuration.measured_requests} requests · concurrency {benchmark.configuration.concurrency} · {benchmark.configuration.num_predict} max tokens</span></div></div>
+          <div className="status-strip-item"><span className="status-pill success"><i />MEASURED</span><div><b>{benchmark.model}</b><span>{benchmark.configuration.measured_requests} requests · concurrency {benchmark.configuration.concurrency} · {benchmark.configuration.num_predict} max tokens</span><span>Request ID: {benchmark.request_id}</span></div></div>
         </div>
         <div className="info-grid">
           {[
