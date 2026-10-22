@@ -58,6 +58,33 @@ def test_safetensor_index_rejects_relative_path_traversal(tmp_path: Path) -> Non
         _resolve_safetensor_files(tmp_path)
 
 
+def test_native_asset_symlink_must_resolve_inside_trusted_roots(tmp_path: Path) -> None:
+    from axiom.core.native_engine import _resolve_trusted_file
+
+    trusted = tmp_path / "trusted"
+    blobs = trusted / "blobs"
+    checkpoint = trusted / "snapshot"
+    outside = tmp_path / "outside"
+    blobs.mkdir(parents=True)
+    checkpoint.mkdir()
+    outside.mkdir()
+    safe_blob = blobs / "config.json"
+    safe_blob.write_text('{"model_type":"llama"}', encoding="utf-8")
+    safe_link = checkpoint / "config.json"
+    try:
+        safe_link.symlink_to(safe_blob)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"File symlinks are unavailable on this platform: {exc}")
+    assert _resolve_trusted_file(safe_link, (trusted.resolve(),), "Model config") == safe_blob.resolve()
+
+    external = outside / "config.json"
+    external.write_text('{"model_type":"llama"}', encoding="utf-8")
+    unsafe_link = checkpoint / "external-config.json"
+    unsafe_link.symlink_to(external)
+    with pytest.raises(NativeEngineError, match="outside the configured trusted model roots"):
+        _resolve_trusted_file(unsafe_link, (trusted.resolve(),), "Model config")
+
+
 def _tiny_weights(torch, vocab_size=8, hidden=8, intermediate=12):
     weights = {
         "model.embed_tokens.weight": torch.randn(vocab_size, hidden) * 0.02,
