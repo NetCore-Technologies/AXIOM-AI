@@ -216,7 +216,7 @@ def test_dataset_clean_json_reports_atomic_output_counts(tmp_path: Path) -> None
     original = '{"text":"first"}\n{"text":"first"}\nnot-json\n\n[1,2]\n'
     dataset.write_text(original, encoding="utf-8")
 
-    result = runner.invoke(app, ["dataset", "clean", str(dataset), str(output), "--json"])
+    result = runner.invoke(app, ["dataset", "clean", str(dataset), "--output", str(output), "--json"])
 
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
@@ -237,7 +237,7 @@ def test_dataset_clean_json_rejects_in_place_cleaning_without_touching_source(tm
     original = '{"text":"keep"}\nnot-json\n'
     dataset.write_text(original, encoding="utf-8")
 
-    result = runner.invoke(app, ["dataset", "clean", str(dataset), str(dataset), "--json"])
+    result = runner.invoke(app, ["dataset", "clean", str(dataset), "--output", str(dataset), "--json"])
 
     assert result.exit_code == 1
     payload = json.loads(result.stdout)

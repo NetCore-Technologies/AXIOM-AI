@@ -421,7 +421,7 @@ def inspect(root: Path) -> dict[str, Any]:
         '["integration", "list", "--json"]',
         '["model", "analyze", "org/tiny", "--json"]',
         '["system", "info", "--json"]',
-        '["dataset", "clean", str(dataset), str(output), "--json"]',
+        '["dataset", "clean", str(dataset), "--output", str(output), "--json"]',
         '["model", "export", "--path", str(export_path), "--json"]',
         '["model", "import", str(export_path), "--json"]',
         '["model", "remove", first_model["id"], "--json"]',
