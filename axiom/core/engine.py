@@ -141,7 +141,7 @@ def _resolve_model_directory(value: str, label: str) -> Path:
     """Resolve a model/adapter directory only when it stays under a trusted root."""
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{label} is required.")
-    if any(character in value for character in ("\\x00", "\\r", "\\n")):
+    if any(character in value for character in ("\x00", "\r", "\n")):
         raise ValueError(f"{label} contains invalid control characters.")
 
     roots = _allowed_model_roots()
@@ -181,7 +181,7 @@ def resolve_local_model_directory(value: str, label: str = "Model") -> str:
 def _inspect_model_config(model_dir: Path) -> dict[str, Any]:
     config_path = model_dir / "config.json"
     try:
-        if not config_path.is_file() or config_path.stat().st_size > _MAX_CONFIG_BYTES:
+        if config_path.is_symlink() or not config_path.is_file() or config_path.stat().st_size > _MAX_CONFIG_BYTES:
             raise ValueError("Base model directory must contain a config.json no larger than 1 MiB.")
         config = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
@@ -325,8 +325,9 @@ def generate_local(
     prompt, max_new_tokens, temperature = validate_generation(prompt, max_new_tokens, temperature)
     with _ENGINE_LOCK:
         model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path)
-        context_cap = max(1, min(model.config.max_position_embeddings, _MAX_INPUT_TOKENS + max_new_tokens))
-        input_limit = max(1, min(_MAX_INPUT_TOKENS, context_cap - max_new_tokens))
+        context_cap = max(2, min(model.config.max_position_embeddings, _MAX_INPUT_TOKENS + max_new_tokens))
+        effective_max_new_tokens = min(max_new_tokens, context_cap - 1)
+        input_limit = max(1, min(_MAX_INPUT_TOKENS, context_cap - effective_max_new_tokens))
         try:
             encoded = tokenizer.encode(prompt, add_special_tokens=False)
             prompt_ids = list(encoded.ids)
@@ -341,12 +342,13 @@ def generate_local(
             prompt_ids = prompt_ids[-input_limit:]
             if details.get("add_bos_token") and bos_id is not None and prompt_ids:
                 prompt_ids[0] = bos_id
+        effective_max_new_tokens = min(effective_max_new_tokens, max(1, context_cap - len(prompt_ids)))
         started = time.perf_counter()
         try:
             with torch.inference_mode():
                 generated_ids = model.generate(
                     prompt_ids,
-                    max_new_tokens=max_new_tokens,
+                    max_new_tokens=effective_max_new_tokens,
                     temperature=temperature,
                     top_p=0.9,
                     eos_token_ids=model.config.eos_token_ids,
