@@ -101,6 +101,8 @@ For package downloads and checksums, see [GitHub Releases](https://github.com/Ne
 | Check your project setup | `axiom doctor` |
 | See available commands | `axiom --help` |
 
+The Control Center also includes the **AI Toolkit**, a searchable collection of 120 browser-local utilities for model sizing, quantization, training planning, dataset checks, evaluation, inference budgets, hardware estimates, privacy heuristics, workflow metadata, API operations, prompts, and release hygiene. See the [AI Toolkit guide](docs/AI-Toolkit.md) for formulas and limitations.
+
 ## Optional features
 
 ### Local fine-tuning
@@ -159,6 +161,7 @@ The local API and Control Center use loopback addresses by default. The optional
 - [Changelog](docs/CHANGELOG.md)
 - [Local fine-tuning](docs/Local-Fine-Tuning.md)
 - [Model Studio](docs/Model-Studio.md)
+- [AI Toolkit](docs/AI-Toolkit.md)
 - [Local inference via Ollama](docs/Local-Inference.md)
 - [AXIOM Engine](docs/Local-Engine.md)
 - [API](docs/API.md)
