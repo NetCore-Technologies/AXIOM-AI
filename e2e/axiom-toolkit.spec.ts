@@ -109,6 +109,13 @@ test.describe("AXIOM local AI Toolkit", () => {
     await page.getByRole("button", { name: "Run utility" }).click();
     await expect(page.locator(".api-playground-json")).not.toContainText("SECRET_SENTINEL");
     await expect(page.locator(".api-playground-json")).toContainText("[REDACTED");
+
+    await page.getByRole("textbox", { name: "Search toolkit utilities" }).fill("Secret-pattern scanner");
+    await page.getByRole("button", { name: /Secret-pattern scanner/ }).click();
+    await page.getByRole("textbox", { name: "Text A" }).fill("API_TOKEN=SECRET_SENTINEL");
+    await page.getByRole("button", { name: "Run utility" }).click();
+    await expect(page.locator(".api-playground-json")).toContainText('"api_token_assignment": 1');
+    await expect(page.locator(".api-playground-json")).not.toContainText("SECRET_SENTINEL");
   });
 
   test("executes all 120 catalogue entries with bounded representative inputs", async ({ page }) => {
