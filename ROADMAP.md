@@ -12,7 +12,7 @@ feature exists or a delivery-date promise.
 ### 01 · Platform foundation
 
 - [R001 · Implemented; tests passing] Publish a versioned API contract and compatibility policy.
-- [R002 · Planned] Add workspace discovery with explicit project-root rules.
+- [R002 · Implemented; tests passing] Resolve the workspace using explicit override, `AXIOM_WORKSPACE`, nearest parent `axiom.yaml`, then the current directory; reject explicit symlink roots.
 - [R003 · Planned] Make API configuration environment-backed and documented.
 - [R004 · Implemented; tests passing] Normalize validation and error response envelopes.
 - [R005 · Implemented; tests passing] Add request IDs and correlation across CLI, API, and GUI.
@@ -20,7 +20,7 @@ feature exists or a delivery-date promise.
 - [R007 · In progress; validation pending] Define stable resource IDs and schema migration behavior.
 - [R008 · Planned] Add cancellation and timeout semantics to long operations.
 - [R009 · Planned] Separate read-only plans from side-effecting jobs in API scopes.
-- [R010 · Planned] Add workspace health checks for filesystem and permissions.
+- [R010 · Implemented; tests passing] Add read-only workspace health checks for config parsing, path safety, file permissions, free disk, Python compatibility, and required dependency imports.
 - [R011 · Planned] Document data retention, local storage, and deletion behavior.
 - [R012 · Planned] Add release compatibility checks for Python, Node, and OS targets.
 
