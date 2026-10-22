@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from collections import deque
 from datetime import UTC, datetime
@@ -257,18 +258,73 @@ def workspace_events() -> dict[str, list[dict[str, Any]]]:
         return {"events": list(_events)}
 
 
+def _model_parameter_sort_key(value: str | None) -> tuple[bool, float]:
+    if not value:
+        return True, 0.0
+    match = re.search(r"(?<![A-Za-z0-9.])(\d+(?:\.\d+)?)\s*([KMBT]?)", value, re.IGNORECASE)
+    if not match:
+        return True, 0.0
+    scale = {"": 1.0, "K": 1_000.0, "M": 1_000_000.0, "B": 1_000_000_000.0, "T": 1_000_000_000_000.0}
+    return False, float(match.group(1)) * scale[match.group(2).upper()]
+
+
 @router.get("/models")
 def workspace_models(
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0, le=1_000_000),
+    search: str = Query(default="", max_length=160),
+    favorite_only: bool = False,
+    format: str | None = Query(default=None, max_length=64),
+    tag: str | None = Query(default=None, max_length=40),
+    sort_by: Literal["name", "source", "format", "parameters", "quantization", "favorite"] = "name",
+    sort_order: Literal["asc", "desc"] = "asc",
 ) -> dict[str, Any]:
+    """Return a bounded, searchable, filterable and stable-sorted model registry page."""
     models = ModelRegistry().list()
+    needle = search.strip().casefold()
+    if needle:
+        def matches(model: Model) -> bool:
+            fields = (
+                model.name, model.source, model.format, model.parameters,
+                model.quantization, model.architecture, model.license, *model.tags,
+            )
+            return any(needle in value.casefold() for value in fields if isinstance(value, str))
+        models = [model for model in models if matches(model)]
+    if favorite_only:
+        models = [model for model in models if model.favorite]
+    if format and format.strip() and format.strip().casefold() != "all":
+        wanted_format = format.strip().casefold()
+        models = [model for model in models if model.format.casefold() == wanted_format]
+    if tag and tag.strip():
+        wanted_tag = tag.strip().casefold()
+        models = [model for model in models if any(item.casefold() == wanted_tag for item in model.tags)]
+
+    def sort_key(model: Model) -> tuple[Any, ...]:
+        if sort_by == "parameters":
+            missing, amount = _model_parameter_sort_key(model.parameters)
+            return missing, amount, model.name.casefold()
+        if sort_by == "favorite":
+            return model.favorite, model.name.casefold()
+        value = getattr(model, sort_by)
+        normalized = value.casefold() if isinstance(value, str) else ""
+        return normalized, model.name.casefold()
+
+    models.sort(key=sort_key, reverse=sort_order == "desc")
+    total = len(models)
     return {
         "models": [model.to_dict() for model in models[offset:offset + limit]],
-        "total": len(models),
+        "total": total,
         "limit": limit,
         "offset": offset,
-        "has_more": offset + limit < len(models),
+        "has_more": offset + limit < total,
+        "filters": {
+            "search": needle,
+            "favorite_only": favorite_only,
+            "format": format.strip() if format else None,
+            "tag": tag.strip() if tag else None,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+        },
     }
 
 
