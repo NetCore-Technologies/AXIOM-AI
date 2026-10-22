@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Activity, Play, RefreshCcw } from "lucide-react";
 import { axiomApi, type LocalInferenceResult, type LocalInferenceStatus } from "../api/client";
+import LocalAxiomEnginePanel from "./LocalAxiomEnginePanel";
 
 export default function LocalInferencePanel() {
   const [status, setStatus] = useState<LocalInferenceStatus | null>(null);
@@ -52,7 +53,7 @@ export default function LocalInferencePanel() {
   };
 
   const online = status?.status === "online";
-  return <section className="surface local-inference-panel">
+  return <><section className="surface local-inference-panel">
     <div className="surface-head">
       <div>
         <p className="surface-eyebrow">REAL GENERATION · LOOPBACK ONLY</p>
@@ -95,5 +96,5 @@ export default function LocalInferencePanel() {
       <div className="surface-head"><div><p className="surface-eyebrow">GENERATED ON THIS MACHINE</p><h3>{result.model}</h3></div><span className="status-pill success"><i />COMPLETED</span></div>
       <pre data-testid="local-inference-output" className="local-inference-output">{result.response || "(The model returned an empty response.)"}</pre>
     </section>}
-  </section>;
+  </section><LocalAxiomEnginePanel /></>;
 }
