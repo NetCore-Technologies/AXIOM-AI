@@ -114,7 +114,7 @@ def _resolve_safetensor_files(model_dir: Path) -> tuple[list[Path], dict[str, st
             if not isinstance(tensor_name, str) or not tensor_name or not isinstance(filename, str):
                 raise NativeEngineError("Safetensors index contains an invalid tensor mapping.")
             shard = Path(filename)
-            if shard.name != filename or filename in {"", ".", ".."} or shard.suffix != ".safetensors":
+            if shard.name != filename or "/" in filename or "\\" in filename or filename in {"", ".", ".."} or shard.suffix != ".safetensors":
                 raise NativeEngineError("Safetensors index contains an unsafe or unsupported shard path.")
             shards.add(filename)
             normalized[tensor_name] = filename
@@ -328,9 +328,11 @@ class NativeLlamaRuntime:
         torch, c = self.torch, self.config
         if input_ids.ndim != 2 or input_ids.shape[0] != 1:
             raise NativeEngineError("AXIOM Native Engine currently accepts one prompt sequence per request.")
-        hidden = torch.nn.functional.embedding(input_ids, self.weights["model.embed_tokens.weight"])
         seq_len = input_ids.shape[1]
         past_len = 0 if past_key_values is None else int(past_key_values[0][0].shape[-2])
+        if past_len + seq_len > self.config.max_position_embeddings:
+            raise NativeEngineError("Generation would exceed the checkpoint's configured maximum context length.")
+        hidden = torch.nn.functional.embedding(input_ids, self.weights["model.embed_tokens.weight"])
         positions = torch.arange(past_len, past_len + seq_len, device=self.device)
         cache, head_dim = [], c.hidden_size // c.num_attention_heads
         repeat_factor = c.num_attention_heads // c.num_key_value_heads
