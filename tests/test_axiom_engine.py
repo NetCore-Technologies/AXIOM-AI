@@ -70,6 +70,27 @@ def test_model_directory_accepts_only_configured_roots(tmp_path, monkeypatch) ->
     assert _resolve_model_directory(str(model), "Base model") == model.resolve()
 
 
+def test_model_directory_accepts_relative_paths_under_trusted_root(tmp_path, monkeypatch) -> None:
+    root = tmp_path / "models"
+    model = root / "model-a"
+    model.mkdir(parents=True)
+    (model / "config.json").write_text(json.dumps({"model_type": "llama"}), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(root))
+
+    assert _resolve_model_directory("models/model-a", "Base model") == model.resolve()
+
+
+def test_model_directory_rejects_parent_traversal_components(tmp_path, monkeypatch) -> None:
+    root = tmp_path / "models"
+    root.mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(root))
+
+    with pytest.raises(ValueError, match="parent-directory traversal"):
+        _resolve_model_directory("models/../private", "Base model")
+
+
 def test_model_directory_rejects_existing_path_outside_configured_roots(tmp_path, monkeypatch) -> None:
     root = tmp_path / "trusted-models"
     root.mkdir()
