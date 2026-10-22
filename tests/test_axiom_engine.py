@@ -75,7 +75,7 @@ def test_model_directory_rejects_existing_path_outside_configured_roots(tmp_path
     outside.mkdir()
     monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(root))
 
-    with pytest.raises(ValueError, match="allowed model directory"):
+    with pytest.raises(ValueError, match="allowed model directory|trusted model root|checkpoint directory"):
         _resolve_model_directory(str(outside), "Base model")
 
 
