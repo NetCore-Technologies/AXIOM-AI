@@ -28,11 +28,6 @@ _ENGINE_LOCK = threading.RLock()
 _LOADED_RUNTIME: dict[str, Any] | None = None
 _LOADED_ARCHITECTURE: str | None = None
 _MODEL_ROOT_ENV = "AXIOM_MODEL_ROOTS"
-_DEFAULT_MODEL_ROOT_SUFFIXES = (
-    Path("models"),
-    Path("runs"),
-    Path("outputs"),
-)
 
 
 class AxiomEngineError(RuntimeError):
@@ -47,9 +42,9 @@ def _version_key(value: str) -> tuple[int, int, int]:
 def runtime_status() -> dict[str, Any]:
     packages: dict[str, bool] = {}
     versions: dict[str, str | None] = {}
-    minimum_versions = {"torch": "2.2.0", "transformers": "5.0.0"}
+    minimum_versions = {"torch": "2.2.0", "tokenizers": "0.19.0", "safetensors": "0.4.0"}
     problems: list[str] = []
-    for name in ("torch", "transformers", "peft"):
+    for name in ("torch", "tokenizers", "safetensors"):
         try:
             packages[name] = importlib.util.find_spec(name) is not None
         except (ImportError, ModuleNotFoundError, ValueError):
@@ -58,14 +53,13 @@ def runtime_status() -> dict[str, Any]:
             versions[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
             versions[name] = None
-        if name in minimum_versions:
-            if not packages[name]:
-                problems.append(f"{name} is not installed")
-            elif versions[name] is not None and _version_key(versions[name]) < _version_key(minimum_versions[name]):
-                problems.append(f"{name} {versions[name]} is too old (need >= {minimum_versions[name]})")
+        if not packages[name]:
+            problems.append(f"{name} is not installed")
+        elif versions[name] is not None and _version_key(versions[name]) < _version_key(minimum_versions[name]):
+            problems.append(f"{name} {versions[name]} is too old (need >= {minimum_versions[name]})")
     ready = not problems
     return {
-        "engine": "axiom-local-engine",
+        "engine": "axiom-native-pytorch-llama",
         "ready": ready,
         "packages": packages,
         "versions": versions,
@@ -73,21 +67,26 @@ def runtime_status() -> dict[str, Any]:
         "problems": problems,
         "loaded": _LOADED_RUNTIME is not None,
         "architecture": _LOADED_ARCHITECTURE,
-        "model_loading": "local_files_only",
+        "model_loading": "local_safetensors_only",
+        "execution_backend": "pytorch-native-axiom",
+        "transformers_generation_used": False,
+        "ollama_used": False,
         "remote_code": False,
+        "supported_model_types": ["llama", "mistral"],
+        "supported_weights": ["safetensors"],
         "setup_note": (
-            "AXIOM Engine is ready for local Transformers causal-LM checkpoints."
+            "AXIOM Native Engine is ready for supported local Llama/Mistral safetensors checkpoints."
             if ready else
-            "AXIOM Engine setup required: " + "; ".join(problems)
-            + ". Install or upgrade local dependencies with: python -m pip install -e '.[training]'"
+            "AXIOM Native Engine setup required: " + "; ".join(problems)
+            + ". Install with: python -m pip install -e '.[native-inference]'"
         ),
         "scope_note": (
-            "AXIOM owns the runtime and training orchestration; pretrained weights remain a separate local input. "
-            "Compatibility depends on the checkpoint architecture supported by the installed Transformers version."
+            "AXIOM implements its own Llama/Mistral forward pass, RMSNorm, RoPE, grouped-query attention, KV cache, "
+            "LoRA application and token-by-token decoder using PyTorch tensor operations. It does not call "
+            "Transformers model.generate or an Ollama server. Checkpoint acquisition and model training are separate."
         ),
         "checked_at": datetime.now(UTC).isoformat(),
     }
-
 
 def _allowed_model_roots() -> tuple[Path, ...]:
     """Return canonical roots from trusted defaults and AXIOM_MODEL_ROOTS.
@@ -210,35 +209,33 @@ def _load_local_model(model_path: str, adapter_path: str | None):
     global _LOADED_RUNTIME, _LOADED_ARCHITECTURE
     try:
         import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
     except (ImportError, OSError):
-        raise AxiomEngineError("AXIOM Engine dependencies are unavailable. Install with: python -m pip install -e '.[training]'") from None
+        raise AxiomEngineError(
+            "AXIOM Native Engine requires PyTorch. Install with: python -m pip install -e '.[native-inference]'"
+        ) from None
 
     base_dir = _resolve_model_directory(model_path, "Base model")
     inspected = _inspect_model_config(base_dir)
-    resolved_adapter: str | None = None
+    resolved_adapter: Path | None = None
     if adapter_path and adapter_path.strip():
         adapter_dir = _resolve_model_directory(adapter_path, "LoRA adapter")
-        if not (adapter_dir / "adapter_config.json").is_file():
-            raise ValueError("LoRA adapter directory must contain adapter_config.json.")
-        if not any((adapter_dir / name).is_file() for name in ("adapter_model.safetensors", "adapter_model.bin")):
-            raise ValueError("LoRA adapter directory must contain adapter_model.safetensors or adapter_model.bin.")
-        resolved_adapter = str(adapter_dir)
+        if not (adapter_dir / "adapter_config.json").is_file() or not (adapter_dir / "adapter_model.safetensors").is_file():
+            raise ValueError(
+                "Native LoRA adapter must contain adapter_config.json and adapter_model.safetensors; "
+                "pickle-based adapter weights are not supported."
+            )
+        resolved_adapter = adapter_dir
 
-    key = (str(base_dir), resolved_adapter)
-    inspected["model_directory_name"] = base_dir.name
-    inspected["adapter_directory_name"] = Path(resolved_adapter).name if resolved_adapter else None
+    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None)
     if _LOADED_RUNTIME is not None and _LOADED_RUNTIME["key"] == key:
         return (
             _LOADED_RUNTIME["model"],
             _LOADED_RUNTIME["tokenizer"],
             _LOADED_RUNTIME["torch"],
             _LOADED_RUNTIME["device"],
-            inspected,
+            _LOADED_RUNTIME["details"],
         )
 
-    # Reclaim the previous model before loading another checkpoint. Retaining
-    # two large language models can exhaust system RAM or accelerator memory.
     previous_runtime = _LOADED_RUNTIME
     _LOADED_RUNTIME = None
     _LOADED_ARCHITECTURE = None
@@ -250,56 +247,45 @@ def _load_local_model(model_path: str, adapter_path: str | None):
             if previous_torch is not None and previous_torch.cuda.is_available():
                 previous_torch.cuda.empty_cache()
         except (RuntimeError, AttributeError):
-            _LOG.debug("GPU cache cleanup was unavailable while replacing the loaded model.", exc_info=True)
+            _LOG.debug("GPU cache cleanup was unavailable while replacing the loaded native model.", exc_info=True)
 
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        mps = getattr(getattr(torch, "backends", None), "mps", None)
+        device = torch.device("mps") if mps is not None and mps.is_available() else torch.device("cpu")
+
+    from axiom.core.native_engine import NativeDependencyError, NativeEngineError, load_native_runtime
     try:
-        tokenizer = AutoTokenizer.from_pretrained(
-            str(base_dir), local_files_only=True, trust_remote_code=False
+        model, tokenizer, native_details = load_native_runtime(
+            base_dir, torch, device, adapter_dir=resolved_adapter
         )
-        if torch.cuda.is_available():
-            dtype = torch.float16
-            device = torch.device("cuda")
-        else:
-            dtype = torch.float32
-            mps = getattr(getattr(torch, "backends", None), "mps", None)
-            device = torch.device("mps") if mps is not None and mps.is_available() else torch.device("cpu")
-        model = AutoModelForCausalLM.from_pretrained(
-            str(base_dir),
-            local_files_only=True,
-            trust_remote_code=False,
-            dtype=dtype,
-            low_cpu_mem_usage=True,
-        )
-        model.to(device)
-        if resolved_adapter:
-            try:
-                from peft import PeftModel
-            except (ImportError, OSError):
-                raise AxiomEngineError("Loading a LoRA adapter requires PEFT. Install with: python -m pip install -e '.[training]'") from None
-            model = PeftModel.from_pretrained(
-                model, resolved_adapter, local_files_only=True, is_trainable=False
-            )
-        model.eval()
-    except (ValueError, AxiomEngineError):
-        raise
-    except Exception as exc:
-        detail = str(exc).replace("\r", " ").replace("\n", " ").strip()[:300]
+    except NativeDependencyError as exc:
+        raise AxiomEngineError(str(exc)) from None
+    except NativeEngineError as exc:
+        raise ValueError(str(exc)) from None
+    except (OSError, RuntimeError):
+        _LOG.debug("Native checkpoint load failed.", exc_info=True)
         raise AxiomEngineError(
-            "AXIOM Engine could not load this local checkpoint or adapter. Confirm that the weights, tokenizer, "
-            "architecture, and installed dependencies are compatible." + (f" Detail: {detail}" if detail else "")
+            "AXIOM Native Engine could not allocate or load this checkpoint. "
+            "Confirm supported safetensors weights and available memory."
         ) from None
 
+    details = {
+        **inspected,
+        **native_details,
+        "config": {"max_position_embeddings": model.config.max_position_embeddings},
+    }
     _LOADED_RUNTIME = {
         "key": key,
         "model": model,
         "tokenizer": tokenizer,
         "torch": torch,
         "device": device,
+        "details": details,
     }
-    _LOADED_ARCHITECTURE = inspected["architecture"]
-    return model, tokenizer, torch, device, inspected
-
-
+    _LOADED_ARCHITECTURE = native_details["architecture"]
+    return model, tokenizer, torch, device, details
 
 def unload_local_model() -> dict[str, Any]:
     """Release the loaded local model and best-effort accelerator cache."""
@@ -338,52 +324,58 @@ def generate_local(
 ) -> dict[str, Any]:
     prompt, max_new_tokens, temperature = validate_generation(prompt, max_new_tokens, temperature)
     with _ENGINE_LOCK:
-        model, tokenizer, torch, device, inspected = _load_local_model(model_path, adapter_path)
-        context_cap = inspected["config"].get("max_position_embeddings") or inspected["config"].get("n_positions") or 4096
-        try:
-            context_cap = max(128, min(int(context_cap), _MAX_INPUT_TOKENS + _MAX_NEW_TOKENS))
-        except (ValueError, TypeError, OverflowError):
-            context_cap = 4096
+        model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path)
+        context_cap = max(1, min(model.config.max_position_embeddings, _MAX_INPUT_TOKENS + max_new_tokens))
         input_limit = max(1, min(_MAX_INPUT_TOKENS, context_cap - max_new_tokens))
-        encoded = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=input_limit)
-        input_ids = encoded["input_ids"].to(device)
-        attention_mask = encoded.get("attention_mask")
-        if attention_mask is not None:
-            attention_mask = attention_mask.to(device)
-        kwargs: dict[str, Any] = {
-            "input_ids": input_ids,
-            "max_new_tokens": min(max_new_tokens, max(1, context_cap - input_ids.shape[-1])),
-            "do_sample": temperature > 0,
-            "pad_token_id": tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id,
-        }
-        if attention_mask is not None:
-            kwargs["attention_mask"] = attention_mask
-        if temperature > 0:
-            kwargs["temperature"] = temperature
-            kwargs["top_p"] = 0.9
+        try:
+            encoded = tokenizer.encode(prompt, add_special_tokens=False)
+            prompt_ids = list(encoded.ids)
+        except Exception:
+            raise ValueError("Prompt could not be tokenized by the local tokenizer.json.") from None
+        if not prompt_ids:
+            raise ValueError("Prompt tokenization returned no tokens.")
+        bos_id = model.config.bos_token_id
+        if details.get("add_bos_token") and bos_id is not None and prompt_ids[0] != bos_id:
+            prompt_ids.insert(0, bos_id)
+        if len(prompt_ids) > input_limit:
+            prompt_ids = prompt_ids[-input_limit:]
+            if details.get("add_bos_token") and bos_id is not None and prompt_ids:
+                prompt_ids[0] = bos_id
         started = time.perf_counter()
         try:
             with torch.inference_mode():
-                output_ids = model.generate(**kwargs)
-        except Exception as exc:
-            detail = str(exc).replace("\r", " ").replace("\n", " ").strip()[:300]
+                generated_ids = model.generate(
+                    prompt_ids,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    top_p=0.9,
+                    eos_token_ids=model.config.eos_token_ids,
+                )
+            response = tokenizer.decode(generated_ids, skip_special_tokens=True)[:100_000]
+        except ValueError:
+            raise
+        except Exception:
+            _LOG.debug("AXIOM Native Engine token generation failed.", exc_info=True)
             raise AxiomEngineError(
-                "AXIOM Engine generation failed. The prompt/context may exceed available memory or this model's limits."
-                + (f" Detail: {detail}" if detail else "")
+                "AXIOM Native Engine generation failed. The prompt/context may exceed memory, "
+                "or the checkpoint may be incompatible with the implemented architecture."
             ) from None
         elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
-        input_token_count = int(input_ids.shape[-1])
-        continuation = output_ids[0, input_token_count:]
-        response = tokenizer.decode(continuation, skip_special_tokens=True)
-        response = response[:100_000]
         return {
-            "engine": "axiom-local-engine",
-            "model": inspected["model_directory_name"] or "local-model",
-            "architecture": inspected["architecture"],
-            "adapter": inspected["adapter_directory_name"],
+            "engine": "axiom-native-engine",
+            "execution_backend": "pytorch-native-axiom",
+            "transformers_generation_used": False,
+            "ollama_used": False,
+            "model": details["model_directory_name"] or "local-model",
+            "architecture": details["architecture"],
+            "model_type": details["model_type"],
+            "adapter": details["adapter_directory_name"],
+            "device": str(device),
+            "checkpoint_format": "safetensors",
+            "decoder": model.last_generation.get("decoder", "axiom-autoregressive-kv-cache"),
             "response": response,
-            "prompt_tokens": input_token_count,
-            "completion_tokens": int(continuation.shape[-1]),
+            "prompt_tokens": model.last_generation.get("prompt_tokens", len(prompt_ids)),
+            "completion_tokens": model.last_generation.get("completion_tokens", len(generated_ids)),
             "elapsed_ms": elapsed_ms,
             "generated_at": datetime.now(UTC).isoformat(),
             "local_only": True,
