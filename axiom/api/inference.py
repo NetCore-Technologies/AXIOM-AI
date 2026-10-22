@@ -57,14 +57,6 @@ class BenchmarkRequest(BaseModel):
             raise ValueError("Prompt must contain at least one non-whitespace character.")
         return value
 
-    @field_validator("iterations")
-    @classmethod
-    def measured_request_count_must_be_bounded(cls, value: int, info) -> int:
-        # Pydantic may validate this before/after concurrency; the endpoint checks
-        # the product again after the complete request has been parsed.
-        return value
-
-
 @router.get("/status")
 def inference_status() -> dict[str, Any]:
     return runtime_status()
