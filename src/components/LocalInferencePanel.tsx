@@ -166,7 +166,7 @@ export default function LocalInferencePanel() {
       </div>
       {Number(benchmarkIterations) * Number(concurrency) > 10 && <div className="inline-alert warning" role="status">Reduce iterations or concurrency: the benchmark permits at most 10 measured requests per run.</div>}
       {benchmarkError && <div className="inline-alert warning" role="alert">{benchmarkError}</div>}
-      {benchmark && <div className="local-inference-benchmark-result" aria-label="Inference benchmark result" style={{ marginTop: 18 }}>
+      {benchmark && <div className="local-inference-benchmark-result" role="region" aria-label="Inference benchmark result" style={{ marginTop: 18 }}>
         <div className="status-strip" aria-label="Benchmark status">
           <div className="status-strip-item"><span className="status-pill success"><i />MEASURED</span><div><b>{benchmark.model}</b><span>{benchmark.configuration.measured_requests} requests · concurrency {benchmark.configuration.concurrency} · {benchmark.configuration.num_predict} max tokens</span><span>Request ID: {benchmark.request_id}</span></div></div>
         </div>
