@@ -62,8 +62,8 @@ feature exists or a delivery-date promise.
 - [R040 · In progress; validation pending] Add duplicate detection by source and content metadata.
 - [R041 · In progress; validation pending] Add model tags, favorites, and workspace labels.
 - [R042 · Planned] Add format/runtime compatibility matrices with version evidence.
-- [R043 · Planned] Add estimated RAM/VRAM fit with explicit uncertainty ranges.
-- [R044 · Planned] Add hardware compatibility warnings before plan generation.
+- [R043 · In progress; validation pending] Add metadata-based RAM/VRAM fit ranges with explicit uncertainty bands and conservative memory reserves in the model registry.
+- [R044 · In progress; validation pending] Surface format and hardware-fit warnings in the existing Models page; runtime loadability and non-NVIDIA GPU measurement remain unverified.
 - [R045 · Planned] Add model source attribution and license review state.
 - [R046 · Planned] Add optional Hugging Face metadata lookup with consent and timeout.
 - [R047 · In progress; validation pending] Add safe model removal that never deletes weights implicitly.
