@@ -96,7 +96,10 @@ export type RuntimeTraceReport = {
 };
 export type AxiomEngineStatus = {
   engine: string; ready: boolean; packages: Record<string, boolean>; versions: Record<string, string | null>;
-  loaded: boolean; architecture: string | null; model_loading: "local_files_only"; remote_code: false;
+  minimum_versions?: Record<string, string>; problems?: string[];
+  loaded: boolean; architecture: string | null; model_loading: "local_files_only" | "local_safetensors_only";
+  execution_backend?: string; transformers_generation_used?: false; ollama_used?: false;
+  supported_model_types?: string[]; supported_weights?: string[]; remote_code: false;
   setup_note: string; scope_note: string; checked_at: string;
 };
 export type AxiomEngineResult = {
