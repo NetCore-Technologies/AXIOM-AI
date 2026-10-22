@@ -119,8 +119,28 @@ def test_native_forward_and_incremental_kv_cache_run_without_transformers() -> N
         assert len(cache) == config.num_hidden_layers
         assert tuple(cache[0][0].shape) == (1, config.num_key_value_heads, 3, 4)
         next_logits, next_cache = runtime.forward(torch.tensor([[5]], dtype=torch.long), cache)
+        full_logits, full_cache = runtime.forward(torch.tensor([[1, 3, 4, 5]], dtype=torch.long))
     assert tuple(next_logits.shape) == (1, config.vocab_size)
     assert tuple(next_cache[0][0].shape) == (1, config.num_key_value_heads, 4, 4)
+    assert torch.allclose(next_logits, full_logits, atol=1e-5, rtol=1e-4)
+    assert tuple(full_cache[0][0].shape) == (1, config.num_key_value_heads, 4, 4)
+
+
+def test_native_decoder_stops_before_emitting_eos_and_does_not_step_past_output_limit() -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    config = NativeLlamaConfig.from_mapping(_config(max_position_embeddings=2))
+    runtime = NativeLlamaRuntime(config, _tiny_weights(torch), torch, torch.device("cpu"))
+    with torch.inference_mode():
+        initial_logits, _ = runtime.forward(torch.tensor([[1]], dtype=torch.long))
+        eos_id = int(torch.argmax(initial_logits, dim=-1).item())
+        assert runtime.generate([1], max_new_tokens=1, temperature=0, eos_token_ids=(eos_id,)) == []
+        # With no EOS override, the final token can fill the last context slot;
+        # the decoder must not run an extra, out-of-window forward pass.
+        output = runtime.generate([1], max_new_tokens=1, temperature=0, eos_token_ids=())
+    assert len(output) == 1
+    assert runtime.last_generation["completion_tokens"] == 1
 
 
 def test_native_adapter_delta_is_applied_in_axiom_linear_path() -> None:
