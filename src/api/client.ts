@@ -94,6 +94,18 @@ export type RuntimeTraceReport = {
   max_retained: number;
   privacy: { prompt_bodies_stored: false; response_bodies_stored: false; disk_persistence: false };
 };
+export type AxiomEngineModel = {
+  path: string; name: string; model_type: "llama" | "mistral";
+  architecture: string; weight_format: string; ready_for_native_attempt: boolean;
+};
+export type AxiomEngineAdapter = {
+  path: string; name: string; weight_format: string;
+};
+export type AxiomEngineAssets = {
+  schema_version: number; models: AxiomEngineModel[]; adapters: AxiomEngineAdapter[];
+  truncated: boolean; scope_note: string;
+};
+
 export type AxiomEngineStatus = {
   engine: string; ready: boolean; packages: Record<string, boolean>; versions: Record<string, string | null>;
   minimum_versions?: Record<string, string>; problems?: string[];
@@ -1144,6 +1156,7 @@ export const axiomApi = {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
   axiomEngineStatus: () => requestJson<AxiomEngineStatus>("/api/engine/status"),
+  axiomEngineModels: () => requestJson<AxiomEngineAssets>("/api/engine/models"),
   runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number }) =>
     requestJson<AxiomEngineResult>("/api/engine/generate", {
       method: "POST", body: JSON.stringify(input),
