@@ -1669,6 +1669,41 @@ function FeaturePage({
   return <><PageHeader page={page} title={meta.label} description={meta.description} actions={actions} />{children}</>;
 }
 
+type ModelRegistrySort = "name" | "source" | "format" | "parameters" | "quantization" | "favorite";
+type ModelRegistryFilters = {
+  search?: string;
+  favorite_only: boolean;
+  format?: string;
+  tag?: string;
+  sort_by: ModelRegistrySort;
+  sort_order: "asc" | "desc";
+};
+type SavedModelRegistryFilter = {
+  id: string;
+  name: string;
+  filters: ModelRegistryFilters;
+};
+
+const SAVED_MODEL_FILTERS_KEY = "axiom.saved-model-registry-filters.v1";
+
+function readSavedModelRegistryFilters(): SavedModelRegistryFilter[] {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(SAVED_MODEL_FILTERS_KEY) ?? "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((value): value is SavedModelRegistryFilter => {
+      if (!value || typeof value !== "object") return false;
+      const item = value as Partial<SavedModelRegistryFilter>;
+      return typeof item.id === "string" && typeof item.name === "string"
+        && !!item.filters && typeof item.filters === "object"
+        && typeof item.filters.favorite_only === "boolean"
+        && ["name", "source", "format", "parameters", "quantization", "favorite"].includes(item.filters.sort_by)
+        && ["asc", "desc"].includes(item.filters.sort_order);
+    }).slice(0, 20);
+  } catch {
+    return [];
+  }
+}
+
 function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
   const [models, setModels] = useState<WorkspaceModel[]>([]);
   const [modelTotal, setModelTotal] = useState(0);
@@ -1691,13 +1726,30 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
   const [license, setLicense] = useState("");
   const [quantization, setQuantization] = useState("");
   const [tags, setTags] = useState("");
+  const [modelSearch, setModelSearch] = useState("");
+  const [favoriteOnly, setFavoriteOnly] = useState(false);
+  const [formatFilter, setFormatFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
+  const [sortBy, setSortBy] = useState<ModelRegistrySort>("name");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [savedFilterName, setSavedFilterName] = useState("");
+  const [savedFilters, setSavedFilters] = useState<SavedModelRegistryFilter[]>(readSavedModelRegistryFilters);
   const importRef = useRef<HTMLInputElement>(null);
 
-  const refresh = async () => {
+  const currentFilters = (): ModelRegistryFilters => ({
+    search: modelSearch.trim(),
+    favorite_only: favoriteOnly,
+    format: formatFilter.trim() || undefined,
+    tag: tagFilter.trim() || undefined,
+    sort_by: sortBy,
+    sort_order: sortOrder,
+  });
+
+  const refresh = async (filters: ModelRegistryFilters = currentFilters()) => {
     setLoading(true);
     setError("");
     try {
-      const page = await axiomApi.modelsPage(0, 25);
+      const page = await axiomApi.modelsPage(0, 25, filters);
       setModels(page.models);
       setModelTotal(page.total);
       setHasMore(page.has_more);
@@ -1706,6 +1758,51 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
     } finally {
       setLoading(false);
     }
+  };
+
+  const persistSavedFilters = (next: SavedModelRegistryFilter[]) => {
+    const bounded = next.slice(0, 20);
+    setSavedFilters(bounded);
+    try {
+      window.localStorage.setItem(SAVED_MODEL_FILTERS_KEY, JSON.stringify(bounded));
+    } catch {
+      onNotify("Saved filters could not be stored in this browser. Check local storage availability.", "warning");
+    }
+  };
+
+  const saveCurrentFilter = () => {
+    const label = savedFilterName.trim();
+    if (!label) {
+      onNotify("Enter a name for this saved filter.", "warning");
+      return;
+    }
+    const record: SavedModelRegistryFilter = {
+      id: typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `filter-${Date.now()}`,
+      name: label.slice(0, 60),
+      filters: currentFilters(),
+    };
+    const next = [record, ...savedFilters.filter((item) => item.name.toLocaleLowerCase() !== record.name.toLocaleLowerCase())];
+    persistSavedFilters(next);
+    setSavedFilterName("");
+    onNotify("Model registry filter saved in this browser.", "success");
+  };
+
+  const applySavedFilter = (saved: SavedModelRegistryFilter) => {
+    const filters: ModelRegistryFilters = {
+      search: saved.filters.search ?? "",
+      favorite_only: saved.filters.favorite_only,
+      format: saved.filters.format || undefined,
+      tag: saved.filters.tag || undefined,
+      sort_by: saved.filters.sort_by ?? "name",
+      sort_order: saved.filters.sort_order ?? "asc",
+    };
+    setModelSearch(filters.search ?? "");
+    setFavoriteOnly(filters.favorite_only);
+    setFormatFilter(filters.format ?? "");
+    setTagFilter(filters.tag ?? "");
+    setSortBy(filters.sort_by);
+    setSortOrder(filters.sort_order);
+    void refresh(filters);
   };
 
   useEffect(() => { void refresh(); }, []);
@@ -1750,7 +1847,7 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
   const loadMore = async () => {
     setLoadingMore(true);
     try {
-      const page = await axiomApi.modelsPage(models.length, 25);
+      const page = await axiomApi.modelsPage(models.length, 25, currentFilters());
       setModels((current) => [...current, ...page.models]);
       setModelTotal(page.total);
       setHasMore(page.has_more);
@@ -1797,6 +1894,7 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
     try {
       const result = await axiomApi.updateModel(model.id, { favorite: !model.favorite });
       setModels((current) => current.map((item) => item.id === model.id ? result.model : item));
+      if (favoriteOnly) await refresh();
     } catch (cause) {
       onNotify(cause instanceof Error ? cause.message : "Favorite could not be updated.", "warning");
     }
@@ -1854,7 +1952,24 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
   };
 
   return <FeaturePage page="models" actions={<><button type="button" className="button secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCcw size={16} /> Refresh</button><button type="button" className="button secondary-button" onClick={() => void discoverLocalModels()} disabled={discoveryBusy}><Search size={15} /> {discoveryBusy ? "Discovering…" : "Discover local"}</button><button type="button" className="button secondary-button" onClick={() => void exportModels()}><ArrowDownToLine size={15} /> Export</button><button type="button" className="button secondary-button" onClick={() => importRef.current?.click()}><Upload size={15} /> Import</button><input ref={importRef} type="file" accept="application/json,.json" hidden onChange={(event) => void importModels(event)} /><button type="button" className="button primary-button" onClick={() => setFormOpen((open) => !open)}><Plus size={16} /> Register model</button></>}>
-    <div className="info-grid"><InfoCard icon={BrainCircuit} label="Registry" value={loading ? "—" : String(modelTotal)} detail={loading ? "Loading inventory" : `${models.filter((model) => model.favorite).length} favorites loaded`} tone={modelTotal ? "success" : "neutral"} /><InfoCard icon={HardDrive} label="Storage" value="Local" detail="Registry metadata only" tone="neutral" /><InfoCard icon={SlidersHorizontal} label="Inventory" value={loading ? "—" : String(models.length)} detail={hasMore ? `Showing ${models.length} of ${modelTotal}` : "All registry entries shown"} tone="info" /></div>
+    <div className="info-grid"><InfoCard icon={BrainCircuit} label="Matching models" value={loading ? "—" : String(modelTotal)} detail={loading ? "Loading inventory" : `${models.filter((model) => model.favorite).length} favorites on this page`} tone={modelTotal ? "success" : "neutral"} /><InfoCard icon={HardDrive} label="Storage" value="Local" detail="Registry metadata only" tone="neutral" /><InfoCard icon={SlidersHorizontal} label="Inventory" value={loading ? "—" : String(models.length)} detail={hasMore ? `Showing ${models.length} of ${modelTotal} matches` : "All matching entries loaded"} tone="info" /></div>
+    <Surface title="Find models" eyebrow="SERVER-SIDE SEARCH AND FILTERS">
+      <div className="two-column-grid">
+        <label className="field"><span className="field-label-row"><span>Search metadata</span></span><input aria-label="Search model registry" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} maxLength={160} placeholder="Name, source, architecture, license, or tag" /></label>
+        <label className="field"><span className="field-label-row"><span>Exact format</span></span><input aria-label="Exact model format" value={formatFilter} onChange={(event) => setFormatFilter(event.target.value)} maxLength={64} placeholder="gguf, safetensors, pytorch…" /></label>
+        <label className="field"><span className="field-label-row"><span>Exact tag</span></span><input aria-label="Exact model tag" value={tagFilter} onChange={(event) => setTagFilter(event.target.value)} maxLength={40} placeholder="local, chat, coding…" /></label>
+        <label className="field"><span className="field-label-row"><span>Sort by</span></span><select aria-label="Sort model registry by" value={sortBy} onChange={(event) => setSortBy(event.target.value as ModelRegistrySort)}><option value="name">Name</option><option value="source">Source</option><option value="format">Format</option><option value="parameters">Parameter count</option><option value="quantization">Quantization</option><option value="favorite">Favorite status</option></select></label>
+        <label className="field"><span className="field-label-row"><span>Order</span></span><select aria-label="Model sort order" value={sortOrder} onChange={(event) => setSortOrder(event.target.value as "asc" | "desc")}><option value="asc">Ascending</option><option value="desc">Descending</option></select></label>
+        <label className="field" style={{ alignSelf: "end" }}><span className="field-label-row"><span>Favorites only</span></span><span style={{ display: "flex", gap: 8, alignItems: "center" }}><input aria-label="Favorites only" type="checkbox" checked={favoriteOnly} onChange={(event) => setFavoriteOnly(event.target.checked)} />Show only favorited models</span></label>
+      </div>
+      <div className="integration-form-actions"><button type="button" className="button primary-button" onClick={() => void refresh()} disabled={loading}>Apply filters</button><button type="button" className="button secondary-button" onClick={() => { setModelSearch(""); setFavoriteOnly(false); setFormatFilter(""); setTagFilter(""); setSortBy("name"); setSortOrder("asc"); void refresh({ search: "", favorite_only: false, sort_by: "name", sort_order: "asc" }); }} disabled={loading}>Clear filters</button></div>
+      <div className="two-column-grid" style={{ marginTop: 18 }}>
+        <label className="field"><span className="field-label-row"><span>Save this filter</span></span><input aria-label="Saved filter name" value={savedFilterName} onChange={(event) => setSavedFilterName(event.target.value)} maxLength={60} placeholder="e.g. Favorite GGUF models" /></label>
+        <div className="field" style={{ justifyContent: "end" }}><span className="field-label-row"><span>Browser-local presets</span></span><button type="button" className="button secondary-button" onClick={saveCurrentFilter} disabled={!savedFilterName.trim()}>Save current filters</button></div>
+      </div>
+      {savedFilters.length > 0 && <div className="module-list">{savedFilters.map((saved) => <div className="module-row" key={saved.id}><span className="module-icon"><Star size={15} /></span><span className="module-copy"><b>{saved.name}</b><small>{saved.filters.search || "All names"} · {saved.filters.favorite_only ? "favorites only" : "all favorites"} · {saved.filters.format || "all formats"} · tag: {saved.filters.tag || "any"} · {saved.filters.sort_by} {saved.filters.sort_order}</small></span><button type="button" className="button secondary-button" onClick={() => applySavedFilter(saved)}>Apply</button><button type="button" className="button secondary-button" aria-label={`Delete saved filter ${saved.name}`} onClick={() => persistSavedFilters(savedFilters.filter((item) => item.id !== saved.id))}>Delete</button></div>)}</div>}
+      <p className="quiet-note">Search, exact format/tag filters, sorting and pagination run against the registry API. Saved filter presets stay in this browser and contain filter metadata only.</p>
+    </Surface>
     {formOpen && <Surface title="Register model metadata" eyebrow="LOCAL REGISTRY">
       <form className="integration-form" onSubmit={(event) => void addModel(event)}>
         <label className="field"><span className="field-label-row"><span>Display name</span></span><input value={name} onChange={(event) => setName(event.target.value)} maxLength={160} required placeholder="Qwen 3 8B" /></label>
