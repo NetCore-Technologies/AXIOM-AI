@@ -243,3 +243,7 @@ The release workflow packages separate macOS Apple Silicon (arm64) and Intel (x8
 The companion [Community and Adoption Strategy](docs/Community-and-Adoption-Strategy.md) proposes a workstream for public benchmark evidence, hardware-estimate calibration, integration quality, physical-hardware validation, user support, and external contribution.
 
 This is a proposal, not a delivery-status claim. It supplements the 120 scoped deliverables above without changing their IDs or marking unverified work as complete. Hardware validation must distinguish simulated CI coverage from measurements on physical NVIDIA, Apple Silicon, AMD, and CPU-only systems where those test environments are available. External repository metrics quoted in assessments must be checked against a current public snapshot before publication.
+
+## Browser-local AI Toolkit surface
+
+`latest/development` now exposes 120 searchable utility actions through the Control Center AI Toolkit. They cover bounded calculations and local text/metadata checks across 12 categories. The tools are documented in [AI-Toolkit.md](docs/AI-Toolkit.md). This GUI addition does **not** mark unrelated R001–R120 deliverables as complete: backend persistence, full-dataset filesystem scans, measured runtime benchmarks, workflow execution, and physical-hardware validation remain governed by their individual roadmap statuses and acceptance tests. Roadmap checkboxes should only change after each deliverable has its own evidence.
