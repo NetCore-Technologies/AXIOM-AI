@@ -11,7 +11,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 import json, math, re
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 
 _MAX_CONFIG_BYTES = 1_048_576
 _MAX_TOKENIZER_BYTES = 64 * 1024 * 1024
@@ -403,7 +403,16 @@ class NativeLlamaRuntime:
         hidden = self._rms_norm(hidden, self.weights["model.norm.weight"])
         return self._linear(hidden[:, -1:, :], "lm_head")[:, -1, :], tuple(cache)
 
-    def generate(self, prompt_token_ids: list[int], *, max_new_tokens: int, temperature: float, top_p: float = 0.9, eos_token_ids: tuple[int, ...] | None = None) -> list[int]:
+    def iter_generate(
+        self,
+        prompt_token_ids: list[int],
+        *,
+        max_new_tokens: int,
+        temperature: float,
+        top_p: float = 0.9,
+        eos_token_ids: tuple[int, ...] | None = None,
+    ) -> Iterator[int]:
+        """Yield each newly decoded token ID from AXIOM's KV-cached decode loop."""
         if not prompt_token_ids:
             raise NativeEngineError("Tokenizer returned no IDs for the prompt.")
         if isinstance(max_new_tokens, bool) or not isinstance(max_new_tokens, int) or not 1 <= max_new_tokens <= 2048:
@@ -415,34 +424,61 @@ class NativeLlamaRuntime:
         torch = self.torch
         eos = set(self.config.eos_token_ids if eos_token_ids is None else eos_token_ids)
         tokens = torch.tensor([prompt_token_ids], device=self.device, dtype=torch.long)
-        generated = []
-        logits, cache = self.forward(tokens)
-        for step in range(max_new_tokens):
-            if temperature == 0:
-                next_token = torch.argmax(logits, dim=-1)
-            else:
-                scores = logits.float() / float(temperature)
-                if top_p < 1:
-                    sorted_scores, sorted_ids = torch.sort(scores, descending=True, dim=-1)
-                    cumulative = torch.softmax(sorted_scores, dim=-1).cumsum(dim=-1)
-                    remove = cumulative > top_p
-                    remove[..., 1:] = remove[..., :-1].clone()
-                    remove[..., 0] = False
-                    sorted_scores = sorted_scores.masked_fill(remove, float("-inf"))
-                    scores = torch.full_like(scores, float("-inf")).scatter(dim=-1, index=sorted_ids, src=sorted_scores)
-                next_token = torch.multinomial(torch.softmax(scores, dim=-1), num_samples=1).squeeze(-1)
-            token_id = int(next_token.item())
-            if token_id < 0 or token_id >= self.config.vocab_size:
-                raise NativeEngineError("Native decoder produced a token ID outside vocab_size.")
-            if token_id in eos:
-                break
-            generated.append(token_id)
-            # Do not evaluate a needless next-token step after the output limit;
-            # in particular, the last token may exactly fill the context window.
-            if step + 1 < max_new_tokens:
-                logits, cache = self.forward(next_token.view(1, 1), cache)
-        self.last_generation = {"prompt_tokens": len(prompt_token_ids), "completion_tokens": len(generated), "cache_layers": len(cache), "decoder": "axiom-autoregressive-kv-cache"}
-        return generated
+        generated: list[int] = []
+        cache: tuple[Any, ...] = ()
+        try:
+            with torch.inference_mode():
+                logits, cache = self.forward(tokens)
+                for step in range(max_new_tokens):
+                    if temperature == 0:
+                        next_token = torch.argmax(logits, dim=-1)
+                    else:
+                        scores = logits.float() / float(temperature)
+                        if top_p < 1:
+                            sorted_scores, sorted_ids = torch.sort(scores, descending=True, dim=-1)
+                            cumulative = torch.softmax(sorted_scores, dim=-1).cumsum(dim=-1)
+                            remove = cumulative > top_p
+                            remove[..., 1:] = remove[..., :-1].clone()
+                            remove[..., 0] = False
+                            sorted_scores = sorted_scores.masked_fill(remove, float("-inf"))
+                            scores = torch.full_like(scores, float("-inf")).scatter(dim=-1, index=sorted_ids, src=sorted_scores)
+                        next_token = torch.multinomial(torch.softmax(scores, dim=-1), num_samples=1).squeeze(-1)
+                    token_id = int(next_token.item())
+                    if token_id < 0 or token_id >= self.config.vocab_size:
+                        raise NativeEngineError("Native decoder produced a token ID outside vocab_size.")
+                    if token_id in eos:
+                        break
+                    generated.append(token_id)
+                    yield token_id
+                    # Avoid a needless forward pass after the output limit.
+                    if step + 1 < max_new_tokens:
+                        logits, cache = self.forward(next_token.view(1, 1), cache)
+        finally:
+            self.last_generation = {
+                "prompt_tokens": len(prompt_token_ids),
+                "completion_tokens": len(generated),
+                "cache_layers": len(cache),
+                "decoder": "axiom-autoregressive-kv-cache",
+            }
+
+    def generate(
+        self,
+        prompt_token_ids: list[int],
+        *,
+        max_new_tokens: int,
+        temperature: float,
+        top_p: float = 0.9,
+        eos_token_ids: tuple[int, ...] | None = None,
+    ) -> list[int]:
+        """Return the complete generated sequence; uses the same native streaming decoder."""
+        return list(self.iter_generate(
+            prompt_token_ids,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            eos_token_ids=eos_token_ids,
+        ))
+
 
 def load_native_runtime(model_dir: Path, torch_module: Any, device: Any, *, adapter_dir: Path | None = None, trusted_roots: tuple[Path, ...] | None = None) -> tuple[NativeLlamaRuntime, Any, dict[str, Any]]:
     """Load a supported local checkpoint/tokenizer without Transformers."""
