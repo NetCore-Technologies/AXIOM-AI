@@ -319,8 +319,13 @@ async function runOperation(tool: Tool, input: ToolkitInput): Promise<string> {
       return json({ parameters_billions: a, source_bits: sourceBits, target_bits: targetBits, source_GB: fmt(original), target_GB: fmt(target), savings_GB: fmt(original - target), savings_percent: fmt(original ? (original - target) / original * 100 : 0) });
     }
     case "memory-fit": {
-      const base = a * bits / 8, overhead = clamp(c, 0, 500) / 100, required = base * (1 + overhead), budget = b * (1 - (tool.category === "Hardware planning" ? 0 : 0));
-      return json({ estimated_weight_GB: fmt(base), runtime_overhead_percent: fmt(clamp(c, 0, 500)), total_estimate_GB: fmt(required), available_memory_GB: fmt(b), estimated_fit: required <= budget, note: "A weight-focused screening estimate, not a guarantee. KV cache and activations may require substantially more memory." });
+      const base = a * bits / 8;
+      const isHardware = tool.category === "Hardware planning";
+      const reservePercent = clamp(c, 0, 95);
+      const overheadPercent = isHardware ? 0 : clamp(c, 0, 500);
+      const required = base * (1 + overheadPercent / 100);
+      const usable = isHardware ? b * (1 - reservePercent / 100) : b;
+      return json({ estimated_weight_GB: fmt(base), runtime_overhead_percent: fmt(overheadPercent), physical_memory_GB: fmt(b), reserve_percent: isHardware ? reservePercent : null, usable_memory_GB: fmt(usable), total_estimate_GB: fmt(required), estimated_fit: required <= usable, note: "A weight-focused screening estimate, not a guarantee. KV cache and activations may require substantially more memory." });
     }
     case "shard-count": {
       if (b <= 0) throw new Error("B must be greater than zero.");
@@ -692,7 +697,7 @@ export default function AxiomToolkit() {
           <p className="page-description">120 local utilities for model sizing, quantization, training, dataset quality, evaluation, inference, hardware, security, workflows, APIs, prompts, and releases.</p>
         </div>
         <div className="page-actions">
-          <span className="status-pill status-pill-success" aria-label="Feature count">120 utilities</span>
+          <span className="status-pill status-pill-success" aria-label="Feature count">{TOOLKIT_TOOLS.length} utilities</span>
         </div>
       </div>
 
@@ -711,7 +716,7 @@ export default function AxiomToolkit() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.15fr)", gap: 16, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 440px), 1fr))", gap: 16, alignItems: "start" }}>
         <div className="panel-surface" style={{ padding: 16, minWidth: 0 }}>
           <h2 style={{ marginTop: 0 }}>Utility catalog</h2>
           <div style={{ display: "grid", gap: 8, maxHeight: 700, overflowY: "auto" }}>
