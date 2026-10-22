@@ -119,8 +119,8 @@ feature exists or a delivery-date promise.
 - [R085 · Planned] Add runtime connector discovery and capability negotiation.
 - [R086 · Planned] Add explicit connect/disconnect controls with secret-safe storage.
 - [R087 · Planned] Add runtime status, model identity, and readiness checks.
-- [R088 · Planned] Add measured inference latency and throughput benchmarks.
-- [R089 · Planned] Add warm-up, prompt, concurrency, and output-token benchmark controls.
+- [R088 · In progress; validation pending] Measure actual local inference latency and token throughput through the loopback runtime API, reporting token-count coverage and wall time.
+- [R089 · In progress; validation pending] Add prompt/token-limit inputs, excluded warm-up runs, bounded measured iterations, and explicit concurrency controls to the existing Runtime page.
 - [R090 · Planned] Add quantization estimates with formulas and overhead assumptions.
 - [R091 · Planned] Compare quantization candidates against selected memory budgets.
 - [R092 · Planned] Keep estimated fit separate from measured quality and speed.
