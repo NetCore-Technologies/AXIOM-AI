@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { ensureAuthenticated } from "./helpers/auth";
 
@@ -47,7 +48,6 @@ test("Runtime request traces show safe metadata, export JSON, and clear the in-m
     },
   ];
   let clearCount = 0;
-  let exportBody: string | null = null;
 
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -114,6 +114,13 @@ test("Runtime request traces show safe metadata, export JSON, and clear the in-m
   await page.getByRole("button", { name: "Export JSON" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("axiom-runtime-traces.json");
+  const downloadPath = await download.path();
+  expect(downloadPath).not.toBeNull();
+  const exportedJson = await readFile(downloadPath as string, "utf8");
+  expect(exportedJson).toContain('"prompt_bodies_stored": false');
+  expect(exportedJson).toContain("ab12cd34ef56ab12cd34ef56ab12cd34");
+  expect(exportedJson).not.toContain("prompt_text");
+  expect(exportedJson).not.toContain("response_text");
 
   await page.getByRole("button", { name: "Clear history" }).click();
   await expect(page.getByRole("dialog", { name: "Clear runtime trace history?" })).toBeVisible();
