@@ -187,3 +187,8 @@ npm run e2e
 ## License
 
 AXIOM is available under the [MIT License](LICENSE).
+
+
+## Machine-readable CLI output
+
+The following inventory and inspection commands expose versioned JSON payloads with `--json`: `axiom model list`, `axiom model info`, `axiom model inspect`, `axiom model search`, `axiom dataset inspect`, `axiom dataset validate`, `axiom dataset stats`, `axiom integration list`, and `axiom engine discover`. Dataset inspect/validate/stats share the same field names and include bounded line-level errors. JSON mode keeps useful output on stdout so it can be piped into scripts; validation failures preserve a non-zero exit code.

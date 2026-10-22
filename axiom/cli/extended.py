@@ -37,6 +37,27 @@ PROJECT_PATHS = (
 )
 
 
+def dataset_inspection_payload(result) -> dict[str, object]:
+    """Serialize dataset inspection results consistently across CLI commands."""
+    return {
+        "schema_version": 1,
+        "dataset": {
+            "path": str(result.path),
+            "format": result.format,
+            "samples": result.samples,
+            "valid": result.valid,
+            "invalid": result.invalid,
+            "empty": result.empty,
+            "duplicates": result.duplicates,
+            "estimated_tokens": result.estimated_tokens,
+            "fields": list(result.fields),
+            "errors": [{"line": number, "message": message} for number, message in result.errors],
+            "errors_limit": 50,
+        },
+        "scope_note": "Estimated tokens are a rough serialized-character estimate, not a tokenizer measurement.",
+    }
+
+
 def package_version() -> str:
     try:
         return importlib.metadata.version("axiom-ai")
@@ -305,69 +326,45 @@ def register(app, model_app, dataset_app) -> None:
 
         console.print("Next: [cyan]axiom config validate[/cyan]")
 
-    @model_app.command("inspect")
-    def model_inspect(
-        path: str = typer.Argument(
-            ...,
-            help="Local model file or directory to summarize",
-        ),
-    ) -> None:
-        """Summarize a local model file or directory."""
-        target = Path(path)
 
-        if not target.exists():
-            console.print(f"[red]Error:[/red] model path not found: {target}")
-            raise typer.Exit(code=1)
-
-        if target.is_file():
-            size = human_size(target.stat().st_size)
-            console.print(
-                Panel.fit(
-                    f"[bold cyan]AXIOM MODEL[/bold cyan]\n\n"
-                    f"Path: {target}\n"
-                    f"Size: {size}",
-                    title="AXIOM",
-                )
-            )
-            return
-
-        files = [p for p in target.rglob("*") if p.is_file()]
-        total = sum(p.stat().st_size for p in files)
-
-        console.print(
-            Panel.fit(
-                f"[bold cyan]AXIOM MODEL[/bold cyan]\n\n"
-                f"Path: {target}\n"
-                f"Files: {len(files)}\n"
-                f"Total size: {human_size(total)}",
-                title="AXIOM",
-            )
-        )
 
     @model_app.command("search")
     def model_search(
-        query: str = typer.Argument(
-            ...,
-            help="Text to match in local model paths",
-        ),
-        path: str = typer.Option(
-            "models",
-            "--path",
-            help="Directory to search for matching local model paths",
-        ),
+        query: str = typer.Argument(..., help="Text to match in local model paths"),
+        path: str = typer.Option("models", "--path", help="Directory to search for matching local model paths"),
+        json_output: bool = typer.Option(False, "--json", help="Emit search matches as JSON."),
     ) -> None:
         """Search local model paths by name."""
         root = Path(path)
+        matches = [
+            item for item in root.rglob("*")
+            if root.is_dir() and query.lower() in str(item).lower()
+        ] if root.is_dir() else []
+        matches = sorted(matches, key=lambda item: str(item).casefold())
+        records = []
+        for item in matches:
+            if item.is_symlink():
+                continue
+            is_file = item.is_file()
+            records.append({
+                "path": str(item),
+                "kind": "file" if is_file else "directory",
+                "size_bytes": item.stat().st_size if is_file else None,
+            })
 
-        if not root.exists():
+        if json_output:
+            typer.echo(json.dumps({
+                "schema_version": 1,
+                "query": query,
+                "root": str(root),
+                "total": len(records),
+                "matches": records,
+            }, ensure_ascii=False, sort_keys=True))
+            return
+        if not root.exists() or not root.is_dir():
             console.print(f"[yellow]No model directory:[/yellow] {root}")
             return
-
-        matches = [
-            item for item in root.rglob("*") if query.lower() in str(item).lower()
-        ]
-
-        if not matches:
+        if not records:
             console.print("[yellow]No matches found.[/yellow]")
             return
 
@@ -375,74 +372,83 @@ def register(app, model_app, dataset_app) -> None:
         table.add_column("Path")
         table.add_column("Type")
         table.add_column("Size")
-
-        for item in matches:
+        for item in records:
             table.add_row(
-                str(item),
-                "file" if item.is_file() else "directory",
-                human_size(item.stat().st_size) if item.is_file() else "-",
+                item["path"], item["kind"],
+                human_size(item["size_bytes"]) if item["size_bytes"] is not None else "-",
             )
-
         console.print(table)
 
     @dataset_app.command("validate")
     def dataset_validate(
-        path: str = typer.Argument(
-            ...,
-            help="Local JSONL dataset file",
-        ),
+        path: str = typer.Argument(..., help="Local JSONL dataset file"),
+        json_output: bool = typer.Option(False, "--json", help="Emit complete validation results as JSON."),
     ) -> None:
         """Check JSONL records and report duplicate objects."""
         try:
             result = inspect_dataset(path)
         except (FileNotFoundError, ValueError, OSError) as exc:
-            console.print(f"[red]Error:[/red] {exc}")
+            if json_output:
+                typer.echo(json.dumps({
+                    "schema_version": 1,
+                    "error": {"code": "dataset_validation_failed", "message": str(exc)},
+                }, ensure_ascii=False, sort_keys=True))
+            else:
+                console.print(f"[red]Error:[/red] {exc}")
             raise typer.Exit(code=1) from exc
+
+        if json_output:
+            typer.echo(json.dumps(dataset_inspection_payload(result), ensure_ascii=False, sort_keys=True))
+            if result.invalid:
+                raise typer.Exit(code=1)
+            return
 
         table = Table(title="AXIOM DATASET VALIDATION")
         table.add_column("Metric")
         table.add_column("Value", justify="right")
-
         table.add_row("Records", str(result.samples))
         table.add_row("Valid", str(result.valid))
         table.add_row("Invalid", str(result.invalid))
         table.add_row("Empty", str(result.empty))
         table.add_row("Duplicates", str(result.duplicates))
-
         console.print(table)
-
         for line_number, message in result.errors:
             console.print(f"[red]INVALID[/red] line {line_number}: {message}")
-
         if result.invalid:
             raise typer.Exit(code=1)
 
     @dataset_app.command("stats")
     def dataset_stats(
-        path: str = typer.Argument(
-            ...,
-            help="Local JSONL dataset file",
-        ),
+        path: str = typer.Argument(..., help="Local JSONL dataset file"),
+        json_output: bool = typer.Option(False, "--json", help="Emit dataset statistics as JSON."),
     ) -> None:
         """Show local JSONL counts and a rough token estimate."""
         try:
             result = inspect_dataset(path)
         except (FileNotFoundError, ValueError, OSError) as exc:
-            console.print(f"[red]Error:[/red] {exc}")
+            if json_output:
+                typer.echo(json.dumps({
+                    "schema_version": 1,
+                    "error": {"code": "dataset_statistics_failed", "message": str(exc)},
+                }, ensure_ascii=False, sort_keys=True))
+            else:
+                console.print(f"[red]Error:[/red] {exc}")
             raise typer.Exit(code=1) from exc
 
-        console.print(
-            Panel.fit(
-                f"[bold cyan]AXIOM DATASET STATS[/bold cyan]\n\n"
-                f"Records: {result.valid:,}\n"
-                f"Invalid: {result.invalid:,}\n"
-                f"Empty: {result.empty:,}\n"
-                f"Duplicates: {result.duplicates:,}\n"
-                f"Fields: {', '.join(result.fields) or 'None'}\n"
-                f"Estimated tokens: {result.estimated_tokens:,}",
-                title="AXIOM",
-            )
-        )
+        if json_output:
+            typer.echo(json.dumps(dataset_inspection_payload(result), ensure_ascii=False, sort_keys=True))
+            return
+
+        console.print(Panel.fit(
+            f"[bold cyan]AXIOM DATASET STATS[/bold cyan]\n\n"
+            f"Records: {result.valid:,}\n"
+            f"Invalid: {result.invalid:,}\n"
+            f"Empty: {result.empty:,}\n"
+            f"Duplicates: {result.duplicates:,}\n"
+            f"Fields: {', '.join(result.fields) or 'None'}\n"
+            f"Estimated tokens: {result.estimated_tokens:,}",
+            title="AXIOM",
+        ))
 
     project_app = typer.Typer(
         help="Inspect and validate the current local AXIOM project."

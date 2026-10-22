@@ -404,6 +404,24 @@ def inspect(root: Path) -> dict[str, Any]:
     engine_panel = (root / "src/components/LocalAxiomEnginePanel.tsx").read_text(encoding="utf-8")
     engine_e2e = (root / "e2e/axiom-engine.spec.ts").read_text(encoding="utf-8")
     failures.extend(engine_security_and_lifecycle_issues(engine_source, native_source, engine_api, client, engine_panel, engine_e2e))
+    cli_main_source = (root / "axiom/cli/main.py").read_text(encoding="utf-8")
+    cli_extended_source = (root / "axiom/cli/extended.py").read_text(encoding="utf-8")
+    cli_json_tests = (root / "tests/test_cli_json.py").read_text(encoding="utf-8")
+    for token in ('def model_list(', 'def model_info(', 'def model_inspect(', 'def dataset_inspect(', 'def integration_list('):
+        if token not in cli_main_source:
+            failures.append("CLI JSON output support is missing from a primary command: " + token)
+    for token in ("def model_search(", "def dataset_validate(", "def dataset_stats(", "def dataset_inspection_payload("):
+        if token not in cli_extended_source:
+            failures.append("CLI JSON output support is missing from an extended command: " + token)
+    for token in (
+        '["model", "list", "--json"]',
+        '["model", "info", "org/tiny", "--json"]',
+        '["model", "inspect", str(model), "--json"]',
+        '["dataset", "inspect", str(dataset), "--json"]',
+        '["integration", "list", "--json"]',
+    ):
+        if token not in cli_json_tests:
+            failures.append("CLI JSON acceptance coverage is missing: " + token)
     engine_cli_source = (root / "axiom/cli/engine.py").read_text(encoding="utf-8")
     engine_cli_tests = (root / "tests/test_axiom_engine_cli.py").read_text(encoding="utf-8")
     for token in ('@engine_app.command("discover")', "def engine_discover(", "discover_local_engine_assets()", "generate_local_stream(", '"--stream"', '"--json"'):
