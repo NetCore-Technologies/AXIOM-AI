@@ -128,7 +128,11 @@ def _read_json_object(
         raise NativeEngineError(f"{label} must contain a JSON object.")
     return payload
 
-def _resolve_safetensor_files(model_dir: Path, trusted_roots: tuple[Path, ...]) -> tuple[list[Path], dict[str, str]]:
+def _resolve_safetensor_files(
+    model_dir: Path,
+    trusted_roots: tuple[Path, ...] | None = None,
+) -> tuple[list[Path], dict[str, str]]:
+    trusted_roots = trusted_roots or (model_dir.resolve(),)
     index_path, single_path = model_dir / "model.safetensors.index.json", model_dir / "model.safetensors"
     if index_path.is_file():
         index = _read_json_object(index_path, _MAX_INDEX_BYTES, "Safetensors shard index", trusted_roots)
