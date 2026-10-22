@@ -26,6 +26,18 @@ Open **Runtime** and use the **AXIOM Local Engine** panel. Enter the absolute pa
 
 The engine caches one loaded base-model/adapter pair in the API process. Selecting a different path replaces that cached runtime on the next generation request. Large models can consume substantial RAM/VRAM and generation can take several minutes on CPU.
 
+## CLI
+
+Check dependency readiness without loading model weights, then generate from an existing local checkpoint:
+
+```bash
+axiom --no-banner engine status
+axiom --no-banner engine run --model-path "$HOME/models/my-llama-model" --prompt "Explain AXIOM in one sentence."
+axiom --no-banner engine run --model-path "$HOME/models/my-llama-model" --adapter-path "$HOME/runs/my-lora-adapter" --prompt-file ./prompt.txt --max-new-tokens 128 --temperature 0 --json
+```
+
+Pass exactly one of `--prompt` and `--prompt-file`. Prompt files are read as UTF-8 and capped at 12,000 characters.
+
 ## API
 
 - `GET /api/engine/status` reports dependency readiness and whether a model is loaded.
