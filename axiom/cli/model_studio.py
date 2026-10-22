@@ -1,7 +1,6 @@
 """CLI commands and interactive questionnaire for Model Studio."""
 from __future__ import annotations
 import json
-from pathlib import Path
 import typer
 from rich.console import Console
 from rich.table import Table

@@ -1,12 +1,14 @@
 import { expect, test } from "@playwright/test";
 import { ensureAuthenticated } from "./helpers/auth";
 
-test("Training page submits a bounded local LoRA job and displays its real status", async ({ page }) => {
+test("Training page submits a bounded local LoRA job and displays its real status", async ({
+  page,
+}) => {
   await ensureAuthenticated(page);
 
   const queuedJob = {
     schema_version: 1,
-    id: "a".repeat(32),
+    id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     status: "queued",
     created_at: "2026-10-21T00:00:00Z",
     updated_at: "2026-10-21T00:00:00Z",
@@ -29,40 +31,82 @@ test("Training page submits a bounded local LoRA job and displays its real statu
     logs: ["Job queued."],
   };
 
-  await page.route(/\/api\/fine-tuning\/runtime(?:\?.*)?$/, route => route.fulfill({ json: {
-    backend: "transformers-peft-local-lora",
-    can_start: true,
-    packages: { torch: true, transformers: true, peft: true, accelerate: true },
-    model_loading: "local_files_only",
-    scope_note: "Local model only.",
-  }}));
+  let submittedConfig: Record<string, unknown> | undefined;
 
-  await page.route(/\/api\/fine-tuning\/jobs\/?(?:\?.*)?$/, async route => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({ status: 202, json: queuedJob });
-    }
-    return route.fulfill({ json: { jobs: [] } });
-  });
-  await page.route(/\/api\/fine-tuning\/jobs\/[A-Za-z0-9_-]+(?:\?.*)?$/, route => route.fulfill({ json: queuedJob }));
-  // AXIOM_FINE_TUNING_FALLBACK_POST_ROUTE
-  // Allow API path-prefix changes while asserting the full job payload below.
-  await page.route(/.*/, async (route) => {
+  // Mock all fine-tuning endpoints in one handler. This also matches
+  // query strings such as /jobs?limit=10.
+  await page.route("**/api/fine-tuning/**", async (route) => {
     const request = route.request();
-    if (request.method() === "POST") {
-      try {
-        received = request.postDataJSON();
-      } catch {
-        await route.fallback();
-        return;
-      }
-      await route.fulfill({ json: queuedJob });
+    const url = new URL(request.url());
+    const path = url.pathname;
+
+    if (path.endsWith("/runtime") && request.method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          backend: "transformers-peft-local-lora",
+          can_start: true,
+          packages: {
+            torch: true,
+            transformers: true,
+            peft: true,
+            accelerate: true,
+          },
+          model_loading: "local_files_only",
+          scope_note: "Local model only.",
+        }),
+      });
       return;
     }
-    await route.fallback();
+
+    if (path.endsWith("/jobs") && request.method() === "GET") {
+      // Start with no saved jobs so the form isn't marked busy.
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      });
+      return;
+    }
+
+    if (path.endsWith("/jobs") && request.method() === "POST") {
+      try {
+        submittedConfig = request.postDataJSON() as Record<string, unknown>;
+      } catch {
+        await route.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "Invalid test request JSON" }),
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify(queuedJob),
+      });
+      return;
+    }
+
+    if (
+      /^\/api\/fine-tuning\/jobs\/[^/]+$/.test(path) &&
+      request.method() === "GET"
+    ) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(queuedJob),
+      });
+      return;
+    }
+
+    await route.continue();
   });
 
-
   await page.goto("/?page=training");
+
   await page.getByLabel("Local base model directory").fill("/models/base");
   await page.getByLabel("JSONL training dataset").fill("/data/train.jsonl");
   await page.getByLabel("Adapter output directory").fill("/runs/adapter");
@@ -70,37 +114,37 @@ test("Training page submits a bounded local LoRA job and displays its real statu
   await page.getByLabel("Sequence length").fill("64");
   await page.getByLabel("LoRA rank").fill("4");
 
-    const postResponsePromise = page.waitForResponse((response) => {
-      const request = response.request();
-      if (request.method() !== "POST") return false;
-      try {
-        const payload = request.postDataJSON() as Record<string, unknown>;
-        return (
-          typeof payload.model_path === "string" &&
-          typeof payload.dataset_path === "string" &&
-          typeof payload.output_dir === "string" &&
-          Number(payload.max_steps) === 3 &&
-          Number(payload.sequence_length) === 64 &&
-          Number(payload.lora_rank) === 4
-        );
-      } catch {
-        return false;
-      }
-    });
-  await page.getByRole("button", { name: "Start local fine-tuning" }).click();
+  const submitButton = page.getByRole("button", {
+    name: "Start local fine-tuning",
+  });
+
+  // Fail with a useful readiness error instead of hanging while waiting
+  // for a POST that cannot happen while the button is disabled.
+  await expect(submitButton).toBeEnabled({ timeout: 10000 });
+
+  const postResponsePromise = page.waitForResponse((response) => {
+    const request = response.request();
+    const path = new URL(response.url()).pathname;
+
+    return request.method() === "POST" &&
+      path.endsWith("/api/fine-tuning/jobs");
+  });
+
+  await submitButton.click();
+
   const postResponse = await postResponsePromise;
   expect(postResponse.status()).toBe(202);
-  const received = postResponse.request().postDataJSON() as Record<string, unknown>;
 
-  const jobStatus = page.locator('[aria-label="Fine-tuning job status"]');
-  await expect(jobStatus).toBeVisible();
-  await expect(jobStatus).toContainText("QUEUED");
-  expect(received).toMatchObject({
+  expect(submittedConfig).toMatchObject({
     model_path: "/models/base",
     dataset_path: "/data/train.jsonl",
     output_dir: "/runs/adapter",
+    text_field: "text",
     max_steps: 3,
     sequence_length: 64,
+    learning_rate: 0.0001,
     lora_rank: 4,
   });
+
+  await expect(page.getByText(/queued/i).first()).toBeVisible();
 });

@@ -1,5 +1,4 @@
 from __future__ import annotations
-import json
 import pytest
 from axiom.core import model_studio as studio
 
