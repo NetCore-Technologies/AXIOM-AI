@@ -13,7 +13,7 @@ _PARAMETER_VALUE = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)?)\s*([KMBT]?)\s*$", re.I
 def _parameter_count_billions(value: str | None) -> tuple[float | None, str | None, bool]:
     if not value:
         return None, None, False
-    match = _PARAMETER_VALUE.fullmatch(value)
+    match = _PARAMETER_VALUE.fullmatch(value.replace(",", ""))
     if not match:
         return None, None, False
     amount = float(match.group(1))
@@ -111,7 +111,7 @@ def estimate_model_compatibility(model: Model, hardware: HardwareInfo) -> dict[s
             "likely_runtimes": ["Ollama", "llama.cpp"],
             "guidance": "GGUF is commonly consumed by GGUF-capable runtimes; this metadata check does not prove the selected model loads.",
         }
-    elif any(marker in model_format for marker in ("safetensors", "pytorch", "transformers", "pt", "bin")):
+    elif "safetensors" in model_format or model_format in {"pytorch", "pytorch bin", "pt", "bin", "transformers"}:
         format_compatibility = {
             "status": "candidate_not_verified",
             "likely_runtimes": ["Transformers", "AXIOM Engine"],
