@@ -129,7 +129,7 @@ export default function LocalAxiomEnginePanel() {
         <small>Use a standard bias-free CAUSAL_LM adapter with adapter_config.json and adapter_model.safetensors. Compatibility is checked during model loading; unsupported adapter options are rejected.</small>
       </label>
       <label className="field">
-        <span className="field-label-row"><span>Prompt</span><span>{prompt.length.toLocaleString()} / 12,000 characters</span></span>
+        <span className="field-label-row"><span>AXIOM Native Engine prompt</span><span>{prompt.length.toLocaleString()} / 12,000 characters</span></span>
         <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={12000} rows={5} required placeholder="Ask the local model to do something…" />
       </label>
       <div className="two-column-grid">
