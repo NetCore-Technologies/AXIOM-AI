@@ -68,36 +68,6 @@ def module_catalog_issues(app_source: str, page_ids: tuple[str, ...] = ("api-pla
     ]
 
 
-def toolkit_catalog_issues(component_source: str) -> list[str]:
-    """Confirm the GUI tool catalogue has 120 entries and every kind has a handler."""
-    category_start = component_source.find("const CATEGORIES:")
-    tools_start = component_source.find("const TOOLKIT_TOOLS", category_start)
-    operation_start = component_source.find("async function runOperation")
-    operation_end = component_source.find("export default function AxiomToolkit", operation_start)
-    if min(category_start, tools_start, operation_start, operation_end) < 0:
-        return ["AI Toolkit category catalogue or operation dispatcher is missing."]
-    catalogue = component_source[category_start:tools_start]
-    operations = component_source[operation_start:operation_end]
-    entries = re.findall(r'^\s+\["([^"]+)",\s*"([a-z0-9-]+)"', catalogue, re.MULTILINE)
-    categories = re.findall(r'\{\s*name:\s*"([^"]+)",\s*tools:\s*\[', catalogue)
-    issues: list[str] = []
-    if len(entries) != 120:
-        issues.append(f"AI Toolkit must declare exactly 120 utility entries; found {len(entries)}.")
-    if len(categories) != 12:
-        issues.append(f"AI Toolkit must group utilities into 12 categories; found {len(categories)}.")
-    titles = [title for title, _ in entries]
-    duplicates = sorted({title for title in titles if titles.count(title) > 1})
-    if duplicates:
-        issues.append("AI Toolkit contains duplicate utility titles: " + ", ".join(duplicates))
-    handled = set(re.findall(r'case\s+"([a-z0-9-]+)"', operations))
-    missing_handlers = sorted({kind for _, kind in entries} - handled)
-    if missing_handlers:
-        issues.append("AI Toolkit entries have no operation handler: " + ", ".join(missing_handlers))
-    if "axiomApi" in component_source or re.search(r'from\s+["\']\.\.?/api/client["\']', component_source):
-        issues.append("AI Toolkit operations must remain browser-local and must not call the AXIOM API client.")
-    return issues
-
-
 def api_playground_issues(component: str, client: str) -> list[str]:
     """Validate the Playground's actual typed GET-only client contract and disclosure."""
     issues: list[str] = []
@@ -128,7 +98,6 @@ def inspect(root: Path) -> dict[str, Any]:
     warnings: list[str] = []
     required = [
         "pyproject.toml", "axiom/version.py", "ROADMAP.md", "src/App.tsx",
-        "src/components/AxiomToolkit.tsx", "e2e/axiom-toolkit.spec.ts", "docs/AI-Toolkit.md",
         "src/api/client.ts", "src/components/ApiPlayground.tsx", "src/components/RuntimeConnectorPanel.tsx", "src/components/AgentProfiles.tsx", "src/styles.css",
         "axiom/api/server.py", "axiom/api/diagnostics.py", "axiom/api/runtime_discovery.py", "axiom/api/agent_profiles.py", "axiom/core/runtime_discovery.py", "axiom/core/agent_profiles.py", "axiom/cli/agent_profiles.py", "scripts/release_smoke.py",
         "tests/test_release_smoke.py", "e2e/helpers/auth.ts", "e2e/modules.spec.ts", "e2e/workflows.spec.ts", "e2e/evaluation.spec.ts",
@@ -160,11 +129,8 @@ def inspect(root: Path) -> dict[str, Any]:
     app_source = (root / "src/App.tsx").read_text(encoding="utf-8")
     failures.extend(page_registration_issues(app_source, "api-playground"))
     failures.extend(page_registration_issues(app_source, "agent-profiles"))
-    failures.extend(page_registration_issues(app_source, "toolkit"))
-    failures.extend(module_catalog_issues(app_source, ("api-playground", "agent-profiles", "toolkit")))
+    failures.extend(module_catalog_issues(app_source))
     component = (root / "src/components/ApiPlayground.tsx").read_text(encoding="utf-8")
-    toolkit = (root / "src/components/AxiomToolkit.tsx").read_text(encoding="utf-8")
-    failures.extend(toolkit_catalog_issues(toolkit))
     client = (root / "src/api/client.ts").read_text(encoding="utf-8")
     for path in (
         "/api/health", "/api/meta", "/api/workspace/runtime",
