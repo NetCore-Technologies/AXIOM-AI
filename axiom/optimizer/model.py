@@ -174,6 +174,7 @@ def inspect_model(source: str) -> ModelInfo:
         )
 
     root = path if path.is_dir() else path.parent
+    root = validate_model_path(root)
     cfg = _config(root)
 
     parameter_count, parameter_source = estimate_parameters_from_config(cfg)
