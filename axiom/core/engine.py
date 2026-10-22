@@ -153,7 +153,9 @@ def _resolve_model_directory(value: str, label: str) -> Path:
         )
     try:
         candidate = Path(value).expanduser()
-        lexical_path = candidate if candidate.is_absolute() else Path(os.path.abspath(candidate))
+        # Normalize dot segments before any filesystem resolution, including
+        # when callers supplied an absolute path.
+        lexical_path = Path(os.path.abspath(candidate))
     except (OSError, RuntimeError, ValueError):
         raise ValueError(f"{label} must be within an allowed local model directory.") from None
 
