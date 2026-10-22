@@ -8,6 +8,7 @@ Transformers model generation or an Ollama service.
 from __future__ import annotations
 
 import gc
+from functools import lru_cache
 import importlib.metadata
 import importlib.util
 import json
@@ -138,12 +139,73 @@ def _path_is_within_root(path: Path, root: Path) -> bool:
         return False
 
 
+@lru_cache(maxsize=8)
+def _trusted_directory_index(
+    root_strings: tuple[str, ...],
+    freshness_bucket: int,
+) -> tuple[tuple[str, bool, bool, bool], ...]:
+    """Index model directories by walking only configured trusted roots.
+
+    Request strings are compared to this filesystem-derived index; they are
+    never fed into Path, open, stat, resolve, or another filesystem operation.
+    The time bucket expires the index every 30 seconds so newly installed models
+    become selectable without an API restart.
+    """
+    del freshness_bucket
+    entries: dict[str, tuple[str, bool, bool, bool]] = {}
+    max_dirs_per_root = 50_000
+    max_depth = 12
+    for root_text in root_strings:
+        visited = 0
+        for directory, subdirs, filenames in os.walk(root_text, topdown=True, followlinks=False):
+            visited += 1
+            if visited > max_dirs_per_root:
+                break
+            try:
+                relative = os.path.relpath(directory, root_text)
+                depth = 0 if relative == os.curdir else len(Path(relative).parts)
+            except (OSError, ValueError):
+                subdirs[:] = []
+                continue
+            blocked_subdirs: list[str] = []
+            allowed_subdirs: list[str] = []
+            for name in subdirs:
+                child = os.path.join(directory, name)
+                if os.path.islink(child):
+                    blocked_subdirs.append(child)
+                else:
+                    allowed_subdirs.append(name)
+            subdirs[:] = allowed_subdirs if depth < max_depth else []
+            for blocked in blocked_subdirs:
+                key = os.path.normcase(os.path.normpath(blocked))
+                entries[key] = (blocked, False, False, True)
+
+            if depth > max_depth:
+                continue
+            model_config = "config.json" in filenames
+            adapter_config = "adapter_config.json" in filenames
+            if not model_config and not adapter_config:
+                continue
+            marker_names = (("config.json",) if model_config else ()) + (("adapter_config.json",) if adapter_config else ())
+            if any(os.path.islink(os.path.join(directory, marker)) for marker in marker_names):
+                continue
+            try:
+                canonical = os.path.realpath(directory)
+                if os.path.commonpath((canonical, root_text)) != root_text:
+                    continue
+            except (OSError, ValueError):
+                continue
+            key = os.path.normcase(os.path.normpath(canonical))
+            entries[key] = (canonical, model_config, adapter_config, False)
+    return tuple(entries[key] for key in sorted(entries))
+
+
 def _resolve_model_directory(value: str, label: str) -> Path:
-    """Resolve a model/adapter directory only when it stays under a trusted root."""
+    """Resolve a request by matching it to an inventoried trusted model folder."""
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{label} is required.")
-    if any(character in value for character in ("\x00", "\r", "\n")):
-        raise ValueError(f"{label} contains invalid control characters.")
+    if len(value) > 4096 or any(character in value for character in ("\\x00", "\\r", "\\n")):
+        raise ValueError(f"{label} contains invalid control characters or exceeds the path limit.")
 
     roots = _allowed_model_roots()
     if not roots:
@@ -151,28 +213,31 @@ def _resolve_model_directory(value: str, label: str) -> Path:
             "No allowed model directories were found. Create a model directory under ~/models "
             "or set AXIOM_MODEL_ROOTS to trusted local directories."
         )
-    try:
-        candidate = Path(value).expanduser()
-        # Normalize dot segments before any filesystem resolution, including
-        # when callers supplied an absolute path.
-        lexical_path = Path(os.path.abspath(candidate))
-    except (OSError, RuntimeError, ValueError):
-        raise ValueError(f"{label} must be within an allowed local model directory.") from None
 
-    if not any(_path_is_within_root(lexical_path, root) for root in roots):
-        raise ValueError(
-            f"{label} must be within an allowed model directory. Set AXIOM_MODEL_ROOTS to add a trusted directory."
-        )
-    try:
-        path = candidate.resolve(strict=True)
-    except (OSError, RuntimeError):
-        raise ValueError(f"{label} must be an existing local directory.") from None
-    if not path.is_dir() or not any(_path_is_within_root(path, root) for root in roots):
-        raise ValueError(
-            f"{label} must resolve to an existing directory inside an allowed model root; symlink escapes are not allowed."
-        )
-    return path
-
+    # Normalization here is lexical only. All filesystem reads are performed
+    # against paths obtained independently from a walk of trusted roots.
+    requested_key = os.path.normcase(os.path.normpath(os.path.expanduser(value.strip())))
+    root_strings = tuple(str(root) for root in roots)
+    freshness_bucket = int(time.monotonic() // 30)
+    entries = _trusted_directory_index(root_strings, freshness_bucket)
+    for discovered, is_model, is_adapter, is_symlink in entries:
+        key = os.path.normcase(os.path.normpath(discovered))
+        if key != requested_key:
+            continue
+        if is_symlink:
+            raise ValueError(f"{label} cannot be a symlink; trusted-root escapes are not allowed.")
+        lowered = label.casefold()
+        if lowered == "base model" and not is_model:
+            continue
+        if lowered == "lora adapter" and not is_adapter:
+            continue
+        # The returned path is from the trusted directory inventory, never
+        # constructed from the request-supplied path.
+        return Path(discovered)
+    raise ValueError(
+        f"{label} must match an existing checkpoint directory discovered under a trusted model root. "
+        "Set AXIOM_MODEL_ROOTS to add a trusted location and retry."
+    )
 
 def resolve_local_model_directory(value: str, label: str = "Model") -> str:
     """Validate an API-supplied path and return its canonical allowed location."""
