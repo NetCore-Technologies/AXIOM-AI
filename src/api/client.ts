@@ -125,6 +125,35 @@ export type WorkspaceModelInspection = {
   status: string;
 };
 
+export type ModelMemoryRange = { low: number; high: number };
+export type WorkspaceMemoryFit = {
+  status: "likely" | "tight" | "unlikely" | "unknown";
+  physical_gb: number | null;
+  budget_gb: number | null;
+  reserve_percent: number;
+  required_gb: ModelMemoryRange | null;
+};
+export type WorkspaceModelCompatibility = {
+  schema_version: number;
+  model: {
+    id: string; name: string; format: string; parameters: string | null;
+    parameter_count_billions: number | null; parameter_basis: string | null;
+    quantization: string | null; architecture: string | null;
+  };
+  hardware: {
+    os_name: string; architecture: string; cpu_cores: number; ram_gb: number | null;
+    gpu_name: string | null; vram_gb: number | null; vram_probe: string; unified_memory_detected: boolean;
+  };
+  quantization_bits_per_parameter: { low: number; high: number } | null;
+  estimated_weight_gb: ModelMemoryRange | null;
+  estimated_runtime_memory_gb: ModelMemoryRange | null;
+  system_ram_fit: WorkspaceMemoryFit;
+  gpu_memory_fit: WorkspaceMemoryFit;
+  format_compatibility: { status: "candidate_not_verified" | "unknown"; likely_runtimes: string[]; guidance: string };
+  warnings: string[];
+  scope_note: string;
+};
+
 export type WorkspaceDataset = {
   path: string;
   size_bytes: number;
@@ -701,6 +730,9 @@ export const axiomApi = {
     method: "POST",
     body: JSON.stringify({ path }),
   }),
+
+  modelCompatibility: (id: string) =>
+    requestJson<{ report: WorkspaceModelCompatibility }>(`/api/workspace/models/${encodeURIComponent(id)}/compatibility`),
 
   addModel: (model: Omit<WorkspaceModel, "id">) =>
     requestJson<{ model: WorkspaceModel }>("/api/workspace/models", {
