@@ -112,7 +112,7 @@ const CATEGORIES: { name: string; tools: RawTool[] }[] = [
     ["Local-address validator", "local-address", "Paste a local host or URL in Text A. Reports whether it appears loopback/private; not a network probe.", 1],
   ]},
   { name: "Workflow utilities", tools: [
-    ["Workflow graph validation", "dag-validate", "Paste JSON in Text A: {""nodes"": [""a"", ""b""], ""edges"": [[""a"", ""b""]]}. Validates references and cycles.", 1],
+    ["Workflow graph validation", "dag-validate", "Paste JSON in Text A with nodes and edges arrays, for example: nodes are a and b; edge is a to b. Validates references and cycles.", 1],
     ["Workflow topological order", "dag-order", "Use the JSON nodes/edges format described in Workflow graph validation.", 1],
     ["Missing workflow inputs", "missing-inputs", "Paste JSON in Text A with required and provided string arrays.", 1],
     ["Workflow cycle detector", "cycle-check", "Paste JSON workflow nodes and edges in Text A. Reports whether a directed cycle exists.", 1],
@@ -204,7 +204,7 @@ function parseRows(source: string): unknown[] {
   }
 }
 function parseNumbers(source: string): number[] {
-  return source.split(/[\s,;]+/).map((value) => Number(value.trim())).filter((value) => value.trim !== "" && Number.isFinite(value));
+  return source.split(/[\s,;]+/).map((value) => value.trim()).filter(Boolean).map(Number).filter((value) => Number.isFinite(value));
 }
 function percentile(values: number[], p: number): number {
   if (!values.length) return 0;
@@ -543,9 +543,8 @@ async function runOperation(tool: Tool, input: ToolkitInput): Promise<string> {
     case "manifest":
     case "manifest-check": {
       const object = rec(JSON.parse(textA) as unknown); if (!object) throw new Error("Text A must contain a JSON object.");
-      const manifest = { schema_version: 1, created_at: new Date().toISOString(), metadata: object };
       if (tool.kind === "manifest-check") return json({ valid_json_object: true, has_name: typeof object.name === "string" || typeof object.project === "string", has_version: typeof object.version === "string" || typeof object.schema_version === "number", top_level_keys: Object.keys(object).sort(), note: "Basic metadata sanity check only." });
-      return json({ schema_version: 1, metadata: object, reproducibility_note: "Add exact model, dataset, code, dependency, and seed identifiers before relying on this manifest." });
+      return json({ schema_version: 1, created_at: new Date().toISOString(), metadata: object, reproducibility_note: "Add exact model, dataset, code, dependency, and seed identifiers before relying on this manifest." });
     }
     case "seed-manifest": return json({ schema_version: 1, seed: Math.floor(a), experiment_description: textA.slice(0, 500), seed_applied: false, note: "This records the requested seed; it does not set seeds in training frameworks." });
     case "artifact-name": return textA.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 100) || "axiom-artifact";
@@ -647,7 +646,7 @@ async function runOperation(tool: Tool, input: ToolkitInput): Promise<string> {
     }
     case "support-redact": return redactText(textA).replace(/(?:\/home|\/Users|\/mnt\/c)\/[^/\s]+/g, "[REDACTED HOME PATH").replace(/\[REDACTED HOME PATH/g, "[REDACTED HOME PATH]");
     case "filename": {
-      const normalized = textA.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[<>:"/\\|?*\x00-\x1F]/g, "-").replace(/\s+/g, "-").replace(/[. ]+$/g, "").replace(/-+/g, "-").slice(0, 120);
+      const normalized = textA.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[<>:"\/\\|?*\x00-\x1F]/g, "-").replace(/\s+/g, "-").replace(/[. ]+$/g, "").replace(/-+/g, "-").slice(0, 120);
       return normalized || "axiom-file";
     }
     default: throw new Error("This utility is not implemented: " + tool.kind);
