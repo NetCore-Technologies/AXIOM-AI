@@ -1,62 +1,60 @@
-# AXIOM Engine: direct local inference
+# AXIOM Native Engine: independent local inference execution
 
-AXIOM Engine is AXIOM's own local runtime and orchestration layer for causal language models. Unlike the Ollama connector, it loads a local Transformers checkpoint directly into the Python process. Llama-architecture checkpoints are supported through the installed Transformers architecture mapping, along with other compatible causal-LM architectures exposed by that installation.
+AXIOM Native Engine executes Llama/Mistral-family causal language models directly inside AXIOM's Python process. PyTorch supplies tensor operations and device kernels; AXIOM implements the model's forward pass, RMSNorm, rotary position embeddings (RoPE), grouped-query attention, causal/sliding-window masks, per-layer key/value cache, SwiGLU MLP, LoRA deltas, sampling and token-by-token decoding.
 
-**What is ours:** the AXIOM runtime API, request bounds, local-path validation, model/adapter loading lifecycle, generation controls, and the separate bounded PyTorch LoRA training loop.
+**It is not an Ollama wrapper.** The inference request does not start, call, or require an Ollama service. It does not call Transformers' AutoModel loader or model.generate. Checkpoint weights are read from the safetensors format and run through AXIOM's own native execution code. Tokenization is performed by the local tokenizers package using the checkpoint's tokenizer.json; AXIOM does not download a tokenizer or model.
 
-**What is not claimed:** AXIOM does not claim that third-party Llama base weights are original AXIOM-trained weights. Bring a model you have already obtained and stored locally, and respect that model's licence and usage terms. AXIOM Engine itself does not download weights, contact a model hub, or execute remote model code.
-
-## Dependencies
-
-Install the local training/inference extra in the same environment that runs AXIOM:
+## Install the native runtime
 
 ```bash
-python -m pip install -e '.[training]'
+python -m pip install -e '.[native-inference]'
 ```
 
-The engine needs PyTorch and Transformers. Loading a LoRA adapter also requires PEFT.
+This extra installs PyTorch, tokenizers, and safetensors. The separate training extra retains Transformers/PEFT tooling for the existing training workflow; the native inference loop does not delegate generation to Transformers.
 
-## Model directory
+## Supported checkpoint format
 
-Use an existing local Transformers model directory containing `config.json`, model weights and tokenizer files. The directory must be compatible with a causal language model supported by your installed Transformers version. A GGUF file or Ollama model tag is not a Transformers model directory.
+A supported base model directory must contain:
+- config.json declaring model_type llama or mistral, with ordinary unscaled RoPE.
+- tokenizer.json, used locally for encoding and decoding.
+- model.safetensors, or model.safetensors.index.json plus the indexed safetensors shards.
+- Standard floating-point model tensors in float16, bfloat16, or float32 with expected Llama/Mistral tensor names and shapes.
 
-**Path safety:** AXIOM resolves both the model and adapter path against trusted model roots before loading. Defaults include existing `models`, `runs`, and `outputs` directories under the working directory, `~/models`, `~/Documents/models`, `~/Documents/AXIOM-AI/models`, the Hugging Face cache at `~/.cache/huggingface/hub`, and AXIOM's local model/fine-tuning directories. Symlinks that resolve outside an allowed root are rejected. To use another trusted directory, set `AXIOM_MODEL_ROOTS` before starting the AXIOM API. Separate multiple roots with the platform path separator (colon on Linux/macOS, semicolon on Windows). For example, on Linux/macOS:
+The current native engine explicitly rejects GGUF, GPTQ/AWQ and other quantized weights, pickle-based pytorch_model.bin weights, custom remote model code, unsupported architectures, and non-default RoPE scaling. It never silently falls back to another execution runtime.
+
+## Trusted model roots
+
+The engine resolves model and adapter paths against trusted local roots and checks the post-resolution canonical path so symlink escapes are rejected. Defaults include existing models, runs, and outputs directories below the working directory; ~/models; ~/Documents/models; ~/Documents/AXIOM-AI/models and runs; the Hugging Face cache; and AXIOM's local model/fine-tuning directories.
+
+To add a trusted location, set AXIOM_MODEL_ROOTS before starting the API. Use the platform path separator between roots (colon on Linux/macOS, semicolon on Windows). For example:
 
 ```bash
 export AXIOM_MODEL_ROOTS="$HOME/models:$HOME/Documents/AXIOM-AI/runs:/mnt/data/models"
 ```
 
-Only add directories you trust; the API does not permit arbitrary paths outside these roots.
+Only add directories you trust. Model/config/tokenizer/index/adapter assets may be symlinks only when their resolved targets remain inside one of the configured trusted roots; external-target symlinks are rejected.
 
 ## Control Center
 
-Open **Runtime** and use the **AXIOM Local Engine** panel. Enter the absolute path to the base model directory. To generate using a trained adapter, optionally enter the adapter output directory produced by the Training panel; it must contain `adapter_config.json` and adapter weights.
+Open **Runtime → AXIOM Local Engine**. Select a discovered model/adapter from the native inventory or enter its local path, then provide a prompt, output-token limit, and temperature. Discovery lists metadata only; weights are validated and loaded only when generation starts. **Unload model** releases AXIOM's model/tokenizer references and asks CUDA to empty its cache when applicable. Framework and OS allocators may keep some reserved memory.
 
-The engine caches one loaded base-model/adapter pair in the API process. Selecting a different path replaces that cached runtime on the next generation request. The **Unload model** action releases AXIOM's model/tokenizer references and asks CUDA to empty its cache when applicable; framework or operating-system allocators may still reserve memory. Large models can consume substantial RAM/VRAM and generation can take several minutes on CPU.
+A standard bias-free CAUSAL_LM LoRA adapter may be selected. AXIOM applies its A/B projection deltas in its own linear-projection path. DoRA, QALoRA, per-module rank/alpha patterns, saved replacement modules, bias-enabled adapters, unsupported target modules, and pickle adapter weights are rejected.
 
-## CLI
+## Execution path
 
-Check dependency readiness without loading model weights, then generate from an existing local checkpoint:
+1. Validate paths against trusted roots and read bounded JSON configuration.
+2. Check architecture/dimensions, safetensors index, tensor names/shapes, and tokenizer vocabulary.
+3. Load safe tensors directly into PyTorch on CUDA, Metal/MPS when available, or CPU.
+4. Tokenize locally and run AXIOM's embedding, RMSNorm, RoPE, grouped-query attention, KV cache, SwiGLU MLP and output-logit operations.
+5. Select tokens through greedy decoding (temperature 0) or temperature/top-p sampling, passing only each new token through the cached model until the output limit or EOS token.
 
-```bash
-axiom --no-banner engine status
-axiom --no-banner engine run --model-path "$HOME/models/my-llama-model" --prompt "Explain AXIOM in one sentence."
-axiom --no-banner engine run --model-path "$HOME/models/my-llama-model" --adapter-path "$HOME/runs/my-lora-adapter" --prompt-file ./prompt.txt --max-new-tokens 128 --temperature 0 --json
-```
+A checkpoint outside this contract is rejected with a compatibility error; the engine does not pretend it ran a model successfully.
 
-Pass exactly one of `--prompt` and `--prompt-file`. Prompt files are read as UTF-8 and capped at 12,000 characters.
+## API and CLI
 
-## API
+- GET /api/engine/status reports native dependency readiness, supported formats, execution backend, and loaded model state.
+- POST /api/engine/generate runs AXIOM-native inference with a local model path, optional LoRA adapter, prompt, output-token limit and temperature.
+- POST /api/engine/unload releases the model cached by the current API process.
+- axiom engine status and axiom engine run use the same local engine.
 
-- `GET /api/engine/status` reports dependency readiness and whether a model is loaded.
-- `POST /api/engine/generate` accepts `model_path`, optional `adapter_path`, `prompt`, `max_new_tokens` and `temperature`.
-- `POST /api/engine/unload` releases the model cached by the current API process.
-
-Prompt length is capped at 12,000 characters; generated tokens are capped at 2,048; model input context is additionally bounded by the loaded checkpoint's configuration and an AXIOM safety limit. All model and tokenizer loads use `local_files_only=True` and `trust_remote_code=False`. The engine does not overwrite base weights or adapter files.
-
-## Limitations
-
-- The engine is a local runtime, not a newly pretrained foundation model. Base model weights must already exist locally.
-- The installed Transformers version determines which causal-LM architectures and checkpoint formats are supported.
-- Runtime readiness does not guarantee that a particular checkpoint will fit available memory.
-- Model downloads, remote model-hub search, GGUF conversion, and Ollama execution are separate workflows.
+Model weights must be obtained separately and placed locally, with respect for their licenses. AXIOM does not claim supplied third-party base weights were pretrained by AXIOM. Native speed and memory depend on model size, precision and device. Quantization and further architecture families need separate implementations and acceptance tests.

@@ -1,12 +1,14 @@
-"""AXIOM's direct local causal-LM engine.
+"""AXIOM-owned native Llama/Mistral inference engine.
 
-The runtime is implemented in AXIOM and uses Transformers only to load supported
-local model architectures. It does not require Ollama and never downloads model
-weights or executes repository-provided model code.
+PyTorch supplies device tensor kernels; AXIOM implements the supported model
+forward pass, attention/cache path, LoRA application, and token-by-token decode.
+Local weights and tokenizer assets are required. The native path does not call
+Transformers model generation or an Ollama service.
 """
 from __future__ import annotations
 
 import gc
+from functools import lru_cache
 import importlib.metadata
 import importlib.util
 import json
@@ -28,11 +30,6 @@ _ENGINE_LOCK = threading.RLock()
 _LOADED_RUNTIME: dict[str, Any] | None = None
 _LOADED_ARCHITECTURE: str | None = None
 _MODEL_ROOT_ENV = "AXIOM_MODEL_ROOTS"
-_DEFAULT_MODEL_ROOT_SUFFIXES = (
-    Path("models"),
-    Path("runs"),
-    Path("outputs"),
-)
 
 
 class AxiomEngineError(RuntimeError):
@@ -47,9 +44,9 @@ def _version_key(value: str) -> tuple[int, int, int]:
 def runtime_status() -> dict[str, Any]:
     packages: dict[str, bool] = {}
     versions: dict[str, str | None] = {}
-    minimum_versions = {"torch": "2.2.0", "transformers": "5.0.0"}
+    minimum_versions = {"torch": "2.2.0", "tokenizers": "0.19.0", "safetensors": "0.4.0"}
     problems: list[str] = []
-    for name in ("torch", "transformers", "peft"):
+    for name in ("torch", "tokenizers", "safetensors"):
         try:
             packages[name] = importlib.util.find_spec(name) is not None
         except (ImportError, ModuleNotFoundError, ValueError):
@@ -58,14 +55,13 @@ def runtime_status() -> dict[str, Any]:
             versions[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
             versions[name] = None
-        if name in minimum_versions:
-            if not packages[name]:
-                problems.append(f"{name} is not installed")
-            elif versions[name] is not None and _version_key(versions[name]) < _version_key(minimum_versions[name]):
-                problems.append(f"{name} {versions[name]} is too old (need >= {minimum_versions[name]})")
+        if not packages[name]:
+            problems.append(f"{name} is not installed")
+        elif versions[name] is not None and _version_key(versions[name]) < _version_key(minimum_versions[name]):
+            problems.append(f"{name} {versions[name]} is too old (need >= {minimum_versions[name]})")
     ready = not problems
     return {
-        "engine": "axiom-local-engine",
+        "engine": "axiom-native-pytorch-llama",
         "ready": ready,
         "packages": packages,
         "versions": versions,
@@ -73,21 +69,26 @@ def runtime_status() -> dict[str, Any]:
         "problems": problems,
         "loaded": _LOADED_RUNTIME is not None,
         "architecture": _LOADED_ARCHITECTURE,
-        "model_loading": "local_files_only",
+        "model_loading": "local_safetensors_only",
+        "execution_backend": "pytorch-native-axiom",
+        "transformers_generation_used": False,
+        "ollama_used": False,
         "remote_code": False,
+        "supported_model_types": ["llama", "mistral"],
+        "supported_weights": ["safetensors"],
         "setup_note": (
-            "AXIOM Engine is ready for local Transformers causal-LM checkpoints."
+            "AXIOM Native Engine is ready for supported local Llama/Mistral safetensors checkpoints."
             if ready else
-            "AXIOM Engine setup required: " + "; ".join(problems)
-            + ". Install or upgrade local dependencies with: python -m pip install -e '.[training]'"
+            "AXIOM Native Engine setup required: " + "; ".join(problems)
+            + ". Install with: python -m pip install -e '.[native-inference]'"
         ),
         "scope_note": (
-            "AXIOM owns the runtime and training orchestration; pretrained weights remain a separate local input. "
-            "Compatibility depends on the checkpoint architecture supported by the installed Transformers version."
+            "AXIOM implements its own Llama/Mistral forward pass, RMSNorm, RoPE, grouped-query attention, KV cache, "
+            "LoRA application and token-by-token decoder using PyTorch tensor operations. It does not call "
+            "Transformers model.generate or an Ollama server. Checkpoint acquisition and model training are separate."
         ),
         "checked_at": datetime.now(UTC).isoformat(),
     }
-
 
 def _allowed_model_roots() -> tuple[Path, ...]:
     """Return canonical roots from trusted defaults and AXIOM_MODEL_ROOTS.
@@ -138,12 +139,83 @@ def _path_is_within_root(path: Path, root: Path) -> bool:
         return False
 
 
+@lru_cache(maxsize=8)
+def _trusted_file_entry(path: str, root_text: str) -> bool:
+    try:
+        resolved = os.path.realpath(path)
+        return os.path.isfile(resolved) and os.path.commonpath((resolved, root_text)) == root_text
+    except (OSError, ValueError):
+        return False
+
+
+def _trusted_directory_index(
+    root_strings: tuple[str, ...],
+    freshness_bucket: int,
+) -> tuple[tuple[str, bool, bool, bool], ...]:
+    """Index model directories by walking only configured trusted roots.
+
+    Request strings are compared to this filesystem-derived index; they are
+    never fed into Path, open, stat, resolve, or another filesystem operation.
+    The time bucket expires the index every 30 seconds so newly installed models
+    become selectable without an API restart.
+    """
+    del freshness_bucket
+    entries: dict[str, tuple[str, bool, bool, bool]] = {}
+    max_dirs_per_root = 50_000
+    max_depth = 12
+    for root_text in root_strings:
+        visited = 0
+        for directory, subdirs, filenames in os.walk(root_text, topdown=True, followlinks=False):
+            visited += 1
+            if visited > max_dirs_per_root:
+                break
+            try:
+                relative = os.path.relpath(directory, root_text)
+                depth = 0 if relative == os.curdir else len(Path(relative).parts)
+            except (OSError, ValueError):
+                subdirs[:] = []
+                continue
+            blocked_subdirs: list[str] = []
+            allowed_subdirs: list[str] = []
+            for name in subdirs:
+                child = os.path.join(directory, name)
+                if os.path.islink(child):
+                    blocked_subdirs.append(child)
+                else:
+                    allowed_subdirs.append(name)
+            subdirs[:] = allowed_subdirs if depth < max_depth else []
+            for blocked in blocked_subdirs:
+                key = os.path.normcase(os.path.normpath(blocked))
+                entries[key] = (blocked, False, False, True)
+
+            if depth > max_depth:
+                continue
+            model_config = "config.json" in filenames
+            adapter_config = "adapter_config.json" in filenames
+            if not model_config and not adapter_config:
+                continue
+            marker_names = (("config.json",) if model_config else ()) + (("adapter_config.json",) if adapter_config else ())
+            # HF cache metadata may be symlinked to blobs. Only accept targets
+            # whose canonical path remains below this root.
+            if any(not _trusted_file_entry(os.path.join(directory, marker), root_text) for marker in marker_names):
+                continue
+            try:
+                canonical = os.path.realpath(directory)
+                if os.path.commonpath((canonical, root_text)) != root_text:
+                    continue
+            except (OSError, ValueError):
+                continue
+            key = os.path.normcase(os.path.normpath(canonical))
+            entries[key] = (canonical, model_config, adapter_config, False)
+    return tuple(entries[key] for key in sorted(entries))
+
+
 def _resolve_model_directory(value: str, label: str) -> Path:
-    """Resolve a model/adapter directory only when it stays under a trusted root."""
+    """Resolve a request by matching it to an inventoried trusted model folder."""
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{label} is required.")
-    if any(character in value for character in ("\\x00", "\\r", "\\n")):
-        raise ValueError(f"{label} contains invalid control characters.")
+    if len(value) > 4096 or any(character in value for character in ("\\x00", "\\r", "\\n")):
+        raise ValueError(f"{label} contains invalid control characters or exceeds the path limit.")
 
     roots = _allowed_model_roots()
     if not roots:
@@ -151,40 +223,140 @@ def _resolve_model_directory(value: str, label: str) -> Path:
             "No allowed model directories were found. Create a model directory under ~/models "
             "or set AXIOM_MODEL_ROOTS to trusted local directories."
         )
-    try:
-        candidate = Path(value).expanduser()
-        # Normalize dot segments before any filesystem resolution, including
-        # when callers supplied an absolute path.
-        lexical_path = Path(os.path.abspath(candidate))
-    except (OSError, RuntimeError, ValueError):
-        raise ValueError(f"{label} must be within an allowed local model directory.") from None
 
-    if not any(_path_is_within_root(lexical_path, root) for root in roots):
-        raise ValueError(
-            f"{label} must be within an allowed model directory. Set AXIOM_MODEL_ROOTS to add a trusted directory."
-        )
-    try:
-        path = candidate.resolve(strict=True)
-    except (OSError, RuntimeError):
-        raise ValueError(f"{label} must be an existing local directory.") from None
-    if not path.is_dir() or not any(_path_is_within_root(path, root) for root in roots):
-        raise ValueError(
-            f"{label} must resolve to an existing directory inside an allowed model root; symlink escapes are not allowed."
-        )
-    return path
+    # Normalization here is lexical only. All filesystem reads are performed
+    # against paths obtained independently from a walk of trusted roots.
+    raw_value = os.path.expanduser(value.strip())
+    # Reject traversal components up front. These are string operations only;
+    # the request value is never passed to a filesystem API or Path constructor.
+    components = raw_value.replace("\\", "/").split("/")
+    if os.pardir in components:
+        raise ValueError(f"{label} must not contain parent-directory traversal components.")
 
+    root_strings = tuple(str(root) for root in roots)
+    candidate_keys = {os.path.normcase(os.path.normpath(raw_value))}
+    if not os.path.isabs(raw_value):
+        # Relative CLI/UI input is first interpreted from the current working
+        # directory; matching still happens against the inventory before any
+        # filesystem operation uses a model path.
+        cwd_key = os.getcwd().rstrip("/\\") + os.sep + raw_value
+        candidate_keys.add(os.path.normcase(os.path.normpath(cwd_key)))
+        candidate_keys.update(
+            os.path.normcase(os.path.normpath(root_text.rstrip("/\\") + os.sep + raw_value))
+            for root_text in root_strings
+        )
+    freshness_bucket = int(time.monotonic() // 30)
+    entries = _trusted_directory_index(root_strings, freshness_bucket)
+    for discovered, is_model, is_adapter, is_symlink in entries:
+        key = os.path.normcase(os.path.normpath(discovered))
+        if key not in candidate_keys:
+            continue
+        if is_symlink:
+            raise ValueError(f"{label} cannot be a symlink; trusted-root escapes are not allowed.")
+        lowered = label.casefold()
+        if lowered == "base model" and not is_model:
+            continue
+        if lowered == "lora adapter" and not is_adapter:
+            continue
+        # The returned path is from the trusted directory inventory, never
+        # constructed from the request-supplied path.
+        return Path(discovered)
+    raise ValueError(
+        f"{label} must match an existing checkpoint directory discovered under a trusted model root. "
+        "Set AXIOM_MODEL_ROOTS to add a trusted location and retry."
+    )
 
 def resolve_local_model_directory(value: str, label: str = "Model") -> str:
     """Validate an API-supplied path and return its canonical allowed location."""
     return str(_resolve_model_directory(value, label))
 
 
+def discover_local_engine_assets() -> dict[str, Any]:
+    """List metadata for native-compatible local folders without loading model weights."""
+    roots = _allowed_model_roots()
+    if not roots:
+        return {
+            "schema_version": 1,
+            "models": [],
+            "adapters": [],
+            "truncated": False,
+            "scope_note": "No trusted model roots exist yet. Create ~/models or configure AXIOM_MODEL_ROOTS.",
+        }
+
+    root_strings = tuple(str(root) for root in roots)
+    entries = _trusted_directory_index(root_strings, int(time.monotonic() // 30))
+    models: list[dict[str, Any]] = []
+    adapters: list[dict[str, Any]] = []
+    max_results = 500
+    for discovered, is_model, is_adapter, is_symlink in entries:
+        if is_symlink:
+            continue
+        directory = Path(discovered)
+        if is_model and len(models) < max_results:
+            try:
+                inspected = _inspect_model_config(directory)
+                from axiom.core.native_engine import NativeLlamaConfig
+
+                native_config = NativeLlamaConfig.from_mapping(inspected["config"])
+                tokenizer_ok = any(_trusted_file_entry(str(directory / "tokenizer.json"), str(root)) for root in roots)
+                single_weights = any(_trusted_file_entry(str(directory / "model.safetensors"), str(root)) for root in roots)
+                indexed_weights = any(_trusted_file_entry(str(directory / "model.safetensors.index.json"), str(root)) for root in roots)
+                if not tokenizer_ok:
+                    continue
+                if not (single_weights or indexed_weights):
+                    continue
+                models.append({
+                    "path": discovered,
+                    "name": directory.name,
+                    "model_type": native_config.model_type,
+                    "architecture": inspected["architecture"],
+                    "weight_format": "safetensors" if single_weights else "sharded safetensors",
+                    "ready_for_native_attempt": True,
+                })
+            except (ValueError, OSError, RuntimeError):
+                # Incompatible or incomplete folders are not offered as runnable models.
+                continue
+        if is_adapter and len(adapters) < max_results:
+            adapter_config = directory / "adapter_config.json"
+            adapter_weights = directory / "adapter_model.safetensors"
+            config_trusted = any(_trusted_file_entry(str(adapter_config), str(root)) for root in roots)
+            weights_trusted = any(_trusted_file_entry(str(adapter_weights), str(root)) for root in roots)
+            if config_trusted and weights_trusted:
+                adapters.append({
+                    "path": discovered,
+                    "name": directory.name,
+                    "weight_format": "safetensors LoRA",
+                })
+        if len(models) >= max_results and len(adapters) >= max_results:
+            break
+
+    models.sort(key=lambda item: (item["name"].casefold(), item["path"]))
+    adapters.sort(key=lambda item: (item["name"].casefold(), item["path"]))
+    return {
+        "schema_version": 1,
+        "models": models,
+        "adapters": adapters,
+        "truncated": len(models) >= max_results or len(adapters) >= max_results,
+        "scope_note": (
+            "Metadata-only discovery under trusted local roots. Weight tensors are not loaded or fully validated "
+            "until an inference request runs. AXIOM does not download models during discovery."
+        ),
+    }
+
+
+
+
 def _inspect_model_config(model_dir: Path) -> dict[str, Any]:
     config_path = model_dir / "config.json"
     try:
-        if not config_path.is_file() or config_path.stat().st_size > _MAX_CONFIG_BYTES:
-            raise ValueError("Base model directory must contain a config.json no larger than 1 MiB.")
-        config = json.loads(config_path.read_text(encoding="utf-8"))
+        resolved_config = config_path.resolve(strict=True)
+        if (
+            not resolved_config.is_file()
+            or resolved_config.stat().st_size > _MAX_CONFIG_BYTES
+            or not any(_path_is_within_root(resolved_config, root) for root in _allowed_model_roots())
+        ):
+            raise ValueError("Base model directory must contain a config.json inside a trusted root and no larger than 1 MiB.")
+        config = json.loads(resolved_config.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
         raise ValueError("Local model config.json could not be read as valid UTF-8 JSON.") from None
     if not isinstance(config, dict) or not isinstance(config.get("model_type"), str):
@@ -210,35 +382,33 @@ def _load_local_model(model_path: str, adapter_path: str | None):
     global _LOADED_RUNTIME, _LOADED_ARCHITECTURE
     try:
         import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
     except (ImportError, OSError):
-        raise AxiomEngineError("AXIOM Engine dependencies are unavailable. Install with: python -m pip install -e '.[training]'") from None
+        raise AxiomEngineError(
+            "AXIOM Native Engine requires PyTorch. Install with: python -m pip install -e '.[native-inference]'"
+        ) from None
 
     base_dir = _resolve_model_directory(model_path, "Base model")
     inspected = _inspect_model_config(base_dir)
-    resolved_adapter: str | None = None
+    resolved_adapter: Path | None = None
     if adapter_path and adapter_path.strip():
         adapter_dir = _resolve_model_directory(adapter_path, "LoRA adapter")
-        if not (adapter_dir / "adapter_config.json").is_file():
-            raise ValueError("LoRA adapter directory must contain adapter_config.json.")
-        if not any((adapter_dir / name).is_file() for name in ("adapter_model.safetensors", "adapter_model.bin")):
-            raise ValueError("LoRA adapter directory must contain adapter_model.safetensors or adapter_model.bin.")
-        resolved_adapter = str(adapter_dir)
+        if not (adapter_dir / "adapter_config.json").is_file() or not (adapter_dir / "adapter_model.safetensors").is_file():
+            raise ValueError(
+                "Native LoRA adapter must contain adapter_config.json and adapter_model.safetensors; "
+                "pickle-based adapter weights are not supported."
+            )
+        resolved_adapter = adapter_dir
 
-    key = (str(base_dir), resolved_adapter)
-    inspected["model_directory_name"] = base_dir.name
-    inspected["adapter_directory_name"] = Path(resolved_adapter).name if resolved_adapter else None
+    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None)
     if _LOADED_RUNTIME is not None and _LOADED_RUNTIME["key"] == key:
         return (
             _LOADED_RUNTIME["model"],
             _LOADED_RUNTIME["tokenizer"],
             _LOADED_RUNTIME["torch"],
             _LOADED_RUNTIME["device"],
-            inspected,
+            _LOADED_RUNTIME["details"],
         )
 
-    # Reclaim the previous model before loading another checkpoint. Retaining
-    # two large language models can exhaust system RAM or accelerator memory.
     previous_runtime = _LOADED_RUNTIME
     _LOADED_RUNTIME = None
     _LOADED_ARCHITECTURE = None
@@ -250,56 +420,45 @@ def _load_local_model(model_path: str, adapter_path: str | None):
             if previous_torch is not None and previous_torch.cuda.is_available():
                 previous_torch.cuda.empty_cache()
         except (RuntimeError, AttributeError):
-            _LOG.debug("GPU cache cleanup was unavailable while replacing the loaded model.", exc_info=True)
+            _LOG.debug("GPU cache cleanup was unavailable while replacing the loaded native model.", exc_info=True)
 
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        mps = getattr(getattr(torch, "backends", None), "mps", None)
+        device = torch.device("mps") if mps is not None and mps.is_available() else torch.device("cpu")
+
+    from axiom.core.native_engine import NativeDependencyError, NativeEngineError, load_native_runtime
     try:
-        tokenizer = AutoTokenizer.from_pretrained(
-            str(base_dir), local_files_only=True, trust_remote_code=False
+        model, tokenizer, native_details = load_native_runtime(
+            base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots()
         )
-        if torch.cuda.is_available():
-            dtype = torch.float16
-            device = torch.device("cuda")
-        else:
-            dtype = torch.float32
-            mps = getattr(getattr(torch, "backends", None), "mps", None)
-            device = torch.device("mps") if mps is not None and mps.is_available() else torch.device("cpu")
-        model = AutoModelForCausalLM.from_pretrained(
-            str(base_dir),
-            local_files_only=True,
-            trust_remote_code=False,
-            dtype=dtype,
-            low_cpu_mem_usage=True,
-        )
-        model.to(device)
-        if resolved_adapter:
-            try:
-                from peft import PeftModel
-            except (ImportError, OSError):
-                raise AxiomEngineError("Loading a LoRA adapter requires PEFT. Install with: python -m pip install -e '.[training]'") from None
-            model = PeftModel.from_pretrained(
-                model, resolved_adapter, local_files_only=True, is_trainable=False
-            )
-        model.eval()
-    except (ValueError, AxiomEngineError):
-        raise
-    except Exception as exc:
-        detail = str(exc).replace("\r", " ").replace("\n", " ").strip()[:300]
+    except NativeDependencyError as exc:
+        raise AxiomEngineError(str(exc)) from None
+    except NativeEngineError as exc:
+        raise ValueError(str(exc)) from None
+    except (OSError, RuntimeError):
+        _LOG.debug("Native checkpoint load failed.", exc_info=True)
         raise AxiomEngineError(
-            "AXIOM Engine could not load this local checkpoint or adapter. Confirm that the weights, tokenizer, "
-            "architecture, and installed dependencies are compatible." + (f" Detail: {detail}" if detail else "")
+            "AXIOM Native Engine could not allocate or load this checkpoint. "
+            "Confirm supported safetensors weights and available memory."
         ) from None
 
+    details = {
+        **inspected,
+        **native_details,
+        "config": {"max_position_embeddings": model.config.max_position_embeddings},
+    }
     _LOADED_RUNTIME = {
         "key": key,
         "model": model,
         "tokenizer": tokenizer,
         "torch": torch,
         "device": device,
+        "details": details,
     }
-    _LOADED_ARCHITECTURE = inspected["architecture"]
-    return model, tokenizer, torch, device, inspected
-
-
+    _LOADED_ARCHITECTURE = native_details["architecture"]
+    return model, tokenizer, torch, device, details
 
 def unload_local_model() -> dict[str, Any]:
     """Release the loaded local model and best-effort accelerator cache."""
@@ -338,52 +497,60 @@ def generate_local(
 ) -> dict[str, Any]:
     prompt, max_new_tokens, temperature = validate_generation(prompt, max_new_tokens, temperature)
     with _ENGINE_LOCK:
-        model, tokenizer, torch, device, inspected = _load_local_model(model_path, adapter_path)
-        context_cap = inspected["config"].get("max_position_embeddings") or inspected["config"].get("n_positions") or 4096
+        model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path)
+        context_cap = max(2, min(model.config.max_position_embeddings, _MAX_INPUT_TOKENS + max_new_tokens))
+        effective_max_new_tokens = min(max_new_tokens, context_cap - 1)
+        input_limit = max(1, min(_MAX_INPUT_TOKENS, context_cap - effective_max_new_tokens))
         try:
-            context_cap = max(128, min(int(context_cap), _MAX_INPUT_TOKENS + _MAX_NEW_TOKENS))
-        except (ValueError, TypeError, OverflowError):
-            context_cap = 4096
-        input_limit = max(1, min(_MAX_INPUT_TOKENS, context_cap - max_new_tokens))
-        encoded = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=input_limit)
-        input_ids = encoded["input_ids"].to(device)
-        attention_mask = encoded.get("attention_mask")
-        if attention_mask is not None:
-            attention_mask = attention_mask.to(device)
-        kwargs: dict[str, Any] = {
-            "input_ids": input_ids,
-            "max_new_tokens": min(max_new_tokens, max(1, context_cap - input_ids.shape[-1])),
-            "do_sample": temperature > 0,
-            "pad_token_id": tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id,
-        }
-        if attention_mask is not None:
-            kwargs["attention_mask"] = attention_mask
-        if temperature > 0:
-            kwargs["temperature"] = temperature
-            kwargs["top_p"] = 0.9
+            encoded = tokenizer.encode(prompt, add_special_tokens=False)
+            prompt_ids = list(encoded.ids)
+        except Exception:
+            raise ValueError("Prompt could not be tokenized by the local tokenizer.json.") from None
+        if not prompt_ids:
+            raise ValueError("Prompt tokenization returned no tokens.")
+        bos_id = model.config.bos_token_id
+        if details.get("add_bos_token") and bos_id is not None and prompt_ids[0] != bos_id:
+            prompt_ids.insert(0, bos_id)
+        if len(prompt_ids) > input_limit:
+            prompt_ids = prompt_ids[-input_limit:]
+            if details.get("add_bos_token") and bos_id is not None and prompt_ids:
+                prompt_ids[0] = bos_id
+        effective_max_new_tokens = min(effective_max_new_tokens, max(1, context_cap - len(prompt_ids)))
         started = time.perf_counter()
         try:
             with torch.inference_mode():
-                output_ids = model.generate(**kwargs)
-        except Exception as exc:
-            detail = str(exc).replace("\r", " ").replace("\n", " ").strip()[:300]
+                generated_ids = model.generate(
+                    prompt_ids,
+                    max_new_tokens=effective_max_new_tokens,
+                    temperature=temperature,
+                    top_p=0.9,
+                    eos_token_ids=model.config.eos_token_ids,
+                )
+            response = tokenizer.decode(generated_ids, skip_special_tokens=True)[:100_000]
+        except ValueError:
+            raise
+        except Exception:
+            _LOG.debug("AXIOM Native Engine token generation failed.", exc_info=True)
             raise AxiomEngineError(
-                "AXIOM Engine generation failed. The prompt/context may exceed available memory or this model's limits."
-                + (f" Detail: {detail}" if detail else "")
+                "AXIOM Native Engine generation failed. The prompt/context may exceed memory, "
+                "or the checkpoint may be incompatible with the implemented architecture."
             ) from None
         elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
-        input_token_count = int(input_ids.shape[-1])
-        continuation = output_ids[0, input_token_count:]
-        response = tokenizer.decode(continuation, skip_special_tokens=True)
-        response = response[:100_000]
         return {
-            "engine": "axiom-local-engine",
-            "model": inspected["model_directory_name"] or "local-model",
-            "architecture": inspected["architecture"],
-            "adapter": inspected["adapter_directory_name"],
+            "engine": "axiom-native-engine",
+            "execution_backend": "pytorch-native-axiom",
+            "transformers_generation_used": False,
+            "ollama_used": False,
+            "model": details["model_directory_name"] or "local-model",
+            "architecture": details["architecture"],
+            "model_type": details["model_type"],
+            "adapter": details["adapter_directory_name"],
+            "device": str(device),
+            "checkpoint_format": "safetensors",
+            "decoder": model.last_generation.get("decoder", "axiom-autoregressive-kv-cache"),
             "response": response,
-            "prompt_tokens": input_token_count,
-            "completion_tokens": int(continuation.shape[-1]),
+            "prompt_tokens": model.last_generation.get("prompt_tokens", len(prompt_ids)),
+            "completion_tokens": model.last_generation.get("completion_tokens", len(generated_ids)),
             "elapsed_ms": elapsed_ms,
             "generated_at": datetime.now(UTC).isoformat(),
             "local_only": True,

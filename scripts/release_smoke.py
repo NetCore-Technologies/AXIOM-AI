@@ -267,52 +267,51 @@ def runtime_trace_issues(trace_core: str, inference_api: str, diagnostics_api: s
     return issues
 
 
-def engine_security_and_lifecycle_issues(engine_source: str, api_source: str, client_source: str, panel_source: str, e2e_source: str) -> list[str]:
-    """Verify trusted local model roots, safe result metadata, and explicit unload wiring."""
+def engine_security_and_lifecycle_issues(engine_source: str, native_source: str, api_source: str, client_source: str, panel_source: str, e2e_source: str) -> list[str]:
+    """Guard the native model execution path and trusted path/lifecycle controls."""
     issues: list[str] = []
     for token in (
         '_MODEL_ROOT_ENV = "AXIOM_MODEL_ROOTS"',
         "def _allowed_model_roots(",
         "def _path_is_within_root(",
         "path.relative_to(root)",
-        "symlink escapes are not allowed",
-        'inspected["model_directory_name"]',
-        'inspected["adapter_directory_name"]',
+        "trusted-root escapes are not allowed",
+        'details["model_directory_name"]',
+        'details["adapter_directory_name"]',
         "def unload_local_model(",
         "_LOADED_RUNTIME: dict[str, Any] | None = None",
+        "load_native_runtime(",
+        "def discover_local_engine_assets(",
+        "NativeEngineError",
     ):
         if token not in engine_source:
-            issues.append("AXIOM Engine trusted path/lifecycle handling is missing: " + token)
-    for forbidden in ('Path(model_path).expanduser().name', 'Path(adapter_path).expanduser().name'):
+            issues.append("AXIOM Engine trusted path/native loader wiring is missing: " + token)
+    for forbidden in ("Path(value)", "Path(model_path)", "Path(adapter_path)", "from transformers import", "AutoModelForCausalLM"):
         if forbidden in engine_source:
-            issues.append("AXIOM Engine result must use already-validated directory names, not re-evaluate user paths: " + forbidden)
+            issues.append("AXIOM Engine must not delegate inference or reevaluate raw path expressions: " + forbidden)
     for token in (
-        "resolve_local_model_directory(candidate",
-        '@router.post("/unload")',
-        "unload_local_model()",
+        "class NativeLlamaRuntime", "def forward(", "def generate(", "def _rms_norm(",
+        "def _apply_rope(", "past_key_values", "repeat_interleave", "safe_open",
+        "model.safetensors", '"execution_backend": "pytorch-native-axiom"',
+        '"transformers_generation_used": False', '"ollama_used": False',
     ):
+        if token not in native_source:
+            issues.append("AXIOM-owned native inference mechanics are missing: " + token)
+    for forbidden in ("AutoModelForCausalLM.from_pretrained", "model.generate(**kwargs)", "requests.post("):
+        if forbidden in native_source:
+            issues.append("Native inference implementation delegates instead of executing locally: " + forbidden)
+    for token in ("resolve_local_model_directory(candidate", '@router.get("/models")', "discover_local_engine_assets()", '@router.post("/unload")', "unload_local_model()"):
         if token not in api_source:
             issues.append("AXIOM Engine API is missing trusted path validation or unload route: " + token)
     if "PurePath" in api_source or "paths_must_be_safe_relative" in api_source:
         issues.append("AXIOM Engine API has legacy path checks that conflict with the trusted-root resolver.")
-    for token in (
-        "unloadAxiomEngine:",
-        '"/api/engine/unload"',
-    ):
+    for token in ("axiomEngineModels:", '"/api/engine/models"', "unloadAxiomEngine:", '"/api/engine/unload"'):
         if token not in client_source:
             issues.append("Typed AXIOM Engine client is missing unload lifecycle support: " + token)
-    for token in (
-        "Unload model",
-        "axiomApi.unloadAxiomEngine()",
-        "AXIOM_MODEL_ROOTS",
-    ):
+    for token in ("Select discovered native model", "axiomApi.axiomEngineModels()", "Unload model", "axiomApi.unloadAxiomEngine()", "AXIOM_MODEL_ROOTS", "tokenizer.json", "safetensors"):
         if token not in panel_source:
-            issues.append("AXIOM Local Engine GUI is missing unload/path safety controls: " + token)
-    for token in (
-        "then unloads it",
-        "api/engine/unload",
-        'name: "Unload model"',
-    ):
+            issues.append("AXIOM Native Engine GUI is missing native support/path safety controls: " + token)
+    for token in ("then unloads it", "api/engine/models", 'selectOption("/models/llama-test")', "api/engine/unload", 'name: "Unload model"'):
         if token not in e2e_source:
             issues.append("AXIOM Engine browser acceptance test is missing lifecycle coverage: " + token)
     return issues
@@ -349,8 +348,8 @@ def inspect(root: Path) -> dict[str, Any]:
     required = [
         "pyproject.toml", "axiom/version.py", "ROADMAP.md", "src/App.tsx",
         "src/api/client.ts", "src/components/ApiPlayground.tsx", "src/components/RuntimeConnectorPanel.tsx", "src/components/AgentProfiles.tsx", "src/components/LocalInferencePanel.tsx", "src/components/RuntimeTracePanel.tsx", "src/styles.css",
-        "axiom/api/server.py", "axiom/api/workspace.py", "axiom/api/engine.py", "axiom/api/inference.py", "axiom/core/inference.py", "axiom/core/runtime_traces.py", "axiom/models/compatibility.py", "axiom/api/diagnostics.py", "axiom/api/runtime_discovery.py", "axiom/api/agent_profiles.py", "axiom/core/runtime_discovery.py", "axiom/core/agent_profiles.py", "axiom/cli/agent_profiles.py", "scripts/release_smoke.py",
-        "tests/test_release_smoke.py", "tests/test_axiom_engine.py", "tests/test_axiom_engine_api.py", "e2e/axiom-engine.spec.ts", "e2e/helpers/auth.ts", "e2e/modules.spec.ts", "e2e/workflows.spec.ts", "e2e/evaluation.spec.ts",
+        "axiom/api/server.py", "axiom/api/workspace.py", "axiom/api/engine.py", "axiom/api/inference.py", "axiom/core/inference.py", "axiom/core/native_engine.py", "axiom/core/runtime_traces.py", "axiom/models/compatibility.py", "axiom/api/diagnostics.py", "axiom/api/runtime_discovery.py", "axiom/api/agent_profiles.py", "axiom/core/runtime_discovery.py", "axiom/core/agent_profiles.py", "axiom/cli/agent_profiles.py", "scripts/release_smoke.py",
+        "tests/test_release_smoke.py", "tests/test_axiom_engine.py", "tests/test_axiom_engine_api.py", "tests/test_native_engine.py", "e2e/axiom-engine.spec.ts", "e2e/helpers/auth.ts", "e2e/modules.spec.ts", "e2e/workflows.spec.ts", "e2e/evaluation.spec.ts",
         "e2e/model-registry-filters.spec.ts", "e2e/inference-benchmark.spec.ts", "e2e/runtime-traces.spec.ts", "e2e/axiom-engine.spec.ts", "tests/test_workspace_model_registry_filters.py",
         "tests/test_model_compatibility.py", "tests/test_inference_benchmark.py", "tests/test_inference_benchmark_api.py", "tests/test_runtime_traces.py", "tests/test_runtime_traces_api.py", "tests/test_runtime_discovery.py", "tests/test_runtime_discovery_api.py", "tests/test_agent_profiles.py", "tests/test_agent_profiles_api.py", "tests/test_agent_profiles_cli.py", "e2e/api-playground.spec.ts", "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
         "docs/Runtime-Discovery.md", "docs/Agent-Profiles.md", "docs/Api-Playground.md", "docs/Inference-Benchmarking.md", "docs/Local-Engine.md", ".github/workflows/quality-gates.yml", ".github/workflows/nightly-build.yml",
@@ -400,10 +399,11 @@ def inspect(root: Path) -> dict[str, Any]:
     trace_e2e = (root / "e2e/runtime-traces.spec.ts").read_text(encoding="utf-8")
     failures.extend(runtime_trace_issues(trace_core, inference_api, diagnostics_api, client, app_source, trace_panel, trace_e2e))
     engine_source = (root / "axiom/core/engine.py").read_text(encoding="utf-8")
+    native_source = (root / "axiom/core/native_engine.py").read_text(encoding="utf-8")
     engine_api = (root / "axiom/api/engine.py").read_text(encoding="utf-8")
     engine_panel = (root / "src/components/LocalAxiomEnginePanel.tsx").read_text(encoding="utf-8")
     engine_e2e = (root / "e2e/axiom-engine.spec.ts").read_text(encoding="utf-8")
-    failures.extend(engine_security_and_lifecycle_issues(engine_source, engine_api, client, engine_panel, engine_e2e))
+    failures.extend(engine_security_and_lifecycle_issues(engine_source, native_source, engine_api, client, engine_panel, engine_e2e))
     for path in (
         "/api/health", "/api/meta", "/api/workspace/runtime",
         "/api/workspace/models?offset=0&limit=5", "/api/workspace/datasets",

@@ -77,7 +77,7 @@ test("model registry filters and saved presets use the real typed API query cont
   await expect(page.getByRole("heading", { name: "Hardware fit · Qwen Seven" })).toBeVisible();
   await expect(page.getByText("3.50–4.38 GB", { exact: true })).toBeVisible();
   await expect(page.getByText("UNLIKELY", { exact: true })).toBeVisible();
-  await expect(page.getByText(/not a benchmark/i)).toBeVisible();
+  await expect(page.getByText("MEMORY ESTIMATE · NOT A BENCHMARK", { exact: true })).toBeVisible();
 
   await page.getByRole("textbox", { name: "Search model registry" }).fill("qwen");
   await page.getByRole("textbox", { name: "Exact model format" }).fill("gguf");

@@ -94,13 +94,32 @@ export type RuntimeTraceReport = {
   max_retained: number;
   privacy: { prompt_bodies_stored: false; response_bodies_stored: false; disk_persistence: false };
 };
+export type AxiomEngineModel = {
+  path: string; name: string; model_type: "llama" | "mistral";
+  architecture: string; weight_format: string; ready_for_native_attempt: boolean;
+};
+export type AxiomEngineAdapter = {
+  path: string; name: string; weight_format: string;
+};
+export type AxiomEngineAssets = {
+  schema_version: number; models: AxiomEngineModel[]; adapters: AxiomEngineAdapter[];
+  truncated: boolean; scope_note: string;
+};
+
 export type AxiomEngineStatus = {
   engine: string; ready: boolean; packages: Record<string, boolean>; versions: Record<string, string | null>;
-  loaded: boolean; architecture: string | null; model_loading: "local_files_only"; remote_code: false;
+  minimum_versions?: Record<string, string>; problems?: string[];
+  loaded: boolean; architecture: string | null; model_loading: "local_files_only" | "local_safetensors_only";
+  execution_backend?: string; transformers_generation_used?: false; ollama_used?: false;
+  supported_model_types?: string[]; supported_weights?: string[]; remote_code: false;
   setup_note: string; scope_note: string; checked_at: string;
 };
 export type AxiomEngineResult = {
-  engine: "axiom-local-engine"; model: string; architecture: string; adapter: string | null; response: string;
+  engine: "axiom-native-engine"; execution_backend: "pytorch-native-axiom";
+  transformers_generation_used: false; ollama_used: false;
+  model: string; architecture: string; model_type: "llama" | "mistral";
+  adapter: string | null; device: string; checkpoint_format: "safetensors";
+  decoder: "axiom-autoregressive-kv-cache"; response: string;
   prompt_tokens: number; completion_tokens: number; elapsed_ms: number; generated_at: string; local_only: true;
 };
 
@@ -1141,6 +1160,7 @@ export const axiomApi = {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
   axiomEngineStatus: () => requestJson<AxiomEngineStatus>("/api/engine/status"),
+  axiomEngineModels: () => requestJson<AxiomEngineAssets>("/api/engine/models"),
   runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number }) =>
     requestJson<AxiomEngineResult>("/api/engine/generate", {
       method: "POST", body: JSON.stringify(input),

@@ -1,11 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Activity, Cpu, Play, RefreshCcw, Unplug } from "lucide-react";
-import { axiomApi, type AxiomEngineResult, type AxiomEngineStatus } from "../api/client";
+import { axiomApi, type AxiomEngineAssets, type AxiomEngineResult, type AxiomEngineStatus } from "../api/client";
 
 export default function LocalAxiomEnginePanel() {
   const [status, setStatus] = useState<AxiomEngineStatus | null>(null);
+  const [assets, setAssets] = useState<AxiomEngineAssets | null>(null);
   const [modelPath, setModelPath] = useState("");
+  const [selectedModelPath, setSelectedModelPath] = useState("");
   const [adapterPath, setAdapterPath] = useState("");
+  const [selectedAdapterPath, setSelectedAdapterPath] = useState("");
   const [prompt, setPrompt] = useState("");
   const [maxNewTokens, setMaxNewTokens] = useState("256");
   const [temperature, setTemperature] = useState("0.7");
@@ -23,7 +26,13 @@ export default function LocalAxiomEnginePanel() {
       setStatus(await axiomApi.axiomEngineStatus());
     } catch (cause) {
       setStatus(null);
-      setError(cause instanceof Error ? cause.message : "AXIOM Engine status is unavailable.");
+      setError(cause instanceof Error ? cause.message : "AXIOM Native Engine status is unavailable.");
+    }
+    try {
+      setAssets(await axiomApi.axiomEngineModels());
+    } catch {
+      // Manual trusted-root path entry remains available if discovery is unavailable.
+      setAssets(null);
     } finally {
       setLoading(false);
     }
@@ -55,7 +64,7 @@ export default function LocalAxiomEnginePanel() {
     setResult(null);
     const tokenLimit = Number(maxNewTokens);
     const temp = Number(temperature);
-    if (!modelPath.trim()) { setError("Enter the path to a local Transformers model directory."); return; }
+    if (!modelPath.trim()) { setError("Choose a discovered native model or enter a trusted local Llama/Mistral model path."); return; }
     if (!prompt.trim()) { setError("Enter a prompt first."); return; }
     if (!Number.isInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 2048) { setError("Maximum generated tokens must be between 1 and 2048."); return; }
     if (!Number.isFinite(temp) || temp < 0 || temp > 2) { setError("Temperature must be between 0 and 2."); return; }
@@ -84,28 +93,43 @@ export default function LocalAxiomEnginePanel() {
         {status?.loaded && <button type="button" className="button secondary-button" onClick={() => void unload()} disabled={loading || running || unloading}><Unplug size={14} /> {unloading ? "Unloading…" : "Unload model"}</button>}
       </div>
     </div>
-    <p>Run a local Llama-architecture or other compatible Transformers causal model directly through AXIOM's own runtime. Ollama is not required for this panel. Model weights must already exist on this computer; AXIOM will not download weights or execute remote model code.</p>
+    <p>AXIOM Native Engine runs its own PyTorch Llama/Mistral forward pass and autoregressive KV-cache decoder, including RMSNorm, RoPE, grouped-query attention and LoRA deltas. Tokenization uses the local tokenizer.json; weights are loaded from local floating-point safetensors. This panel does not call Transformers model.generate or Ollama. Weights must already exist on this computer; model downloads and training are separate workflows.</p>
     <div className="status-strip" aria-label="AXIOM Engine status">
       <div className="status-strip-item">
         <span className={`status-pill ${status?.ready ? "success" : "warning"}`}><i />{loading ? "CHECKING" : status?.ready ? "ENGINE READY" : "SETUP REQUIRED"}</span>
-        <div><b>{status?.loaded ? `Loaded: ${status.architecture || "local model"}` : "Direct Transformers runtime"}</b><span>{status?.setup_note || error || "Checking local PyTorch and Transformers availability."}</span></div>
+        <div><b>{status?.loaded ? `Loaded: ${status.architecture || "local model"}` : "AXIOM-native decoder ready"}</b><span>{status?.setup_note || error || "Checking local PyTorch and Transformers availability."}</span></div>
       </div>
     </div>
     {status && !status.ready && <div className="inline-alert warning" role="status">{status.setup_note}</div>}
     {lifecycleNotice && <div className="inline-alert success" role="status">{lifecycleNotice}</div>}
     <form onSubmit={(event) => void run(event)}>
       <label className="field">
-        <span className="field-label-row"><span>Local Llama / Transformers model directory</span></span>
-        <input value={modelPath} onChange={(event) => setModelPath(event.target.value)} required maxLength={4096} placeholder="/home/user/models/my-llama-model" autoComplete="off" />
-        <small>Existing directory with config.json, local weights, and tokenizer files. GGUF files and Ollama tags are not accepted here. Paths must stay inside a trusted model root; configure AXIOM_MODEL_ROOTS to allow other locations.</small>
+        <span className="field-label-row"><span>Discovered native model</span><span>{assets?.models.length ?? 0} found</span></span>
+        <select aria-label="Select discovered native model" value={selectedModelPath} onChange={(event) => { setSelectedModelPath(event.target.value); if (event.target.value) setModelPath(event.target.value); }}>
+          <option value="">{assets?.models.length ? "Choose a discovered model or enter a path below" : "No supported local models discovered"}</option>
+          {(assets?.models ?? []).map((model) => <option key={model.path} value={model.path}>{model.name} · {model.model_type} · {model.weight_format}</option>)}
+        </select>
+        <small>{assets?.scope_note ?? "Model discovery is unavailable; the API still accepts validated paths under trusted roots."}</small>
+      </label>
+      <label className="field">
+        <span className="field-label-row"><span>Local Llama / Mistral model directory</span></span>
+        <input value={modelPath} onChange={(event) => { setModelPath(event.target.value); if (event.target.value !== selectedModelPath) setSelectedModelPath(""); }} required maxLength={4096} placeholder="/home/user/models/my-llama-model" autoComplete="off" />
+        <small>Existing directory with config.json, tokenizer.json and model.safetensors (or the safetensors shard index). GGUF, quantized formats and pickle .bin weights are not supported by this native path. Paths must match a directory discovered under a trusted root; set AXIOM_MODEL_ROOTS for additional locations.</small>
+      </label>
+      <label className="field">
+        <span className="field-label-row"><span>Discovered LoRA adapter (optional)</span><span>{assets?.adapters.length ?? 0} found</span></span>
+        <select aria-label="Select discovered LoRA adapter" value={selectedAdapterPath} onChange={(event) => { setSelectedAdapterPath(event.target.value); if (event.target.value) setAdapterPath(event.target.value); }}>
+          <option value="">No adapter</option>
+          {(assets?.adapters ?? []).map((adapter) => <option key={adapter.path} value={adapter.path}>{adapter.name} · {adapter.weight_format}</option>)}
+        </select>
       </label>
       <label className="field">
         <span className="field-label-row"><span>Optional LoRA adapter directory</span></span>
-        <input value={adapterPath} onChange={(event) => setAdapterPath(event.target.value)} maxLength={4096} placeholder="/home/user/runs/my-lora-adapter" autoComplete="off" />
-        <small>Use the output directory from Training; it must contain adapter_config.json and adapter weights. The resolved adapter must also be inside a trusted root.</small>
+        <input value={adapterPath} onChange={(event) => { setAdapterPath(event.target.value); if (event.target.value !== selectedAdapterPath) setSelectedAdapterPath(""); }} maxLength={4096} placeholder="/home/user/runs/my-lora-adapter" autoComplete="off" />
+        <small>Use a standard bias-free CAUSAL_LM adapter with adapter_config.json and adapter_model.safetensors. Compatibility is checked during model loading; unsupported adapter options are rejected.</small>
       </label>
       <label className="field">
-        <span className="field-label-row"><span>Prompt</span><span>{prompt.length.toLocaleString()} / 12,000 characters</span></span>
+        <span className="field-label-row"><span>AXIOM Native Engine prompt</span><span>{prompt.length.toLocaleString()} / 12,000 characters</span></span>
         <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={12000} rows={5} required placeholder="Ask the local model to do something…" />
       </label>
       <div className="two-column-grid">

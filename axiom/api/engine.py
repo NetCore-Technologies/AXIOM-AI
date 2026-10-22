@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from axiom.core.engine import AxiomEngineError, generate_local, resolve_local_model_directory, runtime_status, unload_local_model
+from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, generate_local, resolve_local_model_directory, runtime_status, unload_local_model
 
 router = APIRouter(prefix="/api/engine", tags=["axiom-engine"])
 
@@ -38,6 +38,12 @@ class GenerateRequest(BaseModel):
         if not value.strip():
             raise ValueError("Prompt must contain at least one non-whitespace character.")
         return value
+
+
+@router.get("/models")
+def engine_models() -> dict[str, Any]:
+    """List metadata-only native-compatible models and LoRA adapters under trusted roots."""
+    return discover_local_engine_assets()
 
 
 @router.get("/status")

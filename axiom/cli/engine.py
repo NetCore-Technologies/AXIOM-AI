@@ -46,10 +46,10 @@ def engine_status(json_output: bool = typer.Option(False, "--json", help="Print 
 
 @engine_app.command("run")
 def engine_run(
-    model_path: Path = typer.Option(..., "--model-path", exists=True, file_okay=False, dir_okay=True, help="Existing local Transformers model directory."),
+    model_path: Path = typer.Option(..., "--model-path", exists=True, file_okay=False, dir_okay=True, help="Existing local Llama/Mistral safetensors model directory."),
     prompt: str | None = typer.Option(None, "--prompt", help="Prompt text; mutually exclusive with --prompt-file."),
     prompt_file: Path | None = typer.Option(None, "--prompt-file", exists=True, file_okay=True, dir_okay=False, help="Read the prompt from a local UTF-8 text file."),
-    adapter_path: Path | None = typer.Option(None, "--adapter-path", exists=True, file_okay=False, dir_okay=True, help="Optional local PEFT LoRA adapter directory."),
+    adapter_path: Path | None = typer.Option(None, "--adapter-path", exists=True, file_okay=False, dir_okay=True, help="Optional local native-compatible LoRA adapter directory."),
     max_new_tokens: int = typer.Option(256, "--max-new-tokens", min=1, max=2048, help="Maximum generated tokens (1–2048)."),
     temperature: float = typer.Option(0.7, "--temperature", min=0, max=2, help="Sampling temperature; 0 disables sampling."),
     json_output: bool = typer.Option(False, "--json", help="Print response and metrics as JSON."),
@@ -81,7 +81,7 @@ def engine_run(
         typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
         return
     console.print(Panel.fit(
-        f"Engine: AXIOM Local Engine\nModel: {result['model']}\nArchitecture: {result['architecture']}\n"
+        f"Engine: AXIOM Native Engine\nModel: {result['model']}\nArchitecture: {result['architecture']}\n"
         f"Generated tokens: {result['completion_tokens']}\nElapsed: {result['elapsed_ms']} ms",
         title="AXIOM ENGINE",
     ))

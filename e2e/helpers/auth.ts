@@ -50,8 +50,21 @@ async function makeTestAdminRecord() {
 }
 
 export async function ensureAuthenticated(page: Page): Promise<void> {
+  const bootstrapFailures: string[] = [];
   page.on("pageerror", (error) => {
+    bootstrapFailures.push(error.message);
     console.error("[AXIOM browser error]", error.message);
+  });
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      bootstrapFailures.push(message.text());
+      console.error("[AXIOM console error]", message.text());
+    }
+  });
+  page.on("requestfailed", (request) => {
+    if (/\.(?:js|tsx?)(?:[?#]|$)/i.test(request.url())) {
+      bootstrapFailures.push(`${request.url()}: ${request.failure()?.errorText ?? "request failed"}`);
+    }
   });
 
   const response = await page.goto("/");
@@ -82,10 +95,11 @@ export async function ensureAuthenticated(page: Page): Promise<void> {
       title: document.title,
       bodyText: document.body.innerText.slice(0, 1000),
       rootHtml: document.querySelector("#root")?.innerHTML.slice(0, 2000) ?? null,
+      entryScripts: Array.from(document.scripts).map((script) => script.src).filter(Boolean),
     })).catch(() => null);
 
     throw new Error(
-      `AXIOM login form did not render after seeding test admin. State: ${JSON.stringify(state)}`,
+      `AXIOM login form did not render after seeding test admin. State: ${JSON.stringify(state)}; browser errors: ${JSON.stringify(bootstrapFailures.slice(-12))}`,
     );
   }
 

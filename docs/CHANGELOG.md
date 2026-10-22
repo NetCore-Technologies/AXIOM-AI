@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added AXIOM-owned Llama/Mistral inference execution with custom RMSNorm, RoPE, grouped-query attention, KV cache, supported LoRA deltas, sampling and autoregressive decode over local safetensors; the inference path does not call Transformers model.generate or Ollama.
 - Constrained direct AXIOM Engine model/adapter paths to configured trusted roots (including post-resolution symlink checks), replaced path-derived API names with names from validated directories, and added explicit model unload/resource cleanup.
 - Added a bounded in-memory runtime trace history with request IDs for local generation and benchmarking, safe error codes, metadata-only JSON export, and explicit clear controls; prompts and generated responses are not recorded.
 - Added measured local Ollama inference benchmarking to the existing Runtime page and loopback API, with warm-ups, bounded measured iterations/concurrency, request latency percentiles, token-throughput coverage, and no benchmark-result persistence.

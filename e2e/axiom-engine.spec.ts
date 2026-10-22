@@ -25,16 +25,29 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
     connectors: [],
   } }));
   await page.route("**/api/engine/status", (route) => route.fulfill({ json: {
-    engine: "axiom-local-engine", ready: true, packages: { torch: true, transformers: true, peft: true },
-    versions: { torch: "2.9.0", transformers: "5.0.0", peft: "0.21.0" },
-    loaded: engineLoaded, architecture: engineLoaded ? "LlamaForCausalLM" : null, model_loading: "local_files_only", remote_code: false,
-    setup_note: "AXIOM Engine is ready for local Transformers causal-LM checkpoints.",
-    scope_note: "Local model files only.", checked_at: "2026-10-21T00:00:00Z",
+    engine: "axiom-native-pytorch-llama", ready: true, packages: { torch: true, tokenizers: true, safetensors: true },
+    versions: { torch: "2.9.0", tokenizers: "0.22.0", safetensors: "0.6.0" },
+    minimum_versions: { torch: "2.2.0", tokenizers: "0.19.0", safetensors: "0.4.0" },
+    problems: [], execution_backend: "pytorch-native-axiom", transformers_generation_used: false, ollama_used: false,
+    supported_model_types: ["llama", "mistral"], supported_weights: ["safetensors"],
+    loaded: engineLoaded, architecture: engineLoaded ? "LlamaForCausalLM" : null, model_loading: "local_safetensors_only", remote_code: false,
+    setup_note: "AXIOM Native Engine is ready for supported local Llama/Mistral safetensors checkpoints.",
+    scope_note: "AXIOM-owned Llama/Mistral forward pass and autoregressive KV-cache decoder.", checked_at: "2026-10-22T00:00:00Z",
+  } }));
+  await page.route("**/api/engine/models", (route) => route.fulfill({ json: {
+    schema_version: 1,
+    models: [{
+      path: "/models/llama-test", name: "llama-test", model_type: "llama",
+      architecture: "LlamaForCausalLM", weight_format: "safetensors", ready_for_native_attempt: true,
+    }],
+    adapters: [{ path: "/runs/my-lora-adapter", name: "my-lora-adapter", weight_format: "safetensors LoRA" }],
+    truncated: false, scope_note: "Metadata-only discovery under trusted local roots; weights are validated on run.",
   } }));
   await page.route("**/api/engine/generate", (route) => {
     engineLoaded = true;
     return route.fulfill({ json: {
-      engine: "axiom-local-engine", model: "llama-test", architecture: "LlamaForCausalLM",
+      engine: "axiom-native-engine", execution_backend: "pytorch-native-axiom", transformers_generation_used: false, ollama_used: false,
+      model: "llama-test", architecture: "LlamaForCausalLM", model_type: "llama", device: "cpu", checkpoint_format: "safetensors", decoder: "axiom-autoregressive-kv-cache",
       adapter: "my-lora-adapter", response: "AXIOM local engine test response.",
       prompt_tokens: 5, completion_tokens: 6, elapsed_ms: 120.5,
       generated_at: "2026-10-21T00:00:00Z", local_only: true,
@@ -53,11 +66,15 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
 
   const engine = page.locator(".axiom-engine-panel");
   await expect(engine.getByRole("heading", { name: "AXIOM Local Engine" })).toBeVisible();
+  await expect(engine).toContainText("own PyTorch Llama/Mistral forward pass");
+  await expect(engine).toContainText("safetensors");
   await expect(engine.getByText("ENGINE READY")).toBeVisible();
 
-  await engine.getByLabel("Local Llama / Transformers model directory").fill("/models/llama-test");
-  await engine.getByLabel("Optional LoRA adapter directory").fill("/runs/my-lora-adapter");
-  await engine.getByLabel("Prompt").fill("Say hello.");
+  await engine.getByLabel("Select discovered native model").selectOption("/models/llama-test");
+  await expect(engine.getByLabel("Local Llama / Mistral model directory")).toHaveValue("/models/llama-test");
+  await engine.getByLabel("Select discovered LoRA adapter").selectOption("/runs/my-lora-adapter");
+  await expect(engine.getByLabel("Optional LoRA adapter directory")).toHaveValue("/runs/my-lora-adapter");
+  await engine.getByLabel("AXIOM Native Engine prompt").fill("Say hello.");
   await engine.getByRole("button", { name: "Run with AXIOM Engine" }).click();
 
   await expect(engine.getByTestId("axiom-engine-output")).toContainText("AXIOM local engine test response.");
