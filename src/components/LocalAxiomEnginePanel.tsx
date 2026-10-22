@@ -84,7 +84,7 @@ export default function LocalAxiomEnginePanel() {
         {status?.loaded && <button type="button" className="button secondary-button" onClick={() => void unload()} disabled={loading || running || unloading}><Unplug size={14} /> {unloading ? "Unloading…" : "Unload model"}</button>}
       </div>
     </div>
-    <p>Run a local Llama-architecture or other compatible Transformers causal model directly through AXIOM's own runtime. Ollama is not required for this panel. Model weights must already exist on this computer; AXIOM will not download weights or execute remote model code.</p>
+    <p>AXIOM Native Engine runs its own PyTorch Llama/Mistral forward pass and autoregressive KV-cache decoder, including RMSNorm, RoPE, grouped-query attention and LoRA deltas. Tokenization uses the local tokenizer.json; weights are loaded from local floating-point safetensors. This panel does not call Transformers model.generate or Ollama. Weights must already exist on this computer; model downloads and training are separate workflows.</p>
     <div className="status-strip" aria-label="AXIOM Engine status">
       <div className="status-strip-item">
         <span className={`status-pill ${status?.ready ? "success" : "warning"}`}><i />{loading ? "CHECKING" : status?.ready ? "ENGINE READY" : "SETUP REQUIRED"}</span>
@@ -97,12 +97,12 @@ export default function LocalAxiomEnginePanel() {
       <label className="field">
         <span className="field-label-row"><span>Local Llama / Transformers model directory</span></span>
         <input value={modelPath} onChange={(event) => setModelPath(event.target.value)} required maxLength={4096} placeholder="/home/user/models/my-llama-model" autoComplete="off" />
-        <small>Existing directory with config.json, local weights, and tokenizer files. GGUF files and Ollama tags are not accepted here. Paths must stay inside a trusted model root; configure AXIOM_MODEL_ROOTS to allow other locations.</small>
+        <small>Existing Llama/Mistral directory with config.json, tokenizer.json and model.safetensors (or the safetensors shard index). GGUF, quantized formats and pickle .bin weights are not supported by this native execution path. Paths must stay inside a trusted root; set AXIOM_MODEL_ROOTS for additional locations.</small>
       </label>
       <label className="field">
         <span className="field-label-row"><span>Optional LoRA adapter directory</span></span>
         <input value={adapterPath} onChange={(event) => setAdapterPath(event.target.value)} maxLength={4096} placeholder="/home/user/runs/my-lora-adapter" autoComplete="off" />
-        <small>Use the output directory from Training; it must contain adapter_config.json and adapter weights. The resolved adapter must also be inside a trusted root.</small>
+        <small>Use a standard bias-free CAUSAL_LM LoRA output with adapter_config.json and adapter_model.safetensors. Unsupported adapter options are rejected rather than silently ignored.</small>
       </label>
       <label className="field">
         <span className="field-label-row"><span>Prompt</span><span>{prompt.length.toLocaleString()} / 12,000 characters</span></span>
