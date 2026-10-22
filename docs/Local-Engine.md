@@ -34,6 +34,19 @@ export AXIOM_MODEL_ROOTS="$HOME/models:$HOME/Documents/AXIOM-AI/runs:/mnt/data/m
 
 Only add directories you trust. Model/config/tokenizer/index/adapter assets may be symlinks only when their resolved targets remain inside one of the configured trusted roots; external-target symlinks are rejected.
 
+## CLI
+
+Inventory the same trusted local model roots used by the Control Center:
+
+```bash
+axiom engine discover
+axiom engine discover --json
+axiom engine status --json
+axiom engine run --model-path /absolute/path/to/model --prompt "Hello" --max-new-tokens 64 --temperature 0
+```
+
+Discovery inspects metadata and file presence only. It does not load tensors, download weights, or run inference. A listed model is a candidate for an actual local load, not a guarantee that its checkpoint tensors are compatible.
+
 ## Control Center
 
 Open **Runtime → AXIOM Local Engine**. Select a discovered model/adapter from the native inventory or enter its local path, then provide a prompt, output-token limit, and temperature. Discovery lists metadata only; weights are validated and loaded only when generation starts. **Unload model** releases AXIOM's model/tokenizer references and asks CUDA to empty its cache when applicable. Framework and OS allocators may keep some reserved memory.
