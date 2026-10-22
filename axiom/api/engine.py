@@ -1,13 +1,12 @@
 """HTTP API for AXIOM's direct local model engine."""
 from __future__ import annotations
 
-from pathlib import PurePath
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from axiom.core.engine import AxiomEngineError, generate_local, runtime_status
+from axiom.core.engine import AxiomEngineError, generate_local, resolve_local_model_directory, runtime_status, unload_local_model
 
 router = APIRouter(prefix="/api/engine", tags=["axiom-engine"])
 
@@ -21,7 +20,7 @@ class GenerateRequest(BaseModel):
 
     @field_validator("model_path", "adapter_path", mode="before")
     @classmethod
-    def paths_must_be_safe_relative(cls, value: Any) -> Any:
+    def paths_must_resolve_inside_allowed_model_roots(cls, value: Any) -> Any:
         if value is None:
             return None
         if not isinstance(value, str):
@@ -29,14 +28,9 @@ class GenerateRequest(BaseModel):
         candidate = value.strip()
         if not candidate:
             raise ValueError("Path must not be blank.")
-        if any(ch in candidate for ch in ("\x00", "\r", "\n")):
-            raise ValueError("Path contains invalid control characters.")
-        pure = PurePath(candidate)
-        if pure.is_absolute():
-            raise ValueError("Absolute paths are not allowed.")
-        if ".." in pure.parts:
-            raise ValueError("Path traversal is not allowed.")
-        return candidate
+        # The shared resolver validates absolute and relative inputs against
+        # configured trusted roots and rejects symlink escapes.
+        return resolve_local_model_directory(candidate, "Model/adapter directory")
 
     @field_validator("prompt")
     @classmethod
@@ -49,6 +43,12 @@ class GenerateRequest(BaseModel):
 @router.get("/status")
 def engine_status() -> dict[str, Any]:
     return runtime_status()
+
+
+@router.post("/unload")
+def engine_unload() -> dict[str, Any]:
+    """Release AXIOM's currently loaded local model and its cache references."""
+    return unload_local_model()
 
 
 @router.post("/generate")
