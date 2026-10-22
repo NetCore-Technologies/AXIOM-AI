@@ -158,6 +158,56 @@ def model_compatibility_issues(core_source: str, api_source: str, client_source:
     return issues
 
 
+def inference_benchmark_issues(core_source: str, api_source: str, client_source: str, panel_source: str, e2e_source: str) -> list[str]:
+    """Check benchmark implementation connects the measured loopback runtime to Runtime UI."""
+    issues: list[str] = []
+    for token in (
+        "def run_local_inference_benchmark(",
+        "ThreadPoolExecutor",
+        "measured_requests > 10",
+        '"completion_tokens_per_second":',
+        '"prompt_returned": False',
+        '"responses_returned": False',
+        '"results_persisted": False',
+    ):
+        if token not in core_source:
+            issues.append("Local inference benchmark engine is missing a bounded measurement contract: " + token)
+    for token in (
+        '@router.post("/benchmark")',
+        "run_local_inference_benchmark(",
+        "request.iterations * request.concurrency > 10",
+    ):
+        if token not in api_source:
+            issues.append("Local inference benchmark API is missing: " + token)
+    for token in (
+        "export type LocalInferenceBenchmark",
+        '"/api/inference/benchmark"',
+        "runLocalInferenceBenchmark:",
+    ):
+        if token not in client_source:
+            issues.append("Typed inference benchmark client is missing: " + token)
+    for token in (
+        'aria-labelledby="inference-benchmark-title"',
+        'aria-label="Benchmark iterations"',
+        'aria-label="Benchmark concurrency"',
+        'onClick={() => void benchmarkLocalModel()}',
+        "runLocalInferenceBenchmark({",
+        "Benchmark this prompt",
+        "Inference benchmark result",
+    ):
+        if token not in panel_source:
+            issues.append("Runtime GUI benchmark controls/results are missing: " + token)
+    for token in (
+        "Measured local inference benchmark",
+        '"/api/inference/benchmark"',
+        "blocks a requested workload above the ten measured-request limit",
+        "42.857 tokens/s",
+    ):
+        if token not in e2e_source:
+            issues.append("Inference benchmark browser acceptance coverage is missing: " + token)
+    return issues
+
+
 def api_playground_issues(component: str, client: str) -> list[str]:
     """Validate the Playground's actual typed GET-only client contract and disclosure."""
     issues: list[str] = []
@@ -188,11 +238,11 @@ def inspect(root: Path) -> dict[str, Any]:
     warnings: list[str] = []
     required = [
         "pyproject.toml", "axiom/version.py", "ROADMAP.md", "src/App.tsx",
-        "src/api/client.ts", "src/components/ApiPlayground.tsx", "src/components/RuntimeConnectorPanel.tsx", "src/components/AgentProfiles.tsx", "src/styles.css",
-        "axiom/api/server.py", "axiom/api/workspace.py", "axiom/models/compatibility.py", "axiom/api/diagnostics.py", "axiom/api/runtime_discovery.py", "axiom/api/agent_profiles.py", "axiom/core/runtime_discovery.py", "axiom/core/agent_profiles.py", "axiom/cli/agent_profiles.py", "scripts/release_smoke.py",
+        "src/api/client.ts", "src/components/ApiPlayground.tsx", "src/components/RuntimeConnectorPanel.tsx", "src/components/AgentProfiles.tsx", "src/components/LocalInferencePanel.tsx", "src/styles.css",
+        "axiom/api/server.py", "axiom/api/workspace.py", "axiom/api/inference.py", "axiom/core/inference.py", "axiom/models/compatibility.py", "axiom/api/diagnostics.py", "axiom/api/runtime_discovery.py", "axiom/api/agent_profiles.py", "axiom/core/runtime_discovery.py", "axiom/core/agent_profiles.py", "axiom/cli/agent_profiles.py", "scripts/release_smoke.py",
         "tests/test_release_smoke.py", "e2e/helpers/auth.ts", "e2e/modules.spec.ts", "e2e/workflows.spec.ts", "e2e/evaluation.spec.ts",
-        "e2e/model-registry-filters.spec.ts", "tests/test_workspace_model_registry_filters.py",
-        "tests/test_model_compatibility.py", "tests/test_runtime_discovery.py", "tests/test_runtime_discovery_api.py", "tests/test_agent_profiles.py", "tests/test_agent_profiles_api.py", "tests/test_agent_profiles_cli.py", "e2e/api-playground.spec.ts", "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
+        "e2e/model-registry-filters.spec.ts", "e2e/inference-benchmark.spec.ts", "tests/test_workspace_model_registry_filters.py",
+        "tests/test_model_compatibility.py", "tests/test_inference_benchmark.py", "tests/test_inference_benchmark_api.py", "tests/test_runtime_discovery.py", "tests/test_runtime_discovery_api.py", "tests/test_agent_profiles.py", "tests/test_agent_profiles_api.py", "tests/test_agent_profiles_cli.py", "e2e/api-playground.spec.ts", "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
         "docs/Runtime-Discovery.md", "docs/Agent-Profiles.md", "docs/Api-Playground.md", ".github/workflows/quality-gates.yml", ".github/workflows/nightly-build.yml",
     ]
     for relative in required:
@@ -229,6 +279,11 @@ def inspect(root: Path) -> dict[str, Any]:
     compatibility_core = (root / "axiom/models/compatibility.py").read_text(encoding="utf-8")
     compatibility_e2e = model_registry_e2e
     failures.extend(model_compatibility_issues(compatibility_core, workspace_api, client, app_source, compatibility_e2e))
+    inference_core = (root / "axiom/core/inference.py").read_text(encoding="utf-8")
+    inference_api = (root / "axiom/api/inference.py").read_text(encoding="utf-8")
+    inference_panel = (root / "src/components/LocalInferencePanel.tsx").read_text(encoding="utf-8")
+    inference_e2e = (root / "e2e/inference-benchmark.spec.ts").read_text(encoding="utf-8")
+    failures.extend(inference_benchmark_issues(inference_core, inference_api, client, inference_panel, inference_e2e))
     for path in (
         "/api/health", "/api/meta", "/api/workspace/runtime",
         "/api/workspace/models?offset=0&limit=5", "/api/workspace/datasets",
@@ -274,7 +329,7 @@ def inspect(root: Path) -> dict[str, Any]:
         "e2e/helpers/auth.ts", "e2e/modules.spec.ts", "e2e/workflows.spec.ts",
         "e2e/evaluation.spec.ts", "e2e/api-playground.spec.ts",
         "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
-        "e2e/model-registry-filters.spec.ts",
+        "e2e/model-registry-filters.spec.ts", "e2e/inference-benchmark.spec.ts",
     ):
         target = root / relative
         if not target.is_file():
