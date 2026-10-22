@@ -1,9 +1,12 @@
 """Local inference API. Requests are served only through the loopback Ollama adapter."""
 from __future__ import annotations
 
+import uuid
+from datetime import UTC, datetime
+from time import perf_counter
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator
 
 from axiom.core.inference import (
@@ -13,6 +16,7 @@ from axiom.core.inference import (
     runtime_status,
     validate_model_name,
 )
+from axiom.core.runtime_traces import record_runtime_trace
 
 router = APIRouter(prefix="/api/inference", tags=["local-inference"])
 
@@ -63,14 +67,18 @@ def inference_status() -> dict[str, Any]:
 
 
 @router.post("/benchmark")
-def inference_benchmark(request: BenchmarkRequest) -> dict[str, Any]:
+def inference_benchmark(request: BenchmarkRequest, response: Response) -> dict[str, Any]:
     if request.iterations * request.concurrency > 10:
         raise HTTPException(
             status_code=422,
             detail="Benchmark iterations × concurrency may not exceed 10 measured requests.",
         )
+    request_id = uuid.uuid4().hex
+    response.headers["X-Request-ID"] = request_id
+    started_at = datetime.now(UTC).isoformat()
+    started = perf_counter()
     try:
-        return run_local_inference_benchmark(
+        result = run_local_inference_benchmark(
             request.model,
             request.prompt,
             num_predict=request.num_predict,
@@ -79,22 +87,84 @@ def inference_benchmark(request: BenchmarkRequest) -> dict[str, Any]:
             iterations=request.iterations,
             concurrency=request.concurrency,
         )
+        measurements = result.get("measurements", {})
+        configuration = result.get("configuration", {})
+        record_runtime_trace(
+            request_id=request_id,
+            operation="inference.benchmark",
+            model=request.model,
+            status="success",
+            started_at=started_at,
+            duration_ms=(perf_counter() - started) * 1000.0,
+            prompt_characters=len(request.prompt),
+            requested_output_tokens=request.num_predict,
+            temperature=request.temperature,
+            warmup_runs=request.warmup_runs,
+            iterations=request.iterations,
+            concurrency=request.concurrency,
+            measured_requests=configuration.get("measured_requests"),
+            prompt_tokens=None,
+            completion_tokens=measurements.get("total_completion_tokens"),
+            completion_tokens_known=measurements.get("completion_tokens_known"),
+            completion_tokens_per_second=measurements.get("completion_tokens_per_second"),
+        )
+        return {**result, "request_id": request_id}
     except ValueError as exc:
+        record_runtime_trace(
+            request_id=request_id, operation="inference.benchmark", model=request.model,
+            status="error", started_at=started_at, duration_ms=(perf_counter() - started) * 1000.0,
+            prompt_characters=len(request.prompt), requested_output_tokens=request.num_predict,
+            temperature=request.temperature, warmup_runs=request.warmup_runs,
+            iterations=request.iterations, concurrency=request.concurrency,
+            error_code="invalid_benchmark_configuration",
+        )
         raise HTTPException(status_code=422, detail=str(exc)) from None
-    except InferenceRuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except InferenceRuntimeError:
+        record_runtime_trace(
+            request_id=request_id, operation="inference.benchmark", model=request.model,
+            status="error", started_at=started_at, duration_ms=(perf_counter() - started) * 1000.0,
+            prompt_characters=len(request.prompt), requested_output_tokens=request.num_predict,
+            temperature=request.temperature, warmup_runs=request.warmup_runs,
+            iterations=request.iterations, concurrency=request.concurrency,
+            error_code="runtime_unavailable",
+        )
+        raise HTTPException(status_code=503, detail="Local inference benchmark failed because the runtime did not complete the request.") from None
 
 
 @router.post("/generate")
-def inference_generate(request: GenerateRequest) -> dict[str, Any]:
+def inference_generate(request: GenerateRequest, response: Response) -> dict[str, Any]:
+    request_id = uuid.uuid4().hex
+    response.headers["X-Request-ID"] = request_id
+    started_at = datetime.now(UTC).isoformat()
+    started = perf_counter()
     try:
-        return run_local_inference(
+        result = run_local_inference(
             request.model,
             request.prompt,
             num_predict=request.num_predict,
             temperature=request.temperature,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from None
-    except InferenceRuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from None
+        record_runtime_trace(
+            request_id=request_id, operation="inference.generate", model=request.model,
+            status="success", started_at=started_at, duration_ms=(perf_counter() - started) * 1000.0,
+            prompt_characters=len(request.prompt), requested_output_tokens=request.num_predict,
+            temperature=request.temperature, prompt_tokens=result.get("prompt_eval_count"),
+            completion_tokens=result.get("eval_count"),
+        )
+        return {**result, "request_id": request_id}
+    except ValueError:
+        record_runtime_trace(
+            request_id=request_id, operation="inference.generate", model=request.model,
+            status="error", started_at=started_at, duration_ms=(perf_counter() - started) * 1000.0,
+            prompt_characters=len(request.prompt), requested_output_tokens=request.num_predict,
+            temperature=request.temperature, error_code="invalid_generation_request",
+        )
+        raise HTTPException(status_code=422, detail="Local inference request could not be validated.") from None
+    except InferenceRuntimeError:
+        record_runtime_trace(
+            request_id=request_id, operation="inference.generate", model=request.model,
+            status="error", started_at=started_at, duration_ms=(perf_counter() - started) * 1000.0,
+            prompt_characters=len(request.prompt), requested_output_tokens=request.num_predict,
+            temperature=request.temperature, error_code="runtime_unavailable",
+        )
+        raise HTTPException(status_code=503, detail="Local inference runtime did not complete the request.") from None
