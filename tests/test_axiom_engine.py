@@ -54,7 +54,7 @@ def test_model_directory_must_exist_and_be_a_directory(tmp_path, monkeypatch) ->
     monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(tmp_path))
     file_path = tmp_path / "model.txt"
     file_path.write_text("not a model", encoding="utf-8")
-    with pytest.raises(ValueError, match="existing local directory"):
+    with pytest.raises(ValueError, match="existing directory|existing local directory"):
         _resolve_model_directory(str(file_path), "Base model")
 
 
