@@ -243,7 +243,7 @@ def inspect(root: Path) -> dict[str, Any]:
         "tests/test_release_smoke.py", "e2e/helpers/auth.ts", "e2e/modules.spec.ts", "e2e/workflows.spec.ts", "e2e/evaluation.spec.ts",
         "e2e/model-registry-filters.spec.ts", "e2e/inference-benchmark.spec.ts", "tests/test_workspace_model_registry_filters.py",
         "tests/test_model_compatibility.py", "tests/test_inference_benchmark.py", "tests/test_inference_benchmark_api.py", "tests/test_runtime_discovery.py", "tests/test_runtime_discovery_api.py", "tests/test_agent_profiles.py", "tests/test_agent_profiles_api.py", "tests/test_agent_profiles_cli.py", "e2e/api-playground.spec.ts", "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
-        "docs/Runtime-Discovery.md", "docs/Agent-Profiles.md", "docs/Api-Playground.md", ".github/workflows/quality-gates.yml", ".github/workflows/nightly-build.yml",
+        "docs/Runtime-Discovery.md", "docs/Agent-Profiles.md", "docs/Api-Playground.md", "docs/Inference-Benchmarking.md", ".github/workflows/quality-gates.yml", ".github/workflows/nightly-build.yml",
     ]
     for relative in required:
         if not (root / relative).is_file():
