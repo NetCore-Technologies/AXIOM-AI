@@ -42,8 +42,11 @@ export default function RuntimeTracePanel() {
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = "axiom-runtime-traces.json";
+    document.body.appendChild(anchor);
     anchor.click();
-    URL.revokeObjectURL(url);
+    anchor.remove();
+    // Let the browser start the download before releasing its object URL.
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     setNotice("Exported the currently displayed metadata-only trace history.");
   };
 
