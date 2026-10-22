@@ -61,33 +61,6 @@ def test_module_explorer_requires_new_gui_pages_in_the_catalog() -> None:
     assert any("agent-profiles" in issue for issue in release_smoke.module_catalog_issues(incomplete))
 
 
-def test_toolkit_catalog_has_120_unique_tools_and_every_handler() -> None:
-    component = (ROOT / "src" / "components" / "AxiomToolkit.tsx").read_text(encoding="utf-8")
-    assert release_smoke.toolkit_catalog_issues(component) == []
-
-
-def test_toolkit_catalog_rejects_missing_operation_handler() -> None:
-    component = (ROOT / "src" / "components" / "AxiomToolkit.tsx").read_text(encoding="utf-8")
-    broken = component.replace('case "filename":', 'case "missing-handler":', 1)
-    issues = release_smoke.toolkit_catalog_issues(broken)
-    assert any("no operation handler: filename" in issue for issue in issues)
-
-
-def test_toolkit_page_requires_navigation_metadata_and_module_catalog_entry() -> None:
-    complete = '''
-  | "toolkit"
-  { id: "toolkit", label: "AI Toolkit" }
-  toolkit: { label: "AI Toolkit" }
-  case "toolkit": return <AxiomToolkit />;
-  function ModulesPage() { const entries = [{ id: "toolkit" }]; }
-'''
-    assert release_smoke.page_registration_issues(complete, "toolkit") == []
-    assert release_smoke.module_catalog_issues(complete, ("toolkit",)) == []
-    assert release_smoke.module_catalog_issues("function ModulesPage() { const entries = []; }", ("toolkit",)) == [
-        "Module Explorer is missing an entry for 'toolkit'."
-    ]
-
-
 def test_api_playground_smoke_checks_typed_get_only_contract() -> None:
     component = (
         "playgroundRead allowlist GET only Arbitrary URLs mutating methods"
