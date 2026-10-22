@@ -1732,6 +1732,7 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
   const [tagFilter, setTagFilter] = useState("");
   const [sortBy, setSortBy] = useState<ModelRegistrySort>("name");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [appliedFilters, setAppliedFilters] = useState<ModelRegistryFilters>({ favorite_only: false, sort_by: "name", sort_order: "asc" });
   const [savedFilterName, setSavedFilterName] = useState("");
   const [savedFilters, setSavedFilters] = useState<SavedModelRegistryFilter[]>(readSavedModelRegistryFilters);
   const importRef = useRef<HTMLInputElement>(null);
@@ -1746,6 +1747,7 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
   });
 
   const refresh = async (filters: ModelRegistryFilters = currentFilters()) => {
+    setAppliedFilters(filters);
     setLoading(true);
     setError("");
     try {
@@ -1847,7 +1849,7 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
   const loadMore = async () => {
     setLoadingMore(true);
     try {
-      const page = await axiomApi.modelsPage(models.length, 25, currentFilters());
+      const page = await axiomApi.modelsPage(models.length, 25, appliedFilters);
       setModels((current) => [...current, ...page.models]);
       setModelTotal(page.total);
       setHasMore(page.has_more);
@@ -1894,7 +1896,7 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
     try {
       const result = await axiomApi.updateModel(model.id, { favorite: !model.favorite });
       setModels((current) => current.map((item) => item.id === model.id ? result.model : item));
-      if (favoriteOnly) await refresh();
+      if (favoriteOnly || sortBy === "favorite") await refresh();
     } catch (cause) {
       onNotify(cause instanceof Error ? cause.message : "Favorite could not be updated.", "warning");
     }
