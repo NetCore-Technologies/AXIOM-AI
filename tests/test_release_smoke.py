@@ -119,6 +119,26 @@ def test_inference_benchmark_smoke_detects_unbounded_or_disconnected_gui() -> No
     assert any("Benchmark this prompt" in issue for issue in issues)
 
 
+def test_inference_benchmark_checks_core_api_client_gui_and_browser_tests() -> None:
+    core_source = (ROOT / "axiom" / "core" / "inference.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "api" / "inference.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    panel_source = (ROOT / "src" / "components" / "LocalInferencePanel.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "inference-benchmark.spec.ts").read_text(encoding="utf-8")
+    assert release_smoke.inference_benchmark_issues(core_source, api_source, client_source, panel_source, e2e_source) == []
+
+
+def test_inference_benchmark_smoke_detects_disconnected_button() -> None:
+    core_source = (ROOT / "axiom" / "core" / "inference.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "api" / "inference.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    panel_source = (ROOT / "src" / "components" / "LocalInferencePanel.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "inference-benchmark.spec.ts").read_text(encoding="utf-8")
+    broken_panel = panel_source.replace("Benchmark this prompt", "Disconnected button", 1)
+    issues = release_smoke.inference_benchmark_issues(core_source, api_source, client_source, broken_panel, e2e_source)
+    assert any("Benchmark this prompt" in issue for issue in issues)
+
+
 def test_api_playground_smoke_checks_typed_get_only_contract() -> None:
     component = (
         "playgroundRead allowlist GET only Arbitrary URLs mutating methods"
