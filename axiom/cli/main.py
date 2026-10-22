@@ -41,6 +41,7 @@ from axiom.datasets.inspector import inspect_dataset
 from axiom.models.analysis import analyze_config, disk_info
 from axiom.models.inspector import inspect_model
 from axiom.models.registry import Model, ModelRegistry
+from axiom.core.storage import atomic_write_text
 from axiom.runtime.supercompress import compress_context, redacted_base_url
 from axiom.training.planner import create_training_plan
 from axiom.version import __version__
@@ -1010,6 +1011,136 @@ def model_list(
         table.add_row(model.name, model.source, model.format, model.parameters or "-", model.quantization or "-")
     console.print(table)
 
+@model_app.command("export")
+def model_export(
+    path: str = typer.Option("models.registry.json", "--path", help="Destination JSON file."),
+    json_output: bool = typer.Option(False, "--json", help="Emit the export operation result as JSON."),
+) -> None:
+    """Export registered model metadata to a versioned JSON file."""
+    registry = ModelRegistry()
+    target = Path(path).expanduser()
+    try:
+        if target.resolve(strict=False) == registry.registry_file.resolve(strict=False):
+            raise ValueError("Export destination must not be the live model registry file.")
+        models = registry.list()
+        payload = {
+            "schema_version": 1,
+            "models": [model.to_dict() for model in models],
+            "total": len(models),
+            "exported_at": datetime.now(UTC).isoformat(),
+        }
+        target.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(target, json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n")
+    except (OSError, ValueError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_export_failed", "message": str(exc)}}, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    if json_output:
+        typer.echo(json.dumps({"schema_version": 1, "exported": True, "path": str(target.resolve()), "total": len(models)}, sort_keys=True))
+        return
+    console.print(f"[green]✓[/green] Exported {len(models)} model record(s) to {target}")
+
+
+@model_app.command("import")
+def model_import(
+    path: str,
+    json_output: bool = typer.Option(False, "--json", help="Emit imported model records as JSON."),
+) -> None:
+    """Import up to 1000 registered model metadata records from versioned JSON."""
+    source = Path(path).expanduser()
+    try:
+        if not source.is_file():
+            raise ValueError("Model import path must be an existing file.")
+        if source.stat().st_size > ModelRegistry.MAX_BYTES:
+            raise ValueError("Model import exceeds the 4 MB size limit.")
+        raw = json.loads(source.read_text(encoding="utf-8"))
+        if isinstance(raw, list):
+            values = raw
+        elif isinstance(raw, dict) and raw.get("schema_version") == 1 and isinstance(raw.get("models"), list):
+            values = raw["models"]
+        else:
+            raise ValueError("Model import must be a JSON array or a schema_version 1 export object.")
+        registry = ModelRegistry()
+        imported = registry.import_models(values)
+        after_count = len(registry.list())
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_import_failed", "message": str(exc)}}, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] Model import failed: {exc}")
+        raise typer.Exit(code=1) from exc
+    payload = {
+        "schema_version": 1,
+        "imported": len(imported),
+        "total_models_after_import": after_count,
+        "models": [model.to_dict() for model in imported],
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        console.print(f"[green]✓[/green] Imported {len(imported)} model record(s). Registry now contains {after_count} model(s).")
+
+
+@model_app.command("remove")
+def model_remove(
+    model_id: str,
+    json_output: bool = typer.Option(False, "--json", help="Emit the removed record as JSON."),
+) -> None:
+    """Remove one model record by its stable registry ID."""
+    registry = ModelRegistry()
+    try:
+        removed = registry.remove(model_id)
+    except (OSError, ValueError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_remove_failed", "message": str(exc)}}, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] Could not remove model record: {exc}")
+        raise typer.Exit(code=1) from exc
+    if removed is None:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_not_found", "message": "No registered model has that ID."}}, sort_keys=True))
+        else:
+            console.print("[yellow]No registered model has that ID.[/yellow]")
+        raise typer.Exit(code=1)
+    payload = {"schema_version": 1, "removed": True, "model": removed.to_dict()}
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        console.print(f"[green]✓[/green] Removed model: {removed.name} ({removed.id})")
+
+
+@model_app.command("favorite")
+def model_favorite(
+    model_id: str,
+    favorite: bool = typer.Option(True, "--favorite/--unfavorite", help="Set or clear the model's favorite flag."),
+    json_output: bool = typer.Option(False, "--json", help="Emit the updated model record as JSON."),
+) -> None:
+    """Mark a registered model as favorite or clear its favorite flag."""
+    registry = ModelRegistry()
+    try:
+        updated = registry.update(model_id, {"favorite": favorite})
+    except (OSError, TypeError, ValueError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_favorite_failed", "message": str(exc)}}, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] Could not update model favorite state: {exc}")
+        raise typer.Exit(code=1) from exc
+    if updated is None:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_not_found", "message": "No registered model has that ID."}}, sort_keys=True))
+        else:
+            console.print("[yellow]No registered model has that ID.[/yellow]")
+        raise typer.Exit(code=1)
+    payload = {"schema_version": 1, "updated": True, "model": updated.to_dict()}
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        action = "Favorited" if favorite else "Unfavorited"
+        console.print(f"[green]✓[/green] {action} model: {updated.name}")
+
+
 @model_app.command("info")
 def model_info(
     repo_id: str,
@@ -1155,26 +1286,23 @@ def model_add(
     format: str = "unknown",
     parameters: str | None = None,
     quantization: str | None = None,
+    json_output: bool = typer.Option(False, "--json", help="Emit the created model record as JSON."),
 ):
     """Register a model with AXIOM."""
     registry = ModelRegistry()
-
     try:
-        registry.add(
-            Model(
-                name=name,
-                source=source,
-                format=format,
-                parameters=parameters,
-                quantization=quantization,
-            )
-        )
-    except ValueError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=1)
-
+        model = Model(name=name, source=source, format=format, parameters=parameters, quantization=quantization)
+        registry.add(model)
+    except (TypeError, ValueError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_add_failed", "message": str(exc)}}, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    if json_output:
+        typer.echo(json.dumps({"schema_version": 1, "created": True, "model": model.to_dict()}, ensure_ascii=False, sort_keys=True))
+        return
     console.print(f"[green]✓[/green] Registered model: [cyan]{name}[/cyan]")
-
 
 @model_app.command("analyze")
 def model_analyze(

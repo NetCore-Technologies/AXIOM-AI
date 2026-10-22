@@ -27,7 +27,7 @@ feature exists or a delivery-date promise.
 ### 02 · CLI experience
 
 - [R013 · Implemented; tests passing] Add discoverable command groups for workflow and evaluation.
-- [R014 · In progress; validation pending] Add consistent JSON output to every list and inspect command; primary model/integration commands plus dataset validation/search now share stable versioned payloads.
+- [R014 · In progress; validation pending] Add consistent JSON output to every list and inspect command; model add/list/info/inspect/analyze/search/import/export/remove/favorite, integration list, system info, and dataset inspect/validate/stats/clean now have versioned outputs and focused CLI tests. Remaining command families still need coverage.
 - [R015 · Planned] Add shell completion for Bash, Zsh, Fish, and PowerShell.
 - [R016 · Planned] Add interactive prompts only where a non-interactive flag exists.
 - [R017 · Planned] Add global verbosity, quiet, and machine-readable error modes.

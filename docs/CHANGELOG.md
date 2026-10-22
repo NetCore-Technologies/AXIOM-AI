@@ -6,6 +6,7 @@
 - Added explicit workspace-root resolution with environment override and nearest-project discovery, plus bounded read-only workspace diagnostics and safe support bundles exposed through CLI and API.
 - Added metadata-only discovery of trusted native model/LoRA directories, newline-delimited token streaming with Stop/partial-output retention in the GUI, and `axiom engine discover [--json]` / `axiom engine run --stream` in the CLI.
 - Added versioned `--json` output for model/integration inventory, Hugging Face metadata inspection, local model inspection/search, and dataset inspect/validate/stats; dataset commands now share one JSON schema and preserve validation exit codes.
+- Added schema-versioned JSON output to `axiom dataset clean`, including per-category removal counts and source-preservation semantics; added model registry export/import/remove/favorite commands with duplicate-batch checks and live-registry overwrite protection.
 
 - Added AXIOM-owned Llama/Mistral inference execution with custom RMSNorm, RoPE, grouped-query attention, KV cache, supported LoRA deltas, sampling and autoregressive decode over local safetensors; the inference path does not call Transformers model.generate or Ollama.
 - Constrained direct AXIOM Engine model/adapter paths to configured trusted roots (including post-resolution symlink checks), replaced path-derived API names with names from validated directories, and added explicit model unload/resource cleanup.

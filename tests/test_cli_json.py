@@ -244,3 +244,76 @@ def test_dataset_clean_json_rejects_in_place_cleaning_without_touching_source(tm
     assert payload["schema_version"] == 1
     assert payload["error"]["code"] == "dataset_cleaning_failed"
     assert dataset.read_text(encoding="utf-8") == original
+
+
+
+def test_model_registry_export_import_and_remove_json_roundtrip(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    first_add = runner.invoke(app, [
+        "model", "add", "tiny-one", "/models/tiny-one", "--format", "safetensors", "--json",
+    ])
+    second_add = runner.invoke(app, [
+        "model", "add", "tiny-two", "/models/tiny-two", "--format", "gguf", "--json",
+    ])
+    assert first_add.exit_code == 0, first_add.stdout
+    assert second_add.exit_code == 0, second_add.stdout
+    first_model = json.loads(first_add.stdout)["model"]
+    assert json.loads(second_add.stdout)["created"] is True
+
+    export_path = tmp_path / "exports" / "models.json"
+    exported = runner.invoke(app, ["model", "export", "--path", str(export_path), "--json"])
+    assert exported.exit_code == 0, exported.stdout
+    export_payload = json.loads(export_path.read_text(encoding="utf-8"))
+    assert export_payload["schema_version"] == 1
+    assert export_payload["total"] == 2
+    assert json.loads(exported.stdout)["path"] == str(export_path.resolve())
+
+    target_project = tmp_path / "target-project"
+    target_project.mkdir()
+    monkeypatch.chdir(target_project)
+    imported = runner.invoke(app, ["model", "import", str(export_path), "--json"])
+    assert imported.exit_code == 0, imported.stdout
+    import_payload = json.loads(imported.stdout)
+    assert import_payload["imported"] == 2
+    assert import_payload["total_models_after_import"] == 2
+
+    favorite = runner.invoke(app, ["model", "favorite", first_model["id"], "--unfavorite", "--json"])
+    assert favorite.exit_code == 0, favorite.stdout
+    assert json.loads(favorite.stdout)["model"]["favorite"] is False
+
+    removed = runner.invoke(app, ["model", "remove", first_model["id"], "--json"])
+    assert removed.exit_code == 0, removed.stdout
+    assert json.loads(removed.stdout)["removed"] is True
+    listed = runner.invoke(app, ["model", "list", "--json"])
+    assert len(json.loads(listed.stdout)["models"]) == 1
+
+
+def test_model_export_refuses_live_registry_path(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["model", "add", "tiny-one", "/models/tiny-one", "--format", "safetensors"])
+    live_registry = tmp_path / ".axiom" / "models.json"
+    before = live_registry.read_text(encoding="utf-8")
+    result = runner.invoke(app, ["model", "export", "--path", str(live_registry), "--json"])
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["error"]["code"] == "model_export_failed"
+    assert live_registry.read_text(encoding="utf-8") == before
+
+
+def test_model_import_json_rejects_duplicate_batch_without_partial_import(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    existing = runner.invoke(app, ["model", "add", "already-here", "/models/already-here", "--format", "safetensors", "--json"])
+    assert existing.exit_code == 0
+    existing_model = json.loads(existing.stdout)["model"]
+    imported_one = {**existing_model, "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "name": "new-one", "source": "/models/new-one"}
+    duplicate = {**imported_one, "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "name": "new-two", "source": "/models/new-two"}
+    input_file = tmp_path / "bad-batch.json"
+    # Duplicate source identities must reject the entire import before any write.
+    duplicate["source"] = "/models/new-one"
+    input_file.write_text(json.dumps({"schema_version": 1, "models": [imported_one, duplicate]}), encoding="utf-8")
+
+    result = runner.invoke(app, ["model", "import", str(input_file), "--json"])
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["error"]["code"] == "model_import_failed"
+    listed = runner.invoke(app, ["model", "list", "--json"])
+    models = json.loads(listed.stdout)["models"]
+    assert [item["name"] for item in models] == ["already-here"]
