@@ -226,13 +226,25 @@ def _resolve_model_directory(value: str, label: str) -> Path:
 
     # Normalization here is lexical only. All filesystem reads are performed
     # against paths obtained independently from a walk of trusted roots.
-    requested_key = os.path.normcase(os.path.normpath(os.path.expanduser(value.strip())))
+    raw_value = os.path.expanduser(value.strip())
+    # Reject traversal components up front. These are string operations only;
+    # the request value is never passed to a filesystem API or Path constructor.
+    components = raw_value.replace("\\", "/").split("/")
+    if os.pardir in components:
+        raise ValueError(f"{label} must not contain parent-directory traversal components.")
+
     root_strings = tuple(str(root) for root in roots)
+    candidate_keys = {os.path.normcase(os.path.normpath(raw_value))}
+    if not os.path.isabs(raw_value):
+        candidate_keys.update(
+            os.path.normcase(os.path.normpath(os.path.join(root_text, raw_value)))
+            for root_text in root_strings
+        )
     freshness_bucket = int(time.monotonic() // 30)
     entries = _trusted_directory_index(root_strings, freshness_bucket)
     for discovered, is_model, is_adapter, is_symlink in entries:
         key = os.path.normcase(os.path.normpath(discovered))
-        if key != requested_key:
+        if key not in candidate_keys:
             continue
         if is_symlink:
             raise ValueError(f"{label} cannot be a symlink; trusted-root escapes are not allowed.")
