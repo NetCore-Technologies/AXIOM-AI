@@ -174,7 +174,7 @@ def test_tiny_safetensors_checkpoint_generates_through_axiom_native_loop(
     pytest.importorskip("tokenizers")
     safetensors_torch = pytest.importorskip("safetensors.torch")
     from tokenizers import AddedToken, Tokenizer, models, pre_tokenizers
-    from axiom.core.engine import generate_local
+    from axiom.core.engine import generate_local, generate_local_stream
 
     model_root = tmp_path / "models"
     model_dir = model_root / "tiny-llama"
@@ -205,4 +205,10 @@ def test_tiny_safetensors_checkpoint_generates_through_axiom_native_loop(
     assert result["prompt_tokens"] == 3
     assert result["completion_tokens"] == 2
     assert result["decoder"] == "axiom-autoregressive-kv-cache"
+
+    events = list(generate_local_stream(str(model_dir), "hello world", max_new_tokens=2, temperature=0))
+    assert events[-1]["type"] == "complete"
+    assert events[-1]["result"]["response"] == result["response"]
+    assert all(event["type"] == "token" for event in events[:-1])
+    assert len(events[:-1]) == events[-1]["result"]["completion_tokens"]
     assert isinstance(result["response"], str)
