@@ -1,5 +1,6 @@
 import AxiomOptimizer from "./components/AxiomOptimizer";
 import AxiomQuantizer from "./components/AxiomQuantizer";
+import AxiomToolkit from "./components/AxiomToolkit";
 import ApiPlayground from "./components/ApiPlayground";
 import RuntimeConnectorPanel from "./components/RuntimeConnectorPanel";
 import LocalInferencePanel from "./components/LocalInferencePanel";
@@ -121,7 +122,8 @@ type Page =
   | "logs"
   | "settings"
   | "optimizer"
-  | "quantizer";
+  | "quantizer"
+  | "toolkit";
 
 type Theme = "dark" | "light";
 type Tone = "success" | "warning" | "danger" | "neutral" | "info";
@@ -140,6 +142,13 @@ type Notice = {
 };
 
 const navItems: NavItem[] = [
+  {
+    id: "toolkit",
+    label: "AI Toolkit",
+    description: "120 local AI engineering utilities",
+    icon: Wrench,
+    section: "TOOLKIT",
+  },
   {
     id: "optimizer",
     label: "Agent Optimizer",
@@ -253,6 +262,11 @@ const pageMeta: Record<
   Page,
   { label: string; kicker: string; description: string }
 > = {
+  toolkit: {
+    label: "AI Toolkit",
+    kicker: "LOCAL AI ENGINEERING UTILITIES",
+    description: "Run 120 browser-local calculators and validators for model operations, datasets, security, workflows, prompts, and releases.",
+  },
   optimizer: {
     label: "Agent Optimizer",
     kicker: "BETA 5 / MODEL OPTIMIZATION",
@@ -1465,6 +1479,8 @@ function WorkspacePage({
   onChangePassword: () => void;
 }) {
   switch (page) {
+    case "toolkit":
+      return <AxiomToolkit />;
     case "optimizer":
       return <AxiomOptimizer />;
     case "quantizer":
