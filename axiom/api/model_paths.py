@@ -1,8 +1,8 @@
 """Trusted filesystem boundaries for AXIOM model and optimizer paths.
 
 User-supplied paths are canonicalized with ``realpath`` and accepted only when
-``commonpath`` proves that the resolved path stays inside an AXIOM-owned root.
-No filesystem operation is performed on the unvalidated input.
+a separator-aware prefix check proves that the resolved path stays inside an
+AXIOM-owned root. No filesystem operation is performed on the unvalidated input.
 """
 
 from __future__ import annotations
@@ -50,11 +50,10 @@ def _inside(candidate: str, roots: Iterable[Path]) -> Path:
     candidate_real = os.path.realpath(candidate)
     for root in roots:
         root_real = os.path.realpath(os.fspath(root))
-        try:
-            if os.path.commonpath((candidate_real, root_real)) == root_real:
-                return Path(candidate_real)
-        except ValueError:
-            continue
+        if candidate_real == root_real:
+            return Path(root_real)
+        if candidate_real.startswith(os.path.join(root_real, "")):
+            return Path(candidate_real)
     raise ValueError("path is outside an AXIOM trusted filesystem boundary")
 
 
@@ -73,14 +72,12 @@ def validate_child_path(
 ) -> Path:
     """Resolve a child path and require it to remain below the validated parent."""
     parent_real = os.path.realpath(_coerce_path(parent))
-    child_raw = _coerce_path(child)
-    candidate = os.path.realpath(os.path.join(parent_real, child_raw))
-    try:
-        if os.path.commonpath((candidate, parent_real)) != parent_real:
-            raise ValueError("child path escapes its trusted parent")
-    except ValueError as exc:
-        raise ValueError("child path escapes its trusted parent") from exc
-    return Path(candidate)
+    candidate = os.path.realpath(os.path.join(parent_real, _coerce_path(child)))
+    if candidate == parent_real:
+        return Path(parent_real)
+    if candidate.startswith(os.path.join(parent_real, "")):
+        return Path(candidate)
+    raise ValueError("child path escapes its trusted parent")
 
-# Backwards-compatible default root; caller-supplied paths must still be validated.
+
 MODEL_ROOT = Path("models")
