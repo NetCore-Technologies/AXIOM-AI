@@ -101,7 +101,7 @@ For package downloads and checksums, see [GitHub Releases](https://github.com/Ne
 | Check your project setup | `axiom doctor` |
 | See available commands | `axiom --help` |
 
-The **Models** page supports server-side search, exact format/tag filters, favorites-only views, numeric parameter sorting, filtered pagination, and browser-local saved filter presets. Model entries also expose estimated RAM/VRAM fit ranges and explicit compatibility warnings when enough metadata is available. See the [Model Registry guide](docs/Model-Registry.md). The existing **Runtime** page also benchmarks actual local Ollama inference with warm-up, measured iterations, bounded concurrency, latency percentiles, and token throughput when runtime token counts are available. See the [Inference Benchmarking guide](docs/Inference-Benchmarking.md).
+The **Models** page supports server-side search, exact format/tag filters, favorites-only views, numeric parameter sorting, filtered pagination, and browser-local saved filter presets. Model entries also expose estimated RAM/VRAM fit ranges and explicit compatibility warnings when enough metadata is available. See the [Model Registry guide](docs/Model-Registry.md). The existing **Runtime** page also benchmarks actual local Ollama inference with warm-up, measured iterations, bounded concurrency, latency percentiles, and token throughput when runtime token counts are available. See the [Inference Benchmarking guide](docs/Inference-Benchmarking.md). It also provides metadata-only request history with request IDs, JSON export, and clear controls; prompts and generated text are excluded. See the [Local Inference guide](docs/Local-Inference.md).
 
 ## Optional features
 
