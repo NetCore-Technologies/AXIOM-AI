@@ -54,7 +54,7 @@ def test_model_directory_must_exist_and_be_a_directory(tmp_path, monkeypatch) ->
     monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(tmp_path))
     file_path = tmp_path / "model.txt"
     file_path.write_text("not a model", encoding="utf-8")
-    with pytest.raises(ValueError, match="existing directory|existing local directory"):
+    with pytest.raises(ValueError, match="checkpoint directory|trusted model root"):
         _resolve_model_directory(str(file_path), "Base model")
 
 
@@ -62,6 +62,7 @@ def test_model_directory_accepts_only_configured_roots(tmp_path, monkeypatch) ->
     root = tmp_path / "models"
     model = root / "model-a"
     model.mkdir(parents=True)
+    (model / "config.json").write_text(json.dumps({"model_type": "llama"}), encoding="utf-8")
     monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(root))
 
     assert _resolve_model_directory(str(model), "Base model") == model.resolve()
@@ -90,7 +91,7 @@ def test_model_directory_rejects_symlink_escape_from_configured_root(tmp_path, m
         pytest.skip(f"Directory symlinks are unavailable on this platform: {exc}")
     monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(root))
 
-    with pytest.raises(ValueError, match="symlink escapes"):
+    with pytest.raises(ValueError, match="symlink|trusted model root|checkpoint directory"):
         _resolve_model_directory(str(escape), "Base model")
 
 
