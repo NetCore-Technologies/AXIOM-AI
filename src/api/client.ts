@@ -115,7 +115,11 @@ export type AxiomEngineStatus = {
   setup_note: string; scope_note: string; checked_at: string;
 };
 export type AxiomEngineResult = {
-  engine: "axiom-local-engine"; model: string; architecture: string; adapter: string | null; response: string;
+  engine: "axiom-native-engine"; execution_backend: "pytorch-native-axiom";
+  transformers_generation_used: false; ollama_used: false;
+  model: string; architecture: string; model_type: "llama" | "mistral";
+  adapter: string | null; device: string; checkpoint_format: "safetensors";
+  decoder: "axiom-autoregressive-kv-cache"; response: string;
   prompt_tokens: number; completion_tokens: number; elapsed_ms: number; generated_at: string; local_only: true;
 };
 
