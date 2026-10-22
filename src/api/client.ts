@@ -797,13 +797,13 @@ async function streamAxiomEngineRequest(
   signal: AbortSignal,
 ): Promise<AxiomEngineResult> {
   const requestId = globalThis.crypto?.randomUUID?.()
-    ?? \`ui-\${Date.now().toString(36)}-\${Math.random().toString(36).slice(2, 12)}\`;
+    ?? `ui-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
   const headers = new Headers({
     Accept: "application/x-ndjson",
     "Content-Type": "application/json",
     "X-Request-ID": requestId,
   });
-  const response = await fetch(\`\${API_BASE}/api/engine/generate/stream\`, {
+  const response = await fetch(`${API_BASE}/api/engine/generate/stream`, {
     method: "POST",
     headers,
     body: JSON.stringify(input),
@@ -814,7 +814,7 @@ async function streamAxiomEngineRequest(
     let payload: unknown = raw;
     try { payload = raw ? JSON.parse(raw) as unknown : null; } catch { /* retain raw safe error text */ }
     const rid = response.headers.get("X-Request-ID") || requestId;
-    throw new Error(\`\${messageFromPayload(payload, \`AXIOM stream request failed (\${response.status})\`)} (request ID \${rid})\`);
+    throw new Error(`${messageFromPayload(payload, `AXIOM stream request failed (${response.status})`)} (request ID ${rid})`);
   }
   const reader = response.body?.getReader();
   if (!reader) throw new Error("AXIOM streaming response did not expose a readable body.");
