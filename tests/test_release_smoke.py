@@ -166,7 +166,7 @@ def test_runtime_trace_smoke_detects_missing_clear_route() -> None:
 def test_engine_trusted_roots_and_native_execution_are_integrated_end_to_end() -> None:
     engine_source = (ROOT / "axiom" / "core" / "engine.py").read_text(encoding="utf-8")
     native_source = (ROOT / "axiom" / "core" / "native_engine.py").read_text(encoding="utf-8")
-    api_source = (ROOT / "axiom" / "engine" / "api.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "api" / "engine.py).read_text(encoding="utf-8")
     client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
     panel_source = (ROOT / "src" / "components" / "LocalAxiomEnginePanel.tsx").read_text(encoding="utf-8")
     e2e_source = (ROOT / "e2e" / "axiom-engine.spec.ts").read_text(encoding="utf-8")
@@ -176,7 +176,7 @@ def test_engine_trusted_roots_and_native_execution_are_integrated_end_to_end() -
 def test_engine_smoke_detects_path_and_native_execution_regressions() -> None:
     engine_source = (ROOT / "axiom" / "core" / "engine.py").read_text(encoding="utf-8")
     native_source = (ROOT / "axiom" / "core" / "native_engine.py").read_text(encoding="utf-8")
-    api_source = (ROOT / "axiom" / "engine" / "api.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "api" / "engine.py).read_text(encoding="utf-8")
     client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
     panel_source = (ROOT / "src" / "components" / "LocalAxiomEnginePanel.tsx").read_text(encoding="utf-8")
     e2e_source = (ROOT / "e2e" / "axiom-engine.spec.ts").read_text(encoding="utf-8")
@@ -188,7 +188,7 @@ def test_engine_smoke_detects_path_and_native_execution_regressions() -> None:
 def test_native_engine_smoke_rejects_missing_kv_cache_mechanics() -> None:
     engine_source = (ROOT / "axiom" / "core" / "engine.py").read_text(encoding="utf-8")
     native_source = (ROOT / "axiom" / "core" / "native_engine.py").read_text(encoding="utf-8")
-    api_source = (ROOT / "axiom" / "engine" / "api.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "api" / "engine.py).read_text(encoding="utf-8")
     client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
     panel_source = (ROOT / "src" / "components" / "LocalAxiomEnginePanel.tsx").read_text(encoding="utf-8")
     e2e_source = (ROOT / "e2e" / "axiom-engine.spec.ts").read_text(encoding="utf-8")
