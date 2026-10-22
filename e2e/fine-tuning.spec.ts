@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { ensureAuthenticated } from "./helpers/auth";
 
-test("Training page submits a bounded local LoRA job and displays its real status", async ({
+test("Training page submits a bounded local LoRA job and displays its status", async ({
   page,
 }) => {
   const queuedJob = {
@@ -28,16 +28,12 @@ test("Training page submits a bounded local LoRA job and displays its real statu
     result: null,
     logs: ["Job queued."],
   };
-  let submitted: Record<string, unknown> | null = null;
 
   let submittedConfig: Record<string, unknown> | undefined;
   let postRequestCount = 0;
 
-  // Authenticate before installing fine-tuning mocks so authentication
-  // setup can complete normally.
   await ensureAuthenticated(page);
 
-  // Mock all fine-tuning endpoints, including job polling.
   await page.route("**/api/fine-tuning/**", async (route) => {
     const request = route.request();
     const { pathname } = new URL(request.url());
@@ -81,9 +77,7 @@ test("Training page submits a bounded local LoRA job and displays its real statu
         await route.fulfill({
           status: 400,
           contentType: "application/json",
-          body: JSON.stringify({
-            detail: "Invalid test request JSON",
-          }),
+          body: JSON.stringify({ detail: "Invalid test request JSON" }),
         });
         return;
       }
@@ -108,44 +102,6 @@ test("Training page submits a bounded local LoRA job and displays its real statu
     await route.continue();
   });
 
-  const fineTuningRequests: string[] = [];
-
-  page.on("request", (request) => {
-    if (request.url().includes("/api/fine-tuning/")) {
-      fineTuningRequests.push(`${request.method()} ${request.url()}`);
-    }
-  });
-
-  page.on("requestfailed", (request) => {
-    if (request.url().includes("/api/fine-tuning/")) {
-      console.error(
-        "Fine-tuning request failed:",
-        request.method(),
-        request.url(),
-        request.failure()?.errorText,
-      );
-    }
-  });
-
-  await page.route("**/api/fine-tuning/**", route => {
-    const { pathname } = new URL(route.request().url());
-    if (pathname.endsWith("/runtime")) {
-      return route.fulfill({ json: {
-        backend: "transformers-peft-local-lora",
-        can_start: true,
-        packages: { torch: true, transformers: true, peft: true, accelerate: true },
-        model_loading: "local_files_only",
-        scope_note: "Local model only.",
-      } });
-    }
-    if (pathname.endsWith("/jobs") && route.request().method() === "POST") {
-      submitted = route.request().postDataJSON() as Record<string, unknown>;
-      return route.fulfill({ status: 202, json: queuedJob });
-    }
-    if (pathname.endsWith("/jobs")) return route.fulfill({ json: { jobs: [] } });
-    return route.fulfill({ json: queuedJob });
-  });
-
   await page.goto("/?page=training");
 
   await expect(
@@ -166,9 +122,6 @@ test("Training page submits a bounded local LoRA job and displays its real statu
   const submitButton = page.getByRole("button", {
     name: "Start local fine-tuning",
   });
-
-  // Fail with a useful readiness error rather than waiting for a POST
-  // that cannot happen while the submit button is disabled.
   await expect(submitButton).toBeEnabled({ timeout: 10_000 });
 
   const postResponsePromise = page.waitForResponse(
@@ -187,17 +140,10 @@ test("Training page submits a bounded local LoRA job and displays its real statu
   await submitButton.click();
 
   const postResponse = await postResponsePromise;
-
   expect(postResponse.status()).toBe(202);
   expect(postRequestCount).toBe(1);
 
   expect(submittedConfig).toMatchObject({
-  await page.getByRole("button", { name: "Start local fine-tuning" }).click();
-
-  const jobStatus = page.locator('[aria-label="Fine-tuning job status"]');
-  await expect(jobStatus).toBeVisible();
-  await expect(jobStatus).toContainText("QUEUED");
-  expect(submitted).toMatchObject({
     model_path: "/models/base",
     dataset_path: "/data/train.jsonl",
     output_dir: "/runs/adapter",
@@ -208,15 +154,7 @@ test("Training page submits a bounded local LoRA job and displays its real statu
     lora_rank: 4,
   });
 
-  await expect(page.getByText(/queued/i).first()).toBeVisible({
-    timeout: 10_000,
-  });
-
-  expect(
-    fineTuningRequests.some(
-      (request) =>
-        request.includes("GET") &&
-        request.includes("/api/fine-tuning/runtime"),
-    ),
-  ).toBe(true);
+  const jobStatus = page.locator('[aria-label="Fine-tuning job status"]');
+  await expect(jobStatus).toBeVisible({ timeout: 10_000 });
+  await expect(jobStatus).toContainText(/queued/i);
 });
