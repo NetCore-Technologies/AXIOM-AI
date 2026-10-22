@@ -64,6 +64,16 @@ test.describe("Measured local inference benchmark", () => {
           schema_version: 1, discovery_mode: "passive_local_discovery",
           checked_at: "2026-10-22T00:00:00Z", connectors: [], scope_note: "Test stub.",
         } });
+      } else if (url.pathname === "/api/diagnostics/runtime-traces" && request.method() === "GET") {
+        await route.fulfill({ json: {
+          schema_version: 1, traces: [], total_retained: 0, limit: 100, max_retained: 200,
+          privacy: { prompt_bodies_stored: false, response_bodies_stored: false, disk_persistence: false },
+        } });
+      } else if (url.pathname === "/api/engine/models") {
+        await route.fulfill({ json: {
+          schema_version: 1, models: [], adapters: [], truncated: false,
+          scope_note: "No compatible local models configured for this test.",
+        } });
       } else if (url.pathname === "/api/models/studio/status") {
         await route.fulfill({ json: {
           schema_version: 1, ollama_installed: true,
@@ -125,6 +135,10 @@ test.describe("Measured local inference benchmark", () => {
         await route.fulfill({ json: { engine: "axiom-local-engine", ready: false, packages: {}, versions: {}, loaded: false, architecture: null, model_loading: "local_files_only", remote_code: false, setup_note: "Optional dependencies missing.", scope_note: "Test.", checked_at: "2026-10-22T00:00:00Z" } });
       } else if (url.pathname === "/api/diagnostics/runtime-connectors") {
         await route.fulfill({ json: { schema_version: 1, discovery_mode: "passive_local_discovery", checked_at: "2026-10-22T00:00:00Z", connectors: [], scope_note: "Test." } });
+      } else if (url.pathname === "/api/diagnostics/runtime-traces" && request.method() === "GET") {
+        await route.fulfill({ json: { schema_version: 1, traces: [], total_retained: 0, limit: 100, max_retained: 200, privacy: { prompt_bodies_stored: false, response_bodies_stored: false, disk_persistence: false } } });
+      } else if (url.pathname === "/api/engine/models") {
+        await route.fulfill({ json: { schema_version: 1, models: [], adapters: [], truncated: false, scope_note: "No compatible local models configured for this test." } });
       } else if (url.pathname === "/api/models/studio/status") {
         await route.fulfill({ json: { schema_version: 1, ollama_installed: true, ollama_endpoint: "http://127.0.0.1:11434", download_limit_bytes: 1000000, gguf_directory: "models", catalogue: "Hugging Face", network_search_is_explicit: true } });
       } else if (url.pathname === "/api/models/studio/jobs") {
@@ -143,7 +157,7 @@ test.describe("Measured local inference benchmark", () => {
     await page.getByRole("combobox", { name: "Benchmark iterations" }).selectOption("10");
     await page.getByRole("combobox", { name: "Benchmark concurrency" }).selectOption("2");
     await page.getByRole("button", { name: "Benchmark this prompt" }).click();
-    await expect(page.getByRole("alert")).toContainText("iterations × concurrency must not exceed 10");
+    await expect(page.getByText(/iterations × concurrency must not exceed 10/i)).toBeVisible();
     expect(benchmarkRequests).toBe(0);
   });
 });
