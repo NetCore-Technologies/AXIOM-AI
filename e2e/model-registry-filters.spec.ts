@@ -8,10 +8,27 @@ test("model registry filters and saved presets use the real typed API query cont
     { id: "b".repeat(32), name: "Qwen Mini", source: "models/qwen-mini", format: "gguf", parameters: "1.5B", quantization: "Q4_K_M", architecture: "QwenForCausalLM", license: "Apache-2.0", tags: ["local", "chat"], favorite: false, content_sha256: null },
     { id: "c".repeat(32), name: "Llama Base", source: "models/llama", format: "safetensors", parameters: "8B", quantization: "", architecture: "LlamaForCausalLM", license: "Meta", tags: ["training"], favorite: false, content_sha256: null },
   ];
+  const fitReport = {
+    schema_version: 1,
+    model: { id: "a".repeat(32), name: "Qwen Seven", format: "gguf", parameters: "7B", parameter_count_billions: 7, parameter_basis: "unit_suffix", quantization: "Q4_K_M", architecture: "QwenForCausalLM" },
+    hardware: { os_name: "Linux", architecture: "x86_64", cpu_cores: 8, ram_gb: 16, gpu_name: "Test GPU", vram_gb: 4, vram_probe: "NVIDIA nvidia-smi only", unified_memory_detected: false },
+    quantization_bits_per_parameter: { low: 4, high: 5 },
+    estimated_weight_gb: { low: 3.5, high: 4.38 },
+    estimated_runtime_memory_gb: { low: 3.85, high: 6.57 },
+    system_ram_fit: { status: "likely", physical_gb: 16, budget_gb: 11.2, reserve_percent: 30, required_gb: { low: 3.85, high: 6.57 } },
+    gpu_memory_fit: { status: "unlikely", physical_gb: 4, budget_gb: 3.4, reserve_percent: 15, required_gb: { low: 3.85, high: 6.57 } },
+    format_compatibility: { status: "candidate_not_verified", likely_runtimes: ["Ollama", "llama.cpp"], guidance: "GGUF is a runtime candidate, not a verified load." },
+    warnings: ["This is a metadata-based screening estimate, not a benchmark.", "GPU memory measurement is limited."],
+    scope_note: "Estimate only. Runtime compatibility and actual performance require loading and measuring this model with a specific local backend.",
+  };
 
   await page.route("**/api/workspace/models**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
+    if (url.pathname.endsWith("/compatibility") && request.method() === "GET") {
+      await route.fulfill({ json: { report: fitReport } });
+      return;
+    }
     if (url.pathname !== "/api/workspace/models" || request.method() !== "GET") {
       await route.continue();
       return;
@@ -55,6 +72,12 @@ test("model registry filters and saved presets use the real typed API query cont
   await page.goto("/?page=models");
   await expect(page.getByRole("heading", { level: 1, name: "Models", exact: true })).toBeVisible();
   await expect(page.getByText("Qwen Seven", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Check hardware fit for Qwen Seven" }).click();
+  await expect(page.getByRole("heading", { name: "Hardware fit · Qwen Seven" })).toBeVisible();
+  await expect(page.getByText("3.50–4.38 GB", { exact: true })).toBeVisible();
+  await expect(page.getByText("UNLIKELY", { exact: true })).toBeVisible();
+  await expect(page.getByText(/not a benchmark/i)).toBeVisible();
 
   await page.getByRole("textbox", { name: "Search model registry" }).fill("qwen");
   await page.getByRole("textbox", { name: "Exact model format" }).fill("gguf");
