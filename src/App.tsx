@@ -23,6 +23,7 @@ import {
   type WorkspaceDiagnostics,
   type RoadmapAudit,
   type WorkspaceModel,
+  type WorkspaceModelCompatibility,
   type WorkspaceWorkflow,
   type WorkflowNode,
   type WorkflowNodeType,
@@ -1711,6 +1712,9 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
   const [discoveryBusy, setDiscoveryBusy] = useState(false);
   const [discovery, setDiscovery] = useState<{ candidates: WorkspaceModelCandidate[]; truncated: boolean } | null>(null);
   const [inspection, setInspection] = useState<WorkspaceModelInspection | null>(null);
+  const [compatibilityReport, setCompatibilityReport] = useState<WorkspaceModelCompatibility | null>(null);
+  const [compatibilityBusyId, setCompatibilityBusyId] = useState<string | null>(null);
+  const [compatibilityError, setCompatibilityError] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1745,6 +1749,13 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
     sort_by: sortBy,
     sort_order: sortOrder,
   });
+
+  const formatMemoryRange = (range: { low: number; high: number } | null) =>
+    range ? `${range.low.toFixed(2)}–${range.high.toFixed(2)} GB` : "Unknown";
+  const formatMemoryValue = (value: number | null) =>
+    value === null ? "Unknown" : `${value.toFixed(2)} GB`;
+  const fitTone = (status: string): Tone =>
+    status === "likely" ? "success" : status === "tight" ? "warning" : status === "unlikely" ? "danger" : "neutral";
 
   const refresh = async (filters: ModelRegistryFilters = currentFilters()) => {
     setAppliedFilters(filters);
@@ -1831,6 +1842,20 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
     } catch (cause) {
       onNotify(cause instanceof Error ? cause.message : "Model inspection failed.", "warning");
       return null;
+    }
+  };
+
+  const inspectCompatibility = async (model: WorkspaceModel) => {
+    setCompatibilityBusyId(model.id);
+    setCompatibilityError("");
+    setCompatibilityReport(null);
+    try {
+      const result = await axiomApi.modelCompatibility(model.id);
+      setCompatibilityReport(result.report);
+    } catch (cause) {
+      setCompatibilityError(cause instanceof Error ? cause.message : "Hardware fit report could not be generated.");
+    } finally {
+      setCompatibilityBusyId(null);
     }
   };
 
@@ -1998,9 +2023,23 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
       <p className="quiet-note">{inspection.path} · {inspection.status}</p>
       <div className="info-grid"><InfoCard icon={BrainCircuit} label="Architecture" value={inspection.architecture || inspection.model_type || "Unknown"} detail={inspection.capabilities.join(" · ")} tone="neutral" /><InfoCard icon={HardDrive} label="Format / weights" value={inspection.model_format} detail={`${formatBytes(inspection.weight_size_bytes)} · ${inspection.has_tokenizer ? "Tokenizer found" : "No tokenizer detected"}`} tone={inspection.weight_size_bytes ? "success" : "warning"} /><InfoCard icon={Cpu} label="Estimated VRAM" value={inspection.estimated_vram_gb === null ? "Unknown" : `${inspection.estimated_vram_gb} GB`} detail={inspection.parameter_count ? `${inspection.parameter_count.toLocaleString()} parameters · estimate only` : "No parameter count available"} tone="info" /></div>
     </Surface>}
+    {compatibilityError && <InlineAlert tone="warning" role="alert">{compatibilityError}</InlineAlert>}
+    {compatibilityReport && <Surface title={`Hardware fit · ${compatibilityReport.model.name}`} eyebrow="MEMORY ESTIMATE · NOT A BENCHMARK" action={<button type="button" className="icon-text-button" onClick={() => setCompatibilityReport(null)}>Dismiss</button>}>
+      <p className="quiet-note">{compatibilityReport.scope_note}</p>
+      <div className="info-grid">
+        <InfoCard icon={HardDrive} label="Weight footprint" value={formatMemoryRange(compatibilityReport.estimated_weight_gb)} detail={compatibilityReport.quantization_bits_per_parameter ? `${compatibilityReport.quantization_bits_per_parameter.low}–${compatibilityReport.quantization_bits_per_parameter.high} bits per parameter (metadata estimate)` : "Quantization/dtype not known"} tone="info" />
+        <InfoCard icon={Cpu} label="Runtime memory" value={formatMemoryRange(compatibilityReport.estimated_runtime_memory_gb)} detail="Heuristic range includes allocator/KV-cache/runtime allowance" tone="warning" />
+        <InfoCard icon={Database} label="System RAM fit" value={compatibilityReport.system_ram_fit.status.toUpperCase()} detail={`Physical ${formatMemoryValue(compatibilityReport.system_ram_fit.physical_gb)} · budget ${formatMemoryValue(compatibilityReport.system_ram_fit.budget_gb)} after reserve`} tone={fitTone(compatibilityReport.system_ram_fit.status)} />
+        <InfoCard icon={Gauge} label="GPU memory fit" value={compatibilityReport.gpu_memory_fit.status.toUpperCase()} detail={`${compatibilityReport.hardware.gpu_name || "GPU not identified"} · budget ${formatMemoryValue(compatibilityReport.gpu_memory_fit.budget_gb)}`} tone={fitTone(compatibilityReport.gpu_memory_fit.status)} />
+      </div>
+      <div className="two-column-grid" style={{ marginTop: 16 }}>
+        <div><p className="eyebrow">FORMAT COMPATIBILITY</p><StatusPill tone={compatibilityReport.format_compatibility.status === "candidate_not_verified" ? "warning" : "neutral"}>{compatibilityReport.format_compatibility.status.replaceAll("_", " ").toUpperCase()}</StatusPill><p>{compatibilityReport.format_compatibility.guidance}</p><p className="quiet-note">Potential runtimes: {compatibilityReport.format_compatibility.likely_runtimes.join(", ") || "unknown"}</p></div>
+        <div><p className="eyebrow">WARNINGS AND ASSUMPTIONS</p><ul>{compatibilityReport.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul><p className="quiet-note">VRAM evidence: {compatibilityReport.hardware.vram_probe}. No runtime load was attempted.</p></div>
+      </div>
+    </Surface>}
     <Surface title="Model registry" eyebrow="LOCAL INVENTORY">
       {error ? <InlineAlert tone="warning" role="alert">{error}</InlineAlert> : null}
-      {loading ? <div className="loading-state" role="status">Loading model registry…</div> : models.length ? <><div className="module-list">{models.map((model) => <div className="module-row model-registry-row" key={model.id}><span className="module-icon"><BrainCircuit size={17} /></span><span className="module-copy"><b>{model.name}</b><small>{model.source} · {model.format}{model.parameters ? ` · ${model.parameters}` : ""}{model.quantization ? ` · ${model.quantization}` : ""}{model.architecture ? ` · ${model.architecture}` : ""}{model.license ? ` · ${model.license}` : ""}{model.tags?.length ? ` · ${model.tags.join(", ")}` : ""}</small></span><button type="button" className="icon-button" aria-label={`${model.favorite ? "Remove" : "Add"} ${model.name} ${model.favorite ? "favorite" : "to favorites"}`} title={model.favorite ? "Remove favorite" : "Add favorite"} onClick={() => void toggleFavorite(model)}><Star size={15} fill={model.favorite ? "currentColor" : "none"} /></button><button type="button" className="icon-button danger-icon-button" aria-label={`Remove ${model.name} from registry`} title="Remove registry entry" onClick={() => setRemoving(model)}><Trash2 size={15} /></button></div>)}</div>{hasMore && <div className="pagination-actions"><button type="button" className="button secondary-button" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load more models"}</button></div>}</> : <EmptyState icon={BrainCircuit} title="Registry is empty" description="Register model metadata here or use the CLI. Model files remain where they are." action={<CliReference command="axiom model add my-model local safetensors" />} />}
+      {loading ? <div className="loading-state" role="status">Loading model registry…</div> : models.length ? <><div className="module-list">{models.map((model) => <div className="module-row model-registry-row" key={model.id}><span className="module-icon"><BrainCircuit size={17} /></span><span className="module-copy"><b>{model.name}</b><small>{model.source} · {model.format}{model.parameters ? ` · ${model.parameters}` : ""}{model.quantization ? ` · ${model.quantization}` : ""}{model.architecture ? ` · ${model.architecture}` : ""}{model.license ? ` · ${model.license}` : ""}{model.tags?.length ? ` · ${model.tags.join(", ")}` : ""}</small></span><button type="button" className="icon-button" aria-label={`${model.favorite ? "Remove" : "Add"} ${model.name} ${model.favorite ? "favorite" : "to favorites"}`} title={model.favorite ? "Remove favorite" : "Add favorite"} onClick={() => void toggleFavorite(model)}><Star size={15} fill={model.favorite ? "currentColor" : "none"} /></button><button type="button" className="icon-button" aria-label={`Check hardware fit for ${model.name}`} title={compatibilityBusyId === model.id ? "Checking hardware fit…" : "Estimate hardware fit"} disabled={compatibilityBusyId === model.id} onClick={() => void inspectCompatibility(model)}><Gauge size={15} /></button><button type="button" className="icon-button danger-icon-button" aria-label={`Remove ${model.name} from registry`} title="Remove registry entry" onClick={() => setRemoving(model)}><Trash2 size={15} /></button></div>)}</div>{hasMore && <div className="pagination-actions"><button type="button" className="button secondary-button" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load more models"}</button></div>}</> : <EmptyState icon={BrainCircuit} title="Registry is empty" description="Register model metadata here or use the CLI. Model files remain where they are." action={<CliReference command="axiom model add my-model local safetensors" />} />}
     </Surface>
     {removing && <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !removingBusy) setRemoving(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="remove-model-title"><div className="dialog-head"><div><p className="eyebrow">CONFIRM REGISTRY CHANGE</p><h2 id="remove-model-title">Remove {removing.name}?</h2></div><button type="button" className="icon-button" aria-label="Close confirmation" onClick={() => setRemoving(null)} disabled={removingBusy}><X size={16} /></button></div><p className="quiet-note">This removes only its AXIOM registry metadata. Local model weights will not be deleted.</p><div className="integration-form-actions"><button type="button" className="button secondary-button" onClick={() => setRemoving(null)} disabled={removingBusy}>Cancel</button><button type="button" className="button danger-button" onClick={() => void removeModel()} disabled={removingBusy}>{removingBusy ? "Removing…" : "Remove registry entry"}</button></div></section></div>}
     <ModelStudioPanel />
