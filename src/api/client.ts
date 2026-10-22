@@ -34,6 +34,34 @@ export type LocalInferenceResult = {
   total_duration_ms: number | null;
   generated_at: string;
 };
+
+export type LocalInferenceBenchmark = {
+  schema_version: number;
+  backend: "ollama";
+  endpoint: string;
+  model: string;
+  configuration: {
+    prompt_characters: number;
+    num_predict: number;
+    temperature: number;
+    warmup_runs: number;
+    iterations: number;
+    concurrency: number;
+    measured_requests: number;
+  };
+  measurements: {
+    wall_time_ms: number;
+    requests_per_second: number;
+    completion_tokens_known: number;
+    prompt_tokens_known: number;
+    total_completion_tokens: number | null;
+    completion_tokens_per_second: number | null;
+    latency_ms: { min: number | null; median: number | null; p95: number | null; max: number | null };
+    requests: Array<{ latency_ms: number; prompt_tokens: number | null; completion_tokens: number | null; done: boolean }>;
+  };
+  privacy: { prompt_returned: false; responses_returned: false; results_persisted: false };
+  scope_note: string;
+};
 export type AxiomEngineStatus = {
   engine: string; ready: boolean; packages: Record<string, boolean>; versions: Record<string, string | null>;
   loaded: boolean; architecture: string | null; model_loading: "local_files_only"; remote_code: false;
@@ -1074,6 +1102,10 @@ export const axiomApi = {
   inferenceStatus: () => requestJson<LocalInferenceStatus>("/api/inference/status"),
   runLocalInference: (input: { model: string; prompt: string; num_predict: number; temperature: number }) =>
     requestJson<LocalInferenceResult>("/api/inference/generate", {
+      method: "POST", body: JSON.stringify(input),
+    }, 300_000),
+  runLocalInferenceBenchmark: (input: { model: string; prompt: string; num_predict: number; temperature: number; warmup_runs: number; iterations: number; concurrency: number }) =>
+    requestJson<LocalInferenceBenchmark>("/api/inference/benchmark", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
   axiomEngineStatus: () => requestJson<AxiomEngineStatus>("/api/engine/status"),
