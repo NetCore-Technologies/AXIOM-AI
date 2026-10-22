@@ -94,7 +94,10 @@ test.describe("Measured local inference benchmark", () => {
     await expect(page.getByText("42.857 tokens/s", { exact: true })).toBeVisible();
     await expect(page.getByText("200 ms", { exact: true })).toBeVisible();
     await expect(page.getByText("P95 240 ms", { exact: true })).toBeVisible();
-    await expect(page.getByRole("table", { name: "Per-request benchmark timings" }).getByText("18")).toBeVisible();
+    const requestTable = page.getByRole("table", { name: "Per-request benchmark timings" });
+    await expect(requestTable.getByRole("row")).toHaveCount(3);
+    await expect(requestTable).toContainText("8");
+    await expect(requestTable).toContainText("10");
 
     expect(submitted).toMatchObject({
       model: "test-model",
