@@ -1145,6 +1145,10 @@ export const axiomApi = {
     requestJson<AxiomEngineResult>("/api/engine/generate", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
+  unloadAxiomEngine: () =>
+    requestJson<{ schema_version: number; unloaded: boolean; loaded: false; scope_note: string }>("/api/engine/unload", {
+      method: "POST", body: JSON.stringify({}),
+    }),
   modelStudioStatus: () => requestJson<ModelStudioStatus>("/api/models/studio/status"),
   modelStudioSearch: (q: string, limit = 12) => requestJson<{ provider: string; query: string; count: number; results: ModelStudioModel[]; note: string }>(`/api/models/studio/search?${new URLSearchParams({ q, limit: String(limit) })}`),
   modelStudioFiles: (repoId: string) => requestJson<{ repo_id: string; files: ModelStudioFile[]; count: number; url: string; note: string }>(`/api/models/studio/files?${new URLSearchParams({ repo_id: repoId })}`),
