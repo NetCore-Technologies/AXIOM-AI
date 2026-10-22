@@ -29,6 +29,12 @@ Each utility has a description that explains the meaning of its inputs. The shar
 
 The SHA-256 tool hashes Text A in the current browser. CSV previews and class-balance checks can reveal values, so inspect the output before sharing it. Dataset summaries avoid returning record values by default, but users should still avoid pasting secrets and personal data.
 
+## Automated validation
+
+The release-smoke check verifies the exact 120-entry catalogue, unique utility titles, 12 categories, registered handlers for every distinct operation kind, browser-local implementation boundaries, and registration in both the Control Center navigation and Module Explorer. Playwright coverage exercises every catalogue entry with representative bounded inputs and includes targeted output assertions for selected calculations and security-sensitive helpers.
+
+These tests establish automated regression coverage only when the corresponding CI run passes. They do not provide physical-hardware measurements, formal proof of security, a substitute for full-dataset validation, or a claim that other roadmap deliverables are complete.
+
 ## Execution and accuracy boundary
 
 - Toolkit operations execute in the browser tab and do not call the AXIOM API, launch a shell process, download models, or make remote inference requests.
