@@ -237,7 +237,7 @@ def _resolve_model_directory(value: str, label: str) -> Path:
     candidate_keys = {os.path.normcase(os.path.normpath(raw_value))}
     if not os.path.isabs(raw_value):
         candidate_keys.update(
-            os.path.normcase(os.path.normpath(os.path.join(root_text, raw_value)))
+            os.path.normcase(os.path.normpath(root_text + os.sep + raw_value))
             for root_text in root_strings
         )
     freshness_bucket = int(time.monotonic() // 30)
