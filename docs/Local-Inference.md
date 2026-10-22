@@ -14,6 +14,12 @@ AXIOM's first executable inference adapter uses an Ollama service bound to the l
 
 Model download is an explicit user command, not an AXIOM side effect. The exact model available depends on your hardware and the models you've downloaded.
 
+## Runtime request traces
+
+The **Runtime** page includes a request history for local generation and benchmark calls. The API returns an `X-Request-ID` header and the response body carries the same identifier, allowing a call to be correlated with its trace. The in-process buffer keeps at most 200 records, newest first. It stores model name, operation, status, durations, token counts when available, bounded benchmark settings, and safe error codes. It does not accept or store prompt bodies, generated response text, credentials, or raw exception messages. Traces are memory-only and are lost when the API process restarts.
+
+Use **Refresh traces** to reload the history, **Export JSON** to download the displayed metadata, and **Clear history** to clear the current process's buffer after explicit confirmation. Clear affects only this process; it does not remove files because trace history is not written to disk. See the runtime diagnostics API routes `GET /api/diagnostics/runtime-traces` and `DELETE /api/diagnostics/runtime-traces`.
+
 ## Benchmarking
 
 The Runtime page can run a bounded benchmark against the same local Ollama service. It supports up to two excluded warm-up generations, up to ten measured requests across configurable concurrency, output limits up to 512 tokens per benchmark request, per-request latency statistics, wall time, and completion-token throughput when Ollama supplies token counts. The benchmark neither saves prompts/responses nor returns generated text in its result payload. See the [Inference Benchmarking guide](Inference-Benchmarking.md) for endpoint fields, limits, and measurement caveats.
