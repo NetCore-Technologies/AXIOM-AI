@@ -143,7 +143,7 @@ axiom --no-banner engine status
 axiom --no-banner engine run --model-path "$HOME/models/my-llama-model" --prompt "Explain AXIOM in one sentence." --max-new-tokens 128
 ```
 
-See [AXIOM Engine details](docs/Local-Engine.md) for local model layout, adapter use, and limits.
+See [AXIOM Engine details](docs/Local-Engine.md) for trusted model-root configuration, adapter use, model unload, and limits.
 
 ### Model Studio
 
