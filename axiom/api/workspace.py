@@ -302,8 +302,11 @@ def workspace_models(
     if sort_by == "parameters":
         sized_models = [model for model in models if not _model_parameter_sort_key(model.parameters)[0]]
         unsized_models = [model for model in models if _model_parameter_sort_key(model.parameters)[0]]
+        # Sort by name first so equal parameter counts keep an intuitive
+        # alphabetical order in both ascending and descending size modes.
+        sized_models.sort(key=lambda model: model.name.casefold())
         sized_models.sort(
-            key=lambda model: (_model_parameter_sort_key(model.parameters)[1], model.name.casefold()),
+            key=lambda model: _model_parameter_sort_key(model.parameters)[1],
             reverse=sort_order == "desc",
         )
         unsized_models.sort(key=lambda model: model.name.casefold())
