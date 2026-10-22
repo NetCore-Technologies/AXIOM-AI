@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added measured local Ollama inference benchmarking to the existing Runtime page and loopback API, with warm-ups, bounded measured iterations/concurrency, request latency percentiles, token-throughput coverage, and no benchmark-result persistence.
 - Added server-side model registry search, exact format/tag filters, favorites-only selection, numeric parameter sorting, filtered pagination, and browser-local saved filter presets in the existing Models page.
 - Added a model-specific hardware-fit report in the existing Models page: metadata-derived weight/runtime memory ranges, RAM/VRAM budget screening, format-family guidance, and explicit warnings when quantization or GPU-memory evidence is missing.
 - Added the Community and Adoption Strategy covering reproducible benchmarks, hardware calibration, optional integrations, real-world validation, and contributor outreach.
