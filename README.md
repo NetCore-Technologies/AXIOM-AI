@@ -128,7 +128,7 @@ axiom infer run qwen2.5:0.5b --prompt "Say hello in one sentence."
 
 ### AXIOM Engine (direct local inference)
 
-The Control Center's **AXIOM Local Engine** loads a compatible local Transformers causal-language-model checkpoint directly, with optional LoRA adapters. It uses AXIOM's own bounded runtime and does not require Ollama for this path. It never downloads model weights or executes remote model code. The runtime and LoRA training loop are AXIOM-owned; pretrained base weights are still supplied separately by you.
+The Control Center's **AXIOM Native Engine** runs an AXIOM-owned Llama/Mistral forward pass and autoregressive KV-cache decoder on PyTorch tensor kernels, including RMSNorm, RoPE, grouped-query attention, SwiGLU and supported LoRA deltas. It does not call Ollama or Transformers model.generate. The current native path requires local tokenizer.json plus floating-point safetensors checkpoints; GGUF, quantized weights, pickle .bin files and unsupported architectures are explicitly rejected. Model weights are supplied separately by you.
 
 Install the local model dependencies, then use the AXIOM Engine panel in the Control Center:
 
