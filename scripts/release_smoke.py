@@ -300,18 +300,18 @@ def engine_security_and_lifecycle_issues(engine_source: str, native_source: str,
     for forbidden in ("AutoModelForCausalLM.from_pretrained", "model.generate(**kwargs)", "requests.post("):
         if forbidden in native_source:
             issues.append("Native inference implementation delegates instead of executing locally: " + forbidden)
-    for token in ("resolve_local_model_directory(candidate", '@router.get("/models")', "discover_local_engine_assets()", '@router.post("/unload")', "unload_local_model()"):
+    for token in ("_validated_path(value, \"Base model\")", "_validated_path(value, \"LoRA adapter\")", '@router.get("/models")', "discover_local_engine_assets()", '@router.post("/generate/stream")', "generate_local_stream(", '@router.post("/unload")', "unload_local_model()"):
         if token not in api_source:
             issues.append("AXIOM Engine API is missing trusted path validation or unload route: " + token)
     if "PurePath" in api_source or "paths_must_be_safe_relative" in api_source:
         issues.append("AXIOM Engine API has legacy path checks that conflict with the trusted-root resolver.")
-    for token in ("axiomEngineModels:", '"/api/engine/models"', "unloadAxiomEngine:", '"/api/engine/unload"'):
+    for token in ("axiomEngineModels:", '"/api/engine/models"', "streamAxiomEngine:", '"/api/engine/generate/stream"', "unloadAxiomEngine:", '"/api/engine/unload"'):
         if token not in client_source:
             issues.append("Typed AXIOM Engine client is missing unload lifecycle support: " + token)
-    for token in ("Select discovered native model", "axiomApi.axiomEngineModels()", "Unload model", "axiomApi.unloadAxiomEngine()", "AXIOM_MODEL_ROOTS", "tokenizer.json", "safetensors"):
+    for token in ("Select discovered native model", "axiomApi.axiomEngineModels()", "axiomApi.streamAxiomEngine(", "Stop generation", "AXIOM Native Engine prompt", "Unload model", "axiomApi.unloadAxiomEngine()", "AXIOM_MODEL_ROOTS", "tokenizer.json", "safetensors"):
         if token not in panel_source:
             issues.append("AXIOM Native Engine GUI is missing native support/path safety controls: " + token)
-    for token in ("then unloads it", "api/engine/models", 'selectOption("/models/llama-test")', "api/engine/unload", 'name: "Unload model"'):
+    for token in ("then unloads it", "api/engine/models", 'selectOption("/models/llama-test")', "api/engine/generate/stream", 'contentType: "application/x-ndjson"', "api/engine/unload", 'name: "Unload model"'):
         if token not in e2e_source:
             issues.append("AXIOM Engine browser acceptance test is missing lifecycle coverage: " + token)
     return issues
