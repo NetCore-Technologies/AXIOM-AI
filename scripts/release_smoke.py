@@ -116,6 +116,51 @@ def model_registry_filter_issues(api_source: str, client_source: str, app_source
     return issues
 
 
+def model_compatibility_issues(core_source: str, api_source: str, client_source: str, app_source: str, e2e_source: str) -> list[str]:
+    """Check model-fit estimates are connected from the backend into the existing Models page."""
+    issues: list[str] = []
+    for token in (
+        "def estimate_model_compatibility(",
+        '"estimated_weight_gb": estimated_weights',
+        '"estimated_runtime_memory_gb": estimated_runtime',
+        '"system_ram_fit": ram_fit',
+        '"gpu_memory_fit": vram_fit',
+        '"format_compatibility": format_compatibility',
+    ):
+        if token not in core_source:
+            issues.append("Model fit engine is missing an evidence-labelled estimate: " + token)
+    for token in (
+        '@router.get("/models/{model_id}/compatibility")',
+        "estimate_model_compatibility(model, detect_hardware())",
+        'return {"report": report}',
+    ):
+        if token not in api_source:
+            issues.append("Model fit API is missing a backend connection: " + token)
+    for token in (
+        "export type WorkspaceModelCompatibility",
+        "modelCompatibility: (id: string)",
+        "/compatibility",
+    ):
+        if token not in client_source:
+            issues.append("Typed API client is missing the model fit endpoint: " + token)
+    for token in (
+        'aria-label={`Check hardware fit for ${model.name}`}',
+        "api.axiomApi",
+    ):
+        if token == "api.axiomApi":
+            continue
+        if token not in app_source:
+            issues.append("Models GUI is missing the compatibility action: " + token)
+    for token in (
+        'getByRole("button", { name: "Check hardware fit for Qwen Seven" })',
+        'getByRole("heading", { name: "Hardware fit · Qwen Seven" })',
+        'getByText("UNLIKELY", { exact: true })',
+    ):
+        if token not in e2e_source:
+            issues.append("Model fit browser coverage is missing: " + token)
+    return issues
+
+
 def api_playground_issues(component: str, client: str) -> list[str]:
     """Validate the Playground's actual typed GET-only client contract and disclosure."""
     issues: list[str] = []
@@ -147,10 +192,10 @@ def inspect(root: Path) -> dict[str, Any]:
     required = [
         "pyproject.toml", "axiom/version.py", "ROADMAP.md", "src/App.tsx",
         "src/api/client.ts", "src/components/ApiPlayground.tsx", "src/components/RuntimeConnectorPanel.tsx", "src/components/AgentProfiles.tsx", "src/styles.css",
-        "axiom/api/server.py", "axiom/api/workspace.py", "axiom/api/diagnostics.py", "axiom/api/runtime_discovery.py", "axiom/api/agent_profiles.py", "axiom/core/runtime_discovery.py", "axiom/core/agent_profiles.py", "axiom/cli/agent_profiles.py", "scripts/release_smoke.py",
+        "axiom/api/server.py", "axiom/api/workspace.py", "axiom/models/compatibility.py", "axiom/api/diagnostics.py", "axiom/api/runtime_discovery.py", "axiom/api/agent_profiles.py", "axiom/core/runtime_discovery.py", "axiom/core/agent_profiles.py", "axiom/cli/agent_profiles.py", "scripts/release_smoke.py",
         "tests/test_release_smoke.py", "e2e/helpers/auth.ts", "e2e/modules.spec.ts", "e2e/workflows.spec.ts", "e2e/evaluation.spec.ts",
         "e2e/model-registry-filters.spec.ts", "tests/test_workspace_model_registry_filters.py",
-        "tests/test_runtime_discovery.py", "tests/test_runtime_discovery_api.py", "tests/test_agent_profiles.py", "tests/test_agent_profiles_api.py", "tests/test_agent_profiles_cli.py", "e2e/api-playground.spec.ts", "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
+        "tests/test_model_compatibility.py", "tests/test_runtime_discovery.py", "tests/test_runtime_discovery_api.py", "tests/test_agent_profiles.py", "tests/test_agent_profiles_api.py", "tests/test_agent_profiles_cli.py", "e2e/api-playground.spec.ts", "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
         "docs/Runtime-Discovery.md", "docs/Agent-Profiles.md", "docs/Api-Playground.md", ".github/workflows/quality-gates.yml", ".github/workflows/nightly-build.yml",
     ]
     for relative in required:
@@ -184,6 +229,9 @@ def inspect(root: Path) -> dict[str, Any]:
     workspace_api = (root / "axiom/api/workspace.py").read_text(encoding="utf-8")
     model_registry_e2e = (root / "e2e/model-registry-filters.spec.ts").read_text(encoding="utf-8")
     failures.extend(model_registry_filter_issues(workspace_api, client, app_source, model_registry_e2e))
+    compatibility_core = (root / "axiom/models/compatibility.py").read_text(encoding="utf-8")
+    compatibility_e2e = model_registry_e2e
+    failures.extend(model_compatibility_issues(compatibility_core, workspace_api, client, app_source, compatibility_e2e))
     for path in (
         "/api/health", "/api/meta", "/api/workspace/runtime",
         "/api/workspace/models?offset=0&limit=5", "/api/workspace/datasets",
