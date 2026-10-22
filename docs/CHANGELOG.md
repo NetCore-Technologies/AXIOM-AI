@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — latest/development
+
+### Added
+
+- Constrained direct AXIOM Engine model/adapter paths to configured trusted roots (including post-resolution symlink checks), replaced path-derived API names with names from validated directories, and added explicit model unload/resource cleanup.
+- Added a bounded in-memory runtime trace history with request IDs for local generation and benchmarking, safe error codes, metadata-only JSON export, and explicit clear controls; prompts and generated responses are not recorded.
+- Added measured local Ollama inference benchmarking to the existing Runtime page and loopback API, with warm-ups, bounded measured iterations/concurrency, request latency percentiles, token-throughput coverage, and no benchmark-result persistence.
+- Added server-side model registry search, exact format/tag filters, favorites-only selection, numeric parameter sorting, filtered pagination, and browser-local saved filter presets in the existing Models page.
+- Added a model-specific hardware-fit report in the existing Models page: metadata-derived weight/runtime memory ranges, RAM/VRAM budget screening, format-family guidance, and explicit warnings when quantization or GPU-memory evidence is missing.
+- Added the Community and Adoption Strategy covering reproducible benchmarks, hardware calibration, optional integrations, real-world validation, and contributor outreach.
+- Added AXIOM Engine, an AXIOM-owned direct local causal-LM runtime with Control Center and CLI access, bounded generation, and optional local PEFT adapter loading.
+- Added AXIOM's own small-batch PyTorch LoRA training loop, masked padding labels, finite-loss checks, gradient clipping, adapter artifact verification, and dependency version diagnostics.
+
+### Fixed
+
+- Aligned LoRA optional dependency minimums with Transformers 5 and blocked training when installed dependency versions are too old.
+- Improved local model/adapter loading errors without enabling remote model code or model downloads.
+
+### Scope
+
+- AXIOM owns the engine orchestration and training loop; the pretrained base weights are user-supplied local model files and remain subject to their original licences.
+
 ## 0.3.0-beta.4
 
 ### Added

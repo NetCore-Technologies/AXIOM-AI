@@ -3,11 +3,13 @@
 No model downloads are permitted: the base model must be a local Transformers
 model directory and all from_pretrained calls set local_files_only=True.
 """
+
 from __future__ import annotations
 
 import importlib.metadata
 import importlib.util
 import json
+import logging
 import math
 import os
 import random
@@ -18,6 +20,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
+_LOG = logging.getLogger(__name__)
+
 _MAX_DATASET_BYTES = 50 * 1024 * 1024
 _MAX_ROWS = 10_000
 _MAX_LINE_BYTES = 1_048_576
@@ -27,6 +31,7 @@ _MAX_SEQUENCE_LENGTH = 2_048
 _TEXT_FIELD = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
 _PACKAGES = {"torch": "torch", "transformers": "transformers", "peft": "peft", "accelerate": "accelerate"}
 _LOCAL_LOCK = threading.RLock()
+AXIOM_TRAINING_SEED = 1729
 
 
 class FineTuningError(RuntimeError):
@@ -41,6 +46,10 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _clip(exc: BaseException, limit: int) -> str:
+    return str(exc).replace("\r", " ").replace("\n", " ").strip()[:limit]
+
+
 def jobs_directory() -> Path:
     configured = os.environ.get("AXIOM_FINETUNE_HOME", "").strip()
     base = Path(configured).expanduser() if configured else Path.home() / ".local" / "share" / "axiom" / "fine-tuning"
@@ -51,8 +60,10 @@ def _lock_path() -> Path:
     return jobs_directory().parent / ".active-fine-tuning-job.json"
 
 
-def _version_key(value: str) -> tuple[int, ...]:
-    return tuple(int(part) for part in re.findall(r"\d+", value)[:3])
+def _version_key(value: str) -> tuple[int, int, int]:
+    """Normalize short dotted versions to a comparable major/minor/patch tuple."""
+    parts = [int(part) for part in re.findall(r"\d+", value)[:3]]
+    return tuple((parts + [0, 0, 0])[:3])
 
 
 def runtime_status() -> dict[str, Any]:
@@ -197,7 +208,6 @@ def validate_config(config: dict[str, Any]) -> dict[str, Any]:
         "learning_rate": float(learning_rate),
         "lora_rank": lora_rank,
     }
-    # Read and validate the dataset before any training process starts.
     _load_texts(dataset_path, text_field)
     return result
 
@@ -307,7 +317,11 @@ def _release_lock(job_id: str) -> None:
             if current.get("job_id") == job_id and current.get("pid") == os.getpid():
                 lock.unlink(missing_ok=True)
         except (OSError, json.JSONDecodeError):
-            pass
+            _LOG.debug(
+                "Could not release the fine-tuning lock for job %s",
+                job_id,
+                exc_info=True,
+            )
 
 
 def _new_job(config: dict[str, Any]) -> dict[str, Any]:
@@ -391,14 +405,13 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
     if output_dir.exists() and any(output_dir.iterdir()):
         raise FineTuningError("Adapter output directory is no longer empty; refusing to overwrite existing files.")
 
-    # Every model/tokenizer load is pinned to the existing local directory.
     try:
         tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True, trust_remote_code=False)
         model = AutoModelForCausalLM.from_pretrained(
             model_path, local_files_only=True, trust_remote_code=False
         )
     except Exception as exc:
-        message = str(exc).replace("\\r", " ").replace("\\n", " ").strip()[:300]
+        message = _clip(exc, 300)
         raise FineTuningError(
             "Could not load the local base model/tokenizer. Confirm model weights and tokenizer files exist "
             "and are compatible with the installed Transformers version." + (f" Detail: {message}" if message else "")
@@ -439,7 +452,7 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
             ),
         )
     except Exception as exc:
-        message = str(exc).replace("\\r", " ").replace("\\n", " ").strip()[:300]
+        message = _clip(exc, 300)
         raise FineTuningError(
             "PEFT could not attach a LoRA adapter to this model architecture." + (f" Detail: {message}" if message else "")
         ) from None
@@ -458,7 +471,7 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
     try:
         model.to(device)
     except Exception as exc:
-        message = str(exc).replace("\\r", " ").replace("\\n", " ").strip()[:240]
+        message = _clip(exc, 240)
         raise FineTuningError(
             f"Could not place the local model on {device}. The model may exceed available memory." + (f" Detail: {message}" if message else "")
         ) from None
@@ -471,8 +484,6 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
     model.train()
     optimizer.zero_grad(set_to_none=True)
 
-    # One example per optimization step keeps memory use predictable. The
-    # dataset is reshuffled each pass; padding is masked out of the loss.
     for step in range(1, config["max_steps"] + 1):
         if position >= len(order):
             order = list(range(len(texts)))
@@ -510,7 +521,7 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
         except FineTuningError:
             raise
         except Exception as exc:
-            message = str(exc).replace("\\r", " ").replace("\\n", " ").strip()[:300]
+            message = _clip(exc, 300)
             raise FineTuningError(
                 f"Local LoRA training failed at step {step} on {device}. Check available memory and model compatibility."
                 + (f" Detail: {message}" if message else "")
@@ -521,7 +532,7 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
         model.save_pretrained(str(output_dir), safe_serialization=True)
         tokenizer.save_pretrained(str(output_dir))
     except Exception as exc:
-        message = str(exc).replace("\\r", " ").replace("\\n", " ").strip()[:300]
+        message = _clip(exc, 300)
         raise FineTuningError("Training completed, but saving the adapter/tokenizer failed." + (f" Detail: {message}" if message else "")) from None
 
     adapter_files = sorted(path.name for path in output_dir.iterdir() if path.is_file())
@@ -540,8 +551,6 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
         "trainable_parameters": sum(parameter.numel() for parameter in trainable_parameters),
     }
 
-
-AXIOM_TRAINING_SEED = 1729
 
 def execute_finetuning_job(job_id: str, on_progress: Callable[[dict[str, Any]], None] | None = None) -> None:
     job = _read_job(job_id)
@@ -576,8 +585,7 @@ def execute_finetuning_job(job_id: str, on_progress: Callable[[dict[str, Any]], 
             logs=[*current.get("logs", []), "Training completed; PEFT adapter files were written to the selected output directory."][-80:],
         )
     except Exception as exc:
-        # Failure details are clipped; avoid dumping full local environment/configs.
-        reason = str(exc).replace("\r", " ").replace("\n", " ").strip()[:500] or type(exc).__name__
+        reason = _clip(exc, 500) or type(exc).__name__
         try:
             current = _read_job(job_id) or job
             _update_job(
@@ -588,6 +596,10 @@ def execute_finetuning_job(job_id: str, on_progress: Callable[[dict[str, Any]], 
                 logs=[*current.get("logs", []), f"Failed: {reason}"][-80:],
             )
         except Exception:
-            pass
+            _LOG.warning(
+                "Could not record the failed state for fine-tuning job %s",
+                job_id,
+                exc_info=True,
+            )
     finally:
         _release_lock(job_id)

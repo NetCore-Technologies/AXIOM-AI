@@ -61,6 +61,128 @@ def test_module_explorer_requires_new_gui_pages_in_the_catalog() -> None:
     assert any("agent-profiles" in issue for issue in release_smoke.module_catalog_issues(incomplete))
 
 
+def test_model_registry_filters_are_wired_across_api_client_gui_and_e2e() -> None:
+    api_source = (ROOT / "axiom" / "api" / "workspace.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "model-registry-filters.spec.ts").read_text(encoding="utf-8")
+    assert release_smoke.model_registry_filter_issues(api_source, client_source, app_source, e2e_source) == []
+
+
+def test_model_registry_smoke_detects_disconnected_filter_controls() -> None:
+    api_source = (ROOT / "axiom" / "api" / "workspace.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "model-registry-filters.spec.ts").read_text(encoding="utf-8")
+    broken_app = app_source.replace('aria-label="Exact model tag"', 'aria-label="Removed filter"', 1)
+    issues = release_smoke.model_registry_filter_issues(api_source, client_source, broken_app, e2e_source)
+    assert any("Exact model tag" in issue for issue in issues)
+
+
+def test_model_compatibility_report_is_wired_into_the_existing_models_page() -> None:
+    core_source = (ROOT / "axiom" / "models" / "compatibility.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "api" / "workspace.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "model-registry-filters.spec.ts").read_text(encoding="utf-8")
+    assert release_smoke.model_compatibility_issues(core_source, api_source, client_source, app_source, e2e_source) == []
+
+
+def test_model_compatibility_smoke_detects_missing_gui_action() -> None:
+    core_source = (ROOT / "axiom" / "models" / "compatibility.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "api" / "workspace.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "model-registry-filters.spec.ts").read_text(encoding="utf-8")
+    broken_app = app_source.replace("Check hardware fit for", "Removed fit action", 1)
+    issues = release_smoke.model_compatibility_issues(core_source, api_source, client_source, broken_app, e2e_source)
+    assert any("compatibility action" in issue for issue in issues)
+
+
+def test_inference_benchmark_is_wired_from_runtime_gui_to_loopback_engine() -> None:
+    core_source = (ROOT / "axiom" / "core" / "inference.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "api" / "inference.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    panel_source = (ROOT / "src" / "components" / "LocalInferencePanel.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "inference-benchmark.spec.ts").read_text(encoding="utf-8")
+    assert release_smoke.inference_benchmark_issues(core_source, api_source, client_source, panel_source, e2e_source) == []
+
+
+def test_inference_benchmark_smoke_detects_unbounded_or_disconnected_gui() -> None:
+    core_source = (ROOT / "axiom" / "core" / "inference.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "api" / "inference.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    panel_source = (ROOT / "src" / "components" / "LocalInferencePanel.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "inference-benchmark.spec.ts").read_text(encoding="utf-8")
+    broken_panel = panel_source.replace("Benchmark this prompt", "Disconnected button", 1)
+    issues = release_smoke.inference_benchmark_issues(core_source, api_source, client_source, broken_panel, e2e_source)
+    assert any("Benchmark this prompt" in issue for issue in issues)
+
+
+def test_inference_benchmark_checks_core_api_client_gui_and_browser_tests() -> None:
+    core_source = (ROOT / "axiom" / "core" / "inference.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "api" / "inference.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    panel_source = (ROOT / "src" / "components" / "LocalInferencePanel.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "inference-benchmark.spec.ts").read_text(encoding="utf-8")
+    assert release_smoke.inference_benchmark_issues(core_source, api_source, client_source, panel_source, e2e_source) == []
+
+
+def test_inference_benchmark_smoke_detects_disconnected_button() -> None:
+    core_source = (ROOT / "axiom" / "core" / "inference.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "api" / "inference.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    panel_source = (ROOT / "src" / "components" / "LocalInferencePanel.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "inference-benchmark.spec.ts").read_text(encoding="utf-8")
+    broken_panel = panel_source.replace("Benchmark this prompt", "Disconnected button", 1)
+    issues = release_smoke.inference_benchmark_issues(core_source, api_source, client_source, broken_panel, e2e_source)
+    assert any("Benchmark this prompt" in issue for issue in issues)
+
+
+def test_runtime_trace_history_is_wired_across_api_client_gui_and_browser_tests() -> None:
+    trace_core = (ROOT / "axiom" / "core" / "runtime_traces.py").read_text(encoding="utf-8")
+    inference_api = (ROOT / "axiom" / "api" / "inference.py").read_text(encoding="utf-8")
+    diagnostics_api = (ROOT / "axiom" / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+    panel_source = (ROOT / "src" / "components" / "RuntimeTracePanel.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "runtime-traces.spec.ts").read_text(encoding="utf-8")
+    assert release_smoke.runtime_trace_issues(trace_core, inference_api, diagnostics_api, client_source, app_source, panel_source, e2e_source) == []
+
+
+def test_runtime_trace_smoke_detects_missing_clear_route() -> None:
+    trace_core = (ROOT / "axiom" / "core" / "runtime_traces.py").read_text(encoding="utf-8")
+    inference_api = (ROOT / "axiom" / "api" / "inference.py").read_text(encoding="utf-8")
+    diagnostics_api = (ROOT / "axiom" / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+    panel_source = (ROOT / "src" / "components" / "RuntimeTracePanel.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "runtime-traces.spec.ts").read_text(encoding="utf-8")
+    broken_api = diagnostics_api.replace('@router.delete("/runtime-traces")', '@router.post("/runtime-traces-clear")', 1)
+    issues = release_smoke.runtime_trace_issues(trace_core, inference_api, broken_api, client_source, app_source, panel_source, e2e_source)
+    assert any("Runtime trace history API is missing" in issue for issue in issues)
+
+
+def test_engine_trusted_roots_and_unload_are_integrated_end_to_end() -> None:
+    engine_source = (ROOT / "axiom" / "core" / "engine.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "api" / "engine.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    panel_source = (ROOT / "src" / "components" / "LocalAxiomEnginePanel.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "axiom-engine.spec.ts").read_text(encoding="utf-8")
+    assert release_smoke.engine_security_and_lifecycle_issues(engine_source, api_source, client_source, panel_source, e2e_source) == []
+
+
+def test_engine_smoke_detects_path_and_unload_regressions() -> None:
+    engine_source = (ROOT / "axiom" / "core" / "engine.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "api" / "engine.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    panel_source = (ROOT / "src" / "components" / "LocalAxiomEnginePanel.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "axiom-engine.spec.ts").read_text(encoding="utf-8")
+    broken_engine = engine_source.replace("symlink escapes are not allowed", "unrestricted symlink target", 1)
+    issues = release_smoke.engine_security_and_lifecycle_issues(broken_engine, api_source, client_source, panel_source, e2e_source)
+    assert any("symlink escapes are not allowed" in issue for issue in issues)
+
+
 def test_api_playground_smoke_checks_typed_get_only_contract() -> None:
     component = (
         "playgroundRead allowlist GET only Arbitrary URLs mutating methods"

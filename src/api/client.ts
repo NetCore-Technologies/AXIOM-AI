@@ -26,6 +26,7 @@ export type LocalInferenceStatus = {
   checked_at: string;
 };
 export type LocalInferenceResult = {
+  request_id?: string;
   model: string;
   response: string;
   done: boolean;
@@ -33,6 +34,65 @@ export type LocalInferenceResult = {
   eval_count: number | null;
   total_duration_ms: number | null;
   generated_at: string;
+};
+
+export type LocalInferenceBenchmark = {
+  request_id: string;
+  schema_version: number;
+  backend: "ollama";
+  endpoint: string;
+  model: string;
+  configuration: {
+    prompt_characters: number;
+    num_predict: number;
+    temperature: number;
+    warmup_runs: number;
+    iterations: number;
+    concurrency: number;
+    measured_requests: number;
+  };
+  measurements: {
+    wall_time_ms: number;
+    requests_per_second: number;
+    completion_tokens_known: number;
+    prompt_tokens_known: number;
+    total_completion_tokens: number | null;
+    completion_tokens_per_second: number | null;
+    latency_ms: { min: number | null; median: number | null; p95: number | null; max: number | null };
+    requests: Array<{ latency_ms: number; prompt_tokens: number | null; completion_tokens: number | null; done: boolean }>;
+  };
+  privacy: { prompt_returned: false; responses_returned: false; results_persisted: false };
+  scope_note: string;
+};
+
+export type RuntimeTrace = {
+  request_id: string;
+  operation: "inference.generate" | "inference.benchmark";
+  model: string;
+  status: "success" | "error";
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  prompt_characters: number;
+  requested_output_tokens: number;
+  temperature: number;
+  warmup_runs: number | null;
+  iterations: number | null;
+  concurrency: number | null;
+  measured_requests: number | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  completion_tokens_known: number | null;
+  completion_tokens_per_second: number | null;
+  error_code: string | null;
+};
+export type RuntimeTraceReport = {
+  schema_version: number;
+  traces: RuntimeTrace[];
+  total_retained: number;
+  limit: number;
+  max_retained: number;
+  privacy: { prompt_bodies_stored: false; response_bodies_stored: false; disk_persistence: false };
 };
 export type AxiomEngineStatus = {
   engine: string; ready: boolean; packages: Record<string, boolean>; versions: Record<string, string | null>;
@@ -90,6 +150,15 @@ export type WorkspaceModelPage = {
   has_more: boolean;
 };
 
+export type WorkspaceModelRegistryFilters = {
+  search?: string;
+  favorite_only?: boolean;
+  format?: string;
+  tag?: string;
+  sort_by?: "name" | "source" | "format" | "parameters" | "quantization" | "favorite";
+  sort_order?: "asc" | "desc";
+};
+
 export type WorkspaceModelCandidate = {
   path: string;
   lineage: { relation: "source" | "derived_from"; parent_manifest_sha256: string | null };
@@ -114,6 +183,35 @@ export type WorkspaceModelInspection = {
   capabilities: string[];
   estimated_vram_gb: number | null;
   status: string;
+};
+
+export type ModelMemoryRange = { low: number; high: number };
+export type WorkspaceMemoryFit = {
+  status: "likely" | "tight" | "unlikely" | "unknown";
+  physical_gb: number | null;
+  budget_gb: number | null;
+  reserve_percent: number;
+  required_gb: ModelMemoryRange | null;
+};
+export type WorkspaceModelCompatibility = {
+  schema_version: number;
+  model: {
+    id: string; name: string; format: string; parameters: string | null;
+    parameter_count_billions: number | null; parameter_basis: string | null;
+    quantization: string | null; architecture: string | null;
+  };
+  hardware: {
+    os_name: string; architecture: string; cpu_cores: number; ram_gb: number | null;
+    gpu_name: string | null; vram_gb: number | null; vram_probe: string; unified_memory_detected: boolean;
+  };
+  quantization_bits_per_parameter: { low: number; high: number } | null;
+  estimated_weight_gb: ModelMemoryRange | null;
+  estimated_runtime_memory_gb: ModelMemoryRange | null;
+  system_ram_fit: WorkspaceMemoryFit;
+  gpu_memory_fit: WorkspaceMemoryFit;
+  format_compatibility: { status: "candidate_not_verified" | "unknown"; likely_runtimes: string[]; guidance: string };
+  warnings: string[];
+  scope_note: string;
 };
 
 export type WorkspaceDataset = {
@@ -675,8 +773,14 @@ export const axiomApi = {
     return result.models;
   },
 
-  modelsPage: (offset = 0, limit = 100) => {
+  modelsPage: (offset = 0, limit = 100, filters: WorkspaceModelRegistryFilters = {}) => {
     const query = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+    if (filters.search?.trim()) query.set("search", filters.search.trim());
+    if (filters.favorite_only) query.set("favorite_only", "true");
+    if (filters.format?.trim() && filters.format.trim().toLowerCase() !== "all") query.set("format", filters.format.trim());
+    if (filters.tag?.trim()) query.set("tag", filters.tag.trim());
+    query.set("sort_by", filters.sort_by ?? "name");
+    query.set("sort_order", filters.sort_order ?? "asc");
     return requestJson<WorkspaceModelPage>(`/api/workspace/models?${query.toString()}`);
   },
 
@@ -686,6 +790,9 @@ export const axiomApi = {
     method: "POST",
     body: JSON.stringify({ path }),
   }),
+
+  modelCompatibility: (id: string) =>
+    requestJson<{ report: WorkspaceModelCompatibility }>(`/api/workspace/models/${encodeURIComponent(id)}/compatibility`),
 
   addModel: (model: Omit<WorkspaceModel, "id">) =>
     requestJson<{ model: WorkspaceModel }>("/api/workspace/models", {
@@ -1029,11 +1136,19 @@ export const axiomApi = {
     requestJson<LocalInferenceResult>("/api/inference/generate", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
+  runLocalInferenceBenchmark: (input: { model: string; prompt: string; num_predict: number; temperature: number; warmup_runs: number; iterations: number; concurrency: number }) =>
+    requestJson<LocalInferenceBenchmark>("/api/inference/benchmark", {
+      method: "POST", body: JSON.stringify(input),
+    }, 300_000),
   axiomEngineStatus: () => requestJson<AxiomEngineStatus>("/api/engine/status"),
   runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number }) =>
     requestJson<AxiomEngineResult>("/api/engine/generate", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
+  unloadAxiomEngine: () =>
+    requestJson<{ schema_version: number; unloaded: boolean; loaded: false; scope_note: string }>("/api/engine/unload", {
+      method: "POST", body: JSON.stringify({}),
+    }),
   modelStudioStatus: () => requestJson<ModelStudioStatus>("/api/models/studio/status"),
   modelStudioSearch: (q: string, limit = 12) => requestJson<{ provider: string; query: string; count: number; results: ModelStudioModel[]; note: string }>(`/api/models/studio/search?${new URLSearchParams({ q, limit: String(limit) })}`),
   modelStudioFiles: (repoId: string) => requestJson<{ repo_id: string; files: ModelStudioFile[]; count: number; url: string; note: string }>(`/api/models/studio/files?${new URLSearchParams({ repo_id: repoId })}`),
@@ -1044,6 +1159,8 @@ export const axiomApi = {
   startModelStudioJob: (config: { operation: "pull" | "install_gguf" | "convert_gguf"; [key: string]: unknown }) => requestJson<ModelStudioJob>("/api/models/studio/jobs", { method: "POST", body: JSON.stringify(config) }),
 
   runtimeConnectors: () => requestJson<RuntimeConnectorReport>("/api/diagnostics/runtime-connectors"),
+  runtimeTraces: (limit = 50) => requestJson<RuntimeTraceReport>(`/api/diagnostics/runtime-traces?limit=${Math.min(200, Math.max(1, Math.floor(limit)))}`),
+  clearRuntimeTraces: () => requestJson<{ cleared: number; remaining: 0; disk_persistence: false }>("/api/diagnostics/runtime-traces", { method: "DELETE" }),
   agentProfiles: () => requestJson<AgentProfileReport>("/api/agent-profiles"),
   createAgentProfile: (input: { name: string; task_capabilities: string[] }) =>
     requestJson<{ profile: AgentProfile }>("/api/agent-profiles", { method: "POST", body: JSON.stringify(input) }),

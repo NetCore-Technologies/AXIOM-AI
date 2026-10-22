@@ -6,9 +6,13 @@ weights or executes repository-provided model code.
 """
 from __future__ import annotations
 
+import gc
 import importlib.metadata
 import importlib.util
 import json
+import logging
+import os
+import re
 import threading
 import time
 from datetime import UTC, datetime
@@ -19,22 +23,32 @@ _MAX_PROMPT_CHARS = 12_000
 _MAX_NEW_TOKENS = 2_048
 _MAX_INPUT_TOKENS = 8_192
 _MAX_CONFIG_BYTES = 1_048_576
+_LOG = logging.getLogger(__name__)
 _ENGINE_LOCK = threading.RLock()
-_LOADED_KEY: tuple[str, str | None] | None = None
-_LOADED_MODEL: Any = None
-_LOADED_TOKENIZER: Any = None
-_LOADED_TORCH: Any = None
-_LOADED_DEVICE: Any = None
+_LOADED_RUNTIME: dict[str, Any] | None = None
 _LOADED_ARCHITECTURE: str | None = None
+_MODEL_ROOT_ENV = "AXIOM_MODEL_ROOTS"
+_DEFAULT_MODEL_ROOT_SUFFIXES = (
+    Path("models"),
+    Path("runs"),
+    Path("outputs"),
+)
 
 
 class AxiomEngineError(RuntimeError):
     """Raised when the AXIOM local model engine cannot run a request."""
 
 
+def _version_key(value: str) -> tuple[int, int, int]:
+    parts = [int(part) for part in re.findall(r"\d+", value)[:3]]
+    return tuple((parts + [0, 0, 0])[:3])
+
+
 def runtime_status() -> dict[str, Any]:
     packages: dict[str, bool] = {}
     versions: dict[str, str | None] = {}
+    minimum_versions = {"torch": "2.2.0", "transformers": "5.0.0"}
+    problems: list[str] = []
     for name in ("torch", "transformers", "peft"):
         try:
             packages[name] = importlib.util.find_spec(name) is not None
@@ -44,22 +58,28 @@ def runtime_status() -> dict[str, Any]:
             versions[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
             versions[name] = None
-    ready = packages["torch"] and packages["transformers"]
-    missing = [name for name in ("torch", "transformers") if not packages[name]]
+        if name in minimum_versions:
+            if not packages[name]:
+                problems.append(f"{name} is not installed")
+            elif versions[name] is not None and _version_key(versions[name]) < _version_key(minimum_versions[name]):
+                problems.append(f"{name} {versions[name]} is too old (need >= {minimum_versions[name]})")
+    ready = not problems
     return {
         "engine": "axiom-local-engine",
         "ready": ready,
         "packages": packages,
         "versions": versions,
-        "loaded": _LOADED_KEY is not None,
+        "minimum_versions": minimum_versions,
+        "problems": problems,
+        "loaded": _LOADED_RUNTIME is not None,
         "architecture": _LOADED_ARCHITECTURE,
         "model_loading": "local_files_only",
         "remote_code": False,
         "setup_note": (
             "AXIOM Engine is ready for local Transformers causal-LM checkpoints."
             if ready else
-            "Install the local inference dependencies in this Python environment: "
-            + " ".join(missing) + ". Use: python -m pip install -e '.[training]'"
+            "AXIOM Engine setup required: " + "; ".join(problems)
+            + ". Install or upgrade local dependencies with: python -m pip install -e '.[training]'"
         ),
         "scope_note": (
             "AXIOM owns the runtime and training orchestration; pretrained weights remain a separate local input. "
@@ -69,16 +89,94 @@ def runtime_status() -> dict[str, Any]:
     }
 
 
+def _allowed_model_roots() -> tuple[Path, ...]:
+    """Return canonical roots from trusted defaults and AXIOM_MODEL_ROOTS.
+
+    Set AXIOM_MODEL_ROOTS to one or more trusted directories separated by the
+    platform path separator to permit models stored outside the defaults.
+    """
+    home = Path.home()
+    defaults = (
+        Path.cwd() / "models",
+        Path.cwd() / "runs",
+        Path.cwd() / "outputs",
+        home / "models",
+        home / "Documents" / "models",
+        home / "Documents" / "AXIOM-AI" / "models",
+        home / "Documents" / "AXIOM-AI" / "runs",
+        home / ".cache" / "huggingface" / "hub",
+        home / ".local" / "share" / "axiom" / "models",
+        home / ".local" / "share" / "axiom" / "fine-tuning",
+    )
+    configured = os.environ.get(_MODEL_ROOT_ENV, "").strip()
+    custom_roots = tuple(Path(item).expanduser() for item in configured.split(os.pathsep) if item.strip())
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in (*defaults, *custom_roots):
+        try:
+            canonical = candidate.resolve(strict=True)
+        except (OSError, RuntimeError):
+            if candidate in custom_roots:
+                raise ValueError("AXIOM_MODEL_ROOTS entries must be existing local directories.") from None
+            continue
+        if not canonical.is_dir():
+            if candidate in custom_roots:
+                raise ValueError("AXIOM_MODEL_ROOTS entries must be existing local directories.")
+            continue
+        key = str(canonical)
+        if key not in seen:
+            seen.add(key)
+            roots.append(canonical)
+    return tuple(roots)
+
+
+def _path_is_within_root(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def _resolve_model_directory(value: str, label: str) -> Path:
+    """Resolve a model/adapter directory only when it stays under a trusted root."""
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{label} is required.")
+    if any(character in value for character in ("\\x00", "\\r", "\\n")):
+        raise ValueError(f"{label} contains invalid control characters.")
+
+    roots = _allowed_model_roots()
+    if not roots:
+        raise ValueError(
+            "No allowed model directories were found. Create a model directory under ~/models "
+            "or set AXIOM_MODEL_ROOTS to trusted local directories."
+        )
     try:
-        path = Path(value).expanduser().resolve(strict=True)
+        candidate = Path(value).expanduser()
+        # Normalize dot segments before any filesystem resolution, including
+        # when callers supplied an absolute path.
+        lexical_path = Path(os.path.abspath(candidate))
+    except (OSError, RuntimeError, ValueError):
+        raise ValueError(f"{label} must be within an allowed local model directory.") from None
+
+    if not any(_path_is_within_root(lexical_path, root) for root in roots):
+        raise ValueError(
+            f"{label} must be within an allowed model directory. Set AXIOM_MODEL_ROOTS to add a trusted directory."
+        )
+    try:
+        path = candidate.resolve(strict=True)
     except (OSError, RuntimeError):
         raise ValueError(f"{label} must be an existing local directory.") from None
-    if not path.is_dir():
-        raise ValueError(f"{label} must be an existing local directory.")
+    if not path.is_dir() or not any(_path_is_within_root(path, root) for root in roots):
+        raise ValueError(
+            f"{label} must resolve to an existing directory inside an allowed model root; symlink escapes are not allowed."
+        )
     return path
+
+
+def resolve_local_model_directory(value: str, label: str = "Model") -> str:
+    """Validate an API-supplied path and return its canonical allowed location."""
+    return str(_resolve_model_directory(value, label))
 
 
 def _inspect_model_config(model_dir: Path) -> dict[str, Any]:
@@ -109,7 +207,7 @@ def validate_generation(prompt: str, max_new_tokens: int, temperature: float) ->
 
 
 def _load_local_model(model_path: str, adapter_path: str | None):
-    global _LOADED_KEY, _LOADED_MODEL, _LOADED_TOKENIZER, _LOADED_TORCH, _LOADED_DEVICE, _LOADED_ARCHITECTURE
+    global _LOADED_RUNTIME, _LOADED_ARCHITECTURE
     try:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -128,8 +226,31 @@ def _load_local_model(model_path: str, adapter_path: str | None):
         resolved_adapter = str(adapter_dir)
 
     key = (str(base_dir), resolved_adapter)
-    if _LOADED_KEY == key and _LOADED_MODEL is not None and _LOADED_TOKENIZER is not None:
-        return _LOADED_MODEL, _LOADED_TOKENIZER, _LOADED_TORCH, _LOADED_DEVICE, inspected
+    inspected["model_directory_name"] = base_dir.name
+    inspected["adapter_directory_name"] = Path(resolved_adapter).name if resolved_adapter else None
+    if _LOADED_RUNTIME is not None and _LOADED_RUNTIME["key"] == key:
+        return (
+            _LOADED_RUNTIME["model"],
+            _LOADED_RUNTIME["tokenizer"],
+            _LOADED_RUNTIME["torch"],
+            _LOADED_RUNTIME["device"],
+            inspected,
+        )
+
+    # Reclaim the previous model before loading another checkpoint. Retaining
+    # two large language models can exhaust system RAM or accelerator memory.
+    previous_runtime = _LOADED_RUNTIME
+    _LOADED_RUNTIME = None
+    _LOADED_ARCHITECTURE = None
+    if previous_runtime is not None:
+        previous_torch = previous_runtime.get("torch")
+        del previous_runtime
+        gc.collect()
+        try:
+            if previous_torch is not None and previous_torch.cuda.is_available():
+                previous_torch.cuda.empty_cache()
+        except (RuntimeError, AttributeError):
+            _LOG.debug("GPU cache cleanup was unavailable while replacing the loaded model.", exc_info=True)
 
     try:
         tokenizer = AutoTokenizer.from_pretrained(
@@ -168,13 +289,43 @@ def _load_local_model(model_path: str, adapter_path: str | None):
             "architecture, and installed dependencies are compatible." + (f" Detail: {detail}" if detail else "")
         ) from None
 
-    _LOADED_KEY = key
-    _LOADED_MODEL = model
-    _LOADED_TOKENIZER = tokenizer
-    _LOADED_TORCH = torch
-    _LOADED_DEVICE = device
+    _LOADED_RUNTIME = {
+        "key": key,
+        "model": model,
+        "tokenizer": tokenizer,
+        "torch": torch,
+        "device": device,
+    }
     _LOADED_ARCHITECTURE = inspected["architecture"]
     return model, tokenizer, torch, device, inspected
+
+
+
+def unload_local_model() -> dict[str, Any]:
+    """Release the loaded local model and best-effort accelerator cache."""
+    global _LOADED_RUNTIME, _LOADED_ARCHITECTURE
+    with _ENGINE_LOCK:
+        previous_runtime = _LOADED_RUNTIME
+        was_loaded = previous_runtime is not None
+        _LOADED_RUNTIME = None
+        _LOADED_ARCHITECTURE = None
+        if previous_runtime is not None:
+            previous_torch = previous_runtime.get("torch")
+            del previous_runtime
+            gc.collect()
+            try:
+                if previous_torch is not None and previous_torch.cuda.is_available():
+                    previous_torch.cuda.empty_cache()
+            except (RuntimeError, AttributeError):
+                _LOG.debug("GPU cache cleanup was unavailable while unloading the model.", exc_info=True)
+        else:
+            gc.collect()
+        return {
+            "schema_version": 1,
+            "unloaded": was_loaded,
+            "loaded": False,
+            "scope_note": "The loaded model and tokenizer references were released by AXIOM. Framework or OS-level allocators may retain some reserved memory.",
+        }
 
 
 def generate_local(
@@ -220,16 +371,16 @@ def generate_local(
                 "AXIOM Engine generation failed. The prompt/context may exceed available memory or this model's limits."
                 + (f" Detail: {detail}" if detail else "")
             ) from None
-        elapsed_ms = round((__import__("time").perf_counter() - started) * 1000, 2)
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
         input_token_count = int(input_ids.shape[-1])
         continuation = output_ids[0, input_token_count:]
         response = tokenizer.decode(continuation, skip_special_tokens=True)
         response = response[:100_000]
         return {
             "engine": "axiom-local-engine",
-            "model": Path(model_path).expanduser().name or "local-model",
+            "model": inspected["model_directory_name"] or "local-model",
             "architecture": inspected["architecture"],
-            "adapter": Path(adapter_path).expanduser().name if adapter_path and adapter_path.strip() else None,
+            "adapter": inspected["adapter_directory_name"],
             "response": response,
             "prompt_tokens": input_token_count,
             "completion_tokens": int(continuation.shape[-1]),

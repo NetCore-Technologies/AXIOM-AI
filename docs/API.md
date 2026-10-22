@@ -22,6 +22,15 @@ visible request errors, and the CLI daemon readiness probe sends one as well.
 - API version does not replace per-resource `schema_version` fields used for
   persisted workspace data.
 
+## AXIOM Engine and training
+
+- `GET /api/engine/status` reports direct local inference readiness.
+- `POST /api/engine/generate` runs inference from an existing local Transformers model directory and optionally a local PEFT adapter.
+- `GET /api/fine-tuning/runtime` reports compatible local LoRA training dependencies.
+- `POST /api/fine-tuning/jobs` starts one bounded local LoRA training job.
+
+Engine and fine-tuning model loads are local-only; they do not download weights or execute remote model code. See [AXIOM Engine](Local-Engine.md) and [Local fine-tuning](Local-Fine-Tuning.md) for limits and supported inputs.
+
 The API binds to loopback by default through `axiom gui`. Network binding is an
 explicit operator choice; see the local-daemon security guidance before exposing
 it beyond the machine.

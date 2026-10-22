@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Activity, Cpu, Play, RefreshCcw } from "lucide-react";
+import { Activity, Cpu, Play, RefreshCcw, Unplug } from "lucide-react";
 import { axiomApi, type AxiomEngineResult, type AxiomEngineStatus } from "../api/client";
 
 export default function LocalAxiomEnginePanel() {
@@ -12,6 +12,8 @@ export default function LocalAxiomEnginePanel() {
   const [result, setResult] = useState<AxiomEngineResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [unloading, setUnloading] = useState(false);
+  const [lifecycleNotice, setLifecycleNotice] = useState("");
   const [error, setError] = useState("");
 
   const refresh = async () => {
@@ -28,6 +30,24 @@ export default function LocalAxiomEnginePanel() {
   };
 
   useEffect(() => { void refresh(); }, []);
+
+  const unload = async () => {
+    setUnloading(true);
+    setError("");
+    setLifecycleNotice("");
+    try {
+      const outcome = await axiomApi.unloadAxiomEngine();
+      setResult(null);
+      setLifecycleNotice(outcome.unloaded
+        ? "AXIOM released its loaded model and tokenizer references. Framework or OS allocators may retain reserved memory."
+        : "No AXIOM model was loaded; the engine state is already clear.");
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The local model could not be unloaded.");
+    } finally {
+      setUnloading(false);
+    }
+  };
 
   const run = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -59,7 +79,10 @@ export default function LocalAxiomEnginePanel() {
   return <section className="surface axiom-engine-panel" aria-label="AXIOM local engine">
     <div className="surface-head">
       <div><p className="surface-eyebrow">AXIOM ENGINE · DIRECT LOCAL INFERENCE</p><h2>AXIOM Local Engine</h2></div>
-      <button type="button" className="button secondary-button" onClick={() => void refresh()} disabled={loading || running}><RefreshCcw size={14} /> {loading ? "Checking" : "Check engine"}</button>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button type="button" className="button secondary-button" onClick={() => void refresh()} disabled={loading || running || unloading}><RefreshCcw size={14} /> {loading ? "Checking" : "Check engine"}</button>
+        {status?.loaded && <button type="button" className="button secondary-button" onClick={() => void unload()} disabled={loading || running || unloading}><Unplug size={14} /> {unloading ? "Unloading…" : "Unload model"}</button>}
+      </div>
     </div>
     <p>Run a local Llama-architecture or other compatible Transformers causal model directly through AXIOM's own runtime. Ollama is not required for this panel. Model weights must already exist on this computer; AXIOM will not download weights or execute remote model code.</p>
     <div className="status-strip" aria-label="AXIOM Engine status">
@@ -69,16 +92,17 @@ export default function LocalAxiomEnginePanel() {
       </div>
     </div>
     {status && !status.ready && <div className="inline-alert warning" role="status">{status.setup_note}</div>}
+    {lifecycleNotice && <div className="inline-alert success" role="status">{lifecycleNotice}</div>}
     <form onSubmit={(event) => void run(event)}>
       <label className="field">
         <span className="field-label-row"><span>Local Llama / Transformers model directory</span></span>
         <input value={modelPath} onChange={(event) => setModelPath(event.target.value)} required maxLength={4096} placeholder="/home/user/models/my-llama-model" autoComplete="off" />
-        <small>Existing directory with config.json, local weights, and tokenizer files. GGUF files and Ollama tags are not accepted here.</small>
+        <small>Existing directory with config.json, local weights, and tokenizer files. GGUF files and Ollama tags are not accepted here. Paths must stay inside a trusted model root; configure AXIOM_MODEL_ROOTS to allow other locations.</small>
       </label>
       <label className="field">
         <span className="field-label-row"><span>Optional LoRA adapter directory</span></span>
         <input value={adapterPath} onChange={(event) => setAdapterPath(event.target.value)} maxLength={4096} placeholder="/home/user/runs/my-lora-adapter" autoComplete="off" />
-        <small>Use the output directory from Training; it must contain adapter_config.json and adapter weights.</small>
+        <small>Use the output directory from Training; it must contain adapter_config.json and adapter weights. The resolved adapter must also be inside a trusted root.</small>
       </label>
       <label className="field">
         <span className="field-label-row"><span>Prompt</span><span>{prompt.length.toLocaleString()} / 12,000 characters</span></span>

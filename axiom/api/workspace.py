@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from collections import deque
 from datetime import UTC, datetime
@@ -23,6 +24,7 @@ from axiom.datasets.manifest import DEFAULT_MANIFEST_MAX_BYTES, create_dataset_m
 from axiom.datasets.cleaning_preview import preview_jsonl_cleaning
 from axiom.datasets.quality import compare_dataset_schemas, validate_dataset_profile
 from axiom.models.registry import Model, ModelRegistry
+from axiom.models.compatibility import estimate_model_compatibility
 from axiom.models.discovery import discover_local_model_folders
 from axiom.models.inspector import inspect_model
 from axiom.api.model_paths import validate_model_path
@@ -257,18 +259,84 @@ def workspace_events() -> dict[str, list[dict[str, Any]]]:
         return {"events": list(_events)}
 
 
+def _model_parameter_sort_key(value: str | None) -> tuple[bool, float]:
+    if not value:
+        return True, 0.0
+    match = re.search(r"(?<![A-Za-z0-9.])(\d+(?:\.\d+)?)\s*([KMBT]?)", value, re.IGNORECASE)
+    if not match:
+        return True, 0.0
+    scale = {"": 1.0, "K": 1_000.0, "M": 1_000_000.0, "B": 1_000_000_000.0, "T": 1_000_000_000_000.0}
+    return False, float(match.group(1)) * scale[match.group(2).upper()]
+
+
 @router.get("/models")
 def workspace_models(
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0, le=1_000_000),
+    search: str = Query(default="", max_length=160),
+    favorite_only: bool = False,
+    format: str | None = Query(default=None, max_length=64),
+    tag: str | None = Query(default=None, max_length=40),
+    sort_by: Literal["name", "source", "format", "parameters", "quantization", "favorite"] = "name",
+    sort_order: Literal["asc", "desc"] = "asc",
 ) -> dict[str, Any]:
+    """Return a bounded, searchable, filterable and stable-sorted model registry page."""
     models = ModelRegistry().list()
+    needle = search.strip().casefold()
+    if needle:
+        def matches(model: Model) -> bool:
+            fields = (
+                model.name, model.source, model.format, model.parameters,
+                model.quantization, model.architecture, model.license, *model.tags,
+            )
+            return any(needle in value.casefold() for value in fields if isinstance(value, str))
+        models = [model for model in models if matches(model)]
+    if favorite_only:
+        models = [model for model in models if model.favorite]
+    if format and format.strip() and format.strip().casefold() != "all":
+        wanted_format = format.strip().casefold()
+        models = [model for model in models if model.format.casefold() == wanted_format]
+    if tag and tag.strip():
+        wanted_tag = tag.strip().casefold()
+        models = [model for model in models if any(item.casefold() == wanted_tag for item in model.tags)]
+
+    if sort_by == "parameters":
+        sized_models = [model for model in models if not _model_parameter_sort_key(model.parameters)[0]]
+        unsized_models = [model for model in models if _model_parameter_sort_key(model.parameters)[0]]
+        # Sort by name first so equal parameter counts keep an intuitive
+        # alphabetical order in both ascending and descending size modes.
+        sized_models.sort(key=lambda model: model.name.casefold())
+        sized_models.sort(
+            key=lambda model: _model_parameter_sort_key(model.parameters)[1],
+            reverse=sort_order == "desc",
+        )
+        unsized_models.sort(key=lambda model: model.name.casefold())
+        # Unknown parameter metadata stays last for both sort directions.
+        models = [*sized_models, *unsized_models]
+    else:
+        def sort_key(model: Model) -> tuple[Any, ...]:
+            if sort_by == "favorite":
+                return model.favorite, model.name.casefold()
+            value = getattr(model, sort_by)
+            normalized = value.casefold() if isinstance(value, str) else ""
+            return normalized, model.name.casefold()
+
+        models.sort(key=sort_key, reverse=sort_order == "desc")
+    total = len(models)
     return {
         "models": [model.to_dict() for model in models[offset:offset + limit]],
-        "total": len(models),
+        "total": total,
         "limit": limit,
         "offset": offset,
-        "has_more": offset + limit < len(models),
+        "has_more": offset + limit < total,
+        "filters": {
+            "search": needle,
+            "favorite_only": favorite_only,
+            "format": format.strip() if format else None,
+            "tag": tag.strip() if tag else None,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+        },
     }
 
 
@@ -352,6 +420,22 @@ def workspace_model(model_id: str) -> dict[str, Any]:
     if model is None:
         raise HTTPException(status_code=404, detail="Model not found.")
     return {"model": model.to_dict()}
+
+
+@router.get("/models/{model_id}/compatibility")
+def workspace_model_compatibility(model_id: str) -> dict[str, Any]:
+    """Estimate memory fit and report metadata-backed compatibility guidance."""
+    try:
+        model = ModelRegistry().get(model_id)
+        if model is None:
+            raise HTTPException(status_code=404, detail="Model not found.")
+        report = estimate_model_compatibility(model, detect_hardware())
+    except HTTPException:
+        raise
+    except (OSError, TimeoutError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail="Model compatibility report could not be generated.") from exc
+    record_workspace_event("models.compatibility", f"Checked fit metadata for {model.name}")
+    return {"report": report}
 
 
 @router.patch("/models/{model_id}")

@@ -2,6 +2,7 @@ import AxiomOptimizer from "./components/AxiomOptimizer";
 import AxiomQuantizer from "./components/AxiomQuantizer";
 import ApiPlayground from "./components/ApiPlayground";
 import RuntimeConnectorPanel from "./components/RuntimeConnectorPanel";
+import RuntimeTracePanel from "./components/RuntimeTracePanel";
 import LocalInferencePanel from "./components/LocalInferencePanel";
 import AgentProfiles from "./components/AgentProfiles";
 import ModelStudioPanel from "./components/ModelStudioPanel";
@@ -23,6 +24,7 @@ import {
   type WorkspaceDiagnostics,
   type RoadmapAudit,
   type WorkspaceModel,
+  type WorkspaceModelCompatibility,
   type WorkspaceWorkflow,
   type WorkflowNode,
   type WorkflowNodeType,
@@ -1669,6 +1671,41 @@ function FeaturePage({
   return <><PageHeader page={page} title={meta.label} description={meta.description} actions={actions} />{children}</>;
 }
 
+type ModelRegistrySort = "name" | "source" | "format" | "parameters" | "quantization" | "favorite";
+type ModelRegistryFilters = {
+  search?: string;
+  favorite_only: boolean;
+  format?: string;
+  tag?: string;
+  sort_by: ModelRegistrySort;
+  sort_order: "asc" | "desc";
+};
+type SavedModelRegistryFilter = {
+  id: string;
+  name: string;
+  filters: ModelRegistryFilters;
+};
+
+const SAVED_MODEL_FILTERS_KEY = "axiom.saved-model-registry-filters.v1";
+
+function readSavedModelRegistryFilters(): SavedModelRegistryFilter[] {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(SAVED_MODEL_FILTERS_KEY) ?? "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((value): value is SavedModelRegistryFilter => {
+      if (!value || typeof value !== "object") return false;
+      const item = value as Partial<SavedModelRegistryFilter>;
+      return typeof item.id === "string" && typeof item.name === "string"
+        && !!item.filters && typeof item.filters === "object"
+        && typeof item.filters.favorite_only === "boolean"
+        && ["name", "source", "format", "parameters", "quantization", "favorite"].includes(item.filters.sort_by)
+        && ["asc", "desc"].includes(item.filters.sort_order);
+    }).slice(0, 20);
+  } catch {
+    return [];
+  }
+}
+
 function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void }) {
   const [models, setModels] = useState<WorkspaceModel[]>([]);
   const [modelTotal, setModelTotal] = useState(0);
@@ -1676,6 +1713,9 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
   const [discoveryBusy, setDiscoveryBusy] = useState(false);
   const [discovery, setDiscovery] = useState<{ candidates: WorkspaceModelCandidate[]; truncated: boolean } | null>(null);
   const [inspection, setInspection] = useState<WorkspaceModelInspection | null>(null);
+  const [compatibilityReport, setCompatibilityReport] = useState<WorkspaceModelCompatibility | null>(null);
+  const [compatibilityBusyId, setCompatibilityBusyId] = useState<string | null>(null);
+  const [compatibilityError, setCompatibilityError] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1691,13 +1731,39 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
   const [license, setLicense] = useState("");
   const [quantization, setQuantization] = useState("");
   const [tags, setTags] = useState("");
+  const [modelSearch, setModelSearch] = useState("");
+  const [favoriteOnly, setFavoriteOnly] = useState(false);
+  const [formatFilter, setFormatFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
+  const [sortBy, setSortBy] = useState<ModelRegistrySort>("name");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [appliedFilters, setAppliedFilters] = useState<ModelRegistryFilters>({ favorite_only: false, sort_by: "name", sort_order: "asc" });
+  const [savedFilterName, setSavedFilterName] = useState("");
+  const [savedFilters, setSavedFilters] = useState<SavedModelRegistryFilter[]>(readSavedModelRegistryFilters);
   const importRef = useRef<HTMLInputElement>(null);
 
-  const refresh = async () => {
+  const currentFilters = (): ModelRegistryFilters => ({
+    search: modelSearch.trim(),
+    favorite_only: favoriteOnly,
+    format: formatFilter.trim() || undefined,
+    tag: tagFilter.trim() || undefined,
+    sort_by: sortBy,
+    sort_order: sortOrder,
+  });
+
+  const formatMemoryRange = (range: { low: number; high: number } | null) =>
+    range ? `${range.low.toFixed(2)}–${range.high.toFixed(2)} GB` : "Unknown";
+  const formatMemoryValue = (value: number | null) =>
+    value === null ? "Unknown" : `${value.toFixed(2)} GB`;
+  const fitTone = (status: string): Tone =>
+    status === "likely" ? "success" : status === "tight" ? "warning" : status === "unlikely" ? "danger" : "neutral";
+
+  const refresh = async (filters: ModelRegistryFilters = currentFilters()) => {
+    setAppliedFilters(filters);
     setLoading(true);
     setError("");
     try {
-      const page = await axiomApi.modelsPage(0, 25);
+      const page = await axiomApi.modelsPage(0, 25, filters);
       setModels(page.models);
       setModelTotal(page.total);
       setHasMore(page.has_more);
@@ -1706,6 +1772,51 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
     } finally {
       setLoading(false);
     }
+  };
+
+  const persistSavedFilters = (next: SavedModelRegistryFilter[]) => {
+    const bounded = next.slice(0, 20);
+    setSavedFilters(bounded);
+    try {
+      window.localStorage.setItem(SAVED_MODEL_FILTERS_KEY, JSON.stringify(bounded));
+    } catch {
+      onNotify("Saved filters could not be stored in this browser. Check local storage availability.", "warning");
+    }
+  };
+
+  const saveCurrentFilter = () => {
+    const label = savedFilterName.trim();
+    if (!label) {
+      onNotify("Enter a name for this saved filter.", "warning");
+      return;
+    }
+    const record: SavedModelRegistryFilter = {
+      id: typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `filter-${Date.now()}`,
+      name: label.slice(0, 60),
+      filters: currentFilters(),
+    };
+    const next = [record, ...savedFilters.filter((item) => item.name.toLocaleLowerCase() !== record.name.toLocaleLowerCase())];
+    persistSavedFilters(next);
+    setSavedFilterName("");
+    onNotify("Model registry filter saved in this browser.", "success");
+  };
+
+  const applySavedFilter = (saved: SavedModelRegistryFilter) => {
+    const filters: ModelRegistryFilters = {
+      search: saved.filters.search ?? "",
+      favorite_only: saved.filters.favorite_only,
+      format: saved.filters.format || undefined,
+      tag: saved.filters.tag || undefined,
+      sort_by: saved.filters.sort_by ?? "name",
+      sort_order: saved.filters.sort_order ?? "asc",
+    };
+    setModelSearch(filters.search ?? "");
+    setFavoriteOnly(filters.favorite_only);
+    setFormatFilter(filters.format ?? "");
+    setTagFilter(filters.tag ?? "");
+    setSortBy(filters.sort_by);
+    setSortOrder(filters.sort_order);
+    void refresh(filters);
   };
 
   useEffect(() => { void refresh(); }, []);
@@ -1735,6 +1846,20 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
     }
   };
 
+  const inspectCompatibility = async (model: WorkspaceModel) => {
+    setCompatibilityBusyId(model.id);
+    setCompatibilityError("");
+    setCompatibilityReport(null);
+    try {
+      const result = await axiomApi.modelCompatibility(model.id);
+      setCompatibilityReport(result.report);
+    } catch (cause) {
+      setCompatibilityError(cause instanceof Error ? cause.message : "Hardware fit report could not be generated.");
+    } finally {
+      setCompatibilityBusyId(null);
+    }
+  };
+
   const useCandidateMetadata = async (candidate: WorkspaceModelCandidate) => {
     const result = await inspectCandidate(candidate);
     if (!result) return;
@@ -1750,7 +1875,7 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
   const loadMore = async () => {
     setLoadingMore(true);
     try {
-      const page = await axiomApi.modelsPage(models.length, 25);
+      const page = await axiomApi.modelsPage(models.length, 25, appliedFilters);
       setModels((current) => [...current, ...page.models]);
       setModelTotal(page.total);
       setHasMore(page.has_more);
@@ -1797,6 +1922,7 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
     try {
       const result = await axiomApi.updateModel(model.id, { favorite: !model.favorite });
       setModels((current) => current.map((item) => item.id === model.id ? result.model : item));
+      if (favoriteOnly || sortBy === "favorite") await refresh();
     } catch (cause) {
       onNotify(cause instanceof Error ? cause.message : "Favorite could not be updated.", "warning");
     }
@@ -1854,7 +1980,24 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
   };
 
   return <FeaturePage page="models" actions={<><button type="button" className="button secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCcw size={16} /> Refresh</button><button type="button" className="button secondary-button" onClick={() => void discoverLocalModels()} disabled={discoveryBusy}><Search size={15} /> {discoveryBusy ? "Discovering…" : "Discover local"}</button><button type="button" className="button secondary-button" onClick={() => void exportModels()}><ArrowDownToLine size={15} /> Export</button><button type="button" className="button secondary-button" onClick={() => importRef.current?.click()}><Upload size={15} /> Import</button><input ref={importRef} type="file" accept="application/json,.json" hidden onChange={(event) => void importModels(event)} /><button type="button" className="button primary-button" onClick={() => setFormOpen((open) => !open)}><Plus size={16} /> Register model</button></>}>
-    <div className="info-grid"><InfoCard icon={BrainCircuit} label="Registry" value={loading ? "—" : String(modelTotal)} detail={loading ? "Loading inventory" : `${models.filter((model) => model.favorite).length} favorites loaded`} tone={modelTotal ? "success" : "neutral"} /><InfoCard icon={HardDrive} label="Storage" value="Local" detail="Registry metadata only" tone="neutral" /><InfoCard icon={SlidersHorizontal} label="Inventory" value={loading ? "—" : String(models.length)} detail={hasMore ? `Showing ${models.length} of ${modelTotal}` : "All registry entries shown"} tone="info" /></div>
+    <div className="info-grid"><InfoCard icon={BrainCircuit} label="Matching models" value={loading ? "—" : String(modelTotal)} detail={loading ? "Loading inventory" : `${models.filter((model) => model.favorite).length} favorites on this page`} tone={modelTotal ? "success" : "neutral"} /><InfoCard icon={HardDrive} label="Storage" value="Local" detail="Registry metadata only" tone="neutral" /><InfoCard icon={SlidersHorizontal} label="Inventory" value={loading ? "—" : String(models.length)} detail={hasMore ? `Showing ${models.length} of ${modelTotal} matches` : "All matching entries loaded"} tone="info" /></div>
+    <Surface title="Find models" eyebrow="SERVER-SIDE SEARCH AND FILTERS">
+      <div className="two-column-grid">
+        <label className="field"><span className="field-label-row"><span>Search metadata</span></span><input aria-label="Search model registry" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} maxLength={160} placeholder="Name, source, architecture, license, or tag" /></label>
+        <label className="field"><span className="field-label-row"><span>Exact format</span></span><input aria-label="Exact model format" value={formatFilter} onChange={(event) => setFormatFilter(event.target.value)} maxLength={64} placeholder="gguf, safetensors, pytorch…" /></label>
+        <label className="field"><span className="field-label-row"><span>Exact tag</span></span><input aria-label="Exact model tag" value={tagFilter} onChange={(event) => setTagFilter(event.target.value)} maxLength={40} placeholder="local, chat, coding…" /></label>
+        <label className="field"><span className="field-label-row"><span>Sort by</span></span><select aria-label="Sort model registry by" value={sortBy} onChange={(event) => setSortBy(event.target.value as ModelRegistrySort)}><option value="name">Name</option><option value="source">Source</option><option value="format">Format</option><option value="parameters">Parameter count</option><option value="quantization">Quantization</option><option value="favorite">Favorite status</option></select></label>
+        <label className="field"><span className="field-label-row"><span>Order</span></span><select aria-label="Model sort order" value={sortOrder} onChange={(event) => setSortOrder(event.target.value as "asc" | "desc")}><option value="asc">Ascending</option><option value="desc">Descending</option></select></label>
+        <label className="field" style={{ alignSelf: "end" }}><span className="field-label-row"><span>Favorites only</span></span><span style={{ display: "flex", gap: 8, alignItems: "center" }}><input aria-label="Favorites only" type="checkbox" checked={favoriteOnly} onChange={(event) => setFavoriteOnly(event.target.checked)} />Show only favorited models</span></label>
+      </div>
+      <div className="integration-form-actions"><button type="button" className="button primary-button" onClick={() => void refresh()} disabled={loading}>Apply filters</button><button type="button" className="button secondary-button" onClick={() => { setModelSearch(""); setFavoriteOnly(false); setFormatFilter(""); setTagFilter(""); setSortBy("name"); setSortOrder("asc"); void refresh({ search: "", favorite_only: false, sort_by: "name", sort_order: "asc" }); }} disabled={loading}>Clear filters</button></div>
+      <div className="two-column-grid" style={{ marginTop: 18 }}>
+        <label className="field"><span className="field-label-row"><span>Save this filter</span></span><input aria-label="Saved filter name" value={savedFilterName} onChange={(event) => setSavedFilterName(event.target.value)} maxLength={60} placeholder="e.g. Favorite GGUF models" /></label>
+        <div className="field" style={{ justifyContent: "end" }}><span className="field-label-row"><span>Browser-local presets</span></span><button type="button" className="button secondary-button" onClick={saveCurrentFilter} disabled={!savedFilterName.trim()}>Save current filters</button></div>
+      </div>
+      {savedFilters.length > 0 && <div className="module-list">{savedFilters.map((saved) => <div className="module-row" key={saved.id}><span className="module-icon"><Star size={15} /></span><span className="module-copy"><b>{saved.name}</b><small>{saved.filters.search || "All names"} · {saved.filters.favorite_only ? "favorites only" : "all favorites"} · {saved.filters.format || "all formats"} · tag: {saved.filters.tag || "any"} · {saved.filters.sort_by} {saved.filters.sort_order}</small></span><button type="button" className="button secondary-button" onClick={() => applySavedFilter(saved)}>Apply</button><button type="button" className="button secondary-button" aria-label={`Delete saved filter ${saved.name}`} onClick={() => persistSavedFilters(savedFilters.filter((item) => item.id !== saved.id))}>Delete</button></div>)}</div>}
+      <p className="quiet-note">Search, exact format/tag filters, sorting and pagination run against the registry API. Saved filter presets stay in this browser and contain filter metadata only.</p>
+    </Surface>
     {formOpen && <Surface title="Register model metadata" eyebrow="LOCAL REGISTRY">
       <form className="integration-form" onSubmit={(event) => void addModel(event)}>
         <label className="field"><span className="field-label-row"><span>Display name</span></span><input value={name} onChange={(event) => setName(event.target.value)} maxLength={160} required placeholder="Qwen 3 8B" /></label>
@@ -1881,9 +2024,23 @@ function Models({ onNotify }: { onNotify: (message: string, tone?: Tone) => void
       <p className="quiet-note">{inspection.path} · {inspection.status}</p>
       <div className="info-grid"><InfoCard icon={BrainCircuit} label="Architecture" value={inspection.architecture || inspection.model_type || "Unknown"} detail={inspection.capabilities.join(" · ")} tone="neutral" /><InfoCard icon={HardDrive} label="Format / weights" value={inspection.model_format} detail={`${formatBytes(inspection.weight_size_bytes)} · ${inspection.has_tokenizer ? "Tokenizer found" : "No tokenizer detected"}`} tone={inspection.weight_size_bytes ? "success" : "warning"} /><InfoCard icon={Cpu} label="Estimated VRAM" value={inspection.estimated_vram_gb === null ? "Unknown" : `${inspection.estimated_vram_gb} GB`} detail={inspection.parameter_count ? `${inspection.parameter_count.toLocaleString()} parameters · estimate only` : "No parameter count available"} tone="info" /></div>
     </Surface>}
+    {compatibilityError && <InlineAlert tone="warning" role="alert">{compatibilityError}</InlineAlert>}
+    {compatibilityReport && <Surface title={`Hardware fit · ${compatibilityReport.model.name}`} eyebrow="MEMORY ESTIMATE · NOT A BENCHMARK" action={<button type="button" className="icon-text-button" onClick={() => setCompatibilityReport(null)}>Dismiss</button>}>
+      <p className="quiet-note">{compatibilityReport.scope_note}</p>
+      <div className="info-grid">
+        <InfoCard icon={HardDrive} label="Weight footprint" value={formatMemoryRange(compatibilityReport.estimated_weight_gb)} detail={compatibilityReport.quantization_bits_per_parameter ? `${compatibilityReport.quantization_bits_per_parameter.low}–${compatibilityReport.quantization_bits_per_parameter.high} bits per parameter (metadata estimate)` : "Quantization/dtype not known"} tone="info" />
+        <InfoCard icon={Cpu} label="Runtime memory" value={formatMemoryRange(compatibilityReport.estimated_runtime_memory_gb)} detail="Heuristic range includes allocator/KV-cache/runtime allowance" tone="warning" />
+        <InfoCard icon={Database} label="System RAM fit" value={compatibilityReport.system_ram_fit.status.toUpperCase()} detail={`Physical ${formatMemoryValue(compatibilityReport.system_ram_fit.physical_gb)} · budget ${formatMemoryValue(compatibilityReport.system_ram_fit.budget_gb)} after reserve`} tone={fitTone(compatibilityReport.system_ram_fit.status)} />
+        <InfoCard icon={Gauge} label="GPU memory fit" value={compatibilityReport.gpu_memory_fit.status.toUpperCase()} detail={`${compatibilityReport.hardware.gpu_name || "GPU not identified"} · budget ${formatMemoryValue(compatibilityReport.gpu_memory_fit.budget_gb)}`} tone={fitTone(compatibilityReport.gpu_memory_fit.status)} />
+      </div>
+      <div className="two-column-grid" style={{ marginTop: 16 }}>
+        <div><p className="eyebrow">FORMAT COMPATIBILITY</p><StatusPill tone={compatibilityReport.format_compatibility.status === "candidate_not_verified" ? "warning" : "neutral"}>{compatibilityReport.format_compatibility.status.replaceAll("_", " ").toUpperCase()}</StatusPill><p>{compatibilityReport.format_compatibility.guidance}</p><p className="quiet-note">Potential runtimes: {compatibilityReport.format_compatibility.likely_runtimes.join(", ") || "unknown"}</p></div>
+        <div><p className="eyebrow">WARNINGS AND ASSUMPTIONS</p><ul>{compatibilityReport.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul><p className="quiet-note">VRAM evidence: {compatibilityReport.hardware.vram_probe}. No runtime load was attempted.</p></div>
+      </div>
+    </Surface>}
     <Surface title="Model registry" eyebrow="LOCAL INVENTORY">
       {error ? <InlineAlert tone="warning" role="alert">{error}</InlineAlert> : null}
-      {loading ? <div className="loading-state" role="status">Loading model registry…</div> : models.length ? <><div className="module-list">{models.map((model) => <div className="module-row model-registry-row" key={model.id}><span className="module-icon"><BrainCircuit size={17} /></span><span className="module-copy"><b>{model.name}</b><small>{model.source} · {model.format}{model.parameters ? ` · ${model.parameters}` : ""}{model.quantization ? ` · ${model.quantization}` : ""}{model.architecture ? ` · ${model.architecture}` : ""}{model.license ? ` · ${model.license}` : ""}{model.tags?.length ? ` · ${model.tags.join(", ")}` : ""}</small></span><button type="button" className="icon-button" aria-label={`${model.favorite ? "Remove" : "Add"} ${model.name} ${model.favorite ? "favorite" : "to favorites"}`} title={model.favorite ? "Remove favorite" : "Add favorite"} onClick={() => void toggleFavorite(model)}><Star size={15} fill={model.favorite ? "currentColor" : "none"} /></button><button type="button" className="icon-button danger-icon-button" aria-label={`Remove ${model.name} from registry`} title="Remove registry entry" onClick={() => setRemoving(model)}><Trash2 size={15} /></button></div>)}</div>{hasMore && <div className="pagination-actions"><button type="button" className="button secondary-button" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load more models"}</button></div>}</> : <EmptyState icon={BrainCircuit} title="Registry is empty" description="Register model metadata here or use the CLI. Model files remain where they are." action={<CliReference command="axiom model add my-model local safetensors" />} />}
+      {loading ? <div className="loading-state" role="status">Loading model registry…</div> : models.length ? <><div className="module-list">{models.map((model) => <div className="module-row model-registry-row" key={model.id}><span className="module-icon"><BrainCircuit size={17} /></span><span className="module-copy"><b>{model.name}</b><small>{model.source} · {model.format}{model.parameters ? ` · ${model.parameters}` : ""}{model.quantization ? ` · ${model.quantization}` : ""}{model.architecture ? ` · ${model.architecture}` : ""}{model.license ? ` · ${model.license}` : ""}{model.tags?.length ? ` · ${model.tags.join(", ")}` : ""}</small></span><button type="button" className="icon-button" aria-label={`${model.favorite ? "Remove" : "Add"} ${model.name} ${model.favorite ? "favorite" : "to favorites"}`} title={model.favorite ? "Remove favorite" : "Add favorite"} onClick={() => void toggleFavorite(model)}><Star size={15} fill={model.favorite ? "currentColor" : "none"} /></button><button type="button" className="icon-button" aria-label={`Check hardware fit for ${model.name}`} title={compatibilityBusyId === model.id ? "Checking hardware fit…" : "Estimate hardware fit"} disabled={compatibilityBusyId === model.id} onClick={() => void inspectCompatibility(model)}><Gauge size={15} /></button><button type="button" className="icon-button danger-icon-button" aria-label={`Remove ${model.name} from registry`} title="Remove registry entry" onClick={() => setRemoving(model)}><Trash2 size={15} /></button></div>)}</div>{hasMore && <div className="pagination-actions"><button type="button" className="button secondary-button" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load more models"}</button></div>}</> : <EmptyState icon={BrainCircuit} title="Registry is empty" description="Register model metadata here or use the CLI. Model files remain where they are." action={<CliReference command="axiom model add my-model local safetensors" />} />}
     </Surface>
     {removing && <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !removingBusy) setRemoving(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="remove-model-title"><div className="dialog-head"><div><p className="eyebrow">CONFIRM REGISTRY CHANGE</p><h2 id="remove-model-title">Remove {removing.name}?</h2></div><button type="button" className="icon-button" aria-label="Close confirmation" onClick={() => setRemoving(null)} disabled={removingBusy}><X size={16} /></button></div><p className="quiet-note">This removes only its AXIOM registry metadata. Local model weights will not be deleted.</p><div className="integration-form-actions"><button type="button" className="button secondary-button" onClick={() => setRemoving(null)} disabled={removingBusy}>Cancel</button><button type="button" className="button danger-button" onClick={() => void removeModel()} disabled={removingBusy}>{removingBusy ? "Removing…" : "Remove registry entry"}</button></div></section></div>}
     <ModelStudioPanel />
@@ -2852,6 +3009,7 @@ function Runtime() {
     <div className="info-grid"><InfoCard icon={Cpu} label="Processor" value={hardware?.architecture || "—"} detail={hardware ? `${hardware.cpu_cores} CPU cores` : loading ? "Checking" : "Unavailable"} tone={hardware ? "success" : "neutral"} /><InfoCard icon={HardDrive} label="System memory" value={hardware ? `${hardware.ram_gb.toFixed(1)} GB` : "—"} detail="Detected locally" tone={hardware ? "success" : "neutral"} /><InfoCard icon={Zap} label="GPU memory" value={hardware?.vram_gb === null || hardware?.vram_gb === undefined ? "Not detected" : `${hardware.vram_gb.toFixed(1)} GB`} detail={hardware?.gpu_name || "No compatible GPU reported"} tone={hardware?.cuda_available ? "success" : "warning"} /></div>
     {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
     <LocalInferencePanel />
+    <RuntimeTracePanel />
     <RuntimeConnectorPanel />
   </FeaturePage>;
 }

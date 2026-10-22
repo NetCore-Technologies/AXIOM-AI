@@ -1,11 +1,12 @@
 """Workspace diagnostics and privacy-preserving support bundle API."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
 from axiom.core.diagnostics import create_support_bundle, diagnose_workspace
 from axiom.core.roadmap import audit_roadmap
+from axiom.core.runtime_traces import clear_runtime_traces, list_runtime_traces
 
 router = APIRouter(prefix="/api/diagnostics", tags=["diagnostics"])
 
@@ -51,3 +52,15 @@ def roadmap_audit() -> dict:
         raise HTTPException(status_code=404, detail="ROADMAP.md was not found in the current workspace or source checkout.") from exc
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail="ROADMAP.md could not be audited safely.") from exc
+
+
+@router.get("/runtime-traces")
+def runtime_trace_list(limit: int = Query(default=50, ge=1, le=200)) -> dict:
+    """Return a bounded metadata-only view of recent local inference requests."""
+    return list_runtime_traces(limit)
+
+
+@router.delete("/runtime-traces")
+def runtime_trace_clear() -> dict:
+    """Clear the in-memory runtime trace buffer."""
+    return clear_runtime_traces()

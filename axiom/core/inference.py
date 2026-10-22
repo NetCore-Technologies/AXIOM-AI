@@ -153,3 +153,112 @@ def run_local_inference(
         "total_duration_ms": round(total_duration / 1_000_000, 2) if isinstance(total_duration, (int, float)) and total_duration >= 0 else None,
         "generated_at": datetime.now(UTC).isoformat(),
     }
+
+
+def run_local_inference_benchmark(
+    model: str,
+    prompt: str,
+    *,
+    num_predict: int = 128,
+    temperature: float = 0.2,
+    warmup_runs: int = 1,
+    iterations: int = 3,
+    concurrency: int = 1,
+) -> dict[str, Any]:
+    """Measure real loopback inference latency and throughput without retaining text.
+
+    The benchmark is intentionally bounded to at most ten measured generations
+    and two warm-up generations. It uses the same loopback-only adapter as normal
+    inference. Generated prompt/response contents are not returned or persisted.
+    """
+    import statistics
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    model = validate_model_name(model)
+    prompt, num_predict, temperature = validate_generation(prompt, num_predict, temperature)
+    if num_predict > 512:
+        raise ValueError("Benchmark output-token limit must be between 1 and 512.")
+    if isinstance(warmup_runs, bool) or not isinstance(warmup_runs, int) or not 0 <= warmup_runs <= 2:
+        raise ValueError("Benchmark warm-up runs must be between 0 and 2.")
+    if isinstance(iterations, bool) or not isinstance(iterations, int) or not 1 <= iterations <= 10:
+        raise ValueError("Benchmark iterations must be between 1 and 10.")
+    if isinstance(concurrency, bool) or not isinstance(concurrency, int) or not 1 <= concurrency <= 4:
+        raise ValueError("Benchmark concurrency must be between 1 and 4.")
+    measured_requests = iterations * concurrency
+    if measured_requests > 10:
+        raise ValueError("Benchmark iterations × concurrency may not exceed 10 measured requests.")
+
+    for _ in range(warmup_runs):
+        run_local_inference(model, prompt, num_predict=num_predict, temperature=temperature)
+
+    def measured_call() -> dict[str, Any]:
+        started = time.perf_counter()
+        result = run_local_inference(model, prompt, num_predict=num_predict, temperature=temperature)
+        elapsed_ms = max(0.0, (time.perf_counter() - started) * 1000.0)
+        return {
+            "latency_ms": round(elapsed_ms, 2),
+            "prompt_tokens": result.get("prompt_eval_count") if isinstance(result.get("prompt_eval_count"), int) else None,
+            "completion_tokens": result.get("eval_count") if isinstance(result.get("eval_count"), int) else None,
+            "done": result.get("done") is True,
+        }
+
+    samples: list[dict[str, Any]] = []
+    benchmark_started = time.perf_counter()
+    # Each iteration is a measured wave. Requests inside a wave run concurrently
+    # at the caller's explicitly selected concurrency level.
+    with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="axiom-inference-bench") as executor:
+        for _ in range(iterations):
+            futures = [executor.submit(measured_call) for _ in range(concurrency)]
+            samples.extend(future.result() for future in futures)
+    total_wall_seconds = max(time.perf_counter() - benchmark_started, 1e-9)
+
+    latencies = sorted(sample["latency_ms"] for sample in samples)
+    completion_counts = [sample["completion_tokens"] for sample in samples if sample["completion_tokens"] is not None]
+    prompt_counts = [sample["prompt_tokens"] for sample in samples if sample["prompt_tokens"] is not None]
+
+    def percentile(values: list[float], percentage: float) -> float | None:
+        if not values:
+            return None
+        index = max(0, min(len(values) - 1, int((percentage / 100.0) * len(values) + 0.999999) - 1))
+        return round(values[index], 2)
+
+    total_completion_tokens = sum(completion_counts)
+    total_prompt_tokens = sum(prompt_counts)
+    total_wall_ms = round(total_wall_seconds * 1000.0, 2)
+    return {
+        "schema_version": 1,
+        "backend": "ollama",
+        "endpoint": OLLAMA_ENDPOINT,
+        "model": model,
+        "configuration": {
+            "prompt_characters": len(prompt),
+            "num_predict": num_predict,
+            "temperature": temperature,
+            "warmup_runs": warmup_runs,
+            "iterations": iterations,
+            "concurrency": concurrency,
+            "measured_requests": measured_requests,
+        },
+        "measurements": {
+            "wall_time_ms": total_wall_ms,
+            "requests_per_second": round(measured_requests / total_wall_seconds, 3),
+            "completion_tokens_known": len(completion_counts),
+            "prompt_tokens_known": len(prompt_counts),
+            "total_completion_tokens": total_completion_tokens if completion_counts else None,
+            "completion_tokens_per_second": round(total_completion_tokens / total_wall_seconds, 3) if completion_counts else None,
+            "latency_ms": {
+                "min": round(latencies[0], 2) if latencies else None,
+                "median": round(statistics.median(latencies), 2) if latencies else None,
+                "p95": percentile(latencies, 95),
+                "max": round(latencies[-1], 2) if latencies else None,
+            },
+            "requests": samples,
+        },
+        "privacy": {
+            "prompt_returned": False,
+            "responses_returned": False,
+            "results_persisted": False,
+        },
+        "scope_note": "These are measured timings from this run against the local loopback Ollama service. They are not hardware-independent scores. Compare runs only with the same model, prompt, token limit, runtime configuration, and concurrency; no model quality metric is computed.",
+    }

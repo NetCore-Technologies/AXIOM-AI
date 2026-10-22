@@ -46,7 +46,7 @@ feature exists or a delivery-date promise.
 - [R027 · In progress; validation pending] Add a global command palette with page and action search.
 - [R028 · In progress; validation pending] Add deep links and browser-history navigation for workspace pages.
 - [R029 · Planned] Add global loading, retry, stale-data, and offline indicators.
-- [R030 · In progress; validation pending] Add pagination, sorting, and saved filters to large inventories.
+- [R030 · In progress; validation pending] Add server-side search, sorting, and saved filter presets alongside bounded pagination for large inventories.
 - [R031 · In progress; validation pending] Add consistent confirmation for destructive and irreversible actions.
 - [R032 · Planned] Add keyboard navigation and screen-reader status announcements.
 - [R033 · Planned] Add responsive compact layouts for narrow and touch screens.
@@ -62,8 +62,8 @@ feature exists or a delivery-date promise.
 - [R040 · In progress; validation pending] Add duplicate detection by source and content metadata.
 - [R041 · In progress; validation pending] Add model tags, favorites, and workspace labels.
 - [R042 · Planned] Add format/runtime compatibility matrices with version evidence.
-- [R043 · Planned] Add estimated RAM/VRAM fit with explicit uncertainty ranges.
-- [R044 · Planned] Add hardware compatibility warnings before plan generation.
+- [R043 · In progress; validation pending] Add metadata-based RAM/VRAM fit ranges with explicit uncertainty bands and conservative memory reserves in the model registry.
+- [R044 · In progress; validation pending] Surface format and hardware-fit warnings in the existing Models page; runtime loadability and non-NVIDIA GPU measurement remain unverified.
 - [R045 · Planned] Add model source attribution and license review state.
 - [R046 · Planned] Add optional Hugging Face metadata lookup with consent and timeout.
 - [R047 · In progress; validation pending] Add safe model removal that never deletes weights implicitly.
@@ -119,13 +119,13 @@ feature exists or a delivery-date promise.
 - [R085 · Planned] Add runtime connector discovery and capability negotiation.
 - [R086 · Planned] Add explicit connect/disconnect controls with secret-safe storage.
 - [R087 · Planned] Add runtime status, model identity, and readiness checks.
-- [R088 · Planned] Add measured inference latency and throughput benchmarks.
-- [R089 · Planned] Add warm-up, prompt, concurrency, and output-token benchmark controls.
+- [R088 · In progress; validation pending] Measure actual local inference latency and token throughput through the loopback runtime API, reporting token-count coverage and wall time.
+- [R089 · In progress; validation pending] Add prompt/token-limit inputs, excluded warm-up runs, bounded measured iterations, and explicit concurrency controls to the existing Runtime page.
 - [R090 · Planned] Add quantization estimates with formulas and overhead assumptions.
 - [R091 · Planned] Compare quantization candidates against selected memory budgets.
 - [R092 · Planned] Keep estimated fit separate from measured quality and speed.
-- [R093 · Planned] Add runtime logs and request traces with privacy-safe redaction.
-- [R094 · Planned] Add model load/unload lifecycle and resource cleanup handling.
+- [R093 · In progress; validation pending] Add bounded in-memory runtime request traces with request IDs, metadata-only records, export, and explicit clear controls.
+- [R094 · In progress; validation pending] Add explicit model unload and cache cleanup, plus one-model-at-a-time cache replacement; framework allocator release remains best-effort.
 - [R095 · Planned] Add adapter compatibility checks for CPU, CUDA, Metal, and ROCm.
 - [R096 · Planned] Add runtime failure recovery and actionable connector diagnostics.
 
@@ -237,3 +237,10 @@ The release workflow packages separate macOS Apple Silicon (arm64) and Intel (x8
 - Finish connecting intentionally disconnected GUI views through validated APIs.
 - Add measured runtime benchmarking across supported backends.
 - Broaden model format and accelerator coverage.
+
+## Community adoption and validation workstream
+
+The companion [Community and Adoption Strategy](docs/Community-and-Adoption-Strategy.md) proposes a workstream for public benchmark evidence, hardware-estimate calibration, integration quality, physical-hardware validation, user support, and external contribution.
+
+This is a proposal, not a delivery-status claim. It supplements the 120 scoped deliverables above without changing their IDs or marking unverified work as complete. Hardware validation must distinguish simulated CI coverage from measurements on physical NVIDIA, Apple Silicon, AMD, and CPU-only systems where those test environments are available. External repository metrics quoted in assessments must be checked against a current public snapshot before publication.
+

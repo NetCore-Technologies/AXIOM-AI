@@ -20,16 +20,37 @@ The engine needs PyTorch and Transformers. Loading a LoRA adapter also requires 
 
 Use an existing local Transformers model directory containing `config.json`, model weights and tokenizer files. The directory must be compatible with a causal language model supported by your installed Transformers version. A GGUF file or Ollama model tag is not a Transformers model directory.
 
+**Path safety:** AXIOM resolves both the model and adapter path against trusted model roots before loading. Defaults include existing `models`, `runs`, and `outputs` directories under the working directory, `~/models`, `~/Documents/models`, `~/Documents/AXIOM-AI/models`, the Hugging Face cache at `~/.cache/huggingface/hub`, and AXIOM's local model/fine-tuning directories. Symlinks that resolve outside an allowed root are rejected. To use another trusted directory, set `AXIOM_MODEL_ROOTS` before starting the AXIOM API. Separate multiple roots with the platform path separator (colon on Linux/macOS, semicolon on Windows). For example, on Linux/macOS:
+
+```bash
+export AXIOM_MODEL_ROOTS="$HOME/models:$HOME/Documents/AXIOM-AI/runs:/mnt/data/models"
+```
+
+Only add directories you trust; the API does not permit arbitrary paths outside these roots.
+
 ## Control Center
 
 Open **Runtime** and use the **AXIOM Local Engine** panel. Enter the absolute path to the base model directory. To generate using a trained adapter, optionally enter the adapter output directory produced by the Training panel; it must contain `adapter_config.json` and adapter weights.
 
-The engine caches one loaded base-model/adapter pair in the API process. Selecting a different path replaces that cached runtime on the next generation request. Large models can consume substantial RAM/VRAM and generation can take several minutes on CPU.
+The engine caches one loaded base-model/adapter pair in the API process. Selecting a different path replaces that cached runtime on the next generation request. The **Unload model** action releases AXIOM's model/tokenizer references and asks CUDA to empty its cache when applicable; framework or operating-system allocators may still reserve memory. Large models can consume substantial RAM/VRAM and generation can take several minutes on CPU.
+
+## CLI
+
+Check dependency readiness without loading model weights, then generate from an existing local checkpoint:
+
+```bash
+axiom --no-banner engine status
+axiom --no-banner engine run --model-path "$HOME/models/my-llama-model" --prompt "Explain AXIOM in one sentence."
+axiom --no-banner engine run --model-path "$HOME/models/my-llama-model" --adapter-path "$HOME/runs/my-lora-adapter" --prompt-file ./prompt.txt --max-new-tokens 128 --temperature 0 --json
+```
+
+Pass exactly one of `--prompt` and `--prompt-file`. Prompt files are read as UTF-8 and capped at 12,000 characters.
 
 ## API
 
 - `GET /api/engine/status` reports dependency readiness and whether a model is loaded.
 - `POST /api/engine/generate` accepts `model_path`, optional `adapter_path`, `prompt`, `max_new_tokens` and `temperature`.
+- `POST /api/engine/unload` releases the model cached by the current API process.
 
 Prompt length is capped at 12,000 characters; generated tokens are capped at 2,048; model input context is additionally bounded by the loaded checkpoint's configuration and an AXIOM safety limit. All model and tokenizer loads use `local_files_only=True` and `trust_remote_code=False`. The engine does not overwrite base weights or adapter files.
 

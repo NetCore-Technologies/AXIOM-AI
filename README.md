@@ -101,6 +101,8 @@ For package downloads and checksums, see [GitHub Releases](https://github.com/Ne
 | Check your project setup | `axiom doctor` |
 | See available commands | `axiom --help` |
 
+The **Models** page supports server-side search, exact format/tag filters, favorites-only views, numeric parameter sorting, filtered pagination, and browser-local saved filter presets. Model entries also expose estimated RAM/VRAM fit ranges and explicit compatibility warnings when enough metadata is available. See the [Model Registry guide](docs/Model-Registry.md). The existing **Runtime** page also benchmarks actual local Ollama inference with warm-up, measured iterations, bounded concurrency, latency percentiles, and token throughput when runtime token counts are available. See the [Inference Benchmarking guide](docs/Inference-Benchmarking.md). It also provides metadata-only request history with request IDs, JSON export, and clear controls; prompts and generated text are excluded. See the [Local Inference guide](docs/Local-Inference.md).
+
 ## Optional features
 
 ### Local fine-tuning
@@ -134,7 +136,14 @@ Install the local model dependencies, then use the AXIOM Engine panel in the Con
 python -m pip install -e '.[training]'
 ```
 
-See [AXIOM Engine details](docs/Local-Engine.md) for local model layout, adapter use, and limits.
+Use the CLI or the Control Center panel to run it:
+
+```bash
+axiom --no-banner engine status
+axiom --no-banner engine run --model-path "$HOME/models/my-llama-model" --prompt "Explain AXIOM in one sentence." --max-new-tokens 128
+```
+
+See [AXIOM Engine details](docs/Local-Engine.md) for trusted model-root configuration, adapter use, model unload, and limits.
 
 ### Model Studio
 
@@ -152,10 +161,14 @@ The local API and Control Center use loopback addresses by default. The optional
 - [Changelog](docs/CHANGELOG.md)
 - [Local fine-tuning](docs/Local-Fine-Tuning.md)
 - [Model Studio](docs/Model-Studio.md)
+- [Model Registry](docs/Model-Registry.md)
+- [Inference Benchmarking](docs/Inference-Benchmarking.md)
 - [Local inference via Ollama](docs/Local-Inference.md)
+- [Inference Benchmarking](docs/Inference-Benchmarking.md)
 - [AXIOM Engine](docs/Local-Engine.md)
 - [API](docs/API.md)
 - [Roadmap](ROADMAP.md)
+- [Community and adoption strategy](docs/Community-and-Adoption-Strategy.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## Contributing

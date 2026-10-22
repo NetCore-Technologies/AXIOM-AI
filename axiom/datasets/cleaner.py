@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 from pathlib import Path
 from typing import Any
+
+_LOG = logging.getLogger(__name__)
 
 
 class DatasetCleaningResult:
@@ -27,7 +30,6 @@ class DatasetCleaningResult:
         self.removed_empty = removed_empty
         self.removed_duplicates = removed_duplicates
         self.removed_non_objects = removed_non_objects
-        # Preserve the legacy field for integrations using earlier releases.
         self.removed_schema = removed_non_objects
 
 
@@ -44,7 +46,12 @@ def _same_path(source: Path, destination: Path) -> bool:
         if destination.exists() and os.path.samefile(source, destination):
             return True
     except OSError:
-        pass
+        _LOG.debug(
+            "samefile check failed for %s and %s; comparing resolved paths instead",
+            source,
+            destination,
+            exc_info=True,
+        )
 
     return source.resolve(strict=False) == destination.resolve(strict=False)
 
@@ -153,7 +160,10 @@ def clean_jsonl(
             try:
                 os.unlink(temporary_name)
             except FileNotFoundError:
-                pass
+                _LOG.debug(
+                    "Temporary file %s was already removed",
+                    temporary_name,
+                )
 
     return DatasetCleaningResult(
         source=source,
