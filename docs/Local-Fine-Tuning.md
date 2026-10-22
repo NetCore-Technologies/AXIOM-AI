@@ -1,6 +1,6 @@
 # Local LoRA fine-tuning
 
-AXIOM includes an opt-in local training path using Hugging Face Transformers and PEFT. It creates a LoRA adapter; it does not update or overwrite the base model.
+AXIOM includes an opt-in local training path using a purpose-built, bounded PyTorch loop and PEFT LoRA adapters. It creates an adapter; it does not update or overwrite the base model. AXIOM does not rely on the Transformers `Trainer` loop, which helps keep the training behaviour under AXIOM's control as the upstream Trainer API evolves.
 
 ## Requirements
 
@@ -43,6 +43,7 @@ Open **Training** in the Control Center. The **Local LoRA fine-tuning** panel le
 ## Limits and honest scope
 
 - Base model path must be a local Transformers model directory; no model is downloaded by AXIOM.
+- The training extra requires compatible versions of PyTorch (>=2.2), Transformers (>=5), PEFT (>=0.20), and Accelerate (>=1.1). The runtime endpoint checks installed versions and prevents starting a job with an older dependency set.
 - Dataset is limited to 50 MiB, 10,000 rows, and 1 MiB per line; individual text values are limited to 300,000 characters.
 - Steps: 1–1,000; sequence length: 32–2,048 tokens; LoRA rank: 1–64; learning rate: 0.000001–0.01.
 - A single local fine-tuning job is allowed at a time to avoid accidental competing CPU/GPU workloads.
