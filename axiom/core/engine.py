@@ -9,6 +9,7 @@ from __future__ import annotations
 import gc
 import importlib.metadata
 import importlib.util
+import re
 import json
 import threading
 import time
@@ -33,9 +34,16 @@ class AxiomEngineError(RuntimeError):
     """Raised when the AXIOM local model engine cannot run a request."""
 
 
+def _version_key(value: str) -> tuple[int, int, int]:
+    parts = [int(part) for part in re.findall(r"\d+", value)[:3]]
+    return tuple((parts + [0, 0, 0])[:3])
+
+
 def runtime_status() -> dict[str, Any]:
     packages: dict[str, bool] = {}
     versions: dict[str, str | None] = {}
+    minimum_versions = {"torch": "2.2.0", "transformers": "5.0.0"}
+    problems: list[str] = []
     for name in ("torch", "transformers", "peft"):
         try:
             packages[name] = importlib.util.find_spec(name) is not None
@@ -45,13 +53,19 @@ def runtime_status() -> dict[str, Any]:
             versions[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
             versions[name] = None
-    ready = packages["torch"] and packages["transformers"]
-    missing = [name for name in ("torch", "transformers") if not packages[name]]
+        if name in minimum_versions:
+            if not packages[name]:
+                problems.append(f"{name} is not installed")
+            elif versions[name] is not None and _version_key(versions[name]) < _version_key(minimum_versions[name]):
+                problems.append(f"{name} {versions[name]} is too old (need >= {minimum_versions[name]})")
+    ready = not problems
     return {
         "engine": "axiom-local-engine",
         "ready": ready,
         "packages": packages,
         "versions": versions,
+        "minimum_versions": minimum_versions,
+        "problems": problems,
         "loaded": _LOADED_KEY is not None,
         "architecture": _LOADED_ARCHITECTURE,
         "model_loading": "local_files_only",
@@ -59,8 +73,8 @@ def runtime_status() -> dict[str, Any]:
         "setup_note": (
             "AXIOM Engine is ready for local Transformers causal-LM checkpoints."
             if ready else
-            "Install the local inference dependencies in this Python environment: "
-            + " ".join(missing) + ". Use: python -m pip install -e '.[training]'"
+            "AXIOM Engine setup required: " + "; ".join(problems)
+            + ". Install or upgrade local dependencies with: python -m pip install -e '.[training]'"
         ),
         "scope_note": (
             "AXIOM owns the runtime and training orchestration; pretrained weights remain a separate local input. "
