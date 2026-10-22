@@ -119,3 +119,67 @@ def test_native_model_discovery_lists_local_metadata_without_loading_weights(tmp
         "weight_format": "safetensors LoRA",
     }]
     assert "not loaded or fully validated" in payload["scope_note"]
+
+
+
+def test_engine_request_rejects_adapter_directory_as_base_model(tmp_path, monkeypatch) -> None:
+    root = tmp_path / "models"
+    adapter = root / "adapter"
+    adapter.mkdir(parents=True)
+    (adapter / "adapter_config.json").write_text('{"task_type":"CAUSAL_LM"}', encoding="utf-8")
+    monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(root))
+
+    with pytest.raises(ValidationError, match="checkpoint directory|trusted model root"):
+        engine_api.GenerateRequest(model_path=str(adapter), prompt="hello")
+
+
+def test_engine_request_rejects_base_model_directory_as_adapter(tmp_path, monkeypatch) -> None:
+    root = tmp_path / "models"
+    model = root / "base-model"
+    model.mkdir(parents=True)
+    (model / "config.json").write_text('{"model_type":"llama"}', encoding="utf-8")
+    monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(root))
+
+    with pytest.raises(ValidationError, match="checkpoint directory|trusted model root"):
+        engine_api.GenerateRequest(model_path=str(model), adapter_path=str(model), prompt="hello")
+
+
+def test_engine_stream_endpoint_yields_token_snapshots_and_final_metrics(tmp_path, monkeypatch) -> None:
+    root = tmp_path / "models"
+    model = root / "tiny-model"
+    model.mkdir(parents=True)
+    (model / "config.json").write_text('{"model_type":"llama"}', encoding="utf-8")
+    monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(root))
+    completed = {
+        "engine": "axiom-native-engine",
+        "execution_backend": "pytorch-native-axiom",
+        "transformers_generation_used": False,
+        "ollama_used": False,
+        "model": "tiny-model",
+        "architecture": "LlamaForCausalLM",
+        "model_type": "llama",
+        "adapter": None,
+        "device": "cpu",
+        "checkpoint_format": "safetensors",
+        "decoder": "axiom-autoregressive-kv-cache",
+        "response": "Hello",
+        "prompt_tokens": 1,
+        "completion_tokens": 1,
+        "elapsed_ms": 12.5,
+        "generated_at": "2026-10-22T00:00:00+00:00",
+        "local_only": True,
+    }
+    monkeypatch.setattr(engine_api, "generate_local_stream", lambda *_args, **_kwargs: iter([
+        {"type": "token", "response": "Hel", "completion_tokens": 1},
+        {"type": "complete", "result": completed},
+    ]))
+
+    response = _client().post("/api/engine/generate/stream", json={
+        "model_path": str(model), "prompt": "hello", "max_new_tokens": 2, "temperature": 0,
+    })
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert events[0] == {"type": "token", "response": "Hel", "completion_tokens": 1}
+    assert events[1] == {"type": "complete", "result": completed}
