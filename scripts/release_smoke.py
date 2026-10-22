@@ -145,10 +145,7 @@ def model_compatibility_issues(core_source: str, api_source: str, client_source:
             issues.append("Typed API client is missing the model fit endpoint: " + token)
     for token in (
         'aria-label={`Check hardware fit for ${model.name}`}',
-        "api.axiomApi",
     ):
-        if token == "api.axiomApi":
-            continue
         if token not in app_source:
             issues.append("Models GUI is missing the compatibility action: " + token)
     for token in (
