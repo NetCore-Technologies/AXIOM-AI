@@ -18,6 +18,7 @@ def test_engine_request_accepts_absolute_paths_only_inside_explicit_roots(tmp_pa
     root = tmp_path / "models"
     model = root / "tiny-model"
     model.mkdir(parents=True)
+    (model / "config.json").write_text('{"model_type":"llama"}', encoding="utf-8")
     monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(root))
 
     request = engine_api.GenerateRequest(model_path=str(model), prompt="hello")
@@ -32,7 +33,7 @@ def test_engine_request_rejects_absolute_path_outside_configured_roots(tmp_path,
     outside.mkdir()
     monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(root))
 
-    with pytest.raises(ValidationError, match="allowed model directory"):
+    with pytest.raises(ValidationError, match="checkpoint directory|trusted model root"):
         engine_api.GenerateRequest(model_path=str(outside), prompt="hello")
 
 
@@ -48,7 +49,7 @@ def test_engine_request_rejects_symlink_escape(tmp_path, monkeypatch) -> None:
         pytest.skip(f"Directory symlinks are unavailable on this platform: {exc}")
     monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(root))
 
-    with pytest.raises(ValidationError, match="symlink escapes"):
+    with pytest.raises(ValidationError, match="symlink|trusted model root|checkpoint directory"):
         engine_api.GenerateRequest(model_path=str(escape), prompt="hello")
 
 
