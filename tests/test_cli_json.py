@@ -207,3 +207,40 @@ def test_system_info_json_reports_hardware_and_fit_scope(monkeypatch) -> None:
     assert len(payload["model_fit_estimates"]) == 7
     assert payload["model_fit_estimates"][0]["assessment"] == "fit-1B"
     assert "not measured runtime capacity" in payload["fit_scope_note"]
+
+
+
+def test_dataset_clean_json_reports_atomic_output_counts(tmp_path: Path) -> None:
+    dataset = tmp_path / "train.jsonl"
+    output = tmp_path / "cleaned.jsonl"
+    original = '{"text":"first"}\n{"text":"first"}\nnot-json\n\n[1,2]\n'
+    dataset.write_text(original, encoding="utf-8")
+
+    result = runner.invoke(app, ["dataset", "clean", str(dataset), str(output), "--json"])
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    report = payload["cleaning"]
+    assert payload["schema_version"] == 1
+    assert report["total_lines"] == 5
+    assert report["kept"] == 1
+    assert report["removed_duplicates"] == 1
+    assert report["removed_invalid"] == 1
+    assert report["removed_empty"] == 1
+    assert report["removed_non_objects"] == 1
+    assert dataset.read_text(encoding="utf-8") == original
+    assert output.read_text(encoding="utf-8") == '{"text": "first"}\n'
+
+
+def test_dataset_clean_json_rejects_in_place_cleaning_without_touching_source(tmp_path: Path) -> None:
+    dataset = tmp_path / "train.jsonl"
+    original = '{"text":"keep"}\nnot-json\n'
+    dataset.write_text(original, encoding="utf-8")
+
+    result = runner.invoke(app, ["dataset", "clean", str(dataset), str(dataset), "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["schema_version"] == 1
+    assert payload["error"]["code"] == "dataset_cleaning_failed"
+    assert dataset.read_text(encoding="utf-8") == original

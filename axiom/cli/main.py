@@ -1466,47 +1466,67 @@ def dataset_inspect(
 def dataset_clean(
     path: str,
     output: str | None = None,
+    json_output: bool = typer.Option(False, "--json", help="Emit cleaning counts as JSON."),
 ):
     """Clean a JSONL dataset without modifying the original."""
     source = Path(path)
 
+    def report_error(code: str, message: str) -> None:
+        if json_output:
+            typer.echo(json.dumps({
+                "schema_version": 1,
+                "error": {"code": code, "message": message},
+            }, ensure_ascii=False, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] {message}")
+
     if not source.exists():
-        console.print(f"[red]Error:[/red] Dataset not found: {source}")
+        report_error("dataset_not_found", "Dataset not found.")
         raise typer.Exit(code=1)
-
     if not source.is_file():
-        console.print(f"[red]Error:[/red] Not a file: {source}")
+        report_error("dataset_not_file", "Dataset path is not a file.")
         raise typer.Exit(code=1)
-
     if source.suffix.lower() != ".jsonl":
-        console.print("[red]Error:[/red] Cleaning currently supports .jsonl files.")
+        report_error("unsupported_dataset_format", "Cleaning currently supports .jsonl files.")
         raise typer.Exit(code=1)
 
-    destination = (
-        Path(output) if output else source.with_name(f"{source.stem}.cleaned.jsonl")
-    )
-
+    destination = Path(output) if output else source.with_name(f"{source.stem}.cleaned.jsonl")
     try:
         result = clean_jsonl(source, destination)
     except OSError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=1)
+        report_error("dataset_cleaning_failed", str(exc))
+        raise typer.Exit(code=1) from exc
 
-    console.print(
-        Panel.fit(
-            f"[bold cyan]AXIOM DATASET CLEANING[/bold cyan]\n\n"
-            f"Source:             {result.source}\n"
-            f"Output:             {result.output}\n\n"
-            f"Input rows:         {result.total_lines:,}\n"
-            f"Kept:               {result.kept:,}\n"
-            f"Invalid removed:    {result.removed_invalid:,}\n"
-            f"Empty removed:      {result.removed_empty:,}\n"
-            f"Duplicates removed: {result.removed_duplicates:,}\n"
-            f"Non-object rows:    {result.removed_non_objects:,}",
-            title="AXIOM",
-        )
-    )
+    payload = {
+        "schema_version": 1,
+        "cleaning": {
+            "source": str(result.source),
+            "output": str(result.output),
+            "total_lines": result.total_lines,
+            "kept": result.kept,
+            "removed_invalid": result.removed_invalid,
+            "removed_empty": result.removed_empty,
+            "removed_duplicates": result.removed_duplicates,
+            "removed_non_objects": result.removed_non_objects,
+        },
+        "scope_note": "The original dataset is never modified; cleaned rows are written to a distinct output path using an atomic replacement.",
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        return
 
+    console.print(Panel.fit(
+        f"[bold cyan]AXIOM DATASET CLEANING[/bold cyan]\n\n"
+        f"Source:             {result.source}\n"
+        f"Output:             {result.output}\n\n"
+        f"Input rows:         {result.total_lines:,}\n"
+        f"Kept:               {result.kept:,}\n"
+        f"Invalid removed:    {result.removed_invalid:,}\n"
+        f"Empty removed:      {result.removed_empty:,}\n"
+        f"Duplicates removed: {result.removed_duplicates:,}\n"
+        f"Non-object rows:    {result.removed_non_objects:,}",
+        title="AXIOM",
+    ))
 
 @mcp_app.command("serve")
 def mcp_serve():

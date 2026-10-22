@@ -407,7 +407,7 @@ def inspect(root: Path) -> dict[str, Any]:
     cli_main_source = (root / "axiom/cli/main.py").read_text(encoding="utf-8")
     cli_extended_source = (root / "axiom/cli/extended.py").read_text(encoding="utf-8")
     cli_json_tests = (root / "tests/test_cli_json.py").read_text(encoding="utf-8")
-    for token in ('def model_list(', 'def model_info(', 'def model_inspect(', 'def model_analyze(', 'def dataset_inspect(', 'def integration_list(', 'def system_info('):
+    for token in ('def model_list(', 'def model_info(', 'def model_inspect(', 'def model_analyze(', 'def dataset_inspect(', 'def dataset_clean(', 'def integration_list(', 'def system_info('):
         if token not in cli_main_source:
             failures.append("CLI JSON output support is missing from a primary command: " + token)
     for token in ("def model_search(", "def dataset_validate(", "def dataset_stats(", "def dataset_inspection_payload("):
@@ -421,6 +421,7 @@ def inspect(root: Path) -> dict[str, Any]:
         '["integration", "list", "--json"]',
         '["model", "analyze", "org/tiny", "--json"]',
         '["system", "info", "--json"]',
+        '["dataset", "clean", str(dataset), str(output), "--json"]',
     ):
         if token not in cli_json_tests:
             failures.append("CLI JSON acceptance coverage is missing: " + token)
