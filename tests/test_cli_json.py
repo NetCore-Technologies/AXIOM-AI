@@ -139,3 +139,71 @@ def test_model_search_json_skips_symlink_entries(tmp_path: Path) -> None:
     assert payload["total"] >= 1
     assert all("path" in item and "kind" in item and "size_bytes" in item for item in payload["matches"])
     assert all("private.safetensors" not in item["path"] for item in payload["matches"])
+
+
+
+def test_model_analyze_json_reports_metadata_and_estimate_basis(tmp_path: Path, monkeypatch) -> None:
+    config = {
+        "model_type": "llama",
+        "architectures": ["LlamaForCausalLM"],
+        "hidden_size": 8,
+        "intermediate_size": 12,
+        "num_hidden_layers": 1,
+        "num_attention_heads": 2,
+        "num_key_value_heads": 1,
+        "vocab_size": 16,
+        "max_position_embeddings": 128,
+        "torch_dtype": "bfloat16",
+    }
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    def fake_model_info(*, repo_id: str, files_metadata: bool):
+        assert files_metadata is True
+        return SimpleNamespace(
+            id=repo_id,
+            siblings=[
+                SimpleNamespace(rfilename="config.json", size=512),
+                SimpleNamespace(rfilename="model.safetensors", size=4096),
+            ],
+        )
+
+    monkeypatch.setattr(cli_main, "HfApi", lambda: SimpleNamespace(
+        model_info=fake_model_info,
+        hf_hub_download=lambda *, repo_id, filename: str(config_path),
+    ))
+    result = runner.invoke(app, ["model", "analyze", "org/tiny", "--json"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    analysis = payload["analysis"]
+    assert payload["schema_version"] == 1
+    assert analysis["repo_id"] == "org/tiny"
+    assert analysis["architecture"] == "LlamaForCausalLM"
+    assert analysis["context_length"] == 128
+    assert analysis["parameter_source"] == "architecture estimate"
+    assert analysis["files"]["items"] == ["config.json", "model.safetensors"]
+    assert "no model weights were downloaded" in payload["scope_note"].lower()
+
+
+def test_system_info_json_reports_hardware_and_fit_scope(monkeypatch) -> None:
+    hardware = SimpleNamespace(
+        os_name="Linux",
+        architecture="x86_64",
+        cpu_cores=8,
+        ram_gb=16.0,
+        gpu_name="Test GPU",
+        vram_gb=8.0,
+        cuda_available=True,
+    )
+    monkeypatch.setattr(cli_main, "detect_hardware", lambda: hardware)
+    monkeypatch.setattr(cli_main, "estimate_model_fit", lambda billions, _hardware: f"fit-{billions}B")
+
+    result = runner.invoke(app, ["system", "info", "--json"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["schema_version"] == 1
+    assert payload["hardware"]["gpu_name"] == "Test GPU"
+    assert payload["hardware"]["vram_gb"] == 8.0
+    assert len(payload["model_fit_estimates"]) == 7
+    assert payload["model_fit_estimates"][0]["assessment"] == "fit-1B"
+    assert "not measured runtime capacity" in payload["fit_scope_note"]
