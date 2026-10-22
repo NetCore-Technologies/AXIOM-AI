@@ -1,14 +1,37 @@
 """HTTP API for AXIOM's direct local model engine."""
 from __future__ import annotations
 
-from typing import Any
+import json
+from typing import Any, Iterator
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
+from starlette.responses import StreamingResponse
 
-from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, generate_local, resolve_local_model_directory, runtime_status, unload_local_model
+from axiom.core.engine import (
+    AxiomEngineError,
+    discover_local_engine_assets,
+    generate_local,
+    generate_local_stream,
+    resolve_local_model_directory,
+    runtime_status,
+    unload_local_model,
+)
 
 router = APIRouter(prefix="/api/engine", tags=["axiom-engine"])
+
+
+def _validated_path(value: Any, label: str) -> Any:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("Path must be a string.")
+    candidate = value.strip()
+    if not candidate:
+        raise ValueError("Path must not be blank.")
+    # The core matches user input against filesystem-discovered directories
+    # under explicitly configured trusted roots before returning a usable path.
+    return resolve_local_model_directory(candidate, label)
 
 
 class GenerateRequest(BaseModel):
@@ -18,19 +41,15 @@ class GenerateRequest(BaseModel):
     max_new_tokens: int = Field(default=256, ge=1, le=2048)
     temperature: float = Field(default=0.7, ge=0, le=2)
 
-    @field_validator("model_path", "adapter_path", mode="before")
+    @field_validator("model_path", mode="before")
     @classmethod
-    def paths_must_resolve_inside_allowed_model_roots(cls, value: Any) -> Any:
-        if value is None:
-            return None
-        if not isinstance(value, str):
-            raise ValueError("Path must be a string.")
-        candidate = value.strip()
-        if not candidate:
-            raise ValueError("Path must not be blank.")
-        # The shared resolver validates absolute and relative inputs against
-        # configured trusted roots and rejects symlink escapes.
-        return resolve_local_model_directory(candidate, "Model/adapter directory")
+    def base_model_path_must_be_trusted(cls, value: Any) -> Any:
+        return _validated_path(value, "Base model")
+
+    @field_validator("adapter_path", mode="before")
+    @classmethod
+    def adapter_path_must_be_trusted(cls, value: Any) -> Any:
+        return _validated_path(value, "LoRA adapter")
 
     @field_validator("prompt")
     @classmethod
@@ -71,3 +90,27 @@ def engine_generate(request: GenerateRequest) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=str(exc)) from None
     except AxiomEngineError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from None
+
+@router.post("/generate/stream")
+def engine_generate_stream(request: GenerateRequest) -> StreamingResponse:
+    """Stream newline-delimited token snapshots and one final metrics record."""
+    def events() -> Iterator[str]:
+        try:
+            for event in generate_local_stream(
+                request.model_path,
+                request.prompt,
+                adapter_path=request.adapter_path,
+                max_new_tokens=request.max_new_tokens,
+                temperature=request.temperature,
+            ):
+                yield json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n"
+        except ValueError as exc:
+            yield json.dumps({"type": "error", "code": "invalid_request", "message": str(exc)}) + "\n"
+        except AxiomEngineError as exc:
+            yield json.dumps({"type": "error", "code": "native_engine_error", "message": str(exc)}) + "\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
