@@ -27,7 +27,7 @@ test("Runtime GUI submits bounded prompts to the local inference API and display
   await page.goto("/?page=runtime");
   await expect(page.getByRole("heading", { name: "Local model inference" })).toBeVisible();
   await expect(page.getByText("OLLAMA ONLINE", { exact: true })).toBeVisible();
-  await page.getByLabel("Prompt", { exact: true }).fill("Say hello in one sentence.");
+  await page.getByPlaceholder("Ask your local model to do something…").fill("Say hello in one sentence.");
   await page.getByRole("button", { name: "Run locally" }).click();
   await expect(page.getByTestId("local-inference-output")).toContainText("Hello from the mocked local model.");
   expect(received).toMatchObject({ model: "qwen2.5:0.5b", prompt: "Say hello in one sentence.", num_predict: 256, temperature: 0.7 });
