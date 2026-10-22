@@ -9,8 +9,8 @@ from __future__ import annotations
 import importlib.metadata
 import importlib.util
 import json
-import re
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -210,7 +210,7 @@ def generate_local(
         if temperature > 0:
             kwargs["temperature"] = temperature
             kwargs["top_p"] = 0.9
-        started = __import__("time").perf_counter()
+        started = time.perf_counter()
         try:
             with torch.inference_mode():
                 output_ids = model.generate(**kwargs)
