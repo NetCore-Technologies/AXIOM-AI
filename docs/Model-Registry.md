@@ -22,6 +22,19 @@ Saved filter presets are stored in this browser's local storage under a versione
 
 Registry contents and search requests still go to the local AXIOM API. A saved preset is a convenience for this browser, not a cross-device account setting or server-side shared preference.
 
+## Hardware fit and compatibility report
+
+Each registered model row has a **Check hardware fit** action connected to GET /api/workspace/models/{model_id}/compatibility. The API reads registered metadata, inspects the current hardware snapshot, and returns a structured report with:
+
+- Weight-only and heuristic runtime-memory ranges when both parameter count and quantization/dtype metadata can be parsed.
+- Separate system-RAM and detected-GPU-memory screening statuses (likely, tight, unlikely, or unknown), using conservative memory reserves.
+- Format-family guidance for GGUF and Transformers-style checkpoints, explicitly labelled as a candidate rather than verified runtime compatibility.
+- Warnings for ambiguous unitless parameter counts, missing quantization, unknown VRAM, and estimates that cross the memory budget.
+
+The report deliberately omits footprint estimates when quantization/dtype is unknown instead of assuming an arbitrary bit width. Parameter values without a suffix are interpreted as billions only as a flagged fallback. GPU VRAM discovery currently uses the NVIDIA nvidia-smi probe only; a missing value is reported as unknown, not proof that the host has no GPU. AMD VRAM and Apple unified-memory capacity are not measured by this detection path.
+
+The numerical range is heuristic, not a confidence interval or an execution guarantee. Runtime loading, quality, and speed are not measured by this report.
+
 ## Validation boundary
 
 Automated Python API tests cover case-insensitive search, exact filters, numeric parameter sorting, unknown-size ordering, invalid sort fields, and pagination after filtering. Playwright coverage exercises the GUI query contract and saved-preset interaction. Treat this roadmap work as in progress until CI reports the complete Python, lint, production-build, and browser test suite passing.
