@@ -325,7 +325,7 @@ async function runOperation(tool: Tool, input: ToolkitInput): Promise<string> {
       const overheadPercent = isHardware ? 0 : clamp(c, 0, 500);
       const required = base * (1 + overheadPercent / 100);
       const usable = isHardware ? b * (1 - reservePercent / 100) : b;
-      return json({ estimated_weight_GB: fmt(base), runtime_overhead_percent: fmt(overheadPercent), physical_memory_GB: fmt(b), reserve_percent: isHardware ? reservePercent : null, usable_memory_GB: fmt(usable), total_estimate_GB: fmt(required), estimated_fit: required <= usable, note: "A weight-focused screening estimate, not a guarantee. KV cache and activations may require substantially more memory." });
+      return json({ assumed_bits_per_parameter: bits, estimated_weight_GB: fmt(base), runtime_overhead_percent: fmt(overheadPercent), physical_memory_GB: fmt(b), reserve_percent: isHardware ? reservePercent : null, usable_memory_GB: fmt(usable), total_estimate_GB: fmt(required), estimated_fit: required <= usable, note: "A weight-focused screening estimate, not a guarantee. KV cache and activations may require substantially more memory." });
     }
     case "shard-count": {
       if (b <= 0) throw new Error("B must be greater than zero.");
@@ -412,8 +412,8 @@ async function runOperation(tool: Tool, input: ToolkitInput): Promise<string> {
       const left = textA.toLocaleLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [], right = textB.toLocaleLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
       const leftSet = new Set(left), rightSet = new Set(right), overlap = Array.from(leftSet).filter((token) => rightSet.has(token)).length;
       if (tool.kind === "jaccard") { const union = new Set([...leftSet, ...rightSet]).size; return json({ intersection: overlap, union, jaccard_percent: fmt(union ? overlap / union * 100 : 0) }); }
-      const precision = right.length ? overlap / right.length : 0, recall = left.length ? overlap / left.length : 0;
-      return json({ overlap_unique_tokens: overlap, reference_unique_tokens: leftSet.size, prediction_tokens: right.length, precision: fmt(precision), recall: fmt(recall), f1: fmt(precision + recall ? 2 * precision * recall / (precision + recall) : 0), note: "Simple unique-token overlap, not a semantic metric or official benchmark." });
+      const precision = rightSet.size ? overlap / rightSet.size : 0, recall = leftSet.size ? overlap / leftSet.size : 0;
+      return json({ overlap_unique_tokens: overlap, reference_unique_tokens: leftSet.size, prediction_unique_tokens: rightSet.size, precision: fmt(precision), recall: fmt(recall), f1: fmt(precision + recall ? 2 * precision * recall / (precision + recall) : 0), note: "Unique-token overlap; this is not a semantic metric or official benchmark." });
     }
     case "wilson": {
       const total = Math.floor(b), successes = Math.floor(a), z = 1.96;
@@ -426,7 +426,7 @@ async function runOperation(tool: Tool, input: ToolkitInput): Promise<string> {
       const values = numericA(), threshold = a, passed = values.filter((value) => value >= threshold).length;
       return json({ count: values.length, passed, failed: values.length - passed, pass_rate_percent: fmt(values.length ? passed / values.length * 100 : 0), threshold });
     }
-    case "relative-change": return json({ baseline: a, current: b, absolute_change: fmt(b - a), relative_change_percent: fmt(a !== 0 ? (b - a) / Math.abs(a) * 100 : 0), direction: b > a ? "increase" : b < a ? "decrease" : "unchanged" });
+    case "relative-change": return json({ baseline: a, current: b, absolute_change: fmt(b - a), relative_change_percent: a !== 0 ? fmt((b - a) / Math.abs(a) * 100) : null, direction: b > a ? "increase" : b < a ? "decrease" : "unchanged", note: a === 0 ? "Relative change is undefined when the baseline is zero." : undefined });
     case "absolute-difference": return json({ baseline: a, current: b, absolute_difference: fmt(Math.abs(b - a)), signed_difference: fmt(b - a) });
     case "mae":
     case "rmse": {
@@ -504,7 +504,15 @@ async function runOperation(tool: Tool, input: ToolkitInput): Promise<string> {
     case "tool-policy": {
       const list: unknown = JSON.parse(textA);
       if (!Array.isArray(list)) throw new Error("Text A must be a JSON array.");
-      return json({ tools_reviewed: list.length, decisions: list.map((item) => { const object = rec(item) ?? {}; const requested = object.allowed === true; const write = object.write === true, network = object.network === true, execute = object.execute === true; return { name: String(object.name ?? "[unnamed]").slice(0, 120), requested_allow: requested, decision: requested && !write && !network && !execute ? "candidate read-only allow; still require operator review" : "deny by default", write, network, execute }; }) });
+      const allowedKeys = new Set(["name", "description", "allowed", "read", "write", "network", "execute"]);
+      return json({ tools_reviewed: list.length, decisions: list.map((item) => {
+        const object = rec(item) ?? {};
+        const requested = object.allowed === true;
+        const read = object.read === true, write = object.write === true, network = object.network === true, execute = object.execute === true;
+        const unknownPermissionFields = Object.keys(object).filter((key) => !allowedKeys.has(key));
+        const candidateReadOnly = requested && read && !write && !network && !execute && unknownPermissionFields.length === 0;
+        return { name: String(object.name ?? "[unnamed]").slice(0, 120), requested_allow: requested, read, write, network, execute, unknown_permission_fields: unknownPermissionFields, decision: candidateReadOnly ? "candidate read-only allow; still require operator review" : "deny by default" };
+      }), note: "Advisory review only. A policy engine must enforce permissions at the backend boundary." });
     }
     case "env-redact": return textA.split(/\r?\n/).map((line) => {
       if (!line.trim() || /^\s*[#;]/.test(line)) return line;
@@ -579,7 +587,10 @@ async function runOperation(tool: Tool, input: ToolkitInput): Promise<string> {
       try { url = new URL(textA.trim()); } catch { throw new Error("Enter a valid absolute URL."); }
       if (url.protocol !== "https:") throw new Error("Only HTTPS URLs are emitted by this read-only curl builder.");
       if (url.username || url.password) throw new Error("Remove embedded URL credentials first.");
-      return "curl --fail --silent --show-error --max-time 15 --request GET " + JSON.stringify(url.toString());
+      const singleQuote = String.fromCharCode(39);
+      const shellEscape = singleQuote + String.fromCharCode(34) + singleQuote + String.fromCharCode(34) + singleQuote;
+      const quotedUrl = singleQuote + url.toString().split(singleQuote).join(shellEscape) + singleQuote;
+      return "curl --fail --silent --show-error --max-time 15 --request GET " + quotedUrl;
     }
     case "envelope-check": {
       const object = rec(JSON.parse(textA) as unknown); if (!object) throw new Error("Text A must be a JSON object.");
@@ -649,7 +660,7 @@ async function runOperation(tool: Tool, input: ToolkitInput): Promise<string> {
       const value = textA.trim() ? Number(textA.trim()) : a;
       return json({ port: value, valid_integer: Number.isInteger(value), valid_port: Number.isInteger(value) && value >= 1 && value <= 65535, privileged_port: Number.isInteger(value) && value >= 1 && value < 1024 });
     }
-    case "support-redact": return redactText(textA).replace(/(?:\/home|\/Users|\/mnt\/c)\/[^/\s]+/g, "[REDACTED HOME PATH").replace(/\[REDACTED HOME PATH/g, "[REDACTED HOME PATH]");
+    case "support-redact": return redactText(textA).replace(/(?:\/home|\/Users|\/mnt\/c)\/[^/\s]+/g, "[REDACTED HOME]").replace(/\b[A-Za-z]:\\Users\\[^\\\s]+/gi, "[REDACTED HOME]");
     case "filename": {
       const normalized = textA.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[<>:"\/\\|?*\x00-\x1F]/g, "-").replace(/\s+/g, "-").replace(/[. ]+$/g, "").replace(/-+/g, "-").slice(0, 120);
       return normalized || "axiom-file";
