@@ -60,8 +60,10 @@ def _lock_path() -> Path:
     return jobs_directory().parent / ".active-fine-tuning-job.json"
 
 
-def _version_key(value: str) -> tuple[int, ...]:
-    return tuple(int(part) for part in re.findall(r"\d+", value)[:3])
+def _version_key(value: str) -> tuple[int, int, int]:
+    """Normalize short dotted versions to a comparable major/minor/patch tuple."""
+    parts = [int(part) for part in re.findall(r"\d+", value)[:3]]
+    return tuple((parts + [0, 0, 0])[:3])
 
 
 def runtime_status() -> dict[str, Any]:
