@@ -118,7 +118,7 @@ feature exists or a delivery-date promise.
 
 - [R085 · Planned] Add runtime connector discovery and capability negotiation.
 - [R086 · Planned] Add explicit connect/disconnect controls with secret-safe storage.
-- [R087 · Planned] Add runtime status, model identity, and readiness checks.
+- [R087 · In progress; validation pending] Report native-engine dependency readiness, supported Llama/Mistral checkpoint formats, execution backend, loaded architecture, and local-only execution scope.
 - [R088 · In progress; validation pending] Measure actual local inference latency and token throughput through the loopback runtime API, reporting token-count coverage and wall time.
 - [R089 · In progress; validation pending] Add prompt/token-limit inputs, excluded warm-up runs, bounded measured iterations, and explicit concurrency controls to the existing Runtime page.
 - [R090 · Planned] Add quantization estimates with formulas and overhead assumptions.
