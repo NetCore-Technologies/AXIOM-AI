@@ -164,6 +164,7 @@ The local API and Control Center use loopback addresses by default. The optional
 - [Model Registry](docs/Model-Registry.md)
 - [Inference Benchmarking](docs/Inference-Benchmarking.md)
 - [Local inference via Ollama](docs/Local-Inference.md)
+- [Inference Benchmarking](docs/Inference-Benchmarking.md)
 - [AXIOM Engine](docs/Local-Engine.md)
 - [API](docs/API.md)
 - [Roadmap](ROADMAP.md)
