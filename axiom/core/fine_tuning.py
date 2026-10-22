@@ -3,12 +3,17 @@
 No model downloads are permitted: the base model must be a local Transformers
 model directory and all from_pretrained calls set local_files_only=True.
 """
+
 from __future__ import annotations
 
 import importlib.metadata
 import importlib.util
 import json
+<<<<<<< HEAD
 import math
+=======
+import logging
+>>>>>>> 6e933d6 (fix: remove the codeql errors by adding a failsfe system)
 import os
 import random
 import re
@@ -17,6 +22,8 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
+
+_LOG = logging.getLogger(__name__)
 
 _MAX_DATASET_BYTES = 50 * 1024 * 1024
 _MAX_ROWS = 10_000
@@ -198,7 +205,6 @@ def validate_config(config: dict[str, Any]) -> dict[str, Any]:
         "learning_rate": float(learning_rate),
         "lora_rank": lora_rank,
     }
-    # Read and validate the dataset before any training process starts.
     _load_texts(dataset_path, text_field)
     return result
 
@@ -308,7 +314,11 @@ def _release_lock(job_id: str) -> None:
             if current.get("job_id") == job_id and current.get("pid") == os.getpid():
                 lock.unlink(missing_ok=True)
         except (OSError, json.JSONDecodeError):
-            pass
+            _LOG.debug(
+                "Could not release the fine-tuning lock for job %s",
+                job_id,
+                exc_info=True,
+            )
 
 
 def _new_job(config: dict[str, Any]) -> dict[str, Any]:
@@ -380,7 +390,12 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
     try:
         import torch
         from peft import LoraConfig, TaskType, get_peft_model
+<<<<<<< HEAD
         from transformers import AutoModelForCausalLM, AutoTokenizer
+=======
+        from torch.utils.data import Dataset
+        from transformers import AutoModelForCausalLM, AutoTokenizer, DataCollatorForLanguageModeling, Trainer, TrainerCallback, TrainingArguments
+>>>>>>> 6e933d6 (fix: remove the codeql errors by adding a failsfe system)
     except (ImportError, OSError):
         raise FineTuningError(
             "Local LoRA dependencies could not be imported. Upgrade the optional training tools with: python -m pip install -e '.[training]'"
@@ -392,6 +407,7 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
     if output_dir.exists() and any(output_dir.iterdir()):
         raise FineTuningError("Adapter output directory is no longer empty; refusing to overwrite existing files.")
 
+<<<<<<< HEAD
     # Every model/tokenizer load is pinned to the existing local directory.
     try:
         tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True, trust_remote_code=False)
@@ -407,6 +423,11 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
 
     if tokenizer.pad_token_id is None:
         if tokenizer.eos_token_id is None:
+=======
+    tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True, trust_remote_code=False)
+    if tokenizer.pad_token is None:
+        if tokenizer.eos_token is None:
+>>>>>>> 6e933d6 (fix: remove the codeql errors by adding a failsfe system)
             raise FineTuningError("Tokenizer needs an existing pad_token or eos_token to train safely.")
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -584,7 +605,6 @@ def execute_finetuning_job(job_id: str, on_progress: Callable[[dict[str, Any]], 
             logs=[*current.get("logs", []), "Training completed; PEFT adapter files were written to the selected output directory."][-80:],
         )
     except Exception as exc:
-        # Failure details are clipped; avoid dumping full local environment/configs.
         reason = str(exc).replace("\r", " ").replace("\n", " ").strip()[:500] or type(exc).__name__
         try:
             current = _read_job(job_id) or job
@@ -596,6 +616,10 @@ def execute_finetuning_job(job_id: str, on_progress: Callable[[dict[str, Any]], 
                 logs=[*current.get("logs", []), f"Failed: {reason}"][-80:],
             )
         except Exception:
-            pass
+            _LOG.warning(
+                "Could not record the failed state for fine-tuning job %s",
+                job_id,
+                exc_info=True,
+            )
     finally:
         _release_lock(job_id)
