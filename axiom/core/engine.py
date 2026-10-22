@@ -19,7 +19,7 @@ import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 _MAX_PROMPT_CHARS = 12_000
 _MAX_NEW_TOKENS = 2_048
@@ -487,14 +487,21 @@ def unload_local_model() -> dict[str, Any]:
         }
 
 
-def generate_local(
+def generate_local_stream(
     model_path: str,
     prompt: str,
     *,
     adapter_path: str | None = None,
     max_new_tokens: int = 256,
     temperature: float = 0.7,
-) -> dict[str, Any]:
+    include_token_events: bool = True,
+) -> Iterator[dict[str, Any]]:
+    """Yield cumulative decoded text updates and one final metrics event.
+
+    The engine lock is held for the duration of the stream so another request
+    cannot replace or unload the model while its KV cache is active. Closing
+    the iterator closes the native token iterator and releases that lock.
+    """
     prompt, max_new_tokens, temperature = validate_generation(prompt, max_new_tokens, temperature)
     with _ENGINE_LOCK:
         model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path)
@@ -517,17 +524,53 @@ def generate_local(
                 prompt_ids[0] = bos_id
         effective_max_new_tokens = min(effective_max_new_tokens, max(1, context_cap - len(prompt_ids)))
         started = time.perf_counter()
+        generated_ids: list[int] = []
+        response = ""
+        iterator = model.iter_generate(
+            prompt_ids,
+            max_new_tokens=effective_max_new_tokens,
+            temperature=temperature,
+            top_p=0.9,
+            eos_token_ids=model.config.eos_token_ids,
+        )
         try:
-            with torch.inference_mode():
-                generated_ids = model.generate(
-                    prompt_ids,
-                    max_new_tokens=effective_max_new_tokens,
-                    temperature=temperature,
-                    top_p=0.9,
-                    eos_token_ids=model.config.eos_token_ids,
-                )
+            for token_id in iterator:
+                generated_ids.append(token_id)
+                if include_token_events:
+                    try:
+                        # Byte-level tokenizers may not produce a standalone
+                        # printable fragment for every token, so emit a snapshot.
+                        response = tokenizer.decode(generated_ids, skip_special_tokens=True)[:100_000]
+                    except Exception:
+                        raise AxiomEngineError("Generated token stream could not be decoded by tokenizer.json.") from None
+                    yield {
+                        "type": "token",
+                        "response": response,
+                        "completion_tokens": len(generated_ids),
+                    }
             response = tokenizer.decode(generated_ids, skip_special_tokens=True)[:100_000]
-        except ValueError:
+            elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
+            result = {
+                "engine": "axiom-native-engine",
+                "execution_backend": "pytorch-native-axiom",
+                "transformers_generation_used": False,
+                "ollama_used": False,
+                "model": details["model_directory_name"] or "local-model",
+                "architecture": details["architecture"],
+                "model_type": details["model_type"],
+                "adapter": details["adapter_directory_name"],
+                "device": str(device),
+                "checkpoint_format": "safetensors",
+                "decoder": model.last_generation.get("decoder", "axiom-autoregressive-kv-cache"),
+                "response": response,
+                "prompt_tokens": model.last_generation.get("prompt_tokens", len(prompt_ids)),
+                "completion_tokens": model.last_generation.get("completion_tokens", len(generated_ids)),
+                "elapsed_ms": elapsed_ms,
+                "generated_at": datetime.now(UTC).isoformat(),
+                "local_only": True,
+            }
+            yield {"type": "complete", "result": result}
+        except (ValueError, GeneratorExit):
             raise
         except Exception:
             _LOG.debug("AXIOM Native Engine token generation failed.", exc_info=True)
@@ -535,23 +578,32 @@ def generate_local(
                 "AXIOM Native Engine generation failed. The prompt/context may exceed memory, "
                 "or the checkpoint may be incompatible with the implemented architecture."
             ) from None
-        elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
-        return {
-            "engine": "axiom-native-engine",
-            "execution_backend": "pytorch-native-axiom",
-            "transformers_generation_used": False,
-            "ollama_used": False,
-            "model": details["model_directory_name"] or "local-model",
-            "architecture": details["architecture"],
-            "model_type": details["model_type"],
-            "adapter": details["adapter_directory_name"],
-            "device": str(device),
-            "checkpoint_format": "safetensors",
-            "decoder": model.last_generation.get("decoder", "axiom-autoregressive-kv-cache"),
-            "response": response,
-            "prompt_tokens": model.last_generation.get("prompt_tokens", len(prompt_ids)),
-            "completion_tokens": model.last_generation.get("completion_tokens", len(generated_ids)),
-            "elapsed_ms": elapsed_ms,
-            "generated_at": datetime.now(UTC).isoformat(),
-            "local_only": True,
-        }
+        finally:
+            close_iterator = getattr(iterator, "close", None)
+            if callable(close_iterator):
+                close_iterator()
+
+
+def generate_local(
+    model_path: str,
+    prompt: str,
+    *,
+    adapter_path: str | None = None,
+    max_new_tokens: int = 256,
+    temperature: float = 0.7,
+) -> dict[str, Any]:
+    """Generate a complete local response through the streaming decoder."""
+    completed: dict[str, Any] | None = None
+    for event in generate_local_stream(
+        model_path,
+        prompt,
+        adapter_path=adapter_path,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        include_token_events=False,
+    ):
+        if event.get("type") == "complete" and isinstance(event.get("result"), dict):
+            completed = event["result"]
+    if completed is None:
+        raise AxiomEngineError("Native generation ended before a completion event was produced.")
+    return completed
