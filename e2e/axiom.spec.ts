@@ -9,7 +9,7 @@ test.describe("AXIOM landing page", () => {
     await page.goto("/website/");
   });
 
-  test("takes the CLI CTA to the terminal install section", async ({ page }) => {
+  test("takes the install CTA to the install section", async ({ page }) => {
     const cliCtas = page.locator('a[href="#install"]');
 
     expect(await cliCtas.count()).toBeGreaterThan(0);
@@ -19,7 +19,7 @@ test.describe("AXIOM landing page", () => {
 
     await expect(page).toHaveURL(/\/website\/#install$/);
     await expect(page.locator("#install")).toBeVisible();
-    await expect(page.locator("#install")).toContainText("Install the CLI");
+    await expect(page.locator("#install")).toContainText("Install AXIOM");
   });
 
   test("switches the installer to the visitor's platform", async ({ page }) => {
@@ -50,23 +50,27 @@ test.describe("AXIOM landing page", () => {
     await expect(windowsPanel).toBeVisible();
     await expect(unixPanel).toBeHidden();
     await expect(windowsButton).toHaveAttribute("aria-pressed", "true");
-    await expect(page.locator("#platform-note")).toContainText("PowerShell");
-
     await unixButton.click();
     await expect(unixPanel).toBeVisible();
     await expect(windowsPanel).toBeHidden();
   });
 
-  test("explains and copies the loopback health check", async ({ page }) => {
-    await expect(page.locator(".daemon-preview")).toContainText("local only");
-    await expect(page.locator("#daemon-endpoint")).toHaveText(
-      "curl http://127.0.0.1:<free port>/health",
-    );
+  test("shows the startup art and useful commands without captions or dividers", async ({ page }) => {
+    await expect(page.locator(".cli-art")).toBeVisible();
+    await expect(page.locator(".cli-command-list")).toContainText("axiom model inspect ./models/my-model");
+    await expect(page.locator(".cli-command-list")).toContainText("axiom dataset validate ./data/train.jsonl");
+    await expect(page.locator(".cli-command-list")).toContainText("axiom system info");
+    await expect(page.locator(".cli-command-list span, .hero-cli figcaption")).toHaveCount(0);
+    await expect(page.locator(".daemon-preview, .platform-note, .install-optional")).toHaveCount(0);
 
-    await page.locator('.daemon-preview [data-copy="daemon-endpoint"]').click();
-
-    await expect(page.locator('.daemon-preview [data-copy="daemon-endpoint"]')).toHaveText("Copied");
-    await expect(page.locator("#daemon-copy-status")).toHaveText("Copied to your clipboard.");
+    const dividers = await page.locator(
+      ".hero, .workflow-steps, .workflow-steps li, .cli-startup, .cli-command-list > div, .command-block, .site-footer",
+    ).evaluateAll((elements) => elements.map((element) => {
+      const style = getComputedStyle(element);
+      return [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth]
+        .some((width) => Number.parseFloat(width) > 0);
+    }));
+    expect(dividers).toEqual(dividers.map(() => false));
   });
 
   test("keeps GitHub and CLI destinations explicit and network-independent", async ({ page }) => {
@@ -97,11 +101,8 @@ test.describe("AXIOM landing page", () => {
     await expect(page.locator("#windows-command")).toHaveText(
       "irm https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.ps1 | iex",
     );
-    await expect(page.locator(".install-optional")).toContainText("never required");
-    await expect(page.locator(".install-optional a")).toHaveAttribute(
-      "href",
-      "https://docs.headroomlabs.ai/docs",
-    );
+    await expect(page.getByRole("link", { name: "Check it out on GitHub" })).toBeVisible();
+    await expect(page.locator("#install")).toContainText("run");
   });
 
   test("does not render gradient styling or fake dashboard metrics", async ({ page }) => {
@@ -132,8 +133,9 @@ test.describe("AXIOM landing page", () => {
       faviconHref ?? "",
     );
     await expect(page.locator("body")).not.toContainText("THE POINT");
-    await expect(page.locator("#hero-title")).toContainText("machine can run");
-    await expect(page.locator("#hero-title")).toContainText("before you start.");
+    await expect(page.locator("#hero-title")).toContainText("Know what fits");
+    await expect(page.locator("#hero-title")).toContainText("before you train.");
+    await expect(page.locator(".hero-lead")).toContainText("Your files stay on your computer.");
 
     const sectionBackgrounds = await page.locator("body > main > section, .site-footer").evaluateAll((elements) =>
       elements.map((element) => getComputedStyle(element).backgroundColor),

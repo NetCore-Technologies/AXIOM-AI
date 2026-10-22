@@ -28,39 +28,26 @@ test("Training page submits a bounded local LoRA job and displays its real statu
     result: null,
     logs: ["Job queued."],
   };
+  let submitted: Record<string, unknown> | null = null;
 
-  await page.route(/\/api\/fine-tuning\/runtime(?:\?.*)?$/, route => route.fulfill({ json: {
-    backend: "transformers-peft-local-lora",
-    can_start: true,
-    packages: { torch: true, transformers: true, peft: true, accelerate: true },
-    model_loading: "local_files_only",
-    scope_note: "Local model only.",
-  }}));
-
-  await page.route(/\/api\/fine-tuning\/jobs\/?(?:\?.*)?$/, async route => {
-    if (route.request().method() === "POST") {
+  await page.route("**/api/fine-tuning/**", route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith("/runtime")) {
+      return route.fulfill({ json: {
+        backend: "transformers-peft-local-lora",
+        can_start: true,
+        packages: { torch: true, transformers: true, peft: true, accelerate: true },
+        model_loading: "local_files_only",
+        scope_note: "Local model only.",
+      } });
+    }
+    if (pathname.endsWith("/jobs") && route.request().method() === "POST") {
+      submitted = route.request().postDataJSON() as Record<string, unknown>;
       return route.fulfill({ status: 202, json: queuedJob });
     }
-    return route.fulfill({ json: { jobs: [] } });
+    if (pathname.endsWith("/jobs")) return route.fulfill({ json: { jobs: [] } });
+    return route.fulfill({ json: queuedJob });
   });
-  await page.route(/\/api\/fine-tuning\/jobs\/[A-Za-z0-9_-]+(?:\?.*)?$/, route => route.fulfill({ json: queuedJob }));
-  // AXIOM_FINE_TUNING_FALLBACK_POST_ROUTE
-  // Allow API path-prefix changes while asserting the full job payload below.
-  await page.route(/.*/, async (route) => {
-    const request = route.request();
-    if (request.method() === "POST") {
-      try {
-        received = request.postDataJSON();
-      } catch {
-        await route.fallback();
-        return;
-      }
-      await route.fulfill({ json: queuedJob });
-      return;
-    }
-    await route.fallback();
-  });
-
 
   await page.goto("/?page=training");
   await page.getByLabel("Local base model directory").fill("/models/base");
@@ -70,32 +57,12 @@ test("Training page submits a bounded local LoRA job and displays its real statu
   await page.getByLabel("Sequence length").fill("64");
   await page.getByLabel("LoRA rank").fill("4");
 
-    const postResponsePromise = page.waitForResponse((response) => {
-      const request = response.request();
-      if (request.method() !== "POST") return false;
-      try {
-        const payload = request.postDataJSON() as Record<string, unknown>;
-        return (
-          typeof payload.model_path === "string" &&
-          typeof payload.dataset_path === "string" &&
-          typeof payload.output_dir === "string" &&
-          Number(payload.max_steps) === 3 &&
-          Number(payload.sequence_length) === 64 &&
-          Number(payload.lora_rank) === 4
-        );
-      } catch {
-        return false;
-      }
-    });
   await page.getByRole("button", { name: "Start local fine-tuning" }).click();
-  const postResponse = await postResponsePromise;
-  expect(postResponse.status()).toBe(202);
-  const received = postResponse.request().postDataJSON() as Record<string, unknown>;
 
   const jobStatus = page.locator('[aria-label="Fine-tuning job status"]');
   await expect(jobStatus).toBeVisible();
   await expect(jobStatus).toContainText("QUEUED");
-  expect(received).toMatchObject({
+  expect(submitted).toMatchObject({
     model_path: "/models/base",
     dataset_path: "/data/train.jsonl",
     output_dir: "/runs/adapter",

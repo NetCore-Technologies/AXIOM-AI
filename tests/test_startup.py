@@ -26,7 +26,7 @@ def test_render_startup_contains_welcome_and_palette_copy():
 
     rendered = output.getvalue()
     assert (
-        "Inspect models, validate data, and plan local AI work around your machine."
+        "Know what fits before you train."
         in rendered
     )
     assert "Start here: " in rendered

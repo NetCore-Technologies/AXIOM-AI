@@ -23,6 +23,7 @@ export default function AxiomQuantizer() {
     () => profiles.find((item) => item.number === profile),
     [profiles, profile],
   );
+  const estimatedFp16 = plan?.model.estimated_fp16_gb ?? null;
 
   async function optimize() {
     if (!model.trim()) return;
@@ -150,26 +151,29 @@ export default function AxiomQuantizer() {
             <b>{plan.model.source}</b>
 
             <span>Parameters</span>
-            <b>{plan.model.parameter_billions}B</b>
+            <b>{plan.model.parameter_billions === null ? "Unknown" : `${plan.model.parameter_billions}B`}</b>
+
+            <span>Parameter basis</span>
+            <b>{plan.model.parameter_source}</b>
 
             <span>Original FP16 estimate</span>
-            <b>{plan.model.estimated_fp16_gb} GB</b>
+            <b>{plan.model.estimated_fp16_gb === null ? "Unknown" : `${plan.model.estimated_fp16_gb} GB`}</b>
 
             <span>Recommended quantization</span>
             <b>{plan.optimization.recommended_quantization}</b>
 
             <span>RAM</span>
-            <b>{plan.system.ram_gb} GB</b>
+            <b>{plan.system.ram_gb === null ? "Unknown" : `${plan.system.ram_gb} GB`}</b>
 
             <span>VRAM</span>
-            <b>{plan.system.vram_gb || "N/A"} GB</b>
+            <b>{plan.system.vram_gb === null ? "Unknown" : `${plan.system.vram_gb} GB`}</b>
 
             <span>Target</span>
             <b>{plan.optimization.target_tokens_per_second} tok/s</b>
           </div>
 
           <div className="axiom-quantizer-compare">
-            <h3>Quantization comparison (weights only, rough estimate)</h3>
+            <h3>Estimated weight sizes</h3>
             <table>
               <thead>
                 <tr>
@@ -179,15 +183,18 @@ export default function AxiomQuantizer() {
                 </tr>
               </thead>
               <tbody>
-                {[
+                {estimatedFp16 === null ? (
+                  <tr><td colSpan={3}>Model parameter estimate unavailable.</td></tr>
+                ) : [
                   { label: "FP16", factor: 1, key: "fp16" },
                   { label: "INT8", factor: 0.5, key: "int8" },
                   { label: "INT4", factor: 0.25, key: "int4" },
                 ].map((row) => {
-                  const size = plan.model.estimated_fp16_gb * row.factor;
-                  const budget = plan.system.vram_gb || plan.system.ram_gb;
-                  const fit =
-                    size <= budget * 0.7 ? "yes" : size <= budget ? "tight" : "no";
+                  const size = estimatedFp16 * row.factor;
+                  const budget = plan.system.vram_gb ?? plan.system.ram_gb;
+                  const fit = budget === null
+                    ? "unknown"
+                    : size <= budget * 0.7 ? "yes" : size <= budget ? "tight" : "no";
                   const recommended = plan.optimization.recommended_quantization
                     .toLowerCase()
                     .includes(row.key);
@@ -196,7 +203,7 @@ export default function AxiomQuantizer() {
                       <td>{row.label}</td>
                       <td>{size.toFixed(1)} GB</td>
                       <td className={`fit-${fit}`}>
-                        {fit === "yes" ? "fits" : fit === "tight" ? "tight" : "too large"}
+                        {fit === "unknown" ? "unknown" : fit === "yes" ? "fits" : fit === "tight" ? "tight" : "too large"}
                       </td>
                     </tr>
                   );

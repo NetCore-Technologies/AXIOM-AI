@@ -95,7 +95,7 @@ export default function LocalFineTuningPanel() {
         <label className="field"><span className="field-label-row"><span>Maximum optimization steps</span></span><input type="number" min={1} max={1000} step={1} value={maxSteps} onChange={(event) => setMaxSteps(event.target.value)} required /></label>
         <label className="field"><span className="field-label-row"><span>Sequence length</span></span><input type="number" min={32} max={2048} step={1} value={sequenceLength} onChange={(event) => setSequenceLength(event.target.value)} required /></label>
         <label className="field"><span className="field-label-row"><span>LoRA rank</span></span><input type="number" min={1} max={64} step={1} value={loraRank} onChange={(event) => setLoraRank(event.target.value)} required /></label>
-        <label className="field"><span className="field-label-row"><span>Learning rate</span></span><input type="number" min={0.000001} max={0.01} step={0.00001} value={learningRate} onChange={(event) => setLearningRate(event.target.value)} required /></label>
+        <label className="field"><span className="field-label-row"><span>Learning rate</span></span><input type="number" min={0.000001} max={0.01} step={0.000001} value={learningRate} onChange={(event) => setLearningRate(event.target.value)} required /></label>
       </div>
       <div className="integration-form-actions">
         <button type="submit" className="button primary-button" disabled={!canStart}><Play size={15} /> {starting ? "Starting…" : busy ? "Training is active" : "Start local fine-tuning"}</button>
