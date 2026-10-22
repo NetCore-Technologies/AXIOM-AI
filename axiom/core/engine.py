@@ -254,6 +254,81 @@ def resolve_local_model_directory(value: str, label: str = "Model") -> str:
     return str(_resolve_model_directory(value, label))
 
 
+def discover_local_engine_assets() -> dict[str, Any]:
+    """List metadata for native-compatible local folders without loading model weights."""
+    roots = _allowed_model_roots()
+    if not roots:
+        return {
+            "schema_version": 1,
+            "models": [],
+            "adapters": [],
+            "truncated": False,
+            "scope_note": "No trusted model roots exist yet. Create ~/models or configure AXIOM_MODEL_ROOTS.",
+        }
+
+    root_strings = tuple(str(root) for root in roots)
+    entries = _trusted_directory_index(root_strings, int(time.monotonic() // 30))
+    models: list[dict[str, Any]] = []
+    adapters: list[dict[str, Any]] = []
+    max_results = 500
+    for discovered, is_model, is_adapter, is_symlink in entries:
+        if is_symlink:
+            continue
+        directory = Path(discovered)
+        if is_model and len(models) < max_results:
+            try:
+                inspected = _inspect_model_config(directory)
+                from axiom.core.native_engine import NativeLlamaConfig, NativeEngineError
+
+                native_config = NativeLlamaConfig.from_mapping(inspected["config"])
+                tokenizer_ok = any(_trusted_file_entry(str(directory / "tokenizer.json"), str(root)) for root in roots)
+                single_weights = any(_trusted_file_entry(str(directory / "model.safetensors"), str(root)) for root in roots)
+                indexed_weights = any(_trusted_file_entry(str(directory / "model.safetensors.index.json"), str(root)) for root in roots)
+                if not tokenizer_ok:
+                    continue
+                if not (single_weights or indexed_weights):
+                    continue
+                models.append({
+                    "path": discovered,
+                    "name": directory.name,
+                    "model_type": native_config.model_type,
+                    "architecture": inspected["architecture"],
+                    "weight_format": "safetensors" if single_weights else "sharded safetensors",
+                    "ready_for_native_attempt": True,
+                })
+            except (ValueError, OSError, RuntimeError):
+                # Incompatible or incomplete folders are not offered as runnable models.
+                continue
+        if is_adapter and len(adapters) < max_results:
+            adapter_config = directory / "adapter_config.json"
+            adapter_weights = directory / "adapter_model.safetensors"
+            config_trusted = any(_trusted_file_entry(str(adapter_config), str(root)) for root in roots)
+            weights_trusted = any(_trusted_file_entry(str(adapter_weights), str(root)) for root in roots)
+            if config_trusted and weights_trusted:
+                adapters.append({
+                    "path": discovered,
+                    "name": directory.name,
+                    "weight_format": "safetensors LoRA",
+                })
+        if len(models) >= max_results and len(adapters) >= max_results:
+            break
+
+    models.sort(key=lambda item: (item["name"].casefold(), item["path"]))
+    adapters.sort(key=lambda item: (item["name"].casefold(), item["path"]))
+    return {
+        "schema_version": 1,
+        "models": models,
+        "adapters": adapters,
+        "truncated": len(models) >= max_results or len(adapters) >= max_results,
+        "scope_note": (
+            "Metadata-only discovery under trusted local roots. Weight tensors are not loaded or fully validated "
+            "until an inference request runs. AXIOM does not download models during discovery."
+        ),
+    }
+
+
+
+
 def _inspect_model_config(model_dir: Path) -> dict[str, Any]:
     config_path = model_dir / "config.json"
     try:
