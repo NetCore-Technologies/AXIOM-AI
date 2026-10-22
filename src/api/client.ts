@@ -90,6 +90,15 @@ export type WorkspaceModelPage = {
   has_more: boolean;
 };
 
+export type WorkspaceModelRegistryFilters = {
+  search?: string;
+  favorite_only?: boolean;
+  format?: string;
+  tag?: string;
+  sort_by?: "name" | "source" | "format" | "parameters" | "quantization" | "favorite";
+  sort_order?: "asc" | "desc";
+};
+
 export type WorkspaceModelCandidate = {
   path: string;
   lineage: { relation: "source" | "derived_from"; parent_manifest_sha256: string | null };
@@ -675,8 +684,14 @@ export const axiomApi = {
     return result.models;
   },
 
-  modelsPage: (offset = 0, limit = 100) => {
+  modelsPage: (offset = 0, limit = 100, filters: WorkspaceModelRegistryFilters = {}) => {
     const query = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+    if (filters.search?.trim()) query.set("search", filters.search.trim());
+    if (filters.favorite_only) query.set("favorite_only", "true");
+    if (filters.format?.trim() && filters.format.trim().toLowerCase() !== "all") query.set("format", filters.format.trim());
+    if (filters.tag?.trim()) query.set("tag", filters.tag.trim());
+    query.set("sort_by", filters.sort_by ?? "name");
+    query.set("sort_order", filters.sort_order ?? "asc");
     return requestJson<WorkspaceModelPage>(`/api/workspace/models?${query.toString()}`);
   },
 
