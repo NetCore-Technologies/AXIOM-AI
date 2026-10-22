@@ -305,7 +305,7 @@ def engine_security_and_lifecycle_issues(engine_source: str, native_source: str,
             issues.append("AXIOM Engine API is missing trusted path validation or unload route: " + token)
     if "PurePath" in api_source or "paths_must_be_safe_relative" in api_source:
         issues.append("AXIOM Engine API has legacy path checks that conflict with the trusted-root resolver.")
-    for token in ("axiomEngineModels:", '"/api/engine/models"', "streamAxiomEngine:", '"/api/engine/generate/stream"', "unloadAxiomEngine:", '"/api/engine/unload"'):
+    for token in ("axiomEngineModels:", '"/api/engine/models"', "streamAxiomEngine:", '"api/engine/generate/stream"', "unloadAxiomEngine:", '"/api/engine/unload"'):
         if token not in client_source:
             issues.append("Typed AXIOM Engine client is missing unload lifecycle support: " + token)
     for token in ("Select discovered native model", "axiomApi.axiomEngineModels()", "axiomApi.streamAxiomEngine(", "Stop generation", "AXIOM Native Engine prompt", "Unload model", "axiomApi.unloadAxiomEngine()", "AXIOM_MODEL_ROOTS", "tokenizer.json", "safetensors"):
