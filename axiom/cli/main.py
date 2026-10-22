@@ -819,40 +819,56 @@ def integration_doctor():
 
 
 @system_app.command("info")
-def system_info():
+def system_info(
+    json_output: bool = typer.Option(False, "--json", help="Emit detected hardware and fit estimates as JSON."),
+):
     """Show detected hardware and AI runtime capability."""
     hardware = detect_hardware()
+    fit_estimates = []
+    if hardware.vram_gb is not None:
+        for billions in (1, 3, 7, 8, 14, 32, 70):
+            fit_estimates.append({
+                "parameters_billions": billions,
+                "precision_candidates": "FP16 / Q4",
+                "assessment": estimate_model_fit(billions, hardware),
+            })
+    if json_output:
+        typer.echo(json.dumps({
+            "schema_version": 1,
+            "hardware": {
+                "os_name": hardware.os_name,
+                "architecture": hardware.architecture,
+                "cpu_cores": hardware.cpu_cores,
+                "ram_gb": hardware.ram_gb,
+                "gpu_name": hardware.gpu_name,
+                "vram_gb": hardware.vram_gb,
+                "cuda_available": hardware.cuda_available,
+            },
+            "model_fit_estimates": fit_estimates,
+            "fit_scope_note": "Fit values are heuristic screening estimates, not measured runtime capacity or benchmark results.",
+        }, ensure_ascii=False, sort_keys=True))
+        return
 
     gpu = hardware.gpu_name or "Not detected"
     vram = f"{hardware.vram_gb:.2f} GB" if hardware.vram_gb is not None else "N/A"
-
-    console.print(
-        Panel.fit(
-            f"[bold cyan]AXIOM HARDWARE[/bold cyan]\n\n"
-            f"OS:              {hardware.os_name}\n"
-            f"Architecture:    {hardware.architecture}\n"
-            f"CPU cores:       {hardware.cpu_cores}\n"
-            f"RAM:             {hardware.ram_gb:.2f} GB\n"
-            f"GPU:             {gpu}\n"
-            f"VRAM:            {vram}\n"
-            f"CUDA available:  {'✓' if hardware.cuda_available else '✗'}",
-            title="AXIOM",
-        )
-    )
-
-    if hardware.vram_gb is not None:
+    console.print(Panel.fit(
+        f"[bold cyan]AXIOM HARDWARE[/bold cyan]\n\n"
+        f"OS:              {hardware.os_name}\n"
+        f"Architecture:    {hardware.architecture}\n"
+        f"CPU cores:       {hardware.cpu_cores}\n"
+        f"RAM:             {hardware.ram_gb:.2f} GB\n"
+        f"GPU:             {gpu}\n"
+        f"VRAM:            {vram}\n"
+        f"CUDA available:  {'✓' if hardware.cuda_available else '✗'}",
+        title="AXIOM",
+    ))
+    if fit_estimates:
         table = Table(title="Model Fit Estimates")
         table.add_column("Model")
         table.add_column("FP16 / Q4")
-
-        for billions in (1, 3, 7, 8, 14, 32, 70):
-            table.add_row(
-                f"{billions}B",
-                estimate_model_fit(billions, hardware),
-            )
-
+        for item in fit_estimates:
+            table.add_row(f"{item['parameters_billions']}B", item["assessment"])
         console.print(table)
-
 
 @train_app.command("plan")
 def train_plan(
@@ -1161,86 +1177,109 @@ def model_add(
 
 
 @model_app.command("analyze")
-def model_analyze(repo_id: str):
-    """Analyze a Hugging Face model without downloading weights."""
+def model_analyze(
+    repo_id: str,
+    json_output: bool = typer.Option(False, "--json", help="Emit versioned model analysis as JSON."),
+):
+    """Analyze Hugging Face model metadata/config without downloading model weights."""
     api = HfApi()
-
     try:
         info = api.model_info(repo_id=repo_id, files_metadata=True)
-    except Exception as exc:  # noqa: BLE001
-        console.print(f"[red]Error:[/red] Could not retrieve model information: {exc}")
+    except Exception:  # noqa: BLE001
+        if json_output:
+            typer.echo(json.dumps({
+                "schema_version": 1,
+                "error": {"code": "model_analysis_unavailable", "message": "Could not retrieve model metadata."},
+            }, sort_keys=True))
+        else:
+            console.print("[red]Error:[/red] Could not retrieve model information.")
         raise typer.Exit(code=1)
 
+    siblings = getattr(info, "siblings", None) or []
     files = [
-        getattr(item, "rfilename", "")
-        for item in (getattr(info, "siblings", None) or [])
-        if getattr(item, "rfilename", None)
+        name
+        for item in siblings
+        if (name := getattr(item, "rfilename", None))
     ]
-
     config = {}
-
+    warnings = []
     try:
-        config_file = api.hf_hub_download(
-            repo_id=repo_id,
-            filename="config.json",
-        )
-
+        config_file = api.hf_hub_download(repo_id=repo_id, filename="config.json")
         config_path = Path(config_file)
-
         if config_path.is_file():
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        console.print(f"[yellow]Warning:[/yellow] Could not read config.json: {exc}")
+            loaded_config = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(loaded_config, dict):
+                config = loaded_config
+            else:
+                warnings.append("config.json did not contain a JSON object; architecture-derived values are unavailable.")
+        else:
+            warnings.append("config.json was not found in the metadata cache; analysis may be incomplete.")
+    except Exception:  # noqa: BLE001
+        warnings.append("Could not read config.json; analysis may be incomplete.")
 
     total_size = 0
-
-    for item in getattr(info, "siblings", None) or []:
+    sizes_known = 0
+    for item in siblings:
         name = getattr(item, "rfilename", "") or ""
         size = getattr(item, "size", None)
-
-        if size is not None and name.endswith(
-            (".safetensors", ".gguf", ".bin", ".pt", ".pth")
-        ):
-            total_size += int(size)
-
+        if size is not None and name.lower().endswith((".safetensors", ".gguf", ".bin", ".pt", ".pth")):
+            try:
+                total_size += int(size)
+                sizes_known += 1
+            except (TypeError, ValueError):
+                warnings.append("Some checkpoint size metadata was not numeric.")
     analysis = analyze_config(
         repo_id=repo_id,
         config=config,
         files=files,
-        weight_size_bytes=total_size,
+        weight_size_bytes=total_size if sizes_known else None,
     )
 
-    parameters = (
-        f"{analysis.parameter_count / 1_000_000_000:.2f}B"
-        if analysis.parameter_count
-        else "Unknown"
-    )
+    if json_output:
+        payload = {
+            "schema_version": 1,
+            "analysis": {
+                "repo_id": analysis.repo_id,
+                "architecture": analysis.architecture,
+                "model_type": analysis.model_type,
+                "parameter_count": analysis.parameter_count,
+                "parameter_source": analysis.parameter_source,
+                "context_length": analysis.context_length,
+                "precision": analysis.precision,
+                "weight_size_gb": analysis.weight_size_gb,
+                "file_count": analysis.file_count,
+                "files": {
+                    "items": analysis.files[:500],
+                    "total": analysis.file_count,
+                    "truncated": analysis.file_count > 500,
+                },
+            },
+            "warnings": warnings,
+            "scope_note": "Metadata/config analysis only; no model weights were downloaded. Parameter counts and precision can be inferred from configuration metadata and are not runtime measurements.",
+        }
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        return
 
+    if warnings:
+        for warning in warnings:
+            console.print(f"[yellow]Warning:[/yellow] {warning}")
+    parameters = f"{analysis.parameter_count / 1_000_000_000:.2f}B" if analysis.parameter_count else "Unknown"
     context = f"{analysis.context_length:,}" if analysis.context_length else "Unknown"
-
-    weight_size = (
-        f"{analysis.weight_size_gb:.2f} GB"
-        if analysis.weight_size_gb is not None
-        else "Unknown"
-    )
-
-    console.print(
-        Panel.fit(
-            f"[bold cyan]AXIOM MODEL ANALYSIS[/bold cyan]\n\n"
-            f"Repository:      {analysis.repo_id}\n"
-            f"Architecture:    {analysis.architecture}\n"
-            f"Model type:      {analysis.model_type}\n"
-            f"Parameters:      {parameters}\n"
-            f"Parameter basis: {analysis.parameter_source}\n"
-            f"Context length:  {context}\n"
-            f"Precision:       {analysis.precision}\n"
-            f"Weight size:     {weight_size}\n"
-            f"Files:           {analysis.file_count:,}\n\n"
-            f"[dim]No model weights were downloaded.[/dim]",
-            title="AXIOM",
-        )
-    )
-
+    weight_size = f"{analysis.weight_size_gb:.2f} GB" if analysis.weight_size_gb is not None else "Unknown"
+    console.print(Panel.fit(
+        f"[bold cyan]AXIOM MODEL ANALYSIS[/bold cyan]\n\n"
+        f"Repository:      {analysis.repo_id}\n"
+        f"Architecture:    {analysis.architecture}\n"
+        f"Model type:      {analysis.model_type}\n"
+        f"Parameters:      {parameters}\n"
+        f"Parameter basis: {analysis.parameter_source}\n"
+        f"Context length:  {context}\n"
+        f"Precision:       {analysis.precision}\n"
+        f"Weight size:     {weight_size}\n"
+        f"Files:           {analysis.file_count:,}\n\n"
+        "Metadata/config analysis only — no model weights were downloaded.",
+        title="AXIOM",
+    ))
 
 @model_app.command("pull")
 def model_pull(
