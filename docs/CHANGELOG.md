@@ -4,8 +4,6 @@
 
 ### Added
 
-- Added a searchable Control Center AI Toolkit with 120 browser-local utility actions across model sizing, quantization, training, datasets, evaluation, inference, hardware, security, workflow metadata, API operations, prompts, and release checks.
-- Added Playwright coverage that executes all 120 toolkit catalogue entries with representative bounded inputs, plus targeted checks for model-footprint math, JSONL validation, path traversal, shell quoting, default-deny policy review, and browser-local/API isolation.
 - Added the Community and Adoption Strategy covering reproducible benchmarks, hardware calibration, optional integrations, real-world validation, and contributor outreach.
 - Added AXIOM Engine, an AXIOM-owned direct local causal-LM runtime with Control Center and CLI access, bounded generation, and optional local PEFT adapter loading.
 - Added AXIOM's own small-batch PyTorch LoRA training loop, masked padding labels, finite-loss checks, gradient clipping, adapter artifact verification, and dependency version diagnostics.
