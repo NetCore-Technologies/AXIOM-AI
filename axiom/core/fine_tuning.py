@@ -88,12 +88,8 @@ def runtime_status() -> dict[str, Any]:
 
 def require_runtime() -> None:
     status = runtime_status()
-    missing = [name for name, present in status["packages"].items() if not present]
-    if missing:
-        raise FineTuningError(
-            "Local fine-tuning dependencies are missing: " + ", ".join(missing) + ". "
-            "Install the optional extras in your active environment with: python -m pip install -e '.[training]'"
-        )
+    if not status["can_start"]:
+        raise FineTuningError(str(status["setup_note"]))
 
 
 def _resolve_existing(value: str, label: str) -> Path:
