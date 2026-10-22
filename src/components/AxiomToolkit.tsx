@@ -232,7 +232,7 @@ function redactText(source: string): string {
   return source
     .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[REDACTED PRIVATE KEY]")
     .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [REDACTED]")
-    .replace(/\b(api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd|secret)\b(\s*[:=]\s*)["']?[^'" \r\n,;}]+/gi, "$1$2[REDACTED]")
+    .replace(/\b(api[_-]?key|api[_-]?token|access[_-]?token|refresh[_-]?token|client[_-]?secret|credential|authorization|password|passwd|secret|token)\b(\s*[:=]\s*)["']?[^'" \r\n,;}]+/gi, "$1$2[REDACTED]")
     .replace(/\b(gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16})\b/g, "[REDACTED TOKEN]");
 }
 function parseGraph(source: string): { nodes: string[]; edges: [string, string][] } {
