@@ -36,7 +36,7 @@ Only add directories you trust. Model/config/tokenizer/index/adapter assets may 
 
 ## Control Center
 
-Open **Runtime → AXIOM Local Engine**. Select a local base-model directory and provide a prompt, output-token limit, and temperature. **Unload model** releases AXIOM's model/tokenizer references and asks CUDA to empty its cache when applicable. Framework and OS allocators may keep some reserved memory.
+Open **Runtime → AXIOM Local Engine**. Select a discovered model/adapter from the native inventory or enter its local path, then provide a prompt, output-token limit, and temperature. Discovery lists metadata only; weights are validated and loaded only when generation starts. **Unload model** releases AXIOM's model/tokenizer references and asks CUDA to empty its cache when applicable. Framework and OS allocators may keep some reserved memory.
 
 A standard bias-free CAUSAL_LM LoRA adapter may be selected. AXIOM applies its A/B projection deltas in its own linear-projection path. DoRA, QALoRA, per-module rank/alpha patterns, saved replacement modules, bias-enabled adapters, unsupported target modules, and pickle adapter weights are rejected.
 
