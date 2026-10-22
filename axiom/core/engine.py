@@ -26,7 +26,8 @@ _MAX_NEW_TOKENS = 2_048
 _MAX_INPUT_TOKENS = 8_192
 _MAX_CONFIG_BYTES = 1_048_576
 _LOG = logging.getLogger(__name__)
-_ENGINE_LOCK = threading.RLock()
+# A plain Lock is deliberate: the streaming generator may resume on a different worker thread.
+_ENGINE_LOCK = threading.Lock()
 _LOADED_RUNTIME: dict[str, Any] | None = None
 _LOADED_ARCHITECTURE: str | None = None
 _MODEL_ROOT_ENV = "AXIOM_MODEL_ROOTS"
