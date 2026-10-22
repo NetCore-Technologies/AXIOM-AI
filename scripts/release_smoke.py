@@ -285,7 +285,7 @@ def engine_security_and_lifecycle_issues(engine_source: str, native_source: str,
     ):
         if token not in engine_source:
             issues.append("AXIOM Engine trusted path/native loader wiring is missing: " + token)
-    for forbidden in ('Path(model_path).expanduser().name', 'Path(adapter_path).expanduser().name', "from transformers import", "AutoModelForCausalLM"):
+    for forbidden in ("Path(value)", "Path(model_path)", "Path(adapter_path)", "from transformers import", "AutoModelForCausalLM"):
         if forbidden in engine_source:
             issues.append("AXIOM Engine must not delegate inference or reevaluate raw path expressions: " + forbidden)
     for token in (
