@@ -126,7 +126,8 @@ test.describe("Measured local inference benchmark", () => {
   test("blocks a requested workload above the ten measured-request limit", async ({ page }) => {
     let benchmarkRequests = 0;
     await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
-      const url = new URL(route.request().url());
+      const request = route.request();
+      const url = new URL(request.url());
       if (url.pathname === "/api/workspace/runtime") {
         await route.fulfill({ json: { status: "ready", hardware: { os_name: "Linux", architecture: "x86_64", cpu_cores: 8, ram_gb: 16, gpu_name: null, vram_gb: null, cuda_available: false } } });
       } else if (url.pathname === "/api/inference/status") {
