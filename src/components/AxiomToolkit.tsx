@@ -379,7 +379,7 @@ async function runOperation(tool: Tool, input: ToolkitInput): Promise<string> {
     case "text-stats": {
       const lines = textA.split(/\r?\n/), words = textA.trim() ? textA.trim().split(/\s+/) : [];
       const lens = lines.map((line) => line.length);
-      return json({ characters: textA.length, lines: textA ? lines.length : 0, words: words.length, approximate_tokens_character_div_4: Math.ceil(textA.length / 4), mean_line_characters: fmt(lens.length ? lens.reduce((sum, length) => sum + length, 0) / lens.length : 0), max_line_characters: Math.max(0, ...lens) });
+      return json({ characters: textA.length, lines: textA ? lines.length : 0, words: words.length, approximate_tokens_character_div_4: Math.ceil(textA.length / 4), mean_line_characters: fmt(lens.length ? lens.reduce((sum, length) => sum + length, 0) / lens.length : 0), max_line_characters: lens.reduce((maximum, length) => Math.max(maximum, length), 0) });
     }
     case "split-size": {
       const trainFraction = clamp(b, 0, 1), valFraction = clamp(c, 0, 1 - trainFraction);
@@ -446,7 +446,7 @@ async function runOperation(tool: Tool, input: ToolkitInput): Promise<string> {
     case "latency-summary": {
       const values = numericA();
       if (!values.length) throw new Error("Enter one or more numeric latency samples in Text A.");
-      return json({ samples: values.length, min: Math.min(...values), median: percentile(values, 50), p90: percentile(values, 90), p95: percentile(values, 95), p99: percentile(values, 99), max: Math.max(...values), unit: "same unit as input" });
+      return json({ samples: values.length, min: values.reduce((minimum, value) => Math.min(minimum, value), Number.POSITIVE_INFINITY), median: percentile(values, 50), p90: percentile(values, 90), p95: percentile(values, 95), p99: percentile(values, 99), max: values.reduce((maximum, value) => Math.max(maximum, value), Number.NEGATIVE_INFINITY), unit: "same unit as input" });
     }
     case "timeout-budget": return json({ combined_timeout_ms: Math.max(0, a) + Math.max(0, b) + Math.max(0, c), connect_ms: a, first_token_ms: b, stream_idle_ms: c, note: "A combined budget is not the same as a per-stage enforced timeout." });
     case "parallel-slots": {
@@ -681,6 +681,9 @@ export default function AxiomToolkit() {
   async function execute() {
     setRunning(true); setError(""); setResult(""); setRanId("");
     try {
+      if (input.textA.length > 1_000_000 || input.textB.length > 1_000_000) {
+        throw new Error("Inputs are limited to 1,000,000 characters per text field to keep browser-local processing bounded.");
+      }
       const output = await runOperation(selected, input);
       setResult(output);
       setRanId(selected.id);
@@ -697,7 +700,7 @@ export default function AxiomToolkit() {
           <p className="page-description">120 local utilities for model sizing, quantization, training, dataset quality, evaluation, inference, hardware, security, workflows, APIs, prompts, and releases.</p>
         </div>
         <div className="page-actions">
-          <span className="status-pill status-pill-success" aria-label="Feature count">{TOOLKIT_TOOLS.length} utilities</span>
+          <span className="status-pill success" aria-label="Feature count">{TOOLKIT_TOOLS.length} utilities</span>
         </div>
       </div>
 
