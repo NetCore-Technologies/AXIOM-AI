@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -74,7 +75,7 @@ def test_native_model_discovery_lists_local_metadata_without_loading_weights(tmp
     model = root / "tiny-llama"
     model.mkdir(parents=True)
     (model / "config.json").write_text(
-        __import__("json").dumps({
+        json.dumps({
             "model_type": "llama",
             "architectures": ["LlamaForCausalLM"],
             "hidden_size": 8,
