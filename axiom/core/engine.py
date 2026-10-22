@@ -236,8 +236,13 @@ def _resolve_model_directory(value: str, label: str) -> Path:
     root_strings = tuple(str(root) for root in roots)
     candidate_keys = {os.path.normcase(os.path.normpath(raw_value))}
     if not os.path.isabs(raw_value):
+        # Relative CLI/UI input is first interpreted from the current working
+        # directory; matching still happens against the inventory before any
+        # filesystem operation uses a model path.
+        cwd_key = os.getcwd().rstrip("/\\") + os.sep + raw_value
+        candidate_keys.add(os.path.normcase(os.path.normpath(cwd_key)))
         candidate_keys.update(
-            os.path.normcase(os.path.normpath(root_text + os.sep + raw_value))
+            os.path.normcase(os.path.normpath(root_text.rstrip("/\\") + os.sep + raw_value))
             for root_text in root_strings
         )
     freshness_bucket = int(time.monotonic() // 30)
