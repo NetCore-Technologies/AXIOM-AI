@@ -310,7 +310,7 @@ def engine_security_and_lifecycle_issues(engine_source: str, api_source: str, cl
             issues.append("AXIOM Local Engine GUI is missing unload/path safety controls: " + token)
     for token in (
         "then unloads it",
-        '"/api/engine/unload"',
+        "api/engine/unload",
         'name: "Unload model"',
     ):
         if token not in e2e_source:
