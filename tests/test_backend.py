@@ -20,6 +20,7 @@ from axiom.core.integrations import (
 from axiom.core.project import create_project
 from axiom.core.tool_permissions import TOOL_DESCRIPTIONS, ToolPermissionStore
 from axiom.datasets.cleaner import clean_jsonl
+from axiom.datasets.inspector import inspect_dataset
 from axiom.mcp import server as mcp_module
 from axiom.mcp.server import mcp
 from axiom.models.inspector import inspect_model
@@ -196,6 +197,38 @@ def test_dataset_cleaning_never_truncates_source(tmp_path: Path):
         raise AssertionError(None)
 
 
+def test_dataset_cleaning_keeps_valid_objects_with_different_fields(tmp_path: Path):
+    source = tmp_path / "mixed.jsonl"
+    source.write_text(
+        '{"prompt":"hello"}\n{"messages":[{"role":"user"}]}\n',
+        encoding="utf-8",
+    )
+    output = tmp_path / "cleaned.jsonl"
+
+    result = clean_jsonl(source, output)
+
+    assert result.kept == 2
+    assert result.removed_non_objects == 0
+    assert output.read_text(encoding="utf-8").splitlines() == [
+        '{"prompt": "hello"}',
+        '{"messages": [{"role": "user"}]}',
+    ]
+
+
+def test_dataset_inspection_reports_invalid_line_details(tmp_path: Path):
+    source = tmp_path / "invalid.jsonl"
+    source.write_text('{"ok": 1}\nnot json\n[1, 2]\n', encoding="utf-8")
+
+    result = inspect_dataset(str(source))
+
+    assert result.valid == 1
+    assert result.invalid == 2
+    assert result.errors == [
+        (2, "Expecting value: line 1 column 1 (char 0)"),
+        (3, "record is not a JSON object"),
+    ]
+
+
 def test_model_inspection_rejects_non_object_config(tmp_path: Path):
     model_path = tmp_path / "model"
     model_path.mkdir()
@@ -210,6 +243,43 @@ def test_model_inspection_rejects_non_object_config(tmp_path: Path):
     )
     result = inspect_model(str(model_path))
     assert result.capabilities == ["Unknown"]
+
+
+def test_model_inspection_does_not_treat_weight_bytes_as_parameter_count(tmp_path: Path):
+    model_path = tmp_path / "model"
+    model_path.mkdir()
+    (model_path / "config.json").write_text(
+        json.dumps({"hidden_size": 128, "num_hidden_layers": 4, "vocab_size": 1000}),
+        encoding="utf-8",
+    )
+    (model_path / "weights.bin").write_bytes(b"x" * 4096)
+
+    result = inspect_model(str(model_path))
+
+    assert result.weight_size_bytes == 4096
+    assert result.parameter_count is None
+    assert result.parameter_source == "unknown"
+    assert result.estimated_vram_gb is None
+
+
+def test_model_analysis_accounts_for_grouped_query_attention():
+    from axiom.models.analysis import analyze_config
+
+    config = {
+        "hidden_size": 128,
+        "num_hidden_layers": 4,
+        "vocab_size": 1000,
+        "intermediate_size": 352,
+        "num_attention_heads": 8,
+        "num_key_value_heads": 2,
+        "model_type": "llama",
+        "tie_word_embeddings": True,
+    }
+
+    result = analyze_config("local/demo", config, [])
+
+    assert result.parameter_count == 833_664
+    assert result.parameter_source == "architecture estimate"
 
 
 @pytest.mark.parametrize("value", [0, -1, math.inf, math.nan, True])

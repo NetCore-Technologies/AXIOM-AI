@@ -924,7 +924,17 @@ def train_plan(
         gpu = "Not detected"
         vram = "N/A"
 
-    fit = "[green]✓ FITS[/green]" if plan.fits_hardware else "[red]✗ DOES NOT FIT[/red]"
+    if plan.fits_hardware is None:
+        fit = "[yellow]? UNKNOWN[/yellow]"
+    elif plan.fits_hardware:
+        fit = "[green]✓ FITS[/green]"
+    else:
+        fit = "[red]✗ DOES NOT FIT[/red]"
+    estimated_vram = (
+        f"{plan.estimated_vram_gb:.2f} GB"
+        if plan.estimated_vram_gb is not None
+        else "Unknown"
+    )
 
     console.print(
         Panel.fit(
@@ -941,7 +951,7 @@ def train_plan(
             f"Grad accumulation:  {plan.gradient_accumulation}\n"
             f"Sequence length:    {plan.sequence_length}\n"
             f"Learning rate:      {plan.learning_rate:g}\n\n"
-            f"Estimated VRAM:     {plan.estimated_vram_gb:.2f} GB\n"
+            f"Estimated VRAM:     {estimated_vram}\n"
             f"Hardware check:     {fit}\n\n"
             f"{plan.reason}",
             title="AXIOM",
@@ -1321,6 +1331,7 @@ def model_inspect(path: str):
             f"Model type:     {result.model_type or 'Unknown'}\n"
             f"Format:         {result.model_format}\n"
             f"Parameters:     {parameters}\n"
+            f"Parameter basis: {result.parameter_source}\n"
             f"Weight size:    {size_gb:.2f} GB\n"
             f"Estimated VRAM: {vram}\n\n"
             f"Config:         {'✓' if result.has_config else '✗'}\n"
@@ -1355,10 +1366,13 @@ def dataset_inspect(path: str):
             f"Empty:            {result.empty:,}\n"
             f"Duplicates:       {result.duplicates:,}\n"
             f"Estimated tokens: {result.estimated_tokens:,}\n\n"
-            f"Fields: {', '.join(result.fields) if result.fields else '-'}",
+            f"Fields: {', '.join(result.fields) if result.fields else '-'}\n"
+            f"Invalid records: {result.invalid:,}",
             title="AXIOM",
         )
     )
+    for line_number, message in result.errors:
+        console.print(f"[red]INVALID[/red] line {line_number}: {message}")
 
 
 @dataset_app.command("clean")
@@ -1401,7 +1415,7 @@ def dataset_clean(
             f"Invalid removed:    {result.removed_invalid:,}\n"
             f"Empty removed:      {result.removed_empty:,}\n"
             f"Duplicates removed: {result.removed_duplicates:,}\n"
-            f"Schema removed:     {result.removed_schema:,}",
+            f"Non-object rows:    {result.removed_non_objects:,}",
             title="AXIOM",
         )
     )

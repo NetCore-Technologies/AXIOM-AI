@@ -122,6 +122,8 @@ def run(
     for key, value in info.to_dict().items():
         if key == "weights":
             value = ", ".join(value) if value else "-"
+        elif value is None:
+            value = "Unknown"
         model_table.add_row(key, str(value))
 
     console.print(model_table)

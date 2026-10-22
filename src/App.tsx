@@ -2237,7 +2237,7 @@ function Training({ onNotify }: { onNotify: (message: string, tone?: Tone) => vo
     try {
       const result = await axiomApi.trainingPlan(size, method);
       setPlan(result);
-      onNotify(`Training plan ready: ${result.method}, ${result.fits_hardware ? "estimated to fit" : "review the hardware estimate"}.`, result.fits_hardware ? "success" : "warning");
+      onNotify(`Training plan ready: ${result.method}, ${result.fits_hardware === null ? "hardware fit unknown" : result.fits_hardware ? "estimated to fit" : "may not fit"}.`, result.fits_hardware === null ? "neutral" : result.fits_hardware ? "success" : "warning");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Training plan unavailable.");
     } finally {
@@ -2267,9 +2267,9 @@ function Training({ onNotify }: { onNotify: (message: string, tone?: Tone) => vo
 
   return <FeaturePage page="training" actions={<button type="button" className="button primary-button" onClick={() => void createPlan()} disabled={busy}><Play size={16} /> {busy ? "Building plan…" : "Build plan"}</button>}>
     <div className="info-grid">
-      <InfoCard icon={Zap} label="Method" value={plan?.method.toUpperCase() || method.toUpperCase()} detail={plan ? plan.precision : "Choose a planning method"} tone={plan?.fits_hardware ? "success" : "neutral"} />
-      <InfoCard icon={Cpu} label="Detected hardware" value={hardware?.hardware.gpu_name || "CPU only"} detail={hardware ? `${hardware.hardware.ram_gb.toFixed(1)} GB RAM · ${hardware.hardware.vram_gb ?? 0} GB VRAM` : "Hardware unavailable"} tone={hardware?.hardware.cuda_available ? "success" : "warning"} />
-              <InfoCard icon={TimerReset} label="Execution" value="Plan + LoRA" detail="Optional local fine-tuning panel below" tone="info" />
+      <InfoCard icon={Zap} label="Method" value={plan?.method.toUpperCase() || method.toUpperCase()} detail={plan ? plan.precision : "Choose a planning method"} tone={plan?.fits_hardware === true ? "success" : "neutral"} />
+      <InfoCard icon={Cpu} label="Detected hardware" value={hardware?.hardware.gpu_name || "GPU not detected"} detail={hardware ? `${hardware.hardware.ram_gb.toFixed(1)} GB RAM · ${hardware.hardware.vram_gb === null ? "Unknown GPU memory" : `${hardware.hardware.vram_gb} GB VRAM`}` : "Hardware unavailable"} tone={hardware?.hardware.cuda_available ? "success" : "warning"} />
+      <InfoCard icon={TimerReset} label="Execution" value="Plan + LoRA" detail="Optional local fine-tuning panel below" tone="info" />
     </div>
     <div className="two-column-grid">
       <Surface title="Plan inputs" eyebrow="HARDWARE-AWARE ESTIMATE">
@@ -2281,10 +2281,10 @@ function Training({ onNotify }: { onNotify: (message: string, tone?: Tone) => vo
       </Surface>
       <Surface title="Plan result" eyebrow={plan ? "ESTIMATE · NOT A BENCHMARK" : "READY WHEN YOU ARE"}>
         {plan ? <>
-          <div className="diagnostic-row"><span className={`diagnostic-icon ${plan.fits_hardware ? "success" : "warning"}`}><Cpu size={16} /></span><div><b>{plan.fits_hardware ? "Estimated to fit" : "Hardware fit needs review"}</b><span>{plan.reason}</span></div><StatusPill tone={plan.fits_hardware ? "success" : "warning"}>{plan.fits_hardware ? "ESTIMATE" : "REVIEW"}</StatusPill></div>
+          <div className="diagnostic-row"><span className={`diagnostic-icon ${plan.fits_hardware === true ? "success" : plan.fits_hardware === false ? "warning" : "neutral"}`}><Cpu size={16} /></span><div><b>{plan.fits_hardware === null ? "Hardware fit unknown" : plan.fits_hardware ? "Estimated to fit" : "May not fit"}</b><span>{plan.reason}</span></div><StatusPill tone={plan.fits_hardware === null ? "neutral" : plan.fits_hardware ? "success" : "warning"}>{plan.fits_hardware === null ? "UNKNOWN" : plan.fits_hardware ? "ESTIMATE" : "REVIEW"}</StatusPill></div>
           <div className="plan-result-grid">
             <div><small>Precision</small><b>{plan.precision}</b></div>
-            <div><small>Estimated VRAM</small><b>{plan.estimated_vram_gb.toFixed(2)} GB</b></div>
+            <div><small>Estimated VRAM</small><b>{plan.estimated_vram_gb === null ? "Unknown" : `${plan.estimated_vram_gb.toFixed(2)} GB`}</b></div>
             <div><small>Batch size</small><b>{plan.batch_size}</b></div>
             <div><small>Gradient accumulation</small><b>{plan.gradient_accumulation}</b></div>
             <div><small>Sequence length</small><b>{plan.sequence_length.toLocaleString()}</b></div>

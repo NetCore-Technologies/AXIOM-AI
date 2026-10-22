@@ -12,45 +12,52 @@ from typing import Any
 class SystemInfo:
     os: str
     arch: str
-    cpu_count: int
-    ram_gb: float
-    gpu_available: bool
-    gpu_name: str
-    vram_gb: float
-    disk_free_gb: float
+    cpu_count: int | None
+    ram_gb: float | None
+    gpu_available: bool | None
+    gpu_name: str | None
+    vram_gb: float | None
+    disk_free_gb: float | None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "os": self.os,
             "arch": self.arch,
             "cpu_count": self.cpu_count,
-            "ram_gb": round(self.ram_gb, 2),
+            "ram_gb": round(self.ram_gb, 2) if self.ram_gb is not None else None,
             "gpu_available": self.gpu_available,
             "gpu_name": self.gpu_name,
-            "vram_gb": round(self.vram_gb, 2),
-            "disk_free_gb": round(self.disk_free_gb, 2),
+            "vram_gb": round(self.vram_gb, 2) if self.vram_gb is not None else None,
+            "disk_free_gb": round(self.disk_free_gb, 2) if self.disk_free_gb is not None else None,
         }
 
 
-def _ram_gb() -> float:
-    path = Path("/proc/meminfo")
-    if not path.exists():
-        return 0.0
+def _ram_gb() -> float | None:
+    try:
+        pages = os.sysconf("SC_PHYS_PAGES")
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        if pages > 0 and page_size > 0:
+            return pages * page_size / (1024**3)
+    except (AttributeError, OSError, ValueError):
+        # Some platforms do not expose these counters; try the Linux source next.
+        pass
 
+    path = Path("/proc/meminfo")
     try:
         for line in path.read_text(encoding="utf-8").splitlines():
             if line.startswith("MemTotal:"):
                 return int(line.split()[1]) / 1024 / 1024
-    except (OSError, ValueError):
-        return 0.0
+    except (OSError, ValueError, IndexError):
+        # procfs is unavailable or malformed on this system, so RAM is unknown.
+        pass
 
-    return 0.0
+    return None
 
 
-def _nvidia() -> tuple[bool, str, float]:
+def _nvidia() -> tuple[bool | None, str | None, float | None]:
     binary = shutil.which("nvidia-smi")
     if not binary:
-        return False, "", 0.0
+        return None, None, None
 
     try:
         import subprocess
@@ -68,19 +75,19 @@ def _nvidia() -> tuple[bool, str, float]:
         )
 
         if result.returncode != 0 or not result.stdout.strip():
-            return False, "", 0.0
+            return False, None, None
 
         first = result.stdout.strip().splitlines()[0]
         name, memory = [x.strip() for x in first.split(",", 1)]
         return True, name, float(memory) / 1024
     except (OSError, ValueError):
-        return False, "", 0.0
+        return False, None, None
 
 
 def inspect_system() -> SystemInfo:
     gpu, gpu_name, vram = _nvidia()
 
-    free_gb = 0.0
+    free_gb = None
     try:
         free_gb = shutil.disk_usage(Path.cwd()).free / 1024**3
     except OSError:
@@ -93,7 +100,7 @@ def inspect_system() -> SystemInfo:
     return SystemInfo(
         os=platform.system(),
         arch=platform.machine(),
-        cpu_count=os.cpu_count() or 1,
+        cpu_count=os.cpu_count(),
         ram_gb=_ram_gb(),
         gpu_available=gpu,
         gpu_name=gpu_name,

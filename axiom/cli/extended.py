@@ -20,6 +20,7 @@ from axiom.daemon import local_summary
 from axiom.core.diagnostics import diagnose_workspace
 from axiom.cli.support_bundle import register as register_support_bundle_cli
 from axiom.cli.roadmap import roadmap_app as roadmap_cli_app
+from axiom.datasets.inspector import inspect_dataset
 from axiom.version import __version__
 
 AXIOM_VERSION = __version__
@@ -392,61 +393,28 @@ def register(app, model_app, dataset_app) -> None:
         ),
     ) -> None:
         """Check JSONL records and report duplicate objects."""
-        dataset = Path(path)
-
-        if not dataset.is_file():
-            console.print(f"[red]Error:[/red] dataset not found: {dataset}")
-            raise typer.Exit(code=1)
-
-        total = 0
-        valid = 0
-        invalid = 0
-        duplicates = 0
-        seen: set[str] = set()
-
-        with dataset.open("r", encoding="utf-8") as handle:
-            for line_no, raw in enumerate(handle, start=1):
-                if not raw.strip():
-                    continue
-
-                total += 1
-
-                try:
-                    record = json.loads(raw)
-
-                    if not isinstance(record, dict):
-                        raise TypeError("record is not a JSON object")
-
-                    normalized = json.dumps(
-                        record,
-                        ensure_ascii=False,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    )
-
-                    if normalized in seen:
-                        duplicates += 1
-                    else:
-                        seen.add(normalized)
-
-                    valid += 1
-
-                except Exception as exc:  # noqa: BLE001
-                    invalid += 1
-                    console.print(f"[red]INVALID[/red] line {line_no}: {exc}")
+        try:
+            result = inspect_dataset(path)
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise typer.Exit(code=1) from exc
 
         table = Table(title="AXIOM DATASET VALIDATION")
         table.add_column("Metric")
         table.add_column("Value", justify="right")
 
-        table.add_row("Records", str(total))
-        table.add_row("Valid", str(valid))
-        table.add_row("Invalid", str(invalid))
-        table.add_row("Duplicates", str(duplicates))
+        table.add_row("Records", str(result.samples))
+        table.add_row("Valid", str(result.valid))
+        table.add_row("Invalid", str(result.invalid))
+        table.add_row("Empty", str(result.empty))
+        table.add_row("Duplicates", str(result.duplicates))
 
         console.print(table)
 
-        if invalid:
+        for line_number, message in result.errors:
+            console.print(f"[red]INVALID[/red] line {line_number}: {message}")
+
+        if result.invalid:
             raise typer.Exit(code=1)
 
     @dataset_app.command("stats")
@@ -457,37 +425,21 @@ def register(app, model_app, dataset_app) -> None:
         ),
     ) -> None:
         """Show local JSONL counts and a rough token estimate."""
-        dataset = Path(path)
-
-        if not dataset.is_file():
-            console.print(f"[red]Error:[/red] dataset not found: {dataset}")
-            raise typer.Exit(code=1)
-
-        records = 0
-        fields: set[str] = set()
-        estimated_tokens = 0
-
-        with dataset.open("r", encoding="utf-8") as handle:
-            for raw in handle:
-                if not raw.strip():
-                    continue
-
-                try:
-                    record = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-
-                if isinstance(record, dict):
-                    records += 1
-                    fields.update(str(key) for key in record)
-                    estimated_tokens += max(1, len(raw.split()) * 2)
+        try:
+            result = inspect_dataset(path)
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise typer.Exit(code=1) from exc
 
         console.print(
             Panel.fit(
                 f"[bold cyan]AXIOM DATASET STATS[/bold cyan]\n\n"
-                f"Records: {records}\n"
-                f"Fields: {', '.join(sorted(fields)) or 'None'}\n"
-                f"Estimated tokens: {estimated_tokens}",
+                f"Records: {result.valid:,}\n"
+                f"Invalid: {result.invalid:,}\n"
+                f"Empty: {result.empty:,}\n"
+                f"Duplicates: {result.duplicates:,}\n"
+                f"Fields: {', '.join(result.fields) or 'None'}\n"
+                f"Estimated tokens: {result.estimated_tokens:,}",
                 title="AXIOM",
             )
         )

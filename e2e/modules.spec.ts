@@ -13,7 +13,7 @@ test.describe("AXIOM module explorer", () => {
     await expect(page.getByRole("group", { name: "Agent Optimizer" })).toBeVisible();
     await expect(page.getByRole("group", { name: "Dataset engineering and quality" })).toBeVisible();
     await expect(page.getByRole("group", { name: "Developer tool catalog" })).toContainText("CLI surface");
-    await expect(page.getByRole("group", { name: "Training planner and experiments" })).toContainText("Planning only");
+    await expect(page.getByRole("group", { name: "Training planner and experiments" })).toContainText("Planning + local LoRA");
     await expect(page.getByRole("link", { name: "Open API" })).toHaveAttribute("href", "/api/docs");
   });
 

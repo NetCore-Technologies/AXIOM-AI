@@ -17,7 +17,7 @@ class DatasetCleaningResult:
         removed_invalid: int,
         removed_empty: int,
         removed_duplicates: int,
-        removed_schema: int,
+        removed_non_objects: int,
     ):
         self.source = source
         self.output = output
@@ -26,7 +26,9 @@ class DatasetCleaningResult:
         self.removed_invalid = removed_invalid
         self.removed_empty = removed_empty
         self.removed_duplicates = removed_duplicates
-        self.removed_schema = removed_schema
+        self.removed_non_objects = removed_non_objects
+        # Preserve the legacy field for integrations using earlier releases.
+        self.removed_schema = removed_non_objects
 
 
 class DatasetPathError(OSError):
@@ -42,9 +44,7 @@ def _same_path(source: Path, destination: Path) -> bool:
         if destination.exists() and os.path.samefile(source, destination):
             return True
     except OSError:
-        __import__("logging").getLogger(__name__).debug(
-            "intentionally ignored exception", exc_info=True
-        )
+        pass
 
     return source.resolve(strict=False) == destination.resolve(strict=False)
 
@@ -75,9 +75,7 @@ def clean_jsonl(
     removed_invalid = 0
     removed_empty = 0
     removed_duplicates = 0
-    removed_schema = 0
-
-    expected_fields: set[str] | None = None
+    removed_non_objects = 0
 
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary_name: str | None = None
@@ -117,15 +115,7 @@ def clean_jsonl(
                         continue
 
                     if not isinstance(item, dict):
-                        removed_schema += 1
-                        continue
-
-                    fields = set(item.keys())
-
-                    if expected_fields is None:
-                        expected_fields = fields
-                    elif fields != expected_fields:
-                        removed_schema += 1
+                        removed_non_objects += 1
                         continue
 
                     fingerprint = json.dumps(
@@ -163,9 +153,7 @@ def clean_jsonl(
             try:
                 os.unlink(temporary_name)
             except FileNotFoundError:
-                __import__("logging").getLogger(__name__).debug(
-                    "intentionally ignored exception", exc_info=True
-                )
+                pass
 
     return DatasetCleaningResult(
         source=source,
@@ -175,5 +163,5 @@ def clean_jsonl(
         removed_invalid=removed_invalid,
         removed_empty=removed_empty,
         removed_duplicates=removed_duplicates,
-        removed_schema=removed_schema,
+        removed_non_objects=removed_non_objects,
     )

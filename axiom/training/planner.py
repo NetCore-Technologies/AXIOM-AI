@@ -15,8 +15,8 @@ class TrainingPlan:
     gradient_accumulation: int
     sequence_length: int
     learning_rate: float
-    estimated_vram_gb: float
-    fits_hardware: bool
+    estimated_vram_gb: float | None
+    fits_hardware: bool | None
     reason: str
 
 
@@ -81,9 +81,12 @@ def create_training_plan(
             gradient_accumulation=16,
             sequence_length=1024,
             learning_rate=0.0001,
-            estimated_vram_gb=0.0,
-            fits_hardware=False,
-            reason="No compatible GPU was detected. Training should run on a GPU-equipped machine.",
+            estimated_vram_gb=None,
+            fits_hardware=None,
+            reason=(
+                "GPU memory could not be read on this machine, so hardware fit "
+                "is unknown. Check the model with your local runtime before training."
+            ),
         )
 
     if method == "full":

@@ -28,6 +28,7 @@ test("Training page submits a bounded local LoRA job and displays its real statu
     result: null,
     logs: ["Job queued."],
   };
+  let submitted: Record<string, unknown> | null = null;
 
   let submittedConfig: Record<string, unknown> | undefined;
   let postRequestCount = 0;
@@ -126,6 +127,25 @@ test("Training page submits a bounded local LoRA job and displays its real statu
     }
   });
 
+  await page.route("**/api/fine-tuning/**", route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith("/runtime")) {
+      return route.fulfill({ json: {
+        backend: "transformers-peft-local-lora",
+        can_start: true,
+        packages: { torch: true, transformers: true, peft: true, accelerate: true },
+        model_loading: "local_files_only",
+        scope_note: "Local model only.",
+      } });
+    }
+    if (pathname.endsWith("/jobs") && route.request().method() === "POST") {
+      submitted = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ status: 202, json: queuedJob });
+    }
+    if (pathname.endsWith("/jobs")) return route.fulfill({ json: { jobs: [] } });
+    return route.fulfill({ json: queuedJob });
+  });
+
   await page.goto("/?page=training");
 
   await expect(
@@ -172,6 +192,12 @@ test("Training page submits a bounded local LoRA job and displays its real statu
   expect(postRequestCount).toBe(1);
 
   expect(submittedConfig).toMatchObject({
+  await page.getByRole("button", { name: "Start local fine-tuning" }).click();
+
+  const jobStatus = page.locator('[aria-label="Fine-tuning job status"]');
+  await expect(jobStatus).toBeVisible();
+  await expect(jobStatus).toContainText("QUEUED");
+  expect(submitted).toMatchObject({
     model_path: "/models/base",
     dataset_path: "/data/train.jsonl",
     output_dir: "/runs/adapter",

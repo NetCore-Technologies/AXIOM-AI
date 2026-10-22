@@ -71,6 +71,7 @@ def axiom_model_info(path: str) -> dict:
         "architecture": result.architecture,
         "model_type": result.model_type,
         "parameters": result.parameter_count,
+        "parameter_source": result.parameter_source,
         "format": result.model_format,
         "weight_size_bytes": result.weight_size_bytes,
         "has_config": result.has_config,
@@ -103,6 +104,7 @@ def axiom_dataset_inspect(path: str) -> dict:
         "duplicates": result.duplicates,
         "estimated_tokens": result.estimated_tokens,
         "fields": result.fields,
+        "errors": result.errors,
     }
 
 
@@ -142,6 +144,7 @@ def axiom_dataset_clean(
         "removed_invalid": result.removed_invalid,
         "removed_empty": result.removed_empty,
         "removed_duplicates": result.removed_duplicates,
+        "removed_non_objects": result.removed_non_objects,
         "removed_schema": result.removed_schema,
     }
 

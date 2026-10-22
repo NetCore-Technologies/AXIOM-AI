@@ -23,14 +23,14 @@ def test_cleaning_preview_matches_cleaner_decisions_without_writing():
 
     assert report["preview_only"] is True
     assert report["output_written"] is False
-    assert report["kept_rows"] == 1
+    assert report["kept_rows"] == 2
     assert report["removed_duplicate_rows"] == 1
     assert report["removed_invalid_rows"] == 1
     assert report["removed_empty_rows"] == 1
     assert report["removed_non_object_rows"] == 1
-    assert report["removed_schema_rows"] == 1
-    assert report["rewritten_rows"] == 1
-    assert report["removed_rows"] == 5
+    assert report["removed_schema_rows"] == 0
+    assert report["rewritten_rows"] == 2
+    assert report["removed_rows"] == 4
     assert stream.tell() == len(source)
 
 

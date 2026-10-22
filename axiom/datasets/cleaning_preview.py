@@ -35,7 +35,6 @@ def preview_jsonl_cleaning(
     truncated = False
     scan_budget_exhausted = False
     truncation_reasons: set[str] = set()
-    expected_fields: set[str] | None = None
     seen: set[str] = set()
 
     while lines < max_rows:
@@ -94,13 +93,6 @@ def preview_jsonl_cleaning(
             continue
         if not isinstance(item, dict):
             non_object += 1
-            continue
-
-        fields = set(item)
-        if expected_fields is None:
-            expected_fields = fields
-        elif fields != expected_fields:
-            schema += 1
             continue
 
         fingerprint = json.dumps(item, sort_keys=True, ensure_ascii=False, separators=(",", ":"))

@@ -14,14 +14,16 @@ from axiom.api.model_paths import (
 )
 from axiom.optimizer.agent_profiles import AgentProfile
 from axiom.optimizer.system import SystemInfo
+from axiom.models.analysis import estimate_parameters_from_config
 
 
 @dataclass(frozen=True)
 class ModelInfo:
     source: str
     local_path: str
-    parameter_billions: float
-    estimated_fp16_gb: float
+    parameter_billions: float | None
+    estimated_fp16_gb: float | None
+    parameter_source: str
     files: int
     weights: list[str]
 
@@ -29,8 +31,17 @@ class ModelInfo:
         return {
             "source": self.source,
             "local_path": self.local_path,
-            "parameter_billions": round(self.parameter_billions, 3),
-            "estimated_fp16_gb": round(self.estimated_fp16_gb, 2),
+            "parameter_billions": (
+                round(self.parameter_billions, 3)
+                if self.parameter_billions is not None
+                else None
+            ),
+            "estimated_fp16_gb": (
+                round(self.estimated_fp16_gb, 2)
+                if self.estimated_fp16_gb is not None
+                else None
+            ),
+            "parameter_source": self.parameter_source,
             "files": self.files,
             "weights": self.weights,
         }
@@ -105,7 +116,10 @@ def _copy_without_following_symlinks(source: Path, destination: Path) -> None:
 def _config(path: Path) -> dict[str, Any]:
     trusted_path = validate_model_path(path)
     root_str = os.path.realpath(trusted_path)
-    if not root_str.startswith(os.path.realpath(MODEL_ROOT)):
+    model_root_real = os.path.realpath(MODEL_ROOT)
+    if root_str != model_root_real and not root_str.startswith(
+        model_root_real + os.sep
+    ):
         return {}
     if not os.path.isdir(root_str):
         return {}
@@ -155,25 +169,19 @@ def inspect_model(source: str) -> ModelInfo:
         return ModelInfo(
             source=source,
             local_path="",
-            parameter_billions=0.0,
-            estimated_fp16_gb=0.0,
+            parameter_billions=None,
+            estimated_fp16_gb=None,
+            parameter_source="unknown",
             files=0,
             weights=[],
         )
 
     root = path if path.is_dir() else path.parent
+    root = validate_model_path(os.fspath(root))
     cfg = _config(root)
 
-    params = cfg.get("num_parameters")
-    if params is None:
-        hidden = int(cfg.get("hidden_size") or 4096)
-        layers = int(cfg.get("num_hidden_layers") or 32)
-        params_b = max(
-            1.0,
-            hidden * hidden * layers * 12 / 1_000_000_000,
-        )
-    else:
-        params_b = float(params) / 1_000_000_000
+    parameter_count, parameter_source = estimate_parameters_from_config(cfg)
+    params_b = parameter_count / 1_000_000_000 if parameter_count else None
 
     weights = [
         str(p.relative_to(root))
@@ -187,7 +195,8 @@ def inspect_model(source: str) -> ModelInfo:
         source=source,
         local_path=str(root),
         parameter_billions=params_b,
-        estimated_fp16_gb=params_b * 2.0,
+        estimated_fp16_gb=params_b * 2.0 if params_b is not None else None,
+        parameter_source=parameter_source,
         files=count,
         weights=weights,
     )
@@ -198,7 +207,15 @@ def choose_quantization(
     system: SystemInfo,
     profile: AgentProfile,
 ) -> str:
-    usable = system.vram_gb if system.gpu_available else system.ram_gb * 0.55
+    if model.estimated_fp16_gb is None:
+        return profile.preferred_quantization
+
+    if system.gpu_available is True and system.vram_gb is not None:
+        usable = system.vram_gb
+    elif system.ram_gb is not None:
+        usable = system.ram_gb * 0.55
+    else:
+        return profile.preferred_quantization
 
     if usable <= 0:
         return profile.preferred_quantization

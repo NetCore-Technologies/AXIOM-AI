@@ -95,12 +95,6 @@
 
   const platformButtons = document.querySelectorAll("[data-platform]");
   const platformPanels = document.querySelectorAll("[data-platform-panel]");
-  const platformNote = document.querySelector("#platform-note");
-  const platformNotes = {
-    unix: "The shell installer uses the native Linux bundle on x86_64 and a Python fallback elsewhere.",
-    windows: "PowerShell installs AXIOM under your user profile and adds the command to your user PATH.",
-  };
-
   const detectedPlatform = /win/i.test(
     navigator.userAgentData?.platform || navigator.platform || "",
   )
@@ -119,7 +113,6 @@
       panel.classList.toggle("is-active", panel.dataset.platformPanel === platform);
     });
 
-    if (platformNote) platformNote.textContent = platformNotes[platform] || "";
   };
 
   platformButtons.forEach((button) => {
