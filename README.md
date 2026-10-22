@@ -134,6 +134,13 @@ Install the local model dependencies, then use the AXIOM Engine panel in the Con
 python -m pip install -e '.[training]'
 ```
 
+Use the CLI or the Control Center panel to run it:
+
+```bash
+axiom --no-banner engine status
+axiom --no-banner engine run --model-path "$HOME/models/my-llama-model" --prompt "Explain AXIOM in one sentence." --max-new-tokens 128
+```
+
 See [AXIOM Engine details](docs/Local-Engine.md) for local model layout, adapter use, and limits.
 
 ### Model Studio
