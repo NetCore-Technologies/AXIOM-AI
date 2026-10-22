@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from axiom.core import engine
 from axiom.core.engine import (
     _inspect_model_config,
     _resolve_model_directory,
@@ -91,3 +92,33 @@ def test_model_directory_rejects_symlink_escape_from_configured_root(tmp_path, m
 
     with pytest.raises(ValueError, match="symlink escapes"):
         _resolve_model_directory(str(escape), "Base model")
+
+
+
+def test_unload_releases_cached_model_state_and_reports_the_change(monkeypatch) -> None:
+    monkeypatch.setattr(engine, "_LOADED_RUNTIME", {
+        "key": ("/allowed/models/model-a", None),
+        "model": object(),
+        "tokenizer": object(),
+        "torch": None,
+        "device": "cpu",
+    })
+    monkeypatch.setattr(engine, "_LOADED_ARCHITECTURE", "LlamaForCausalLM")
+
+    result = engine.unload_local_model()
+
+    assert result["unloaded"] is True
+    assert result["loaded"] is False
+    assert engine._LOADED_RUNTIME is None
+    assert engine._LOADED_ARCHITECTURE is None
+    assert "may retain" in result["scope_note"]
+
+
+def test_unload_is_safe_when_no_model_is_loaded(monkeypatch) -> None:
+    monkeypatch.setattr(engine, "_LOADED_RUNTIME", None)
+    monkeypatch.setattr(engine, "_LOADED_ARCHITECTURE", None)
+
+    result = engine.unload_local_model()
+
+    assert result["unloaded"] is False
+    assert result["loaded"] is False
