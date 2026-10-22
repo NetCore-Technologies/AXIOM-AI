@@ -61,6 +61,24 @@ def test_module_explorer_requires_new_gui_pages_in_the_catalog() -> None:
     assert any("agent-profiles" in issue for issue in release_smoke.module_catalog_issues(incomplete))
 
 
+def test_model_registry_filters_are_wired_across_api_client_gui_and_e2e() -> None:
+    api_source = (ROOT / "axiom" / "api" / "workspace.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "model-registry-filters.spec.ts").read_text(encoding="utf-8")
+    assert release_smoke.model_registry_filter_issues(api_source, client_source, app_source, e2e_source) == []
+
+
+def test_model_registry_smoke_detects_disconnected_filter_controls() -> None:
+    api_source = (ROOT / "axiom" / "api" / "workspace.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "model-registry-filters.spec.ts").read_text(encoding="utf-8")
+    broken_app = app_source.replace('aria-label="Exact model tag"', 'aria-label="Removed filter"', 1)
+    issues = release_smoke.model_registry_filter_issues(api_source, client_source, broken_app, e2e_source)
+    assert any("Exact model tag" in issue for issue in issues)
+
+
 def test_api_playground_smoke_checks_typed_get_only_contract() -> None:
     component = (
         "playgroundRead allowlist GET only Arbitrary URLs mutating methods"
