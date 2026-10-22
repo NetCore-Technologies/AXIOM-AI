@@ -1286,12 +1286,26 @@ def model_add(
     format: str = "unknown",
     parameters: str | None = None,
     quantization: str | None = None,
+    architecture: str | None = typer.Option(None, "--architecture", help="Known model architecture."),
+    license_name: str | None = typer.Option(None, "--license", help="Source/license identifier from trusted metadata."),
+    tag: list[str] | None = typer.Option(None, "--tag", help="Repeat for each model tag."),
+    content_sha256: str | None = typer.Option(None, "--content-sha256", help="Optional 64-hex digest for inspected local weights."),
     json_output: bool = typer.Option(False, "--json", help="Emit the created model record as JSON."),
 ):
-    """Register a model with AXIOM."""
+    """Register model metadata without downloading or moving weights."""
     registry = ModelRegistry()
     try:
-        model = Model(name=name, source=source, format=format, parameters=parameters, quantization=quantization)
+        model = Model(
+            name=name,
+            source=source,
+            format=format,
+            parameters=parameters,
+            quantization=quantization,
+            architecture=architecture,
+            license=license_name,
+            tags=tag or [],
+            content_sha256=content_sha256,
+        )
         registry.add(model)
     except (TypeError, ValueError) as exc:
         if json_output:
@@ -1303,6 +1317,80 @@ def model_add(
         typer.echo(json.dumps({"schema_version": 1, "created": True, "model": model.to_dict()}, ensure_ascii=False, sort_keys=True))
         return
     console.print(f"[green]✓[/green] Registered model: [cyan]{name}[/cyan]")
+
+
+@model_app.command("update")
+def model_update(
+    model_id: str,
+    name: str | None = typer.Option(None, "--name"),
+    source: str | None = typer.Option(None, "--source"),
+    format: str | None = typer.Option(None, "--format"),
+    parameters: str | None = typer.Option(None, "--parameters"),
+    quantization: str | None = typer.Option(None, "--quantization"),
+    architecture: str | None = typer.Option(None, "--architecture"),
+    license_name: str | None = typer.Option(None, "--license"),
+    tag: list[str] | None = typer.Option(None, "--tag", help="Replace all tags; repeat for each tag."),
+    clear_tags: bool = typer.Option(False, "--clear-tags", help="Clear all tags."),
+    content_sha256: str | None = typer.Option(None, "--content-sha256"),
+    favorite: bool | None = typer.Option(None, "--favorite/--unfavorite"),
+    json_output: bool = typer.Option(False, "--json", help="Emit the updated model record as JSON."),
+):
+    """Update validated registry metadata without touching model weights."""
+    changes: dict[str, object] = {}
+    for key, value in (
+        ("name", name),
+        ("source", source),
+        ("format", format),
+        ("parameters", parameters),
+        ("quantization", quantization),
+        ("architecture", architecture),
+        ("license", license_name),
+        ("content_sha256", content_sha256),
+    ):
+        if value is not None:
+            changes[key] = value
+    if tag is not None:
+        changes["tags"] = tag
+    if clear_tags:
+        if tag is not None:
+            message = "--clear-tags cannot be combined with --tag."
+            if json_output:
+                typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_update_invalid", "message": message}}, sort_keys=True))
+            else:
+                console.print(f"[red]Error:[/red] {message}")
+            raise typer.Exit(code=1)
+        changes["tags"] = []
+    if favorite is not None:
+        changes["favorite"] = favorite
+    if not changes:
+        message = "Specify at least one metadata option to update."
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_update_empty", "message": message}}, sort_keys=True))
+        else:
+            console.print(f"[yellow]No model changes requested.[/yellow] {message}")
+        raise typer.Exit(code=1)
+
+    registry = ModelRegistry()
+    try:
+        updated = registry.update(model_id, changes)
+    except (OSError, TypeError, ValueError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_update_failed", "message": str(exc)}}, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] Could not update model metadata: {exc}")
+        raise typer.Exit(code=1) from exc
+    if updated is None:
+        message = "No registered model has that ID."
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_not_found", "message": message}}, sort_keys=True))
+        else:
+            console.print(f"[yellow]{message}[/yellow]")
+        raise typer.Exit(code=1)
+    payload = {"schema_version": 1, "updated": True, "model": updated.to_dict()}
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        console.print(f"[green]✓[/green] Updated model metadata: {updated.name}")
 
 @model_app.command("analyze")
 def model_analyze(

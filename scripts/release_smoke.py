@@ -407,7 +407,7 @@ def inspect(root: Path) -> dict[str, Any]:
     cli_main_source = (root / "axiom/cli/main.py").read_text(encoding="utf-8")
     cli_extended_source = (root / "axiom/cli/extended.py").read_text(encoding="utf-8")
     cli_json_tests = (root / "tests/test_cli_json.py").read_text(encoding="utf-8")
-    for token in ('def model_list(', 'def model_add(', 'def model_export(', 'def model_import(', 'def model_remove(', 'def model_favorite(', 'def model_info(', 'def model_inspect(', 'def model_analyze(', 'def dataset_inspect(', 'def dataset_clean(', 'def integration_list(', 'def system_info('):
+    for token in ('def model_list(', 'def model_add(', 'def model_update(', 'def model_export(', 'def model_import(', 'def model_remove(', 'def model_favorite(', 'def model_info(', 'def model_inspect(', 'def model_analyze(', 'def dataset_inspect(', 'def dataset_clean(', 'def integration_list(', 'def system_info('):
         if token not in cli_main_source:
             failures.append("CLI JSON output support is missing from a primary command: " + token)
     for token in ("def model_search(", "def dataset_validate(", "def dataset_stats(", "def dataset_inspection_payload("):
@@ -422,6 +422,8 @@ def inspect(root: Path) -> dict[str, Any]:
         '["model", "analyze", "org/tiny", "--json"]',
         '["system", "info", "--json"]',
         '["dataset", "clean", str(dataset), "--output", str(output), "--json"]',
+        '["model", "add", "tiny-llama", "/models/tiny-llama",',
+        '["model", "update", model["id"],',
         '["model", "export", "--path", str(export_path), "--json"]',
         '["model", "import", str(export_path), "--json"]',
         '["model", "remove", first_model["id"], "--json"]',

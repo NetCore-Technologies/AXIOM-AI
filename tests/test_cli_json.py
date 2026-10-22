@@ -317,3 +317,48 @@ def test_model_import_json_rejects_duplicate_batch_without_partial_import(tmp_pa
     listed = runner.invoke(app, ["model", "list", "--json"])
     models = json.loads(listed.stdout)["models"]
     assert [item["name"] for item in models] == ["already-here"]
+
+
+
+def test_model_add_and_update_json_preserve_metadata_fields(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    created = runner.invoke(app, [
+        "model", "add", "tiny-llama", "/models/tiny-llama",
+        "--format", "safetensors", "--architecture", "LlamaForCausalLM",
+        "--license", "apache-2.0", "--tag", "local", "--tag", "reviewed",
+        "--content-sha256", "a".repeat(64), "--json",
+    ])
+    assert created.exit_code == 0, created.stdout
+    model = json.loads(created.stdout)["model"]
+    assert model["architecture"] == "LlamaForCausalLM"
+    assert model["license"] == "apache-2.0"
+    assert model["tags"] == ["local", "reviewed"]
+    assert model["content_sha256"] == "a" * 64
+
+    updated = runner.invoke(app, [
+        "model", "update", model["id"],
+        "--architecture", "MistralForCausalLM",
+        "--license", "mit", "--tag", "quality-reviewed",
+        "--favorite", "--json",
+    ])
+    assert updated.exit_code == 0, updated.stdout
+    record = json.loads(updated.stdout)["model"]
+    assert record["architecture"] == "MistralForCausalLM"
+    assert record["license"] == "mit"
+    assert record["tags"] == ["quality-reviewed"]
+    assert record["favorite"] is True
+    assert record["content_sha256"] == "a" * 64
+
+
+def test_model_update_validation_failure_does_not_mutate_registry(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    created = runner.invoke(app, ["model", "add", "tiny-llama", "/models/tiny-llama", "--format", "safetensors", "--json"])
+    original = json.loads(created.stdout)["model"]
+    invalid = runner.invoke(app, [
+        "model", "update", original["id"], "--license", "x" * 121, "--json",
+    ])
+    assert invalid.exit_code == 1
+    assert json.loads(invalid.stdout)["error"]["code"] == "model_update_failed"
+    listed = runner.invoke(app, ["model", "list", "--json"])
+    model_after = json.loads(listed.stdout)["models"][0]
+    assert model_after == original
