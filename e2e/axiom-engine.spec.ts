@@ -43,15 +43,23 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
     adapters: [{ path: "/runs/my-lora-adapter", name: "my-lora-adapter", weight_format: "safetensors LoRA" }],
     truncated: false, scope_note: "Metadata-only discovery under trusted local roots; weights are validated on run.",
   } }));
-  await page.route("**/api/engine/generate", (route) => {
+  await page.route("**/api/engine/generate/stream", (route) => {
     engineLoaded = true;
-    return route.fulfill({ json: {
+    const completed = {
       engine: "axiom-native-engine", execution_backend: "pytorch-native-axiom", transformers_generation_used: false, ollama_used: false,
       model: "llama-test", architecture: "LlamaForCausalLM", model_type: "llama", device: "cpu", checkpoint_format: "safetensors", decoder: "axiom-autoregressive-kv-cache",
       adapter: "my-lora-adapter", response: "AXIOM local engine test response.",
       prompt_tokens: 5, completion_tokens: 6, elapsed_ms: 120.5,
       generated_at: "2026-10-21T00:00:00Z", local_only: true,
-    } });
+    };
+    return route.fulfill({
+      status: 200,
+      contentType: "application/x-ndjson",
+      body: [
+        JSON.stringify({ type: "token", response: "AXIOM local", completion_tokens: 2 }),
+        JSON.stringify({ type: "complete", result: completed }),
+      ].join("\n") + "\n",
+    });
   });
   await page.route("**/api/engine/unload", (route) => {
     unloadCalls += 1;
