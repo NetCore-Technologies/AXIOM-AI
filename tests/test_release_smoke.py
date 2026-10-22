@@ -79,6 +79,26 @@ def test_model_registry_smoke_detects_disconnected_filter_controls() -> None:
     assert any("Exact model tag" in issue for issue in issues)
 
 
+def test_model_compatibility_report_is_wired_into_the_existing_models_page() -> None:
+    core_source = (ROOT / "axiom" / "models" / "compatibility.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "api" / "workspace.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "model-registry-filters.spec.ts").read_text(encoding="utf-8")
+    assert release_smoke.model_compatibility_issues(core_source, api_source, client_source, app_source, e2e_source) == []
+
+
+def test_model_compatibility_smoke_detects_missing_gui_action() -> None:
+    core_source = (ROOT / "axiom" / "models" / "compatibility.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "api" / "workspace.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "model-registry-filters.spec.ts").read_text(encoding="utf-8")
+    broken_app = app_source.replace("Check hardware fit for", "Removed fit action", 1)
+    issues = release_smoke.model_compatibility_issues(core_source, api_source, client_source, broken_app, e2e_source)
+    assert any("compatibility action" in issue for issue in issues)
+
+
 def test_api_playground_smoke_checks_typed_get_only_contract() -> None:
     component = (
         "playgroundRead allowlist GET only Arbitrary URLs mutating methods"
