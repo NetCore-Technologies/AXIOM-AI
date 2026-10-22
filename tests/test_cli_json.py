@@ -326,7 +326,7 @@ def test_model_add_and_update_json_preserve_metadata_fields(tmp_path: Path, monk
         "model", "add", "tiny-llama", "/models/tiny-llama",
         "--format", "safetensors", "--architecture", "LlamaForCausalLM",
         "--license", "apache-2.0", "--tag", "local", "--tag", "reviewed",
-        "--content-sha256", "a".repeat(64), "--json",
+        "--content-sha256", "a" * 64, "--json",
     ])
     assert created.exit_code == 0, created.stdout
     model = json.loads(created.stdout)["model"]
