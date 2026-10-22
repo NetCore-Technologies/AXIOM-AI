@@ -109,7 +109,7 @@ def model_registry_filter_issues(api_source: str, client_source: str, app_source
         'searchParams.get("favorite_only")',
         'searchParams.get("sort_by")',
         "Save current filters",
-        "Apply saved filters",
+        'getByRole("button", { name: "Apply", exact: true })',
     ):
         if token not in e2e_source:
             issues.append("Model registry browser acceptance coverage is missing: " + token)
