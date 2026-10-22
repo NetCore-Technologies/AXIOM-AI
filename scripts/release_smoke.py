@@ -404,6 +404,14 @@ def inspect(root: Path) -> dict[str, Any]:
     engine_panel = (root / "src/components/LocalAxiomEnginePanel.tsx").read_text(encoding="utf-8")
     engine_e2e = (root / "e2e/axiom-engine.spec.ts").read_text(encoding="utf-8")
     failures.extend(engine_security_and_lifecycle_issues(engine_source, native_source, engine_api, client, engine_panel, engine_e2e))
+    engine_cli_source = (root / "axiom/cli/engine.py").read_text(encoding="utf-8")
+    engine_cli_tests = (root / "tests/test_axiom_engine_cli.py").read_text(encoding="utf-8")
+    for token in ('@engine_app.command("discover")', "def engine_discover(", "discover_local_engine_assets()", '"--json"'):
+        if token not in engine_cli_source:
+            failures.append("Native Engine CLI discovery wiring is missing: " + token)
+    for token in ('["discover", "--json"]', "test_engine_discover_json_lists_local_model_and_adapter_metadata"):
+        if token not in engine_cli_tests:
+            failures.append("Native Engine CLI discovery regression coverage is missing: " + token)
     for path in (
         "/api/health", "/api/meta", "/api/workspace/runtime",
         "/api/workspace/models?offset=0&limit=5", "/api/workspace/datasets",
