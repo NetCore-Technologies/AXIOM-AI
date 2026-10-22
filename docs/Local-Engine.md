@@ -32,7 +32,7 @@ To add a trusted location, set AXIOM_MODEL_ROOTS before starting the API. Use th
 export AXIOM_MODEL_ROOTS="$HOME/models:$HOME/Documents/AXIOM-AI/runs:/mnt/data/models"
 ```
 
-Only add directories you trust. config.json, tokenizer.json, shard indexes and adapter configuration must be regular files; symlinked checkpoint shards are rejected.
+Only add directories you trust. Model/config/tokenizer/index/adapter assets may be symlinks only when their resolved targets remain inside one of the configured trusted roots; external-target symlinks are rejected.
 
 ## Control Center
 
