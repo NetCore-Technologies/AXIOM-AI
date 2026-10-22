@@ -163,24 +163,38 @@ def test_runtime_trace_smoke_detects_missing_clear_route() -> None:
     assert any("Runtime trace history API is missing" in issue for issue in issues)
 
 
-def test_engine_trusted_roots_and_unload_are_integrated_end_to_end() -> None:
+def test_engine_trusted_roots_and_native_execution_are_integrated_end_to_end() -> None:
     engine_source = (ROOT / "axiom" / "core" / "engine.py").read_text(encoding="utf-8")
-    api_source = (ROOT / "axiom" / "api" / "engine.py").read_text(encoding="utf-8")
+    native_source = (ROOT / "axiom" / "core" / "native_engine.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "engine" / "api.py").read_text(encoding="utf-8")
     client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
     panel_source = (ROOT / "src" / "components" / "LocalAxiomEnginePanel.tsx").read_text(encoding="utf-8")
     e2e_source = (ROOT / "e2e" / "axiom-engine.spec.ts").read_text(encoding="utf-8")
-    assert release_smoke.engine_security_and_lifecycle_issues(engine_source, api_source, client_source, panel_source, e2e_source) == []
+    assert release_smoke.engine_security_and_lifecycle_issues(engine_source, native_source, api_source, client_source, panel_source, e2e_source) == []
 
 
-def test_engine_smoke_detects_path_and_unload_regressions() -> None:
+def test_engine_smoke_detects_path_and_native_execution_regressions() -> None:
     engine_source = (ROOT / "axiom" / "core" / "engine.py").read_text(encoding="utf-8")
-    api_source = (ROOT / "axiom" / "api" / "engine.py").read_text(encoding="utf-8")
+    native_source = (ROOT / "axiom" / "core" / "native_engine.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "engine" / "api.py").read_text(encoding="utf-8")
     client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
     panel_source = (ROOT / "src" / "components" / "LocalAxiomEnginePanel.tsx").read_text(encoding="utf-8")
     e2e_source = (ROOT / "e2e" / "axiom-engine.spec.ts").read_text(encoding="utf-8")
     broken_engine = engine_source.replace("symlink escapes are not allowed", "unrestricted symlink target", 1)
-    issues = release_smoke.engine_security_and_lifecycle_issues(broken_engine, api_source, client_source, panel_source, e2e_source)
+    issues = release_smoke.engine_security_and_lifecycle_issues(broken_engine, native_source, api_source, client_source, panel_source, e2e_source)
     assert any("symlink escapes are not allowed" in issue for issue in issues)
+
+
+def test_native_engine_smoke_rejects_missing_kv_cache_mechanics() -> None:
+    engine_source = (ROOT / "axiom" / "core" / "engine.py").read_text(encoding="utf-8")
+    native_source = (ROOT / "axiom" / "core" / "native_engine.py").read_text(encoding="utf-8")
+    api_source = (ROOT / "axiom" / "engine" / "api.py").read_text(encoding="utf-8")
+    client_source = (ROOT / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    panel_source = (ROOT / "src" / "components" / "LocalAxiomEnginePanel.tsx").read_text(encoding="utf-8")
+    e2e_source = (ROOT / "e2e" / "axiom-engine.spec.ts").read_text(encoding="utf-8")
+    broken_native = native_source.replace("past_key_values", "discarded_cache", 1)
+    issues = release_smoke.engine_security_and_lifecycle_issues(engine_source, broken_native, api_source, client_source, panel_source, e2e_source)
+    assert any("past_key_values" in issue for issue in issues)
 
 
 def test_api_playground_smoke_checks_typed_get_only_contract() -> None:
