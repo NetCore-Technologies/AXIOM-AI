@@ -51,9 +51,9 @@ def _lock_path() -> Path:
     return jobs_directory().parent / ".active-fine-tuning-job.json"
 
 
-def _version_key(value: str) -> tuple[int, ...]:
-    return tuple(int(part) for part in re.findall(r"\d+", value)[:3])
-
+def _version_key(value: str) -> tuple[int, int, int]:
+    parts = [int(part) for part in re.findall(r"\d+", value)[:3]]
+    return tuple((parts + [0, 0, 0])[:3])
 
 def runtime_status() -> dict[str, Any]:
     packages: dict[str, bool] = {}
@@ -426,6 +426,9 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
             "AXIOM supports common Llama-style q_proj/k_proj/v_proj/o_proj and several other known projection layouts."
         )
 
+    torch.manual_seed(AXIOM_TRAINING_SEED)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(AXIOM_TRAINING_SEED)
     try:
         model = get_peft_model(
             model,
@@ -462,6 +465,10 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
         raise FineTuningError(
             f"Could not place the local model on {device}. The model may exceed available memory." + (f" Detail: {message}" if message else "")
         ) from None
+
+    trainable_parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
+    if not trainable_parameters:
+        raise FineTuningError("No trainable LoRA parameters remain after model placement.")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     optimizer = torch.optim.AdamW(trainable_parameters, lr=config["learning_rate"])
