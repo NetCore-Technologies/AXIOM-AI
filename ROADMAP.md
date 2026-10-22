@@ -57,7 +57,7 @@ feature exists or a delivery-date promise.
 ### 04 · Model lifecycle and compatibility
 
 - [R037 · In progress; validation pending] Expand registry metadata with architecture, size, source, and license.
-- [R038 · In progress; validation pending] Add safe local-folder discovery without following symlinks.
+- [R038 · In progress; validation pending] Add safe local-folder discovery without following directory symlinks; file symlinks are accepted only when resolved targets remain inside trusted roots.
 - [R039 · In progress; validation pending] Add model inspection summaries in the GUI.
 - [R040 · In progress; validation pending] Add duplicate detection by source and content metadata.
 - [R041 · In progress; validation pending] Add model tags, favorites, and workspace labels.
