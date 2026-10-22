@@ -278,7 +278,7 @@ def discover_local_engine_assets() -> dict[str, Any]:
         if is_model and len(models) < max_results:
             try:
                 inspected = _inspect_model_config(directory)
-                from axiom.core.native_engine import NativeLlamaConfig, NativeEngineError
+                from axiom.core.native_engine import NativeLlamaConfig
 
                 native_config = NativeLlamaConfig.from_mapping(inspected["config"])
                 tokenizer_ok = any(_trusted_file_entry(str(directory / "tokenizer.json"), str(root)) for root in roots)
