@@ -1,8 +1,9 @@
-"""AXIOM's direct local causal-LM engine.
+"""AXIOM-owned native Llama/Mistral inference engine.
 
-The runtime is implemented in AXIOM and uses Transformers only to load supported
-local model architectures. It does not require Ollama and never downloads model
-weights or executes repository-provided model code.
+PyTorch supplies device tensor kernels; AXIOM implements the supported model
+forward pass, attention/cache path, LoRA application, and token-by-token decode.
+Local weights and tokenizer assets are required. The native path does not call
+Transformers model generation or an Ollama service.
 """
 from __future__ import annotations
 
