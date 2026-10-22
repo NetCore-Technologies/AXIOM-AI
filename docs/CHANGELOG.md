@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added the Community and Adoption Strategy covering reproducible benchmarks, hardware calibration, optional integrations, real-world validation, and contributor outreach.
 - Added AXIOM Engine, an AXIOM-owned direct local causal-LM runtime with Control Center and CLI access, bounded generation, and optional local PEFT adapter loading.
 - Added AXIOM's own small-batch PyTorch LoRA training loop, masked padding labels, finite-loss checks, gradient clipping, adapter artifact verification, and dependency version diagnostics.
 
