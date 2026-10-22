@@ -182,7 +182,7 @@ def test_engine_smoke_detects_path_and_native_execution_regressions() -> None:
     e2e_source = (ROOT / "e2e" / "axiom-engine.spec.ts").read_text(encoding="utf-8")
     broken_engine = engine_source.replace("symlink escapes are not allowed", "unrestricted symlink target", 1)
     issues = release_smoke.engine_security_and_lifecycle_issues(broken_engine, native_source, api_source, client_source, panel_source, e2e_source)
-    assert any("symlink escapes are not allowed" in issue for issue in issues)
+    assert any("trusted-root escapes are not allowed" in issue for issue in issues)
 
 
 def test_native_engine_smoke_rejects_missing_kv_cache_mechanics() -> None:
