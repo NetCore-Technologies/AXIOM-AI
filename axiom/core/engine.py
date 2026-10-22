@@ -6,6 +6,7 @@ weights or executes repository-provided model code.
 """
 from __future__ import annotations
 
+import gc
 import importlib.metadata
 import importlib.util
 import json
@@ -130,6 +131,22 @@ def _load_local_model(model_path: str, adapter_path: str | None):
     key = (str(base_dir), resolved_adapter)
     if _LOADED_KEY == key and _LOADED_MODEL is not None and _LOADED_TOKENIZER is not None:
         return _LOADED_MODEL, _LOADED_TOKENIZER, _LOADED_TORCH, _LOADED_DEVICE, inspected
+
+    # Reclaim the previous model before loading another checkpoint. Retaining
+    # two large language models can exhaust system RAM or accelerator memory.
+    if _LOADED_KEY is not None:
+        _LOADED_KEY = None
+        _LOADED_MODEL = None
+        _LOADED_TOKENIZER = None
+        _LOADED_TORCH = None
+        _LOADED_DEVICE = None
+        _LOADED_ARCHITECTURE = None
+        gc.collect()
+        try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except (RuntimeError, AttributeError):
+            pass
 
     try:
         tokenizer = AutoTokenizer.from_pretrained(
