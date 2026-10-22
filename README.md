@@ -124,6 +124,18 @@ axiom infer models
 axiom infer run qwen2.5:0.5b --prompt "Say hello in one sentence."
 ```
 
+### AXIOM Engine (direct local inference)
+
+The Control Center's **AXIOM Local Engine** loads a compatible local Transformers causal-language-model checkpoint directly, with optional LoRA adapters. It uses AXIOM's own bounded runtime and does not require Ollama for this path. It never downloads model weights or executes remote model code. The runtime and LoRA training loop are AXIOM-owned; pretrained base weights are still supplied separately by you.
+
+Install the local model dependencies, then use the AXIOM Engine panel in the Control Center:
+
+```bash
+python -m pip install -e '.[training]'
+```
+
+See [AXIOM Engine details](docs/Local-Engine.md) for local model layout, adapter use, and limits.
+
 ### Model Studio
 
 Model Studio helps you search for models, install them in Ollama, and convert local models to GGUF. Some options need a network connection or a local `llama.cpp` checkout. See the [Model Studio guide](docs/Model-Studio.md).
@@ -140,7 +152,8 @@ The local API and Control Center use loopback addresses by default. The optional
 - [Changelog](docs/CHANGELOG.md)
 - [Local fine-tuning](docs/Local-Fine-Tuning.md)
 - [Model Studio](docs/Model-Studio.md)
-- [Local inference](docs/Local-Inference.md)
+- [Local inference via Ollama](docs/Local-Inference.md)
+- [AXIOM Engine](docs/Local-Engine.md)
 - [API](docs/API.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)

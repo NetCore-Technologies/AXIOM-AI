@@ -34,8 +34,8 @@ dependencies = [
 training = [
     "torch>=2.2",
     "transformers>=5,<6",
-    "peft>=0.13",
-    "accelerate>=1.0",
+    "peft>=0.20.0",
+    "accelerate>=1.1.0",
 ]
 test = [
     "pytest>=8.3",
