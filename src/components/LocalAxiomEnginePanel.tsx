@@ -1,6 +1,6 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Activity, Cpu, Play, RefreshCcw, Unplug } from "lucide-react";
-import { axiomApi, type AxiomEngineAssets, type AxiomEngineResult, type AxiomEngineStatus } from "../api/client";
+import { axiomApi, type AxiomEngineAssets, type AxiomEngineResult, type AxiomEngineStatus, type AxiomEngineStreamEvent } from "../api/client";
 
 export default function LocalAxiomEnginePanel() {
   const [status, setStatus] = useState<AxiomEngineStatus | null>(null);
@@ -13,6 +13,10 @@ export default function LocalAxiomEnginePanel() {
   const [maxNewTokens, setMaxNewTokens] = useState("256");
   const [temperature, setTemperature] = useState("0.7");
   const [result, setResult] = useState<AxiomEngineResult | null>(null);
+  const [streamResponse, setStreamResponse] = useState("");
+  const [streamTokenCount, setStreamTokenCount] = useState(0);
+  const activeStreamRef = useRef<AbortController | null>(null);
+  const streamTokenCountRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [unloading, setUnloading] = useState(false);
@@ -38,7 +42,10 @@ export default function LocalAxiomEnginePanel() {
     }
   };
 
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    void refresh();
+    return () => activeStreamRef.current?.abort();
+  }, []);
 
   const unload = async () => {
     setUnloading(true);
@@ -61,26 +68,48 @@ export default function LocalAxiomEnginePanel() {
   const run = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
+    setLifecycleNotice("");
     setResult(null);
+    setStreamResponse("");
+    setStreamTokenCount(0);
+    streamTokenCountRef.current = 0;
     const tokenLimit = Number(maxNewTokens);
     const temp = Number(temperature);
     if (!modelPath.trim()) { setError("Choose a discovered native model or enter a trusted local Llama/Mistral model path."); return; }
     if (!prompt.trim()) { setError("Enter a prompt first."); return; }
     if (!Number.isInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 2048) { setError("Maximum generated tokens must be between 1 and 2048."); return; }
     if (!Number.isFinite(temp) || temp < 0 || temp > 2) { setError("Temperature must be between 0 and 2."); return; }
+    const controller = new AbortController();
+    activeStreamRef.current = controller;
     setRunning(true);
     try {
-      setResult(await axiomApi.runAxiomEngine({
+      const completed = await axiomApi.streamAxiomEngine({
         model_path: modelPath.trim(),
         adapter_path: adapterPath.trim() || undefined,
         prompt,
         max_new_tokens: tokenLimit,
         temperature: temp,
-      }));
+      }, (event: AxiomEngineStreamEvent) => {
+        if (event.type === "token") {
+          streamTokenCountRef.current = event.completion_tokens;
+          setStreamTokenCount(event.completion_tokens);
+          setStreamResponse(event.response);
+        } else if (event.type === "complete") {
+          streamTokenCountRef.current = event.result.completion_tokens;
+          setStreamTokenCount(event.result.completion_tokens);
+          setStreamResponse(event.result.response);
+        }
+      }, controller.signal);
+      setResult(completed);
       void refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "AXIOM Engine generation failed.");
+      if (controller.signal.aborted) {
+        setError(`Generation cancelled after ${streamTokenCountRef.current} token(s). Partial output remains visible.`);
+      } else {
+        setError(cause instanceof Error ? cause.message : "AXIOM Native Engine generation failed.");
+      }
     } finally {
+      if (activeStreamRef.current === controller) activeStreamRef.current = null;
       setRunning(false);
     }
   };
@@ -138,13 +167,19 @@ export default function LocalAxiomEnginePanel() {
       </div>
       <div className="integration-form-actions">
         <button type="submit" className="button primary-button" disabled={!status?.ready || loading || running || !modelPath.trim() || !prompt.trim()}><Play size={15} /> {running ? "Generating locally…" : "Run with AXIOM Engine"}</button>
+        {running && <button type="button" className="button secondary-button" onClick={() => activeStreamRef.current?.abort()}><Unplug size={14} /> Stop generation</button>}
         {result && <span className="quiet-note"><Activity size={14} /> {result.completion_tokens} tokens · {result.elapsed_ms} ms</span>}
+        {!result && streamTokenCount > 0 && <span className="quiet-note"><Activity size={14} /> {streamTokenCount} token(s) streamed</span>}
       </div>
     </form>
     {error && <div className="inline-alert warning" role="alert">{error}</div>}
-    {result && <section className="local-inference-result" aria-label="AXIOM Engine generated response">
-      <div className="surface-head"><div><p className="surface-eyebrow">GENERATED ON THIS MACHINE · {result.architecture}</p><h3>{result.model}{result.adapter ? ` + ${result.adapter}` : ""}</h3></div><span className="status-pill success"><i />COMPLETED</span></div>
-      <pre data-testid="axiom-engine-output" className="local-inference-output">{result.response || "(The model returned an empty response.)"}</pre>
+    {(result || streamResponse) && <section className="local-inference-result" aria-label="AXIOM Engine generated response">
+      <div className="surface-head"><div>
+        <p className="surface-eyebrow">{result ? `GENERATED ON THIS MACHINE · ${result.architecture}` : running ? "STREAMING TOKEN OUTPUT · LOCAL ONLY" : "PARTIAL LOCAL OUTPUT"}</p>
+        <h3>{result ? `${result.model}${result.adapter ? ` + ${result.adapter}` : ""}` : (assets?.models.find((model) => model.path === modelPath)?.name || "AXIOM Native Engine")}</h3>
+      </div><span className={`status-pill ${result ? "success" : running ? "warning" : "neutral"}`}><i />{result ? "COMPLETED" : running ? "GENERATING" : "CANCELLED"}</span></div>
+      <pre data-testid={result ? "axiom-engine-output" : "axiom-engine-live-output"} className="local-inference-output">{(result ? result.response : streamResponse) || "(The model has not emitted printable text yet.)"}</pre>
+      {!result && <p className="quiet-note">Cumulative text snapshots update as the native decoder emits tokens. {streamTokenCount} token(s) received.</p>}
     </section>}
     <p className="quiet-note"><Cpu size={14} /> AXIOM owns this runtime and the LoRA training loop; the underlying pretrained base weights retain their original model licence.</p>
   </section>;
