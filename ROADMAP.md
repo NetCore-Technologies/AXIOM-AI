@@ -124,7 +124,7 @@ feature exists or a delivery-date promise.
 - [R090 · Planned] Add quantization estimates with formulas and overhead assumptions.
 - [R091 · Planned] Compare quantization candidates against selected memory budgets.
 - [R092 · Planned] Keep estimated fit separate from measured quality and speed.
-- [R093 · Planned] Add runtime logs and request traces with privacy-safe redaction.
+- [R093 · In progress; validation pending] Add bounded in-memory runtime request traces with request IDs, metadata-only records, export, and explicit clear controls.
 - [R094 · Planned] Add model load/unload lifecycle and resource cleanup handling.
 - [R095 · Planned] Add adapter compatibility checks for CPU, CUDA, Metal, and ROCm.
 - [R096 · Planned] Add runtime failure recovery and actionable connector diagnostics.
