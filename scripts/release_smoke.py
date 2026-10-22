@@ -99,7 +99,7 @@ def model_registry_filter_issues(api_source: str, client_source: str, app_source
         'aria-label="Favorites only"',
         "SAVED_MODEL_FILTERS_KEY",
         "localStorage.setItem(SAVED_MODEL_FILTERS_KEY",
-        "const appliedFilters",
+        "setAppliedFilters] = useState<ModelRegistryFilters>",
         "modelsPage(models.length, 25, appliedFilters)",
     ):
         if token not in app_source:
