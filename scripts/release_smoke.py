@@ -208,6 +208,65 @@ def inference_benchmark_issues(core_source: str, api_source: str, client_source:
     return issues
 
 
+def runtime_trace_issues(trace_core: str, inference_api: str, diagnostics_api: str, client_source: str, app_source: str, panel_source: str, e2e_source: str) -> list[str]:
+    """Check runtime request correlation, metadata-only storage, API controls and GUI wiring."""
+    issues: list[str] = []
+    for token in (
+        "MAX_RUNTIME_TRACES = 200",
+        "def record_runtime_trace(",
+        "def list_runtime_traces(",
+        "def clear_runtime_traces(",
+        '"prompt_bodies_stored": False',
+        '"response_bodies_stored": False',
+        '"disk_persistence": False',
+    ):
+        if token not in trace_core:
+            issues.append("Runtime trace store is missing its bounded privacy contract: " + token)
+    for token in (
+        'response.headers["X-Request-ID"] = request_id',
+        'operation="inference.generate"',
+        'operation="inference.benchmark"',
+        'error_code="runtime_unavailable"',
+    ):
+        if token not in inference_api:
+            issues.append("Inference API is missing request correlation or safe failure tracing: " + token)
+    for token in (
+        '@router.get("/runtime-traces")',
+        '@router.delete("/runtime-traces")',
+        "list_runtime_traces(limit)",
+        "clear_runtime_traces()",
+    ):
+        if token not in diagnostics_api:
+            issues.append("Runtime trace history API is missing: " + token)
+    for token in (
+        "export type RuntimeTraceReport",
+        "runtimeTraces: (limit = 50)",
+        "clearRuntimeTraces:",
+    ):
+        if token not in client_source:
+            issues.append("Typed runtime trace client is missing: " + token)
+    if 'import RuntimeTracePanel from "./components/RuntimeTracePanel";' not in app_source or "<RuntimeTracePanel />" not in app_source:
+        issues.append("Runtime page is not integrated with the request-trace panel.")
+    for token in (
+        'aria-label="Runtime request trace history"',
+        "onClick={exportTraces}",
+        "clearRuntimeTraces()",
+        "axiom-runtime-traces.json",
+        "Prompt text, generated responses, credentials",
+    ):
+        if token not in panel_source:
+            issues.append("Runtime trace UI is missing export/clear/privacy behavior: " + token)
+    for token in (
+        "Runtime request traces show safe metadata, export JSON, and clear the in-memory buffer",
+        "/api/diagnostics/runtime-traces",
+        "axiom-runtime-traces.json",
+        "Clear in-memory history",
+    ):
+        if token not in e2e_source:
+            issues.append("Runtime trace browser acceptance coverage is missing: " + token)
+    return issues
+
+
 def api_playground_issues(component: str, client: str) -> list[str]:
     """Validate the Playground's actual typed GET-only client contract and disclosure."""
     issues: list[str] = []
@@ -238,11 +297,11 @@ def inspect(root: Path) -> dict[str, Any]:
     warnings: list[str] = []
     required = [
         "pyproject.toml", "axiom/version.py", "ROADMAP.md", "src/App.tsx",
-        "src/api/client.ts", "src/components/ApiPlayground.tsx", "src/components/RuntimeConnectorPanel.tsx", "src/components/AgentProfiles.tsx", "src/components/LocalInferencePanel.tsx", "src/styles.css",
-        "axiom/api/server.py", "axiom/api/workspace.py", "axiom/api/inference.py", "axiom/core/inference.py", "axiom/models/compatibility.py", "axiom/api/diagnostics.py", "axiom/api/runtime_discovery.py", "axiom/api/agent_profiles.py", "axiom/core/runtime_discovery.py", "axiom/core/agent_profiles.py", "axiom/cli/agent_profiles.py", "scripts/release_smoke.py",
+        "src/api/client.ts", "src/components/ApiPlayground.tsx", "src/components/RuntimeConnectorPanel.tsx", "src/components/AgentProfiles.tsx", "src/components/LocalInferencePanel.tsx", "src/components/RuntimeTracePanel.tsx", "src/styles.css",
+        "axiom/api/server.py", "axiom/api/workspace.py", "axiom/api/inference.py", "axiom/core/inference.py", "axiom/core/runtime_traces.py", "axiom/models/compatibility.py", "axiom/api/diagnostics.py", "axiom/api/runtime_discovery.py", "axiom/api/agent_profiles.py", "axiom/core/runtime_discovery.py", "axiom/core/agent_profiles.py", "axiom/cli/agent_profiles.py", "scripts/release_smoke.py",
         "tests/test_release_smoke.py", "e2e/helpers/auth.ts", "e2e/modules.spec.ts", "e2e/workflows.spec.ts", "e2e/evaluation.spec.ts",
-        "e2e/model-registry-filters.spec.ts", "e2e/inference-benchmark.spec.ts", "tests/test_workspace_model_registry_filters.py",
-        "tests/test_model_compatibility.py", "tests/test_inference_benchmark.py", "tests/test_inference_benchmark_api.py", "tests/test_runtime_discovery.py", "tests/test_runtime_discovery_api.py", "tests/test_agent_profiles.py", "tests/test_agent_profiles_api.py", "tests/test_agent_profiles_cli.py", "e2e/api-playground.spec.ts", "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
+        "e2e/model-registry-filters.spec.ts", "e2e/inference-benchmark.spec.ts", "e2e/runtime-traces.spec.ts", "tests/test_workspace_model_registry_filters.py",
+        "tests/test_model_compatibility.py", "tests/test_inference_benchmark.py", "tests/test_inference_benchmark_api.py", "tests/test_runtime_traces.py", "tests/test_runtime_traces_api.py", "tests/test_runtime_discovery.py", "tests/test_runtime_discovery_api.py", "tests/test_agent_profiles.py", "tests/test_agent_profiles_api.py", "tests/test_agent_profiles_cli.py", "e2e/api-playground.spec.ts", "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
         "docs/Runtime-Discovery.md", "docs/Agent-Profiles.md", "docs/Api-Playground.md", "docs/Inference-Benchmarking.md", ".github/workflows/quality-gates.yml", ".github/workflows/nightly-build.yml",
     ]
     for relative in required:
@@ -284,6 +343,11 @@ def inspect(root: Path) -> dict[str, Any]:
     inference_panel = (root / "src/components/LocalInferencePanel.tsx").read_text(encoding="utf-8")
     inference_e2e = (root / "e2e/inference-benchmark.spec.ts").read_text(encoding="utf-8")
     failures.extend(inference_benchmark_issues(inference_core, inference_api, client, inference_panel, inference_e2e))
+    trace_core = (root / "axiom/core/runtime_traces.py").read_text(encoding="utf-8")
+    diagnostics_api = (root / "axiom/api/diagnostics.py").read_text(encoding="utf-8")
+    trace_panel = (root / "src/components/RuntimeTracePanel.tsx").read_text(encoding="utf-8")
+    trace_e2e = (root / "e2e/runtime-traces.spec.ts").read_text(encoding="utf-8")
+    failures.extend(runtime_trace_issues(trace_core, inference_api, diagnostics_api, client, app_source, trace_panel, trace_e2e))
     for path in (
         "/api/health", "/api/meta", "/api/workspace/runtime",
         "/api/workspace/models?offset=0&limit=5", "/api/workspace/datasets",
@@ -329,7 +393,7 @@ def inspect(root: Path) -> dict[str, Any]:
         "e2e/helpers/auth.ts", "e2e/modules.spec.ts", "e2e/workflows.spec.ts",
         "e2e/evaluation.spec.ts", "e2e/api-playground.spec.ts",
         "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
-        "e2e/model-registry-filters.spec.ts", "e2e/inference-benchmark.spec.ts",
+        "e2e/model-registry-filters.spec.ts", "e2e/inference-benchmark.spec.ts", "e2e/runtime-traces.spec.ts",
     ):
         target = root / relative
         if not target.is_file():
