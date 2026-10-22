@@ -163,6 +163,7 @@ The local API and Control Center use loopback addresses by default. The optional
 - [AXIOM Engine](docs/Local-Engine.md)
 - [API](docs/API.md)
 - [Roadmap](ROADMAP.md)
+- [Community and adoption strategy](docs/Community-and-Adoption-Strategy.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## Contributing
