@@ -101,6 +101,8 @@ For package downloads and checksums, see [GitHub Releases](https://github.com/Ne
 | Check your project setup | `axiom doctor` |
 | See available commands | `axiom --help` |
 
+The **Models** page supports server-side search, exact format/tag filters, favorites-only views, numeric parameter sorting, filtered pagination, and browser-local saved filter presets. See the [Model Registry guide](docs/Model-Registry.md).
+
 ## Optional features
 
 ### Local fine-tuning
@@ -159,6 +161,7 @@ The local API and Control Center use loopback addresses by default. The optional
 - [Changelog](docs/CHANGELOG.md)
 - [Local fine-tuning](docs/Local-Fine-Tuning.md)
 - [Model Studio](docs/Model-Studio.md)
+- [Model Registry](docs/Model-Registry.md)
 - [Local inference via Ollama](docs/Local-Inference.md)
 - [AXIOM Engine](docs/Local-Engine.md)
 - [API](docs/API.md)
