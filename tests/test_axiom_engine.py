@@ -34,7 +34,8 @@ def test_validate_generation_rejects_invalid_bounds(prompt, tokens, temperature)
         validate_generation(prompt, tokens, temperature)
 
 
-def test_model_config_is_read_only_and_reports_architecture(tmp_path) -> None:
+def test_model_config_is_read_only_and_reports_architecture(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(tmp_path))
     (tmp_path / "config.json").write_text(
         json.dumps({"model_type": "llama", "architectures": ["LlamaForCausalLM"]}),
         encoding="utf-8",
@@ -44,7 +45,8 @@ def test_model_config_is_read_only_and_reports_architecture(tmp_path) -> None:
     assert inspected["architecture"] == "LlamaForCausalLM"
 
 
-def test_model_config_rejects_missing_model_type(tmp_path) -> None:
+def test_model_config_rejects_missing_model_type(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(tmp_path))
     (tmp_path / "config.json").write_text(json.dumps({"hidden_size": 8}), encoding="utf-8")
     with pytest.raises(ValueError, match="model_type"):
         _inspect_model_config(tmp_path)
