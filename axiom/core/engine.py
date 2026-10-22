@@ -237,7 +237,7 @@ def generate_local(
                 "AXIOM Engine generation failed. The prompt/context may exceed available memory or this model's limits."
                 + (f" Detail: {detail}" if detail else "")
             ) from None
-        elapsed_ms = round((__import__("time").perf_counter() - started) * 1000, 2)
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
         input_token_count = int(input_ids.shape[-1])
         continuation = output_ids[0, input_token_count:]
         response = tokenizer.decode(continuation, skip_special_tokens=True)
