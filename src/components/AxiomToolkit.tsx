@@ -35,7 +35,7 @@ const CATEGORIES: { name: string; tools: RawTool[] }[] = [
     ["Q3 versus FP16 savings", "quant-savings", "Compare estimated Q3 weights with FP16. A=model parameters in billions.", 3],
     ["Q2 versus FP16 savings", "quant-savings", "Compare estimated Q2 weights with FP16. A=model parameters in billions.", 2],
     ["Compare two bit widths", "quant-compare", "A=parameters in billions, B=source bits per parameter, C=target bits per parameter.", 4],
-    ["Quantized model memory fit", "memory-fit", "A=parameters in billions, B=available GB, C=runtime overhead percentage; this is a weight-only estimate.", 4],
+    ["Quantized model memory fit", "memory-fit", "A=parameters in billions, B=available GB, C=runtime overhead percentage; assumes 4-bit weights and gives a weight-only estimate.", 4],
     ["Model shard planner", "shard-count", "A=estimated file size in GB, B=target shard size in GB.", 4],
     ["Compression ratio", "compression-ratio", "A=original size in GB, B=compressed size in GB.", 4],
   ]},
@@ -88,7 +88,7 @@ const CATEGORIES: { name: string; tools: RawTool[] }[] = [
     ["Request latency summary", "latency-summary", "Paste latency samples in milliseconds into Text A. Summarizes min, median, p95, and max.", 1],
   ]},
   { name: "Hardware planning", tools: [
-    ["Memory fit with reserve", "memory-fit", "A=model parameters in billions, B=physical memory GB, C=reserve percentage. Uses the selected tool's bit width.", 4],
+    ["Memory fit with reserve", "memory-fit", "A=model parameters in billions, B=physical memory GB, C=reserve percentage. Estimates 4-bit weights before KV cache and activations.", 4],
     ["Available memory after reserve", "memory-reserve", "A=installed memory GB, B=reserve percentage for OS and other workloads.", 1],
     ["CPU worker recommendation", "cpu-workers", "A=logical CPU cores, B=cores reserved for other work.", 1],
     ["Bandwidth-limited token rate", "bandwidth-rate", "A=memory bandwidth GB/s, B=bytes read per generated token in GB-equivalent bytes.", 1],
@@ -288,8 +288,11 @@ function localHostCheck(value: string): { host: string; appearsLocal: boolean; r
     (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
     (parts[0] === 169 && parts[1] === 254)
   );
-  const appearsLocal = host === "localhost" || host === "::1" || host.endsWith(".local") || Boolean(privateV4);
-  return { host, appearsLocal, reason: appearsLocal ? "Loopback/private/link-local name or address pattern" : "Does not match recognized local/private patterns" };
+  const ipv6Loopback = host === "::1";
+  const ipv6UniqueLocal = /^f[cd][0-9a-f]{2}:/i.test(host);
+  const ipv6LinkLocal = /^fe[89ab][0-9a-f]:/i.test(host);
+  const appearsLocal = host === "localhost" || host.endsWith(".local") || Boolean(privateV4) || ipv6Loopback || ipv6UniqueLocal || ipv6LinkLocal;
+  return { host, appearsLocal, ipv6_loopback: ipv6Loopback, ipv6_unique_local: ipv6UniqueLocal, ipv6_link_local: ipv6LinkLocal, reason: appearsLocal ? "Loopback/private/link-local name or address pattern" : "Does not match recognized local/private patterns" };
 }
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Utility could not complete.";
