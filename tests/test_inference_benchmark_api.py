@@ -104,6 +104,7 @@ def test_benchmark_endpoint_maps_runtime_unavailability_to_503(monkeypatch) -> N
 
     assert response.status_code == 503
     assert response.json()["detail"] == "Local inference benchmark failed because the runtime did not complete the request."
+    assert response.headers["X-Request-ID"] == list_runtime_traces()["traces"][0]["request_id"]
     assert list_runtime_traces()["traces"][0]["error_code"] == "runtime_unavailable"
 
 
