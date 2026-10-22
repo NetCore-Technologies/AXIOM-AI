@@ -530,7 +530,9 @@ async function runOperation(tool: Tool, input: ToolkitInput): Promise<string> {
         ["github_token", /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g],
         ["openai_like_key", /\bsk-[A-Za-z0-9_-]{16,}\b/g],
         ["aws_access_key", /\bAKIA[A-Z0-9]{16}\b/g],
-        ["password_assignment", /\b(password|passwd|secret)\s*[:=]\s*\S+/gi],
+        ["api_key_assignment", /\bapi[_-]?key\s*[:=]\s*["']?[^'" \r\n,;}]+/gi],
+        ["api_token_assignment", /\bapi[_-]?token\s*[:=]\s*["']?[^'" \r\n,;}]+/gi],
+        ["credential_assignment", /\b(access[_-]?token|refresh[_-]?token|client[_-]?secret|credential|authorization|password|passwd|secret|token)\s*[:=]\s*["']?[^'" \r\n,;}]+/gi],
       ];
       return json(Object.fromEntries(patterns.map(([name, pattern]) => [name, (textA.match(pattern) ?? []).length])));
     }
