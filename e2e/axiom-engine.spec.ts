@@ -25,11 +25,14 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
     connectors: [],
   } }));
   await page.route("**/api/engine/status", (route) => route.fulfill({ json: {
-    engine: "axiom-local-engine", ready: true, packages: { torch: true, transformers: true, peft: true },
-    versions: { torch: "2.9.0", transformers: "5.0.0", peft: "0.21.0" },
-    loaded: engineLoaded, architecture: engineLoaded ? "LlamaForCausalLM" : null, model_loading: "local_files_only", remote_code: false,
-    setup_note: "AXIOM Engine is ready for local Transformers causal-LM checkpoints.",
-    scope_note: "Local model files only.", checked_at: "2026-10-21T00:00:00Z",
+    engine: "axiom-native-pytorch-llama", ready: true, packages: { torch: true, tokenizers: true, safetensors: true },
+    versions: { torch: "2.9.0", tokenizers: "0.22.0", safetensors: "0.6.0" },
+    minimum_versions: { torch: "2.2.0", tokenizers: "0.19.0", safetensors: "0.4.0" },
+    problems: [], execution_backend: "pytorch-native-axiom", transformers_generation_used: false, ollama_used: false,
+    supported_model_types: ["llama", "mistral"], supported_weights: ["safetensors"],
+    loaded: engineLoaded, architecture: engineLoaded ? "LlamaForCausalLM" : null, model_loading: "local_safetensors_only", remote_code: false,
+    setup_note: "AXIOM Native Engine is ready for supported local Llama/Mistral safetensors checkpoints.",
+    scope_note: "AXIOM-owned Llama/Mistral forward pass and autoregressive KV-cache decoder.", checked_at: "2026-10-22T00:00:00Z",
   } }));
   await page.route("**/api/engine/generate", (route) => {
     engineLoaded = true;
@@ -53,6 +56,8 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
 
   const engine = page.locator(".axiom-engine-panel");
   await expect(engine.getByRole("heading", { name: "AXIOM Local Engine" })).toBeVisible();
+  await expect(engine).toContainText("own PyTorch Llama/Mistral forward pass");
+  await expect(engine).toContainText("safetensors");
   await expect(engine.getByText("ENGINE READY")).toBeVisible();
 
   await engine.getByLabel("Local Llama / Transformers model directory").fill("/models/llama-test");
