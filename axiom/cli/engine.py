@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from axiom.core.engine import AxiomEngineError, generate_local, runtime_status
+from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, generate_local, runtime_status
 
 engine_app = typer.Typer(help="Run causal language models directly through AXIOM's local engine.", no_args_is_help=True)
 console = Console()
@@ -18,6 +18,50 @@ console = Console()
 def _fail(message: str) -> None:
     console.print(f"[red]Error:[/red] {message}")
     raise typer.Exit(code=1)
+
+
+@engine_app.command("discover")
+def engine_discover(
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """Discover native-compatible local models and LoRA adapters below trusted roots."""
+    report = discover_local_engine_assets()
+    if json_output:
+        typer.echo(json.dumps(report, indent=2, ensure_ascii=False))
+        return
+
+    models = report["models"]
+    adapters = report["adapters"]
+    if models:
+        table = Table(title=f"Native models ({len(models)})")
+        table.add_column("Name", style="cyan")
+        table.add_column("Type")
+        table.add_column("Architecture")
+        table.add_column("Checkpoint")
+        table.add_column("Path")
+        for model in models:
+            table.add_row(
+                model["name"], model["model_type"], model["architecture"],
+                model["weight_format"], model["path"],
+            )
+        console.print(table)
+    else:
+        console.print("[yellow]No compatible native models found under trusted roots.[/yellow]")
+
+    if adapters:
+        table = Table(title=f"LoRA adapters ({len(adapters)})")
+        table.add_column("Name", style="cyan")
+        table.add_column("Format")
+        table.add_column("Path")
+        for adapter in adapters:
+            table.add_row(adapter["name"], adapter["weight_format"], adapter["path"])
+        console.print(table)
+    elif not models:
+        console.print("No native-compatible LoRA adapters found.")
+
+    if report["truncated"]:
+        console.print("[yellow]The inventory reached its result cap. Narrow AXIOM_MODEL_ROOTS to inspect a smaller set.[/yellow]")
+    console.print(report["scope_note"])
 
 
 @engine_app.command("status")
