@@ -52,7 +52,7 @@ def _lock_path() -> Path:
 
 
 def _version_key(value: str) -> tuple[int, ...]:
-    return tuple(int(part) for part in re.findall(r"\\d+", value)[:3])
+    return tuple(int(part) for part in re.findall(r"\d+", value)[:3])
 
 
 def runtime_status() -> dict[str, Any]:
