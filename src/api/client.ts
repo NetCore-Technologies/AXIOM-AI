@@ -34,6 +34,15 @@ export type LocalInferenceResult = {
   total_duration_ms: number | null;
   generated_at: string;
 };
+export type AxiomEngineStatus = {
+  engine: string; ready: boolean; packages: Record<string, boolean>; versions: Record<string, string | null>;
+  loaded: boolean; architecture: string | null; model_loading: "local_files_only"; remote_code: false;
+  setup_note: string; scope_note: string; checked_at: string;
+};
+export type AxiomEngineResult = {
+  engine: "axiom-local-engine"; model: string; architecture: string; adapter: string | null; response: string;
+  prompt_tokens: number; completion_tokens: number; elapsed_ms: number; generated_at: string; local_only: true;
+};
 
 export type ModelStudioModel = { id: string; author: string; downloads: number; likes: number; pipeline_tag: string; last_modified: string; tags: string[]; url: string };
 export type ModelStudioFile = { filename: string; size_bytes: number | null; quantization: string };
@@ -274,6 +283,10 @@ export type FineTuningRuntime = {
   backend: string;
   can_start: boolean;
   packages: Record<string, boolean>;
+  versions?: Record<string, string | null>;
+  minimum_versions?: Record<string, string>;
+  problems?: string[];
+  setup_note?: string;
   model_loading: "local_files_only";
   scope_note: string;
 };
@@ -285,7 +298,7 @@ export type FineTuningJob = {
   schema_version: 1; id: string; status: "queued" | "running" | "completed" | "failed";
   created_at: string; updated_at: string; started_at: string | null; finished_at: string | null;
   config: FineTuningConfig; completed_steps: number; loss: number | null; error: string | null;
-  logs: string[]; result?: { output_dir: string; adapter_files: string[]; target_modules: string[]; dataset_rows: number; max_steps: number };
+  logs: string[]; result?: { output_dir: string; adapter_files: string[]; target_modules: string[]; dataset_rows: number; max_steps: number; device?: string; engine?: string; trainable_parameters?: number };
 };
 
 export type WorkspaceEvent = {
@@ -1014,6 +1027,11 @@ export const axiomApi = {
   inferenceStatus: () => requestJson<LocalInferenceStatus>("/api/inference/status"),
   runLocalInference: (input: { model: string; prompt: string; num_predict: number; temperature: number }) =>
     requestJson<LocalInferenceResult>("/api/inference/generate", {
+      method: "POST", body: JSON.stringify(input),
+    }, 300_000),
+  axiomEngineStatus: () => requestJson<AxiomEngineStatus>("/api/engine/status"),
+  runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number }) =>
+    requestJson<AxiomEngineResult>("/api/engine/generate", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
   modelStudioStatus: () => requestJson<ModelStudioStatus>("/api/models/studio/status"),
