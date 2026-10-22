@@ -55,6 +55,7 @@ def _version_key(value: str) -> tuple[int, int, int]:
     parts = [int(part) for part in re.findall(r"\d+", value)[:3]]
     return tuple((parts + [0, 0, 0])[:3])
 
+
 def runtime_status() -> dict[str, Any]:
     packages: dict[str, bool] = {}
     versions: dict[str, str | None] = {}
@@ -398,7 +399,7 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
             model_path, local_files_only=True, trust_remote_code=False
         )
     except Exception as exc:
-        message = str(exc).replace("\\r", " ").replace("\\n", " ").strip()[:300]
+        message = str(exc).replace("\r", " ").replace("\n", " ").strip()[:300]
         raise FineTuningError(
             "Could not load the local base model/tokenizer. Confirm model weights and tokenizer files exist "
             "and are compatible with the installed Transformers version." + (f" Detail: {message}" if message else "")
@@ -442,7 +443,7 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
             ),
         )
     except Exception as exc:
-        message = str(exc).replace("\\r", " ").replace("\\n", " ").strip()[:300]
+        message = str(exc).replace("\r", " ").replace("\n", " ").strip()[:300]
         raise FineTuningError(
             "PEFT could not attach a LoRA adapter to this model architecture." + (f" Detail: {message}" if message else "")
         ) from None
@@ -461,7 +462,7 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
     try:
         model.to(device)
     except Exception as exc:
-        message = str(exc).replace("\\r", " ").replace("\\n", " ").strip()[:240]
+        message = str(exc).replace("\r", " ").replace("\n", " ").strip()[:240]
         raise FineTuningError(
             f"Could not place the local model on {device}. The model may exceed available memory." + (f" Detail: {message}" if message else "")
         ) from None
@@ -517,7 +518,7 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
         except FineTuningError:
             raise
         except Exception as exc:
-            message = str(exc).replace("\\r", " ").replace("\\n", " ").strip()[:300]
+            message = str(exc).replace("\r", " ").replace("\n", " ").strip()[:300]
             raise FineTuningError(
                 f"Local LoRA training failed at step {step} on {device}. Check available memory and model compatibility."
                 + (f" Detail: {message}" if message else "")
@@ -528,7 +529,7 @@ def _run_transformers(config: dict[str, Any], progress: Callable[[int, float | N
         model.save_pretrained(str(output_dir), safe_serialization=True)
         tokenizer.save_pretrained(str(output_dir))
     except Exception as exc:
-        message = str(exc).replace("\\r", " ").replace("\\n", " ").strip()[:300]
+        message = str(exc).replace("\r", " ").replace("\n", " ").strip()[:300]
         raise FineTuningError("Training completed, but saving the adapter/tokenizer failed." + (f" Detail: {message}" if message else "")) from None
 
     adapter_files = sorted(path.name for path in output_dir.iterdir() if path.is_file())
