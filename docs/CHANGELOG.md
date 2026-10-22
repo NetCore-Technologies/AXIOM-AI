@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — latest/development
+
+### Added
+
+- Added AXIOM Engine, an AXIOM-owned direct local causal-LM runtime with Control Center and CLI access, bounded generation, and optional local PEFT adapter loading.
+- Added AXIOM's own small-batch PyTorch LoRA training loop, masked padding labels, finite-loss checks, gradient clipping, adapter artifact verification, and dependency version diagnostics.
+
+### Fixed
+
+- Aligned LoRA optional dependency minimums with Transformers 5 and blocked training when installed dependency versions are too old.
+- Improved local model/adapter loading errors without enabling remote model code or model downloads.
+
+### Scope
+
+- AXIOM owns the engine orchestration and training loop; the pretrained base weights are user-supplied local model files and remain subject to their original licences.
+
 ## 0.3.0-beta.4
 
 ### Added
