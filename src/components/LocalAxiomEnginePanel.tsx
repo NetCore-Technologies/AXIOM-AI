@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Activity, Cpu, Play, RefreshCcw, Unplug } from "lucide-react";
+const formatEstimatedMemory = (gib: number): string => {
+  if (!Number.isFinite(gib) || gib < 0) return "n/a";
+  if (gib >= 0.01) return `${gib.toFixed(2)} GiB`;
+  if (gib >= 0.001) return `${gib.toFixed(4)} GiB`;
+  if (gib >= 1 / (1024 * 1024)) return `${(gib * 1024 * 1024).toFixed(2)} KiB`;
+  return `${(gib * 1024 ** 3).toFixed(0)} bytes`;
+};
+
 import { axiomApi, type AxiomEngineAdapterCompatibility, type AxiomEngineAssets, type AxiomEngineResult, type AxiomEngineStatus, type AxiomEngineStreamEvent, type AxiomQuantizationEstimate } from "../api/client";
 
 export default function LocalAxiomEnginePanel() {
@@ -342,12 +350,18 @@ export default function LocalAxiomEnginePanel() {
           </div>
         </div>
         <p className="quiet-note">{quantizationPlan.scope_note}</p>
+        <p className="quiet-note">
+          <strong>{quantizationPlan.recommendation.format
+            ? `Budget-based planning recommendation: ${quantizationPlan.recommendation.format.toUpperCase()}.`
+            : "No native precision is estimated to fit all supplied budgets."}</strong>
+          {" "}{quantizationPlan.recommendation.note}
+        </p>
         <div className="two-column-grid">
           {quantizationPlan.candidates.map((candidate) => <article className="surface" key={candidate.format} aria-label={candidate.format + " memory candidate"}>
             <h4>{candidate.format.toUpperCase()}</h4>
-            <p><strong>{candidate.estimated_total_gib.toFixed(2)} GiB estimated</strong></p>
-            <p className="quiet-note">Uncertainty range {candidate.estimated_range_gib[0].toFixed(2)}–{candidate.estimated_range_gib[1].toFixed(2)} GiB</p>
-            <p className="quiet-note">Weights {candidate.estimated_weight_gib.toFixed(2)} GiB · KV cache {candidate.estimated_kv_cache_gib.toFixed(2)} GiB · Workspace {candidate.estimated_workspace_gib.toFixed(2)} GiB</p>
+            <p><strong>{formatEstimatedMemory(candidate.estimated_total_gib)} estimated</strong></p>
+            <p className="quiet-note">Uncertainty range {formatEstimatedMemory(candidate.estimated_range_gib[0])}–{formatEstimatedMemory(candidate.estimated_range_gib[1])}</p>
+            <p className="quiet-note">Weights {formatEstimatedMemory(candidate.estimated_weight_gib)} · KV cache {formatEstimatedMemory(candidate.estimated_kv_cache_gib)} · Workspace {formatEstimatedMemory(candidate.estimated_workspace_gib)}</p>
             {candidate.fits_ram_budget !== null && <p>RAM budget: {candidate.fits_ram_budget ? "Estimated fit" : "Over estimated budget"}</p>}
             {candidate.fits_vram_budget !== null && <p>VRAM budget: {candidate.fits_vram_budget ? "Estimated fit" : "Over estimated budget"}</p>}
             <p>{candidate.native_checkpoint_supported ? "Floating-point format supported by native loader (actual load still required)." : "Sizing only — native loader does not support this quantized format."}</p>
