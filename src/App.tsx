@@ -1049,7 +1049,7 @@ function Welcome({
       </div>
 
       <div className="auth-footer">
-        <span>AXIOM / 0.2.0-beta.5</span>
+        <span>AXIOM / 0.3.0-beta.5</span>
         <span>LOCAL · PRIVATE · ENGINEERED FOR AI</span>
       </div>
     </div>
