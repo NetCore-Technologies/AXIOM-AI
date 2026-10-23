@@ -54,6 +54,8 @@ Open **Runtime → AXIOM Local Engine**. Select a discovered model/adapter from 
 
 A standard bias-free CAUSAL_LM LoRA adapter may be selected. AXIOM applies its A/B projection deltas in its own linear-projection path. DoRA, QALoRA, per-module rank/alpha patterns, saved replacement modules, bias-enabled adapters, unsupported target modules, and pickle adapter weights are rejected.
 
+Before generation, use **Check adapter compatibility** to run a metadata/tensor-shape preflight against the chosen base model. The report separates CPU, NVIDIA CUDA, AMD ROCm, and Apple Metal/MPS availability and lists structural blockers by target module, rank, or shape. It does not allocate the full base model or guarantee device memory/driver/kernel success; actual generation remains the final execution test.
+
 ## Execution path
 
 1. Validate paths against trusted roots and read bounded JSON configuration.
