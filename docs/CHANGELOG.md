@@ -47,6 +47,7 @@
 
 ### Added
 
+- Exposed temperature, top-p, top-k, repetition penalty and optional seed in the native Runtime form; typed API streaming carries every setting into AXIOM's decoder and reports effective sampling metadata.
 - Added a searchable Control Center Module Explorer across GUI pages, CLI command families, and API surfaces.
 - Added workspace diagnostics with machine-readable CLI output using `axiom doctor --json`.
 - Added a roadmap audit command, `axiom roadmap audit --json`, and GUI roadmap integrity reporting.
