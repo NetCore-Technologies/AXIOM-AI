@@ -9,7 +9,7 @@ checkpoints are accepted; unsupported formats are rejected, not delegated.
 from __future__ import annotations
 from contextlib import ExitStack
 from dataclasses import dataclass
-import json, math, re, threading
+import json, math, re, threading, time
 from pathlib import Path
 from typing import Any, Iterator, Mapping
 
@@ -684,13 +684,18 @@ class NativeLlamaRuntime:
         tokens = torch.tensor([prompt_token_ids], device=self.device, dtype=torch.long)
         generated: list[int] = []
         cache: tuple[Any, ...] = ()
+        prefill_ms = 0.0
+        decode_ms = 0.0
         try:
             with torch.inference_mode():
                 if cancel_event is not None and cancel_event.is_set():
                     return
+                prefill_started = time.perf_counter()
                 try:
                     logits, cache = self.forward(tokens, cancel_event=cancel_event)
+                    prefill_ms = (time.perf_counter() - prefill_started) * 1000
                 except NativeGenerationCancelled:
+                    prefill_ms = (time.perf_counter() - prefill_started) * 1000
                     return
                 for step in range(max_new_tokens):
                     if cancel_event is not None and cancel_event.is_set():
@@ -736,12 +741,15 @@ class NativeLlamaRuntime:
                     if cancel_event is not None and cancel_event.is_set():
                         break
                     if step + 1 < max_new_tokens:
+                        decode_started = time.perf_counter()
                         try:
                             logits, cache = self.forward(
                                 next_token.view(1, 1), cache, cancel_event=cancel_event
                             )
                         except NativeGenerationCancelled:
+                            decode_ms += (time.perf_counter() - decode_started) * 1000
                             break
+                        decode_ms += (time.perf_counter() - decode_started) * 1000
         finally:
             self.last_generation = {
                 "prompt_tokens": len(prompt_token_ids),
@@ -752,6 +760,12 @@ class NativeLlamaRuntime:
                 "top_k": top_k,
                 "repetition_penalty": float(repetition_penalty),
                 "seed": seed,
+                "prefill_ms": round(prefill_ms, 3),
+                "decode_ms": round(decode_ms, 3),
+                "time_to_first_token_ms": round(prefill_ms, 3),
+                "generation_tokens_per_second": round(
+                    len(generated) * 1000 / (prefill_ms + decode_ms), 3
+                ) if prefill_ms + decode_ms > 0 and generated else 0.0,
             }
 
     def generate(
