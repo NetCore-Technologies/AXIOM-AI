@@ -126,7 +126,7 @@ feature exists or a delivery-date promise.
 - [R092 · Planned] Keep estimated fit separate from measured quality and speed.
 - [R093 · Implemented; tests passing] Add bounded in-memory runtime request traces with request IDs, metadata-only records, export, and explicit clear controls.
 - [R094 · Implemented; tests passing] Add explicit model unload and cache cleanup, plus one-model-at-a-time cache replacement; framework allocator release remains best-effort.
-- [R095 · Planned] Add adapter compatibility checks for CPU, CUDA, Metal, and ROCm.
+- [R095 · In progress; validation pending] Add adapter compatibility checks for CPU, CUDA, Metal, and ROCm; metadata/tensor-shape preflight and per-device availability reporting are now wired but require the release test gate to pass.
 - [R096 · Planned] Add runtime failure recovery and actionable connector diagnostics.
 
 ### 09 · Agent profiles, MCP, and security
