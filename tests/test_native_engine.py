@@ -195,6 +195,68 @@ def test_native_iterator_stops_before_next_token_forward_when_cancelled(monkeypa
     assert runtime.last_generation["completion_tokens"] == 1
 
 
+def _tiny_adapter_file(safetensors_torch, torch, root: Path, *, bad_a_shape: bool = False) -> Path:
+    adapter = root / "tiny-lora"
+    adapter.mkdir()
+    (adapter / "adapter_config.json").write_text(json.dumps({
+        "task_type": "CAUSAL_LM", "bias": "none", "r": 1,
+        "lora_alpha": 2, "target_modules": ["q_proj"],
+    }), encoding="utf-8")
+    a_shape = (1, 7) if bad_a_shape else (1, 8)
+    safetensors_torch.save_file({
+        "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": torch.ones(a_shape),
+        "base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": torch.ones((8, 1)),
+    }, str(adapter / "adapter_model.safetensors"))
+    return adapter
+
+
+def test_native_adapter_compatibility_checks_tensor_shapes_and_device_presence(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    safetensors_torch = pytest.importorskip("safetensors.torch")
+    from axiom.core.native_engine import inspect_native_adapter_compatibility
+
+    root = tmp_path / "trusted"
+    model = root / "base"
+    model.mkdir(parents=True)
+    (model / "config.json").write_text(json.dumps(_config()), encoding="utf-8")
+    (model / "tokenizer.json").write_text("{}", encoding="utf-8")
+    safetensors_torch.save_file(_tiny_weights(torch), str(model / "model.safetensors"))
+    adapter = _tiny_adapter_file(safetensors_torch, torch, root)
+
+    report = inspect_native_adapter_compatibility(model, adapter, trusted_roots=(root.resolve(),))
+
+    assert report["schema_version"] == 1
+    assert report["structurally_compatible"] is True
+    assert report["issues"] == []
+    assert report["adapter"]["rank"] == 1
+    assert report["adapter"]["target_modules"] == ["q_proj"]
+    assert report["adapter_tensor_count"] == 2
+    assert {device["name"] for device in report["devices"]} == {"CPU", "CUDA", "ROCm", "Metal/MPS"}
+    cpu = next(device for device in report["devices"] if device["name"] == "CPU")
+    assert cpu["available"] is True
+    assert cpu["compatible"] is True
+
+
+def test_native_adapter_compatibility_rejects_projection_shape_mismatch(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    safetensors_torch = pytest.importorskip("safetensors.torch")
+    from axiom.core.native_engine import inspect_native_adapter_compatibility
+
+    root = tmp_path / "trusted"
+    model = root / "base"
+    model.mkdir(parents=True)
+    (model / "config.json").write_text(json.dumps(_config()), encoding="utf-8")
+    (model / "tokenizer.json").write_text("{}", encoding="utf-8")
+    safetensors_torch.save_file(_tiny_weights(torch), str(model / "model.safetensors"))
+    adapter = _tiny_adapter_file(safetensors_torch, torch, root, bad_a_shape=True)
+
+    report = inspect_native_adapter_compatibility(model, adapter, trusted_roots=(root.resolve(),))
+
+    assert report["structurally_compatible"] is False
+    assert any("LoRA A tensor shape" in issue for issue in report["issues"])
+    assert next(device for device in report["devices"] if device["name"] == "CPU")["compatible"] is False
+
+
 def test_native_adapter_delta_is_applied_in_axiom_linear_path() -> None:
     torch = pytest.importorskip("torch")
     from axiom.core.native_engine import NativeLlamaRuntime
