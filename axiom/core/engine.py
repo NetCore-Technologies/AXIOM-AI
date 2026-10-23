@@ -415,6 +415,39 @@ def validate_sampling_parameters(
     return float(top_p), top_k, float(repetition_penalty), seed
 
 
+def validate_stop_sequences(stop_sequences: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    """Validate bounded stop strings while preserving intentional surrounding spaces."""
+    if stop_sequences is None:
+        return ()
+    if not isinstance(stop_sequences, (list, tuple)):
+        raise ValueError("Stop sequences must be a list of text strings.")
+    if len(stop_sequences) > 16:
+        raise ValueError("At most 16 stop sequences may be configured per inference request.")
+    validated: list[str] = []
+    for sequence in stop_sequences:
+        if not isinstance(sequence, str):
+            raise ValueError("Every stop sequence must be text.")
+        if not sequence or not sequence.strip():
+            raise ValueError("Stop sequences must contain at least one non-whitespace character.")
+        if len(sequence) > 256:
+            raise ValueError("Each stop sequence is limited to 256 characters.")
+        if sequence not in validated:
+            validated.append(sequence)
+    return tuple(validated)
+
+
+def _pending_stop_prefix_length(text: str, stop_sequences: tuple[str, ...]) -> int:
+    """Length of the longest text suffix that could become a stop sequence."""
+    longest = 0
+    for sequence in stop_sequences:
+        upper = min(len(sequence) - 1, len(text))
+        for size in range(upper, 0, -1):
+            if size > longest and text.endswith(sequence[:size]):
+                longest = size
+                break
+    return longest
+
+
 def _load_local_model(model_path: str, adapter_path: str | None):
     global _LOADED_RUNTIME, _LOADED_ARCHITECTURE
     try:
@@ -535,6 +568,7 @@ def generate_local_stream(
     top_k: int = 0,
     repetition_penalty: float = 1.0,
     seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] = (),
     include_token_events: bool = True,
     cancel_event: threading.Event | None = None,
 ) -> Iterator[dict[str, Any]]:
@@ -546,6 +580,7 @@ def generate_local_stream(
     """
     prompt, max_new_tokens, temperature = validate_generation(prompt, max_new_tokens, temperature)
     top_p, top_k, repetition_penalty, seed = validate_sampling_parameters(top_p, top_k, repetition_penalty, seed)
+    stop_sequences = validate_stop_sequences(stop_sequences)
     with _ENGINE_LOCK:
         model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path)
         context_cap = max(2, min(model.config.max_position_embeddings, _MAX_INPUT_TOKENS + max_new_tokens))
@@ -582,22 +617,59 @@ def generate_local_stream(
             eos_token_ids=model.config.eos_token_ids,
             cancel_event=cancel_event,
         )
+        stop_reason = "max_new_tokens"
         try:
             for token_id in iterator:
+                if cancel_event is not None and cancel_event.is_set():
+                    stop_reason = "cancelled"
+                    break
                 generated_ids.append(token_id)
+                if not include_token_events and not stop_sequences:
+                    continue
+                try:
+                    decoded_response = tokenizer.decode(generated_ids, skip_special_tokens=True)[:100_000]
+                except Exception:
+                    raise AxiomEngineError("Generated token stream could not be decoded by tokenizer.json.") from None
+
+                matches = [
+                    (decoded_response.find(sequence), sequence)
+                    for sequence in stop_sequences
+                    if sequence in decoded_response
+                ]
+                if matches:
+                    stop_at = min(position for position, _sequence in matches)
+                    response = decoded_response[:stop_at]
+                    stop_reason = "stop_sequence"
+                    if include_token_events:
+                        yield {
+                            "type": "token",
+                            "response": response,
+                            "completion_tokens": len(generated_ids),
+                        }
+                    # Closing now finalizes the native generator's metrics and
+                    # releases the KV cache before the completion event is built.
+                    close_iterator = getattr(iterator, "close", None)
+                    if callable(close_iterator):
+                        close_iterator()
+                    break
+
+                pending = _pending_stop_prefix_length(decoded_response, stop_sequences)
+                response = decoded_response[:-pending] if pending else decoded_response
                 if include_token_events:
-                    try:
-                        # Byte-level tokenizers may not produce a standalone
-                        # printable fragment for every token, so emit a snapshot.
-                        response = tokenizer.decode(generated_ids, skip_special_tokens=True)[:100_000]
-                    except Exception:
-                        raise AxiomEngineError("Generated token stream could not be decoded by tokenizer.json.") from None
                     yield {
                         "type": "token",
                         "response": response,
                         "completion_tokens": len(generated_ids),
                     }
-            response = tokenizer.decode(generated_ids, skip_special_tokens=True)[:100_000]
+
+            if stop_reason != "stop_sequence":
+                # Flush any partial stop-prefix back into the final text if no
+                # complete stop sequence was ever observed.
+                response = tokenizer.decode(generated_ids, skip_special_tokens=True)[:100_000]
+                if cancel_event is not None and cancel_event.is_set():
+                    stop_reason = "cancelled"
+                else:
+                    stop_reason = model.last_generation.get("stop_reason", stop_reason)
             elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
             result = {
                 "engine": "axiom-native-engine",
@@ -623,9 +695,11 @@ def generate_local_stream(
                     "repetition_penalty": repetition_penalty,
                     "seed": seed,
                 },
+                "stop_sequences": list(stop_sequences),
+                "stop_reason": stop_reason,
                 "response": response,
                 "prompt_tokens": model.last_generation.get("prompt_tokens", len(prompt_ids)),
-                "completion_tokens": model.last_generation.get("completion_tokens", len(generated_ids)),
+                "completion_tokens": len(generated_ids),
                 "elapsed_ms": elapsed_ms,
                 "generated_at": datetime.now(UTC).isoformat(),
                 "local_only": True,
@@ -656,6 +730,7 @@ def generate_local(
     top_k: int = 0,
     repetition_penalty: float = 1.0,
     seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Generate a complete local response through the streaming decoder."""
     completed: dict[str, Any] | None = None
@@ -669,6 +744,7 @@ def generate_local(
         top_k=top_k,
         repetition_penalty=repetition_penalty,
         seed=seed,
+        stop_sequences=stop_sequences,
         include_token_events=False,
     ):
         if event.get("type") == "complete" and isinstance(event.get("result"), dict):
