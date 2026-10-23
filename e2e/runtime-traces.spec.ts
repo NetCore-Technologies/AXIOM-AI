@@ -102,8 +102,8 @@ test("Runtime request traces show safe metadata, export JSON, and clear the in-m
 
   await ensureAuthenticated(page);
   await page.goto("/?page=runtime");
-  const tracesPanel = page.getByRole("region", { name: "Runtime request traces", exact: true });
-  await expect(page.getByRole("heading", { name: "Runtime request traces" })).toBeVisible();
+  const tracesPanel = page.getByRole("region", { name: "Runtime request trace history", exact: true });
+  await expect(page.getByRole("heading", { name: "Runtime request trace history" })).toBeVisible();
   await expect(page.getByRole("table", { name: "Runtime request trace history" }).getByRole("row")).toHaveCount(3);
   await expect(page.getByText("inference.generate", { exact: true })).toBeVisible();
   await expect(page.getByText("runtime_unavailable", { exact: true })).toBeVisible();

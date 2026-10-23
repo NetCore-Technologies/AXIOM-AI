@@ -91,7 +91,7 @@ def test_compatibility_endpoint_returns_report_for_registered_model(monkeypatch)
             return model if model_id == model.id else None
 
     monkeypatch.setattr(workspace, "ModelRegistry", StubRegistry)
-    monkeypatch.setattr(workspace, "detect_hardware", lambda: _hardware())
+    monkeypatch.setattr(workspace, "detect_hardware", _hardware)
     app = FastAPI()
     app.include_router(workspace.router)
     client = TestClient(app)

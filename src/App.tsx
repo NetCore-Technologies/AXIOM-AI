@@ -126,6 +126,16 @@ type Page =
   | "quantizer";
 
 type Theme = "dark" | "light";
+type LayoutDensity = "comfortable" | "compact";
+type AccentColor = "lime" | "blue" | "violet";
+type AppPreferences = {
+  sessionTimeoutMinutes: number;
+  density: LayoutDensity;
+  accentColor: AccentColor;
+  reduceMotion: boolean;
+  lowPowerMode: boolean;
+  dashboardRefreshSeconds: number;
+};
 type Tone = "success" | "warning" | "danger" | "neutral" | "info";
 
 type NavItem = {
@@ -424,6 +434,65 @@ const SESSION_KEY = "axiom-session";
 const REMEMBERED_SESSION_KEY = "axiom-remembered-session";
 const REMEMBER_PREFERENCE_KEY = "axiom-remember-me";
 const THEME_KEY = "axiom-theme";
+const PREFERENCES_KEY = "axiom-preferences-v1";
+const LAST_ACTIVITY_KEY = "axiom-last-activity";
+
+const DEFAULT_PREFERENCES: AppPreferences = {
+  sessionTimeoutMinutes: 30,
+  density: "comfortable",
+  accentColor: "lime",
+  reduceMotion: false,
+  lowPowerMode: false,
+  dashboardRefreshSeconds: 10,
+};
+
+function readPreferences(): AppPreferences {
+  try {
+    const raw = localStorage.getItem(PREFERENCES_KEY);
+    if (!raw) return { ...DEFAULT_PREFERENCES };
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object") return { ...DEFAULT_PREFERENCES };
+    const stored = value as Partial<AppPreferences>;
+    const timeout = stored.sessionTimeoutMinutes;
+    const refresh = stored.dashboardRefreshSeconds;
+    const sessionTimeoutMinutes =
+      typeof timeout === "number" && Number.isInteger(timeout) && timeout >= 1 && timeout <= 300
+        ? timeout : DEFAULT_PREFERENCES.sessionTimeoutMinutes;
+    const requestedRefresh =
+      typeof refresh === "number" && Number.isInteger(refresh) &&
+      (refresh === 0 || (refresh >= 5 && refresh <= 120))
+        ? refresh : DEFAULT_PREFERENCES.dashboardRefreshSeconds;
+    const lowPowerMode = stored.lowPowerMode === true;
+    return {
+      sessionTimeoutMinutes,
+      density: stored.density === "compact" ? "compact" : "comfortable",
+      accentColor: stored.accentColor === "blue" || stored.accentColor === "violet" ? stored.accentColor : "lime",
+      reduceMotion: stored.reduceMotion === true,
+      lowPowerMode,
+      // Low-power and recurring dashboard polling are incompatible; normalize
+      // stale/corrupted persisted state safely instead of reviving both.
+      dashboardRefreshSeconds: lowPowerMode ? 0 : requestedRefresh,
+    };
+  } catch {
+    return { ...DEFAULT_PREFERENCES };
+  }
+}
+
+function validatePreferences(preferences: AppPreferences): string | null {
+  if (!Number.isInteger(preferences.sessionTimeoutMinutes) ||
+      preferences.sessionTimeoutMinutes < 1 || preferences.sessionTimeoutMinutes > 300) {
+    return "Session timeout must be a whole number from 1 to 300 minutes.";
+  }
+  if (!Number.isInteger(preferences.dashboardRefreshSeconds) ||
+      !(preferences.dashboardRefreshSeconds === 0 ||
+        (preferences.dashboardRefreshSeconds >= 5 && preferences.dashboardRefreshSeconds <= 120))) {
+    return "Dashboard refresh must be Off or between 5 and 120 seconds.";
+  }
+  if (preferences.lowPowerMode && preferences.dashboardRefreshSeconds > 0) {
+    return "Low-power mode and recurring dashboard refresh conflict. Turn refresh Off or disable low-power mode.";
+  }
+  return null;
+}
 
 const ADMIN_VERIFIER = "AXIOM-ADMIN-VERIFIER-V1";
 
@@ -524,15 +593,26 @@ function getStoredTheme(): Theme {
 }
 
 function isAuthenticated(): boolean {
-  // An authenticated session must always belong to an existing administrator.
   if (!readAdmin()) return false;
+  const hasSession = sessionStorage.getItem(SESSION_KEY) === "1" ||
+    localStorage.getItem(REMEMBERED_SESSION_KEY) === "1";
+  if (!hasSession) return false;
 
-  // The tab session supports ordinary sign-in. The separate persistent marker
-  // is written only when the user explicitly enables Remember me.
-  return (
-    sessionStorage.getItem(SESSION_KEY) === "1" ||
-    localStorage.getItem(REMEMBERED_SESSION_KEY) === "1"
-  );
+  const lastActivityRaw = localStorage.getItem(LAST_ACTIVITY_KEY);
+  const lastActivity = Number(lastActivityRaw);
+  if (!lastActivityRaw || !Number.isFinite(lastActivity) || lastActivity <= 0) {
+    // Preserve sessions created by an older AXIOM version, starting the new
+    // configurable idle timer from the first upgraded page load.
+    localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+    return true;
+  }
+  if (Date.now() - lastActivity >= readPreferences().sessionTimeoutMinutes * 60_000) {
+    sessionStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(REMEMBERED_SESSION_KEY);
+    localStorage.removeItem(LAST_ACTIVITY_KEY);
+    return false;
+  }
+  return true;
 }
 
 function getAdministratorName(): string {
@@ -604,6 +684,7 @@ async function verifyAdministrator(
 function App() {
 
   const [theme, setTheme] = useState<Theme>(getStoredTheme);
+  const [preferences, setPreferences] = useState<AppPreferences>(readPreferences);
   const [booted, setBooted] = useState(
     () => localStorage.getItem("axiom-booted") === "1",
   );
@@ -622,7 +703,10 @@ function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
-  }, [theme]);
+    document.documentElement.dataset.density = preferences.density;
+    document.documentElement.dataset.accent = preferences.accentColor;
+    document.documentElement.dataset.reducedMotion = String(preferences.reduceMotion || preferences.lowPowerMode);
+  }, [theme, preferences]);
 
   useEffect(() => {
     const restorePage = () => setPage(pageFromLocation());
@@ -640,45 +724,69 @@ function App() {
   }, [notice]);
 
   useEffect(() => {
-    if (!authenticated || localStorage.getItem(REMEMBERED_SESSION_KEY) === "1") {
-      return;
-    }
+    if (!authenticated) return;
 
     let timeout: number | undefined;
-    const logoutForInactivity = () => {
+    let lastWrite = 0;
+    const removeSession = () => {
       sessionStorage.removeItem(SESSION_KEY);
       localStorage.removeItem(REMEMBERED_SESSION_KEY);
+      localStorage.removeItem(LAST_ACTIVITY_KEY);
       setAuthenticated(false);
       setChangePasswordOpen(false);
-      setNotice({ message: "Your session expired after 10 minutes of inactivity.", tone: "warning" });
+      setNotice({
+        message: `Your session expired after ${preferences.sessionTimeoutMinutes} minutes of inactivity.`,
+        tone: "warning",
+      });
     };
-    const resetTimer = () => {
-      if (timeout !== undefined) {
-        window.clearTimeout(timeout);
+    const scheduleExpiry = () => {
+      if (timeout !== undefined) window.clearTimeout(timeout);
+      const stored = Number(localStorage.getItem(LAST_ACTIVITY_KEY));
+      const lastActivity = Number.isFinite(stored) && stored > 0 ? stored : Date.now();
+      const remaining = preferences.sessionTimeoutMinutes * 60_000 - (Date.now() - lastActivity);
+      timeout = window.setTimeout(() => {
+        const latest = Number(localStorage.getItem(LAST_ACTIVITY_KEY));
+        const effectiveLastActivity = Number.isFinite(latest) && latest > 0 ? latest : lastActivity;
+        if (Date.now() - effectiveLastActivity >= preferences.sessionTimeoutMinutes * 60_000) {
+          removeSession();
+        } else {
+          scheduleExpiry();
+        }
+      }, Math.max(0, remaining));
+    };
+    const recordActivity = () => {
+      const now = Date.now();
+      // Write at most once every two seconds; mouse movement must not churn
+      // localStorage, but the timeout is recalculated for each event.
+      if (now - lastWrite >= 2_000) {
+        localStorage.setItem(LAST_ACTIVITY_KEY, String(now));
+        lastWrite = now;
       }
-
-      timeout = window.setTimeout(logoutForInactivity, 10 * 60 * 1000);
+      scheduleExpiry();
     };
-    const activityEvents = [
-      "mousemove",
-      "mousedown",
-      "keydown",
-      "touchstart",
-      "scroll",
-      "pointerdown",
-    ];
+    const activityEvents = ["mousemove", "mousedown", "keydown", "touchstart", "scroll", "pointerdown", "focus"];
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === LAST_ACTIVITY_KEY || event.key === PREFERENCES_KEY) scheduleExpiry();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") recordActivity();
+    };
 
-    activityEvents.forEach((event) => window.addEventListener(event, resetTimer));
-    resetTimer();
+    activityEvents.forEach((event) => window.addEventListener(event, recordActivity, { passive: true }));
+    window.addEventListener("storage", onStorage);
+    document.addEventListener("visibilitychange", onVisibility);
+    if (!localStorage.getItem(LAST_ACTIVITY_KEY)) {
+      localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+    }
+    scheduleExpiry();
 
     return () => {
-      if (timeout !== undefined) {
-        window.clearTimeout(timeout);
-      }
-
-      activityEvents.forEach((event) => window.removeEventListener(event, resetTimer));
+      if (timeout !== undefined) window.clearTimeout(timeout);
+      activityEvents.forEach((event) => window.removeEventListener(event, recordActivity));
+      window.removeEventListener("storage", onStorage);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [authenticated]);
+  }, [authenticated, preferences.sessionTimeoutMinutes]);
 
   useEffect(() => {
     if (!authenticated) {
@@ -693,6 +801,18 @@ function App() {
   const setAndPersistTheme = (nextTheme: Theme) => {
     localStorage.setItem(THEME_KEY, nextTheme);
     setTheme(nextTheme);
+  };
+
+  const savePreferences = (nextPreferences: AppPreferences): string | null => {
+    const validationError = validatePreferences(nextPreferences);
+    if (validationError) return validationError;
+    try {
+      localStorage.setItem(PREFERENCES_KEY, JSON.stringify(nextPreferences));
+      setPreferences(nextPreferences);
+      return null;
+    } catch {
+      return "Preferences could not be saved in this browser profile.";
+    }
   };
 
   const notify = (message: string, tone: Tone = "info") => {
@@ -733,6 +853,7 @@ function App() {
           setUsername(username.trim());
           sessionStorage.removeItem(SESSION_KEY);
           localStorage.removeItem(REMEMBERED_SESSION_KEY);
+          localStorage.removeItem(LAST_ACTIVITY_KEY);
 
           window.setTimeout(() => {
             setSetupDone(true);
@@ -750,6 +871,7 @@ function App() {
         setTheme={setAndPersistTheme}
         onLogin={(rememberMe) => {
           sessionStorage.setItem(SESSION_KEY, "1");
+          localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
           localStorage.setItem(REMEMBER_PREFERENCE_KEY, rememberMe ? "1" : "0");
           if (rememberMe) {
             localStorage.setItem(REMEMBERED_SESSION_KEY, "1");
@@ -765,6 +887,7 @@ function App() {
   const logout = () => {
     sessionStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(REMEMBERED_SESSION_KEY);
+    localStorage.removeItem(LAST_ACTIVITY_KEY);
     setAuthenticated(false);
     setChangePasswordOpen(false);
   };
@@ -806,6 +929,8 @@ function App() {
             username={username}
             theme={theme}
             setTheme={setAndPersistTheme}
+            preferences={preferences}
+            onSavePreferences={savePreferences}
             setPage={navigate}
             onNotify={notify}
             onChangePassword={() => setChangePasswordOpen(true)}
@@ -819,6 +944,7 @@ function App() {
           onSuccess={() => {
             sessionStorage.removeItem(SESSION_KEY);
             localStorage.removeItem(REMEMBERED_SESSION_KEY);
+            localStorage.removeItem(LAST_ACTIVITY_KEY);
             setChangePasswordOpen(false);
             setAuthenticated(false);
             setNotice({ message: "Password changed. Sign in again to continue.", tone: "success" });
@@ -1228,7 +1354,7 @@ function LoginScreen({
 
           <label className="remember-row">
             <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} />
-            <span><b>Remember me on this browser</b><small>Stay signed in on this local browser profile until you sign out.</small></span>
+            <span><b>Remember me on this browser</b><small>Keep this browser session remembered, subject to the configured inactivity timeout.</small></span>
           </label>
 
           {error && <InlineAlert tone="danger" role="alert">{error}</InlineAlert>}
@@ -1454,6 +1580,8 @@ function WorkspacePage({
   username,
   theme,
   setTheme,
+  preferences,
+  onSavePreferences,
   setPage,
   onNotify,
   onChangePassword,
@@ -1462,6 +1590,8 @@ function WorkspacePage({
   username: string;
   theme: Theme;
   setTheme: (theme: Theme) => void;
+  preferences: AppPreferences;
+  onSavePreferences: (preferences: AppPreferences) => string | null;
   setPage: (page: Page) => void;
   onNotify: (message: string, tone?: Tone) => void;
   onChangePassword: () => void;
@@ -1472,7 +1602,11 @@ function WorkspacePage({
     case "quantizer":
       return <AxiomQuantizer />;
     case "dashboard":
-      return <Dashboard username={username} setPage={setPage} />;
+      return <Dashboard
+        username={username}
+        setPage={setPage}
+        refreshIntervalSeconds={preferences.lowPowerMode ? 0 : preferences.dashboardRefreshSeconds}
+      />;
     case "models":
       return <Models onNotify={onNotify} />;
     case "datasets":
@@ -1500,7 +1634,14 @@ function WorkspacePage({
     case "logs":
       return <LogsPage />;
     case "settings":
-      return <SettingsPage theme={theme} setTheme={setTheme} setPage={setPage} onChangePassword={onChangePassword} />;
+      return <SettingsPage
+        theme={theme}
+        setTheme={setTheme}
+        setPage={setPage}
+        onChangePassword={onChangePassword}
+        preferences={preferences}
+        onSavePreferences={onSavePreferences}
+      />;
   }
 }
 
@@ -1530,9 +1671,11 @@ function PageHeader({
 function Dashboard({
   username,
   setPage,
+  refreshIntervalSeconds,
 }: {
   username: string;
   setPage: (page: Page) => void;
+  refreshIntervalSeconds: number;
 }) {
   const [apiStatus, setApiStatus] = useState<"checking" | "online" | "offline">("checking");
   const [models, setModels] = useState<WorkspaceModel[] | null>(null);
@@ -1568,13 +1711,15 @@ function Dashboard({
         });
     };
     checkHealth();
-    const timer = window.setInterval(checkHealth, 10_000);
+    const timer = refreshIntervalSeconds > 0
+      ? window.setInterval(checkHealth, refreshIntervalSeconds * 1000)
+      : undefined;
     void refreshWorkspace();
     return () => {
       active = false;
-      window.clearInterval(timer);
+      if (timer !== undefined) window.clearInterval(timer);
     };
-  }, []);
+  }, [refreshIntervalSeconds]);
 
   const apiLabel = apiStatus === "online" ? "Backend connected" : apiStatus === "checking" ? "Checking backend..." : "Backend unavailable";
   const apiTone: Tone = apiStatus === "online" ? "success" : apiStatus === "checking" ? "neutral" : "warning";
@@ -3396,17 +3541,70 @@ function LogsPage() {
   </FeaturePage>;
 }
 
+const cliGuiMappings: Array<{ command: string; description: string; page: Page; destination: string }> = [
+  { command: "axiom doctor / status", description: "Workspace readiness, diagnostics and local backend health.", page: "diagnostics", destination: "Diagnostics" },
+  { command: "axiom summary / guide / check", description: "First-run orientation, project state and suggested next steps.", page: "dashboard", destination: "Control center" },
+  { command: "axiom dataset profile / manifest / quality", description: "Bounded profiling, dataset manifests and configurable quality checks.", page: "datasets", destination: "Datasets" },
+  { command: "axiom model search / compatibility", description: "Search local model files and review hardware compatibility.", page: "models", destination: "Models" },
+  { command: "axiom engine discover / adapter compatibility / quantization estimate", description: "Trusted local model inventory, adapter checks and native memory estimates.", page: "quantizer", destination: "Quantization Lab" },
+  { command: "axiom fine-tuning status / jobs / start", description: "Inspect the fine-tuning runtime and manage supported local jobs.", page: "training", destination: "Training" },
+  { command: "axiom diagnostics support-bundle / runtime-connectors", description: "Review backend diagnostics and prepare a privacy-aware support bundle.", page: "diagnostics", destination: "Diagnostics" },
+  { command: "axiom runtime traces / connectors", description: "Inspect metadata-only runtime traces and connected runtime capabilities.", page: "runtime", destination: "Runtime" },
+  { command: "axiom api playground / openapi", description: "Inspect the allowlisted read-only API surface from the browser.", page: "api-playground", destination: "API Playground" },
+  { command: "axiom system info / tools", description: "Hardware information and developer-tool availability.", page: "diagnostics", destination: "Diagnostics" },
+  { command: "axiom init / project / config validate", description: "Project setup and safe configuration checks.", page: "dashboard", destination: "Control center" },
+  { command: "axiom model list / info / inspect / analyze", description: "Model registry, metadata, local inspection and sizing.", page: "models", destination: "Models" },
+  { command: "axiom model add / update / pull / import / export / remove", description: "Model lifecycle operations and local model files.", page: "models", destination: "Models" },
+  { command: "axiom hf login / status / logout", description: "Hugging Face access and model discovery workflows.", page: "models", destination: "Models" },
+  { command: "axiom dataset inspect / stats / validate / clean", description: "Dataset quality reports and supported cleaning operations.", page: "datasets", destination: "Datasets" },
+  { command: "axiom train plan", description: "Hardware-aware training plans and local fine-tuning.", page: "training", destination: "Training" },
+  { command: "axiom experiment list / show / update / delete", description: "Saved experiment records and evaluation history.", page: "evaluation", destination: "Evaluation" },
+  { command: "axiom workflow …", description: "Build, validate, duplicate and inspect local workflow designs.", page: "workflows", destination: "Workflows" },
+  { command: "axiom evaluation …", description: "Offline scoring, baselines and regression checks.", page: "evaluation", destination: "Evaluation" },
+  { command: "axiom engine status / models / run / unload", description: "AXIOM-native local Llama/Mistral inference and model lifecycle.", page: "runtime", destination: "Runtime" },
+  { command: "axiom infer … / supercompress …", description: "Local inference and separate compression workflows.", page: "runtime", destination: "Runtime" },
+  { command: "axiom optimize …", description: "Hardware-aware optimization and memory budgeting.", page: "optimizer", destination: "Agent Optimizer" },
+  { command: "axiom mcp permissions / profile / allow / revoke / serve", description: "Default-deny MCP profiles and tool permission decisions.", page: "mcp", destination: "MCP inspector" },
+  { command: "axiom integration list / add / remove / doctor", description: "Review configured integrations and their connection status.", page: "diagnostics", destination: "Diagnostics" },
+  { command: "axiom roadmap / module", description: "Review planned scope and discover shipped GUI modules.", page: "roadmap", destination: "Roadmap" },
+  { command: "axiom completion / version / gui", description: "CLI-native entry points that remain available for terminal users.", page: "settings", destination: "Settings" },
+];
+
 function SettingsPage({
   theme,
   setTheme,
   setPage,
   onChangePassword,
+  preferences,
+  onSavePreferences,
 }: {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   setPage: (page: Page) => void;
   onChangePassword: () => void;
+  preferences: AppPreferences;
+  onSavePreferences: (preferences: AppPreferences) => string | null;
 }) {
+  const [draft, setDraft] = useState<AppPreferences>(() => ({ ...preferences }));
+  const [saveError, setSaveError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const conflict = draft.lowPowerMode && draft.dashboardRefreshSeconds > 0;
+
+  const update = <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+    setSaved(false);
+    setSaveError("");
+  };
+  const save = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const validation = validatePreferences(draft);
+    if (validation) { setSaveError(validation); return; }
+    const result = onSavePreferences(draft);
+    if (result) { setSaveError(result); return; }
+    setSaveError("");
+    setSaved(true);
+  };
+
   return <FeaturePage page="settings">
     <div className="settings-grid">
       <Surface title="Appearance" eyebrow="INTERFACE">
@@ -3414,10 +3612,58 @@ function SettingsPage({
         <div className="surface-divider" />
         <div className="setting-row"><div><b>Command search</b><span>Use the keyboard shortcut to jump between workspace views.</span></div><kbd className="shortcut-key"><Command size={12} /> K</kbd></div>
       </Surface>
+      <Surface title="Session and preferences" eyebrow="CUSTOMIZATION">
+        <form className="settings-preferences" onSubmit={save}>
+          <div className="settings-preference-grid">
+            <label className="field settings-field">
+              <span className="field-label-row"><span>Session timeout (minutes)</span><span>1–300</span></span>
+              <input aria-label="Session timeout (minutes)" type="number" min={1} max={300} step={1} value={draft.sessionTimeoutMinutes} onChange={(event) => update("sessionTimeoutMinutes", Number(event.target.value))} required />
+              <small>Sign out after this period without activity, including remembered sessions. The timer runs in this browser profile.</small>
+            </label>
+            <label className="field settings-field">
+              <span className="field-label-row"><span>Accent color</span></span>
+              <select aria-label="Accent color" value={draft.accentColor} onChange={(event) => update("accentColor", event.target.value as AccentColor)}>
+                <option value="lime">AXIOM lime</option><option value="blue">Cobalt blue</option><option value="violet">Violet</option>
+              </select>
+              <small>Changes interactive highlights and focus indicators across the interface.</small>
+            </label>
+            <label className="field settings-field">
+              <span className="field-label-row"><span>Interface density</span></span>
+              <select aria-label="Interface density" value={draft.density} onChange={(event) => update("density", event.target.value as LayoutDensity)}>
+                <option value="comfortable">Comfortable</option><option value="compact">Compact</option>
+              </select>
+              <small>Compact mode reduces padding in cards and rows.</small>
+            </label>
+            <label className="field settings-field">
+              <span className="field-label-row"><span>Dashboard health refresh</span></span>
+              <select aria-label="Dashboard health refresh" value={draft.dashboardRefreshSeconds} onChange={(event) => update("dashboardRefreshSeconds", Number(event.target.value))}>
+                <option value={0}>Off</option><option value={5}>Every 5 seconds</option><option value={10}>Every 10 seconds</option><option value={15}>Every 15 seconds</option><option value={30}>Every 30 seconds</option><option value={60}>Every minute</option><option value={120}>Every 2 minutes</option>
+              </select>
+              <small>Controls periodic health polling on the Control Center dashboard.</small>
+            </label>
+          </div>
+          <label className="setting-toggle">
+            <span><b>Reduce motion</b><small>Minimize animated transitions and scrolling movement.</small></span>
+            <input aria-label="Reduce motion" type="checkbox" checked={draft.reduceMotion} onChange={(event) => update("reduceMotion", event.target.checked)} />
+          </label>
+          <label className="setting-toggle">
+            <span><b>Low-power mode</b><small>Reduce visual motion and disable background dashboard polling.</small></span>
+            <input aria-label="Low-power mode" type="checkbox" checked={draft.lowPowerMode} onChange={(event) => update("lowPowerMode", event.target.checked)} />
+          </label>
+          {conflict && <InlineAlert tone="warning" role="alert">Low-power mode and recurring dashboard refresh conflict. Set Dashboard health refresh to Off or disable low-power mode before saving.</InlineAlert>}
+          {saveError && <InlineAlert tone="danger" role="alert">{saveError}</InlineAlert>}
+          {saved && <InlineAlert tone="success">Preferences saved for this browser profile.</InlineAlert>}
+          <div className="settings-save-row">
+            <button type="submit" className="button primary-button" disabled={conflict}><Check size={15} /> Save preferences</button>
+            <button type="button" className="button secondary-button" onClick={() => { setDraft({ ...DEFAULT_PREFERENCES }); setSaveError(""); setSaved(false); }}>Reset form</button>
+          </div>
+        </form>
+      </Surface>
       <Surface title="Security" eyebrow="LOCAL ADMINISTRATOR">
         <div className="setting-row"><div><b>Administrator password</b><span>Changing it ends the current session and returns to sign in.</span></div><button type="button" className="button secondary-button" onClick={onChangePassword}><KeyRound size={15} /> Change password</button></div>
         <div className="surface-divider" />
-        <div className="setting-row"><div><b>Session timeout</b><span>Automatic sign out after inactivity.</span></div><StatusPill tone="neutral">10 MINUTES</StatusPill></div>
+        <div className="setting-row"><div><b>Session timeout</b><span>The saved inactivity timeout is enforced on this browser, even when Remember me is selected.</span></div><StatusPill tone="neutral">{preferences.sessionTimeoutMinutes} MINUTES</StatusPill></div>
+        <p className="quiet-note">This protects AXIOM's local browser sign-in screen; it is not a replacement for server-side authentication when exposing an API on a network.</p>
       </Surface>
       <Surface title="Data and retention" eyebrow="LOCAL / REVIEWABLE">
         <p className="quiet-note">AXIOM keeps project metadata and generated files on your computer. Runtime request traces are bounded to 200 metadata-only records in memory; prompt and response bodies are not stored in that trace buffer.</p>
@@ -3426,12 +3672,20 @@ function SettingsPage({
         <p className="quiet-note">Deleting a registry entry or saved plan does not delete a checkpoint, dataset, or run output. Files at chosen output paths remain until you remove them yourself.</p>
         <a href="https://github.com/NetCore-Technologies/AXIOM-AI/blob/latest/development/docs/DATA-RETENTION.md" target="_blank" rel="noreferrer">Read the data retention and deletion guide</a>
       </Surface>
+      <Surface title="CLI feature map" eyebrow="COMMANDS → GUI">
+        <p className="quiet-note">Open the matching AXIOM Control Center page for each command family. Use Copy to keep the corresponding CLI command handy; terminal-only actions such as shell completion remain accessible through the CLI.</p>
+        {cliGuiMappings.map((item) => <div className="setting-row cli-map-row" key={item.command}>
+          <div><b>{item.command}</b><span>{item.description}</span></div>
+          <button type="button" className="button secondary-button" onClick={() => setPage(item.page)}>Open {item.destination}</button>
+        </div>)}
+      </Surface>
       <Surface title="Integration boundary" eyebrow="HONEST STATE">
-        <Callout tone="info" title="Local API integration">The dashboard, model registry, dataset profiler, training planner, hardware snapshot, persistent plan history, diagnostics, and event log share the local FastAPI contract.</Callout>
+        <Callout tone="info" title="Local API integration">The dashboard, model registry, dataset profiler, training planner, hardware snapshot, persistent plan history, diagnostics, and event log share the local FastAPI contract. CLI mapping opens these GUI equivalents rather than pretending terminal-only shell operations run inside the browser.</Callout>
       </Surface>
     </div>
   </FeaturePage>;
 }
+
 
 function Surface({ title, eyebrow, action, children, className = "" }: { title: string; eyebrow?: string; action?: ReactNode; children: ReactNode; className?: string }) {
   return <section className={`surface ${className}`}><div className="surface-head"><div>{eyebrow && <p className="surface-eyebrow">{eyebrow}</p>}<h2>{title}</h2></div>{action && <div className="surface-action">{action}</div>}</div>{children}</section>;

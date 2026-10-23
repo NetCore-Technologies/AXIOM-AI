@@ -6,7 +6,8 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 import axiom.cli.engine as engine_cli
-from axiom.cli.engine import engine_app
+
+engine_app = engine_cli.engine_app
 
 
 runner = CliRunner()

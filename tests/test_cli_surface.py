@@ -3,7 +3,8 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 import axiom.cli.main as cli_main
-from axiom.cli.main import app
+
+app = cli_main.app
 
 runner = CliRunner()
 
@@ -54,7 +55,9 @@ def test_shell_completion_can_be_viewed_for_supported_shells_without_installing(
         # Click renamed its Bash completion variable between releases.
         "bash": ("_AXIOM_COMPLETE=complete_bash", "_AXIOM_COMPLETE=bash_complete"),
         "zsh": ("#compdef axiom",),
-        "fish": ("complete -c axiom",),
+        # Click versions generate Fish shell functions and completion variables
+        # with different names; either stable marker confirms a real script.
+        "fish": ("function _axiom_completion", "_AXIOM_COMPLETE=fish_complete", "__fish_complete_path"),
         "powershell": ("Register-ArgumentCompleter",),
     }
     for shell, accepted_markers in markers.items():

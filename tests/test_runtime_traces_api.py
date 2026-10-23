@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from axiom.api import diagnostics, inference
-from axiom.core.runtime_traces import clear_runtime_traces, list_runtime_traces
+from axiom.core.runtime_traces import clear_runtime_traces
 
 
 def _client() -> TestClient:

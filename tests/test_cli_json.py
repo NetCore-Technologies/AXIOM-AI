@@ -7,7 +7,8 @@ from types import SimpleNamespace
 from typer.testing import CliRunner
 
 import axiom.cli.main as cli_main
-from axiom.cli.main import app
+
+app = cli_main.app
 from axiom.models.registry import Model, ModelRegistry
 
 
@@ -127,10 +128,11 @@ def test_model_search_json_skips_symlink_entries(tmp_path: Path) -> None:
     linked = root / "linked-llama.safetensors"
     try:
         linked.symlink_to(outside)
-    except (OSError, NotImplementedError) as exc:
-        # The non-symlink match still confirms the output shape on platforms
-        # where symlinks are not permitted by the current user.
-        linked = None
+    except (OSError, NotImplementedError):
+        # Windows and restricted containers may disable symlink creation.
+        symlink_created = False
+    else:
+        symlink_created = True
 
     result = runner.invoke(app, ["model", "search", "llama", "--path", str(root), "--json"])
     assert result.exit_code == 0, result.stdout

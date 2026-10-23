@@ -530,7 +530,6 @@ def register(app, model_app, dataset_app) -> None:
         valid = False
         error_code: str | None = None
         suggestions: list[str] = []
-        message = "Configuration is invalid."
 
         if config.is_symlink():
             error_code = "config_symlink_forbidden"
