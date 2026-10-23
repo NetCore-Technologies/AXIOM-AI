@@ -196,28 +196,20 @@ def shell_completion_script(
         return
     command = get_command(app)
     context = click.Context(command, info_name="axiom")
-    completion_param = next(
-        (
-            parameter for parameter in command.params
-            if "--show-completion" in (
-                tuple(getattr(parameter, "opts", ()))
-                + tuple(getattr(parameter, "secondary_opts", ()))
-            )
-        ),
-        None,
-    )
-    # Typer/Click versions differ in how root completion options are exposed
-    # from get_command(app). A valid explicit option keeps script generation
-    # usable even when the wrapper does not expose the implicit Typer option.
-    if completion_param is None:
+    # Click's completion constructor changed between supported versions.
+    # Prefer the current three-argument signature and fall back to older
+    # versions that still require a parameter object.
+    try:
+        completion = completion_type(command, context, "_AXIOM_COMPLETE")
+    except TypeError:
         completion_param = click.Option(
             ["--show-completion"],
             is_flag=True,
             hidden=True,
             help="Generate shell completion source.",
         )
-    # Click's ShellComplete API takes (command, context, parameter, complete_var).
-    script = completion_type(command, context, completion_param, "_AXIOM_COMPLETE").source()
+        completion = completion_type(command, context, completion_param, "_AXIOM_COMPLETE")
+    script = completion.source()
     typer.echo(script, nl=False)
 
 
