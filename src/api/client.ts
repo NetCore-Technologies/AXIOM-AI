@@ -141,7 +141,9 @@ export type AxiomEngineResult = {
   transformers_generation_used: false; ollama_used: false;
   model: string; architecture: string; model_type: "llama" | "mistral";
   adapter: string | null; device: string; checkpoint_format: "safetensors";
-  decoder: "axiom-autoregressive-kv-cache"; attention_backend: string; sampling: AxiomEngineSampling; response: string;
+  decoder: "axiom-autoregressive-kv-cache"; attention_backend: string;
+  prefill_ms: number; decode_ms: number; time_to_first_token_ms: number; generation_tokens_per_second: number;
+  sampling: AxiomEngineSampling; response: string;
   prompt_tokens: number; completion_tokens: number; elapsed_ms: number; generated_at: string; local_only: true;
 };
 
