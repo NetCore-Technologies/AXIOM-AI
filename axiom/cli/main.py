@@ -50,6 +50,7 @@ app = typer.Typer(
     name="axiom",
     help="Inspect AI work, plan around your hardware, and keep it local.",
     invoke_without_command=True,
+    add_completion=True,
 )
 
 model_app = typer.Typer(help="Manage AI models.")
