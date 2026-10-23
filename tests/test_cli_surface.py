@@ -54,7 +54,9 @@ def test_shell_completion_can_be_viewed_for_supported_shells_without_installing(
         # Click renamed its Bash completion variable between releases.
         "bash": ("_AXIOM_COMPLETE=complete_bash", "_AXIOM_COMPLETE=bash_complete"),
         "zsh": ("#compdef axiom",),
-        "fish": ("complete -c axiom",),
+        # Click's Fish backend emits a generated function/dispatcher rather
+        # than the legacy `complete -c axiom` registration in some versions.
+        "fish": ("complete -c axiom", "function _axiom_completion", "_AXIOM_COMPLETE=fish_complete"),
         "powershell": ("Register-ArgumentCompleter",),
     }
     for shell, accepted_markers in markers.items():
