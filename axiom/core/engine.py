@@ -272,6 +272,19 @@ def resolve_local_model_directory(value: str, label: str = "Model") -> str:
     return str(_resolve_model_directory(value, label))
 
 
+def check_local_adapter_compatibility(model_path: str, adapter_path: str) -> dict[str, Any]:
+    """Preflight a local LoRA adapter against the native model and available device backends."""
+    model_dir = _resolve_model_directory(model_path, "Base model")
+    adapter_dir = _resolve_model_directory(adapter_path, "LoRA adapter")
+    from axiom.core.native_engine import inspect_native_adapter_compatibility
+
+    return inspect_native_adapter_compatibility(
+        model_dir,
+        adapter_dir,
+        trusted_roots=_allowed_model_roots(),
+    )
+
+
 def discover_local_engine_assets() -> dict[str, Any]:
     """List metadata for native-compatible local folders without loading model weights."""
     roots = _allowed_model_roots()
