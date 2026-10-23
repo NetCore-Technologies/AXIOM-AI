@@ -132,12 +132,16 @@ export type AxiomEngineStatus = {
   supported_model_types?: string[]; supported_weights?: string[]; remote_code: false;
   setup_note: string; scope_note: string; checked_at: string;
 };
+export type AxiomEngineSampling = {
+  temperature: number; top_p: number; top_k: number;
+  repetition_penalty: number; seed: number | null;
+};
 export type AxiomEngineResult = {
   engine: "axiom-native-engine"; execution_backend: "pytorch-native-axiom";
   transformers_generation_used: false; ollama_used: false;
   model: string; architecture: string; model_type: "llama" | "mistral";
   adapter: string | null; device: string; checkpoint_format: "safetensors";
-  decoder: "axiom-autoregressive-kv-cache"; response: string;
+  decoder: "axiom-autoregressive-kv-cache"; sampling: AxiomEngineSampling; response: string;
   prompt_tokens: number; completion_tokens: number; elapsed_ms: number; generated_at: string; local_only: true;
 };
 
@@ -810,7 +814,7 @@ async function requestJson<T>(path: string, init: RequestInit = {}, timeoutMs = 
 }
 
 async function streamAxiomEngineRequest(
-  input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number },
+  input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null },
   onEvent: (event: AxiomEngineStreamEvent) => void,
   signal: AbortSignal,
 ): Promise<AxiomEngineResult> {
@@ -1256,12 +1260,12 @@ export const axiomApi = {
     requestJson<AxiomEngineAdapterCompatibility>("/api/engine/adapters/compatibility", {
       method: "POST", body: JSON.stringify(input),
     }),
-  runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number }) =>
+  runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null }) =>
     requestJson<AxiomEngineResult>("/api/engine/generate", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
   streamAxiomEngine: (
-    input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number },
+    input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null },
     onEvent: (event: AxiomEngineStreamEvent) => void,
     signal: AbortSignal,
   ) => streamAxiomEngineRequest(input, onEvent, signal),
