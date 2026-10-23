@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Activity, Cpu, Play, RefreshCcw, Unplug } from "lucide-react";
-import { axiomApi, type AxiomEngineAssets, type AxiomEngineResult, type AxiomEngineStatus, type AxiomEngineStreamEvent } from "../api/client";
+import { axiomApi, type AxiomEngineAdapterCompatibility, type AxiomEngineAssets, type AxiomEngineResult, type AxiomEngineStatus, type AxiomEngineStreamEvent } from "../api/client";
 
 export default function LocalAxiomEnginePanel() {
   const [status, setStatus] = useState<AxiomEngineStatus | null>(null);
   const [assets, setAssets] = useState<AxiomEngineAssets | null>(null);
+  const [adapterCompatibility, setAdapterCompatibility] = useState<AxiomEngineAdapterCompatibility | null>(null);
+  const [checkingAdapter, setCheckingAdapter] = useState(false);
   const [modelPath, setModelPath] = useState("");
   const [selectedModelPath, setSelectedModelPath] = useState("");
   const [adapterPath, setAdapterPath] = useState("");
@@ -62,6 +64,26 @@ export default function LocalAxiomEnginePanel() {
       setError(cause instanceof Error ? cause.message : "The local model could not be unloaded.");
     } finally {
       setUnloading(false);
+    }
+  };
+
+  const checkAdapterCompatibility = async () => {
+    if (!modelPath.trim() || !adapterPath.trim()) {
+      setError("Select both a native base model and a LoRA adapter before checking compatibility.");
+      return;
+    }
+    setCheckingAdapter(true);
+    setError("");
+    setAdapterCompatibility(null);
+    try {
+      setAdapterCompatibility(await axiomApi.checkAxiomEngineAdapterCompatibility({
+        model_path: modelPath.trim(),
+        adapter_path: adapterPath.trim(),
+      }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Adapter compatibility preflight failed.");
+    } finally {
+      setCheckingAdapter(false);
     }
   };
 
@@ -142,21 +164,42 @@ export default function LocalAxiomEnginePanel() {
       </label>
       <label className="field">
         <span className="field-label-row"><span>Local Llama / Mistral model directory</span></span>
-        <input value={modelPath} onChange={(event) => { setModelPath(event.target.value); if (event.target.value !== selectedModelPath) setSelectedModelPath(""); }} required maxLength={4096} placeholder="/home/user/models/my-llama-model" autoComplete="off" />
+        <input value={modelPath} onChange={(event) => { setModelPath(event.target.value); if (event.target.value !== selectedModelPath) setSelectedModelPath(""); setAdapterCompatibility(null); }} required maxLength={4096} placeholder="/home/user/models/my-llama-model" autoComplete="off" />
         <small>Existing directory with config.json, tokenizer.json and model.safetensors (or the safetensors shard index). GGUF, quantized formats and pickle .bin weights are not supported by this native path. Paths must match a directory discovered under a trusted root; set AXIOM_MODEL_ROOTS for additional locations.</small>
       </label>
       <label className="field">
         <span className="field-label-row"><span>Discovered LoRA adapter (optional)</span><span>{assets?.adapters.length ?? 0} found</span></span>
-        <select aria-label="Select discovered LoRA adapter" value={selectedAdapterPath} onChange={(event) => { setSelectedAdapterPath(event.target.value); if (event.target.value) setAdapterPath(event.target.value); }}>
+        <select aria-label="Select discovered LoRA adapter" value={selectedAdapterPath} onChange={(event) => { setSelectedAdapterPath(event.target.value); if (event.target.value) setAdapterPath(event.target.value); setAdapterCompatibility(null); }}>
           <option value="">No adapter</option>
           {(assets?.adapters ?? []).map((adapter) => <option key={adapter.path} value={adapter.path}>{adapter.name} · {adapter.weight_format}</option>)}
         </select>
       </label>
       <label className="field">
         <span className="field-label-row"><span>Optional LoRA adapter directory</span></span>
-        <input value={adapterPath} onChange={(event) => { setAdapterPath(event.target.value); if (event.target.value !== selectedAdapterPath) setSelectedAdapterPath(""); }} maxLength={4096} placeholder="/home/user/runs/my-lora-adapter" autoComplete="off" />
+        <input value={adapterPath} onChange={(event) => { setAdapterPath(event.target.value); if (event.target.value !== selectedAdapterPath) setSelectedAdapterPath(""); setAdapterCompatibility(null); }} maxLength={4096} placeholder="/home/user/runs/my-lora-adapter" autoComplete="off" />
         <small>Use a standard bias-free CAUSAL_LM adapter with adapter_config.json and adapter_model.safetensors. Compatibility is checked during model loading; unsupported adapter options are rejected.</small>
       </label>
+      <div className="integration-form-actions">
+        <button type="button" className="button secondary-button" onClick={() => void checkAdapterCompatibility()} disabled={checkingAdapter || running || !modelPath.trim() || !adapterPath.trim()}>
+          {checkingAdapter ? "Checking adapter…" : "Check adapter compatibility"}
+        </button>
+      </div>
+      {adapterCompatibility && <section className="panel-surface" aria-label="LoRA device compatibility report" style={{ padding: 14, marginBottom: 14 }}>
+        <div className="surface-head">
+          <div><p className="surface-eyebrow">NATIVE ADAPTER PREFLIGHT</p><h3>{adapterCompatibility.structurally_compatible ? "Adapter structure supported" : "Adapter incompatible"}</h3></div>
+          <span className={"status-pill " + (adapterCompatibility.structurally_compatible ? "success" : "warning")}>{adapterCompatibility.structurally_compatible ? "STRUCTURE OK" : "ISSUES FOUND"}</span>
+        </div>
+        <p className="quiet-note">{adapterCompatibility.adapter_tensor_count} adapter tensors · {adapterCompatibility.checked_layers} model layers checked · rank {adapterCompatibility.adapter.rank ?? "unknown"} · alpha {adapterCompatibility.adapter.alpha ?? "unknown"}</p>
+        <div className="two-column-grid">
+          {adapterCompatibility.devices.map((device) => <div key={device.name} className="panel-surface" style={{ padding: 10 }}>
+            <strong>{device.name}</strong>
+            <span className={"status-pill " + (device.compatible ? "success" : device.available ? "warning" : "neutral")}>{device.status.toUpperCase()}</span>
+            <p className="quiet-note">{device.reason}</p>
+          </div>)}
+        </div>
+        {adapterCompatibility.issues.length > 0 && <div className="inline-alert warning" role="alert"><strong>Compatibility blockers</strong><ul>{adapterCompatibility.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
+        <p className="quiet-note">{adapterCompatibility.scope_note}</p>
+      </section>}
       <label className="field">
         <span className="field-label-row"><span>AXIOM Native Engine prompt</span><span>{prompt.length.toLocaleString()} / 12,000 characters</span></span>
         <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={12000} rows={5} required placeholder="Ask the local model to do something…" />
