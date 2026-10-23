@@ -70,6 +70,41 @@ def test_engine_unload_endpoint_calls_lifecycle_handler(monkeypatch) -> None:
 
 
 
+def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch) -> None:
+    monkeypatch.setattr(engine_api, "resolve_local_model_directory", lambda value, label: value)
+
+    def fake_stream(model_path, prompt, *, adapter_path=None, max_new_tokens=256, temperature=0.7, cancel_event=None):
+        yield {"type": "token", "response": "hi", "completion_tokens": 1}
+        yield {
+            "type": "complete",
+            "result": {
+                "engine": "axiom-native-engine",
+                "execution_backend": "pytorch-native-axiom",
+                "response": "hi",
+                "completion_tokens": 1,
+                "local_only": True,
+            },
+        }
+
+    monkeypatch.setattr(engine_api, "generate_local_stream", fake_stream)
+    response = _client().post(
+        "/api/engine/generate/stream",
+        json={
+            "model_path": "/trusted/models/tiny",
+            "prompt": "hello",
+            "max_new_tokens": 3,
+            "temperature": 0,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    events = [json.loads(line) for line in response.text.splitlines() if line]
+    assert events[0] == {"type": "token", "response": "hi", "completion_tokens": 1}
+    assert events[1]["type"] == "complete"
+    assert events[1]["result"]["execution_backend"] == "pytorch-native-axiom"
+
+
 def test_native_model_discovery_lists_local_metadata_without_loading_weights(tmp_path, monkeypatch) -> None:
     root = tmp_path / "models"
     model = root / "tiny-llama"
