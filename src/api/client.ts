@@ -106,6 +106,24 @@ export type AxiomEngineAssets = {
   truncated: boolean; scope_note: string;
 };
 
+export type AxiomEngineAdapterDevice = {
+  name: "CPU" | "CUDA" | "ROCm" | "Metal/MPS";
+  available: boolean; compatible: boolean;
+  status: "compatible" | "incompatible" | "unavailable"; reason: string;
+};
+export type AxiomEngineAdapterCompatibility = {
+  schema_version: number;
+  base_model: { name: string; model_type: "llama" | "mistral" | null; architecture: string | null };
+  adapter: { name: string; rank: number | null; alpha: number | null; target_modules: string[] };
+  structurally_compatible: boolean;
+  compatible_on_any_device: boolean;
+  adapter_tensor_count: number;
+  checked_layers: number;
+  devices: AxiomEngineAdapterDevice[];
+  issues: string[];
+  scope_note: string;
+};
+
 export type AxiomEngineStatus = {
   engine: string; ready: boolean; packages: Record<string, boolean>; versions: Record<string, string | null>;
   minimum_versions?: Record<string, string>; problems?: string[];
@@ -1234,6 +1252,10 @@ export const axiomApi = {
     }, 300_000),
   axiomEngineStatus: () => requestJson<AxiomEngineStatus>("/api/engine/status"),
   axiomEngineModels: () => requestJson<AxiomEngineAssets>("/api/engine/models"),
+  checkAxiomEngineAdapterCompatibility: (input: { model_path: string; adapter_path: string }) =>
+    requestJson<AxiomEngineAdapterCompatibility>("/api/engine/adapters/compatibility", {
+      method: "POST", body: JSON.stringify(input),
+    }),
   runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number }) =>
     requestJson<AxiomEngineResult>("/api/engine/generate", {
       method: "POST", body: JSON.stringify(input),
