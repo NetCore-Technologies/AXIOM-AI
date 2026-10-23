@@ -49,6 +49,7 @@ class GenerateRequest(BaseModel):
     top_k: int = Field(default=0, ge=0, le=100000)
     repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
     seed: int | None = Field(default=None, ge=0, le=9223372036854775807)
+    stop_sequences: list[str] = Field(default_factory=list, max_length=16)
 
     @field_validator("model_path", mode="before")
     @classmethod
@@ -59,6 +60,19 @@ class GenerateRequest(BaseModel):
     @classmethod
     def adapter_path_must_be_trusted(cls, value: Any) -> Any:
         return _validated_path(value, "LoRA adapter")
+
+    @field_validator("stop_sequences")
+    @classmethod
+    def stop_sequences_must_be_bounded(cls, value: list[str]) -> list[str]:
+        unique: list[str] = []
+        for sequence in value:
+            if not isinstance(sequence, str) or not sequence or not sequence.strip():
+                raise ValueError("Stop sequences must be non-empty text strings.")
+            if len(sequence) > 256:
+                raise ValueError("Each stop sequence is limited to 256 characters.")
+            if sequence not in unique:
+                unique.append(sequence)
+        return unique
 
     @field_validator("prompt")
     @classmethod
@@ -124,6 +138,7 @@ def engine_generate(request: GenerateRequest) -> dict[str, Any]:
             top_k=request.top_k,
             repetition_penalty=request.repetition_penalty,
             seed=request.seed,
+            stop_sequences=request.stop_sequences,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
@@ -216,6 +231,7 @@ async def engine_generate_stream(
         top_k=request.top_k,
         repetition_penalty=request.repetition_penalty,
         seed=request.seed,
+        stop_sequences=request.stop_sequences,
         cancel_event=cancel_event,
     )
     producer = Thread(
