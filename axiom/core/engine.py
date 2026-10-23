@@ -371,16 +371,37 @@ def estimate_native_quantization(
         candidate_results.append({
             "format": name,
             "nominal_weight_bits": bits,
-            "estimated_weight_gib": round(weight_bytes / gib, 3),
-            "estimated_kv_cache_gib": round(kv_bytes_total / gib, 3),
-            "estimated_workspace_gib": round(workspace_bytes / gib, 3),
-            "estimated_total_gib": round(total_gib, 3),
-            "estimated_range_gib": [round(uncertainty_low, 3), round(uncertainty_high, 3)],
+            # Preserve enough precision that small test/checkpoint models do
+            # not collapse all candidate formats to 0.000 GiB.
+            "estimated_weight_gib": round(weight_bytes / gib, 9),
+            "estimated_kv_cache_gib": round(kv_bytes_total / gib, 9),
+            "estimated_workspace_gib": round(workspace_bytes / gib, 9),
+            "estimated_total_gib": round(total_gib, 9),
+            "estimated_range_gib": [round(uncertainty_low, 9), round(uncertainty_high, 9)],
             "fits_ram_budget": None if ram_budget_gib is None else total_gib <= float(ram_budget_gib),
             "fits_vram_budget": None if vram_budget_gib is None else total_gib <= float(vram_budget_gib),
             "native_checkpoint_supported": native_supported,
             "native_support_note": reason,
         })
+
+    native_candidates = [item for item in candidate_results if item["native_checkpoint_supported"]]
+    fitting_candidates = [
+        item for item in native_candidates
+        if (ram_budget_gib is None or item["fits_ram_budget"] is True)
+        and (vram_budget_gib is None or item["fits_vram_budget"] is True)
+    ]
+    recommended = min(fitting_candidates, key=lambda item: item["estimated_total_gib"]) if fitting_candidates else None
+    recommendation = {
+        "format": recommended["format"] if recommended else None,
+        "status": "fits_budget" if recommended else "no_native_candidate_fits",
+        "note": (
+            "Lowest estimated-memory native format that fits every supplied budget. This is a planning suggestion, "
+            "not a conversion and not a guarantee that the checkpoint's stored dtype or device kernels are compatible."
+            if recommended else
+            "No currently native-supported precision is estimated to fit every supplied budget. Reduce context/batch "
+            "or increase the budget; INT4/INT8 are planning-only and cannot be loaded by the native engine."
+        ),
+    }
 
     return {
         "schema_version": 1,
@@ -413,6 +434,7 @@ def estimate_native_quantization(
             "quality_and_speed": "Not estimated; must be measured through model evaluation and runtime benchmarks.",
         },
         "candidates": candidate_results,
+        "recommendation": recommendation,
         "scope_note": (
             "Planning estimates only. They do not inspect tensor contents, measure physical memory, or predict model quality/speed. "
             "INT4/INT8 are sizing-only and cannot be loaded by the current AXIOM Native Engine. "
