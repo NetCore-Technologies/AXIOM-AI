@@ -107,6 +107,31 @@ def _tiny_weights(torch, vocab_size=8, hidden=8, intermediate=12):
     return weights
 
 
+@pytest.mark.parametrize("force_manual", [False, True])
+def test_native_attention_sdpa_and_manual_paths_match_reference(force_manual: bool, monkeypatch) -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    config = NativeLlamaConfig.from_mapping(_config())
+    runtime = NativeLlamaRuntime(config, _tiny_weights(torch), torch, torch.device("cpu"))
+    if force_manual:
+        monkeypatch.setattr(torch.nn.functional, "scaled_dot_product_attention", None)
+
+    query = torch.randn((1, 2, 3, 4), dtype=torch.float32)
+    key = torch.randn((1, 2, 3, 4), dtype=torch.float32)
+    value = torch.randn((1, 2, 3, 4), dtype=torch.float32)
+    blocked = torch.triu(torch.ones((3, 3), dtype=torch.bool), diagonal=1)
+    actual = runtime._attention(query, key, value, blocked)
+
+    scores = torch.matmul(query, key.transpose(-2, -1)) / (4 ** 0.5)
+    expected_probs = torch.softmax(scores.masked_fill(blocked[None, None], float("-inf")), dim=-1)
+    expected = torch.matmul(expected_probs, value)
+    assert torch.allclose(actual, expected, atol=2e-5, rtol=1e-4)
+    assert runtime.last_attention_backend == (
+        "axiom-manual-matmul-attention" if force_manual else "pytorch-scaled-dot-product-attention"
+    )
+
+
 def test_native_forward_and_incremental_kv_cache_run_without_transformers() -> None:
     torch = pytest.importorskip("torch")
     from axiom.core.native_engine import NativeLlamaRuntime
