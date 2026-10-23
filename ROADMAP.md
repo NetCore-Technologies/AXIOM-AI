@@ -119,7 +119,7 @@ feature exists or a delivery-date promise.
 - [R085 · Implemented; tests passing] Add passive runtime connector discovery and capability reporting without assuming a connection or credentials.
 - [R086 · Planned] Add explicit connect/disconnect controls with secret-safe storage.
 - [R087 · Implemented; tests passing] Report native-engine dependency readiness, supported Llama/Mistral checkpoint formats, execution backend, loaded architecture, and local-only execution scope.
-- [R088 · Implemented; tests passing] Measure actual local inference latency and token throughput through the loopback runtime API, reporting token-count coverage and wall time.
+- [R088 · In progress; validation pending] Report actual local inference wall time, prefill latency, cached-decode latency, time to first token, and generated tokens/second from AXIOM's native token loop; wall time includes stream processing while throughput is based on prefill+decode compute time.
 - [R089 · Implemented; tests passing] Add prompt/token-limit inputs, excluded warm-up runs, bounded measured iterations, and explicit concurrency controls to the existing Runtime page.
 - [R090 · Planned] Add quantization estimates with formulas and overhead assumptions.
 - [R091 · Planned] Compare quantization candidates against selected memory budgets.
