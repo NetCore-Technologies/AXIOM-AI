@@ -611,6 +611,7 @@ def generate_local_stream(
                 "device": str(device),
                 "checkpoint_format": "safetensors",
                 "decoder": model.last_generation.get("decoder", "axiom-autoregressive-kv-cache"),
+                "attention_backend": model.last_attention_backend,
                 "sampling": {
                     "temperature": temperature,
                     "top_p": top_p,
