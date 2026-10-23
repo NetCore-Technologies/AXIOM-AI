@@ -57,6 +57,35 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
     adapters: [{ path: "/runs/my-lora-adapter", name: "my-lora-adapter", weight_format: "safetensors LoRA" }],
     truncated: false, scope_note: "Metadata-only discovery under trusted local roots; weights are validated on run.",
   } }));
+  await page.route("**/api/engine/quantization/estimate", (route) => {
+    const input = route.request().postDataJSON() as Record<string, unknown>;
+    expect(input.model_path).toBe("/models/llama-test");
+    expect(input.context_length).toBe(16);
+    expect(input.batch_size).toBe(1);
+    expect(input.ram_budget_gib).toBe(8);
+    expect(input.vram_budget_gib).toBe(4);
+    return route.fulfill({ json: {
+      schema_version: 1,
+      model: {
+        name: "llama-test", model_type: "llama", architecture: "LlamaForCausalLM",
+        estimated_parameter_count: 1200, parameter_count_method: "analytic config estimate",
+      },
+      request: { context_length: 16, batch_size: 1, ram_budget_gib: 8, vram_budget_gib: 4 },
+      assumptions: { safety_margin_percent: 20, uncertainty_range_percent: { low: -15, high: 25 } },
+      candidates: [
+        { format: "int4", nominal_weight_bits: 4, estimated_weight_gib: 0.0000005, estimated_kv_cache_gib: 0.0000002, estimated_workspace_gib: 0.000001, estimated_total_gib: 0.000003, estimated_range_gib: [0.00000255, 0.00000375], fits_ram_budget: true, fits_vram_budget: true, native_checkpoint_supported: false, native_support_note: "Sizing only." },
+        { format: "int8", nominal_weight_bits: 8, estimated_weight_gib: 0.000001, estimated_kv_cache_gib: 0.0000002, estimated_workspace_gib: 0.000001, estimated_total_gib: 0.0000035, estimated_range_gib: [0.000002975, 0.000004375], fits_ram_budget: true, fits_vram_budget: true, native_checkpoint_supported: false, native_support_note: "Sizing only." },
+        { format: "bf16", nominal_weight_bits: 16, estimated_weight_gib: 0.0000013, estimated_kv_cache_gib: 0.0000002, estimated_workspace_gib: 0.000001, estimated_total_gib: 0.000004, estimated_range_gib: [0.0000034, 0.000005], fits_ram_budget: true, fits_vram_budget: true, native_checkpoint_supported: true, native_support_note: null },
+        { format: "fp16", nominal_weight_bits: 16, estimated_weight_gib: 0.0000013, estimated_kv_cache_gib: 0.0000002, estimated_workspace_gib: 0.000001, estimated_total_gib: 0.000004, estimated_range_gib: [0.0000034, 0.000005], fits_ram_budget: true, fits_vram_budget: true, native_checkpoint_supported: true, native_support_note: null },
+        { format: "fp32", nominal_weight_bits: 32, estimated_weight_gib: 0.0000025, estimated_kv_cache_gib: 0.0000004, estimated_workspace_gib: 0.000001, estimated_total_gib: 0.000006, estimated_range_gib: [0.0000051, 0.0000075], fits_ram_budget: true, fits_vram_budget: true, native_checkpoint_supported: true, native_support_note: null },
+      ],
+      recommendation: {
+        format: "bf16", status: "fits_budget",
+        note: "Lowest estimated-memory native format that fits every supplied budget. This is a planning suggestion, not a conversion and not a guarantee that the checkpoint's stored dtype or device kernels are compatible.",
+      },
+      scope_note: "Planning estimates only. They do not inspect tensor contents, measure physical memory, or predict model quality/speed.",
+    } });
+  });
   await page.route("**/api/engine/generate/stream", (route) => {
     engineLoaded = true;
     const requestBody = route.request().postDataJSON() as Record<string, unknown>;
@@ -103,6 +132,15 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
 
   await engine.getByLabel("Select discovered native model").selectOption("/models/llama-test");
   await expect(engine.getByLabel("Local Llama / Mistral model directory")).toHaveValue("/models/llama-test");
+  await engine.getByLabel("Planner context length").fill("16");
+  await engine.getByLabel("Planner batch size").fill("1");
+  await engine.getByLabel("RAM budget GiB").fill("8");
+  await engine.getByLabel("VRAM budget GiB").fill("4");
+  await engine.getByRole("button", { name: "Estimate memory fit" }).click();
+  const memoryEstimate = engine.getByRole("region", { name: "Quantization estimate results" });
+  await expect(memoryEstimate).toContainText("Budget-based planning recommendation: BF16.");
+  await expect(memoryEstimate).toContainText("3.15 KiB estimated");
+  await expect(memoryEstimate.getByLabel("int4 memory candidate")).toContainText("Sizing only");
   await engine.getByLabel("Select discovered LoRA adapter").selectOption("/runs/my-lora-adapter");
   await expect(engine.getByLabel("Optional LoRA adapter directory")).toHaveValue("/runs/my-lora-adapter");
   await engine.getByRole("button", { name: "Check adapter compatibility" }).click();
