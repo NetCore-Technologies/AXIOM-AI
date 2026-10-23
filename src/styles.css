@@ -2194,3 +2194,34 @@ html[data-reduced-motion="true"] *::after {
   .settings-preference-grid { grid-template-columns: minmax(0, 1fr); }
   .cli-map-row { align-items: flex-start; flex-direction: column; }
 }
+
+/* Accent palettes are user preferences and keep the same existing design tokens. */
+html[data-accent="blue"] .dark,
+html[data-accent="blue"] .auth-layout.dark,
+html[data-accent="blue"] .app-shell.dark {
+  --accent: #8da4ff;
+  --accent-strong: #627bf0;
+  --accent-ink: #0b1024;
+}
+html[data-accent="violet"] .dark,
+html[data-accent="violet"] .auth-layout.dark,
+html[data-accent="violet"] .app-shell.dark {
+  --accent: #c4a3ff;
+  --accent-strong: #a67af4;
+  --accent-ink: #1a0d2b;
+}
+html[data-accent="lime"] .light,
+html[data-accent="lime"] .auth-layout.light,
+html[data-accent="lime"] .app-shell.light {
+  --accent: #526d00;
+  --accent-strong: #3f5600;
+  --accent-ink: #ffffff;
+}
+html[data-accent="violet"] .light,
+html[data-accent="violet"] .auth-layout.light,
+html[data-accent="violet"] .app-shell.light {
+  --accent: #6741a5;
+  --accent-strong: #4e2f83;
+  --accent-ink: #ffffff;
+}
+
