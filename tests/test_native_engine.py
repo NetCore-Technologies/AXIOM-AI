@@ -344,6 +344,14 @@ def test_tiny_safetensors_checkpoint_generates_through_axiom_native_loop(
     assert result["prompt_tokens"] == 3
     assert result["completion_tokens"] == 2
     assert result["decoder"] == "axiom-autoregressive-kv-cache"
+    assert result["attention_backend"] in {
+        "pytorch-scaled-dot-product-attention",
+        "axiom-manual-matmul-attention",
+    }
+    assert result["prefill_ms"] >= 0
+    assert result["decode_ms"] >= 0
+    assert result["time_to_first_token_ms"] == result["prefill_ms"]
+    assert result["generation_tokens_per_second"] >= 0
     assert result["sampling"] == {
         "temperature": 0,
         "top_p": 0.9,
