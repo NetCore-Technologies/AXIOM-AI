@@ -292,7 +292,7 @@ def engine_security_and_lifecycle_issues(engine_source: str, native_source: str,
             issues.append("AXIOM Engine must not delegate inference or reevaluate raw path expressions: " + forbidden)
     for token in (
         "class NativeLlamaRuntime", "def forward(", "def generate(", "def _rms_norm(",
-        "def _apply_rope(", "past_key_values", "repeat_interleave", "safe_open",
+        "def _apply_rope(", "past_key_values", "repeat_interleave", "safe_open", "NativeGenerationCancelled", "cancel_event.is_set()",
         "model.safetensors", "NativeGenerationCancelled", "cancel_event.is_set()",
         '"execution_backend": "pytorch-native-axiom"',
         '"transformers_generation_used": False', '"ollama_used": False',
@@ -310,10 +310,10 @@ def engine_security_and_lifecycle_issues(engine_source: str, native_source: str,
     for token in ("axiomEngineModels:", '"/api/engine/models"', "streamAxiomEngine:", 'api/engine/generate/stream', "unloadAxiomEngine:", '"/api/engine/unload"'):
         if token not in client_source:
             issues.append("Typed AXIOM Engine client is missing unload lifecycle support: " + token)
-    for token in ("Select discovered native model", "axiomApi.axiomEngineModels()", "axiomApi.streamAxiomEngine(", "Stop generation", "AXIOM Native Engine prompt", "Unload model", "axiomApi.unloadAxiomEngine()", "AXIOM_MODEL_ROOTS", "tokenizer.json", "safetensors"):
+    for token in ("Select discovered native model", "axiomApi.axiomEngineModels()", "axiomApi.streamAxiomEngine(", "Stop generation", "Generation cancelled after", "AXIOM Native Engine prompt", "Unload model", "axiomApi.unloadAxiomEngine()", "AXIOM_MODEL_ROOTS", "tokenizer.json", "safetensors"):
         if token not in panel_source:
             issues.append("AXIOM Native Engine GUI is missing native support/path safety controls: " + token)
-    for token in ("then unloads it", "api/engine/models", 'selectOption("/models/llama-test")', "api/engine/generate/stream", 'contentType: "application/x-ndjson"', "api/engine/unload", 'name: "Unload model"'):
+    for token in ("then unloads it", "api/engine/models", 'selectOption("/models/llama-test")', "api/engine/generate/stream", 'contentType: "application/x-ndjson"', "api/engine/unload", 'name: "Unload model"', 'name: "Stop generation"', "Generation cancelled after 0 token(s)"):
         if token not in e2e_source:
             issues.append("AXIOM Engine browser acceptance test is missing lifecycle coverage: " + token)
     return issues
