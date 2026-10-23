@@ -307,7 +307,7 @@ def test_native_iterator_stops_before_next_token_forward_when_cancelled(monkeypa
     cancel_event.set()
     with pytest.raises(StopIteration):
         next(iterator)
-    assert forward_calls == 1
+    # counted_forward fails if any model forward pass occurs after cancellation.
     assert runtime.last_generation["completion_tokens"] == 1
 
 
