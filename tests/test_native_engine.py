@@ -319,6 +319,13 @@ def test_tiny_safetensors_checkpoint_generates_through_axiom_native_loop(
     assert result["prompt_tokens"] == 3
     assert result["completion_tokens"] == 2
     assert result["decoder"] == "axiom-autoregressive-kv-cache"
+    assert result["sampling"] == {
+        "temperature": 0,
+        "top_p": 0.9,
+        "top_k": 0,
+        "repetition_penalty": 1.0,
+        "seed": None,
+    }
 
     events = list(generate_local_stream(str(model_dir), "hello world", max_new_tokens=2, temperature=0))
     assert events[-1]["type"] == "complete"
