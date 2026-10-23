@@ -612,6 +612,10 @@ def generate_local_stream(
                 "checkpoint_format": "safetensors",
                 "decoder": model.last_generation.get("decoder", "axiom-autoregressive-kv-cache"),
                 "attention_backend": model.last_attention_backend,
+                "prefill_ms": model.last_generation.get("prefill_ms", 0.0),
+                "decode_ms": model.last_generation.get("decode_ms", 0.0),
+                "time_to_first_token_ms": model.last_generation.get("time_to_first_token_ms", 0.0),
+                "generation_tokens_per_second": model.last_generation.get("generation_tokens_per_second", 0.0),
                 "sampling": {
                     "temperature": temperature,
                     "top_p": top_p,
