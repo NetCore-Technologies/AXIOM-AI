@@ -40,13 +40,16 @@ def test_shell_completion_can_be_viewed_for_supported_shells_without_installing(
     monkeypatch.chdir(tmp_path)
     help_result = runner.invoke(app, ["--help"])
     assert help_result.exit_code == 0, help_result.stdout
-    assert "--install-completion" in help_result.stdout
-    assert "--show-completion" in help_result.stdout
+    # Click/Typer can route help text to stderr on newer releases; output
+    # combines both streams and tests the public CLI surface rather than a
+    # version-specific capture detail.
+    assert "--install-completion" in help_result.output
+    assert "--show-completion" in help_result.output
 
     for shell in ("bash", "zsh", "fish", "powershell"):
         result = runner.invoke(app, ["--show-completion", shell])
         assert result.exit_code == 0, f"{shell}: {result.stdout}"
-        assert result.stdout.strip()
+        assert result.output.strip()
 
 
 def test_init_creates_a_project_that_project_commands_can_use(
