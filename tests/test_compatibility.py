@@ -51,3 +51,13 @@ def test_unknown_os_is_reported_as_unverified_without_claiming_support() -> None
     assert report["status"] == "warning"
     assert report["checks"]["operating_system"]["status"] == "warning"
     assert "FreeBSD" not in report["checks"]["operating_system"]["tested_targets"]
+
+
+def test_unusable_node_is_skipped_for_python_only_checks_but_fails_release_checks() -> None:
+    local = compatibility.assess_compatibility((3, 11, 8), "Windows", "unavailable")
+    assert local["status"] == "passed"
+    assert local["checks"]["node"]["status"] == "skipped"
+
+    release = compatibility.assess_compatibility((3, 11, 8), "Windows", "unavailable", require_node=True)
+    assert release["status"] == "failed"
+    assert release["checks"]["node"]["status"] == "fail"

@@ -53,10 +53,11 @@ def assess_compatibility(
         python_tuple = (*python_tuple, *(0 for _ in range(3 - len(python_tuple))))
     python_ok = python_tuple >= MIN_PYTHON
     os_ok = operating_system in SUPPORTED_OPERATING_SYSTEMS
-    if node_version is None:
+    node_unavailable = node_version is None or node_version == "unavailable"
+    if node_unavailable:
         node_status = "fail" if require_node else "skipped"
         node_supported = not require_node
-        node_text = "not installed or not found on PATH"
+        node_text = "not installed or not usable on PATH"
     else:
         node_supported = node_version_supported(node_version)
         node_status = "pass" if node_supported else "fail"
