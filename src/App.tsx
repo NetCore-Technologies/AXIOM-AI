@@ -3537,6 +3537,14 @@ function LogsPage() {
 
 const cliGuiMappings: Array<{ command: string; description: string; page: Page; destination: string }> = [
   { command: "axiom doctor / status", description: "Workspace readiness, diagnostics and local backend health.", page: "diagnostics", destination: "Diagnostics" },
+  { command: "axiom summary / guide / check", description: "First-run orientation, project state and suggested next steps.", page: "dashboard", destination: "Control center" },
+  { command: "axiom dataset profile / manifest / quality", description: "Bounded profiling, dataset manifests and configurable quality checks.", page: "datasets", destination: "Datasets" },
+  { command: "axiom model search / compatibility", description: "Search local model files and review hardware compatibility.", page: "models", destination: "Models" },
+  { command: "axiom engine discover / adapter compatibility / quantization estimate", description: "Trusted local model inventory, adapter checks and native memory estimates.", page: "quantizer", destination: "Quantization Lab" },
+  { command: "axiom fine-tuning status / jobs / start", description: "Inspect the fine-tuning runtime and manage supported local jobs.", page: "training", destination: "Training" },
+  { command: "axiom diagnostics support-bundle / runtime-connectors", description: "Review backend diagnostics and prepare a privacy-aware support bundle.", page: "diagnostics", destination: "Diagnostics" },
+  { command: "axiom runtime traces / connectors", description: "Inspect metadata-only runtime traces and connected runtime capabilities.", page: "runtime", destination: "Runtime" },
+  { command: "axiom api playground / openapi", description: "Inspect the allowlisted read-only API surface from the browser.", page: "api-playground", destination: "API Playground" },
   { command: "axiom system info / tools", description: "Hardware information and developer-tool availability.", page: "diagnostics", destination: "Diagnostics" },
   { command: "axiom init / project / config validate", description: "Project setup and safe configuration checks.", page: "dashboard", destination: "Control center" },
   { command: "axiom model list / info / inspect / analyze", description: "Model registry, metadata, local inspection and sizing.", page: "models", destination: "Models" },
