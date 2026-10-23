@@ -158,6 +158,8 @@ The local API and Control Center use loopback addresses by default. The optional
 ## Documentation
 
 - [Install and troubleshooting](https://github.com/NetCore-Technologies/AXIOM-AI/wiki)
+- [My First AI starter project](examples/my-first-ai/README.md)
+- [Installer options and troubleshooting](installers/README.md)
 - [Changelog](docs/CHANGELOG.md)
 - [Local fine-tuning](docs/Local-Fine-Tuning.md)
 - [Model Studio](docs/Model-Studio.md)
