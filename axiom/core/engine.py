@@ -436,7 +436,7 @@ def estimate_native_quantization(
         "candidates": candidate_results,
         "recommendation": recommendation,
         "scope_note": (
-            "Planning estimates only. They do not inspect tensor contents, measure physical memory, or predict model quality/speed. "
+            "Planning estimates only. They do not inspect tensor contents or measure physical memory, and do not predict model quality/speed. "
             "INT4/INT8 are sizing-only and cannot be loaded by the current AXIOM Native Engine. "
             "FP16/BF16/FP32 availability still depends on the actual checkpoint dtype, device kernels and free memory. "
             "Estimated fit is not a guarantee of successful loading."
