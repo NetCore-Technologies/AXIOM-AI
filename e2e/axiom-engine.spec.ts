@@ -34,6 +34,20 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
     setup_note: "AXIOM Native Engine is ready for supported local Llama/Mistral safetensors checkpoints.",
     scope_note: "AXIOM-owned Llama/Mistral forward pass and autoregressive KV-cache decoder.", checked_at: "2026-10-22T00:00:00Z",
   } }));
+  await page.route("**/api/engine/adapters/compatibility", (route) => route.fulfill({ json: {
+    schema_version: 1,
+    base_model: { name: "llama-test", model_type: "llama", architecture: "LlamaForCausalLM" },
+    adapter: { name: "my-lora-adapter", rank: 8, alpha: 16, target_modules: ["q_proj", "v_proj"] },
+    structurally_compatible: true, compatible_on_any_device: true,
+    adapter_tensor_count: 4, checked_layers: 12,
+    devices: [
+      { name: "CPU", available: true, compatible: true, status: "compatible", reason: "Structural preflight passed." },
+      { name: "CUDA", available: false, compatible: false, status: "unavailable", reason: "No CUDA device detected." },
+      { name: "ROCm", available: false, compatible: false, status: "unavailable", reason: "No ROCm device detected." },
+      { name: "Metal/MPS", available: false, compatible: false, status: "unavailable", reason: "MPS is unavailable." },
+    ],
+    issues: [], scope_note: "Metadata/tensor-shape preflight only; actual allocation and execution remain untested.",
+  } }));
   await page.route("**/api/engine/models", (route) => route.fulfill({ json: {
     schema_version: 1,
     models: [{
@@ -82,6 +96,10 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
   await expect(engine.getByLabel("Local Llama / Mistral model directory")).toHaveValue("/models/llama-test");
   await engine.getByLabel("Select discovered LoRA adapter").selectOption("/runs/my-lora-adapter");
   await expect(engine.getByLabel("Optional LoRA adapter directory")).toHaveValue("/runs/my-lora-adapter");
+  await engine.getByRole("button", { name: "Check adapter compatibility" }).click();
+  await expect(engine.getByRole("region", { name: "LoRA device compatibility report" })).toContainText("Adapter structure supported");
+  await expect(engine.getByRole("region", { name: "LoRA device compatibility report" })).toContainText("CPU");
+  await expect(engine.getByRole("region", { name: "LoRA device compatibility report" })).toContainText("ROCm");
   await engine.getByLabel("AXIOM Native Engine prompt").fill("Say hello.");
   await engine.getByRole("button", { name: "Run with AXIOM Engine" }).click();
 
