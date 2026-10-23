@@ -16,6 +16,7 @@
 ## Unreleased — latest/development
 
 ### Added
+- Add native LoRA adapter compatibility preflight to the Runtime GUI and API: inspect target modules and tensor shapes without loading full base weights, and report CPU/CUDA/ROCm/MPS availability separately.
 - Added cooperative cancellation for native inference streams: browser disconnects are monitored asynchronously, cancellation reaches the AXIOM decoder, and tests cover cancellation before prompt prefill and between tokens.
 - Added explicit workspace-root resolution with environment override and nearest-project discovery, plus bounded read-only workspace diagnostics and safe support bundles exposed through CLI and API.
 - Added metadata-only discovery of trusted native model/LoRA directories, newline-delimited token streaming with Stop/partial-output retention in the GUI, and `axiom engine discover [--json]` / `axiom engine run --stream` in the CLI.
