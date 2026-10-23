@@ -242,3 +242,10 @@ def test_engine_stream_endpoint_yields_token_snapshots_and_final_metrics(tmp_pat
     events = [json.loads(line) for line in response.text.splitlines()]
     assert events[0] == {"type": "token", "response": "Hel", "completion_tokens": 1}
     assert events[1] == {"type": "complete", "result": completed}
+    assert events[1]["result"]["sampling"] == {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 0,
+        "repetition_penalty": 1.0,
+        "seed": None,
+    }
