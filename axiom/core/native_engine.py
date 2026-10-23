@@ -558,7 +558,8 @@ class NativeLlamaRuntime:
 
     def _attention(self, query: Any, key: Any, value: Any, blocked_mask: Any) -> Any:
         """Run explicit AXIOM masks through optimized tensor attention, with a manual fallback."""
-        functional = self.torch.nn.functional
+        torch = self.torch
+        functional = torch.nn.functional
         scaled_dot_product = getattr(functional, "scaled_dot_product_attention", None)
         if callable(scaled_dot_product):
             # A boolean SDPA mask uses True for visible positions. Invert AXIOM's
