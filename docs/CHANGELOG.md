@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — environment, compatibility, and retention
+
+- Allow `AXIOM_GUI_PORT` to set the default local Control Center port; explicit `--port` remains authoritative and invalid values fail clearly.
+- Add a dependency-free compatibility report for Python, Node.js, and validated OS targets, run in cross-platform CI.
+- Add a data-retention guide and a Settings shortcut to review and clear the in-memory runtime trace buffer.
+- Update delivery status for native engine discovery, runtime benchmarking, trace lifecycle, connector discovery, API Playground, and release smoke coverage after the existing end-to-end checks passed.
+
+
 ## Unreleased — latest/development
 
 ### Added

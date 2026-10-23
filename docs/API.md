@@ -34,3 +34,24 @@ Engine and fine-tuning model loads are local-only; they do not download weights 
 The API binds to loopback by default through `axiom gui`. Network binding is an
 explicit operator choice; see the local-daemon security guidance before exposing
 it beyond the machine.
+
+
+## Environment configuration
+
+AXIOM reads configuration from the current process environment. The Control
+Center remains bound to IPv4 loopback; this is deliberate and cannot be loosened
+by setting an environment variable.
+
+| Variable | Purpose | Default / behavior |
+| --- | --- | --- |
+| `AXIOM_GUI_PORT` | Default port for `axiom gui` / `axiom ui` | `40507`; an explicit `--port` wins; `0` selects an ephemeral port |
+| `AXIOM_CORS_ORIGINS` | Comma-separated exact browser origins allowed by FastAPI CORS | Local Vite origins on ports `4173` and `5173` |
+| `AXIOM_WORKSPACE` | Workspace-root override used by workspace resolution | If unset, nearest-config/current-directory resolution applies |
+| `AXIOM_MODEL_ROOT` | Default local model root for daemon/model inspection compatibility | Workspace-local `models` directory where the daemon sets it |
+| `AXIOM_MODEL_ROOTS` | Additional trusted roots for native local model and adapter discovery | No additional roots |
+| `AXIOM_PYTHON` | Python executable selected by the JavaScript GUI launcher | `python` on Windows; `python3` elsewhere |
+
+Do not add a public origin to `AXIOM_CORS_ORIGINS` unless you understand the
+browser trust implications. CORS is not authentication. Keep the service on
+loopback for ordinary local use; network exposure requires a separately
+reviewed deployment and access-control design.

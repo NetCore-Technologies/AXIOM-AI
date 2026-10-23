@@ -352,15 +352,30 @@ def experiment_delete(
     console.print_json(json.dumps({"deleted": removed, "run_artifacts_deleted": False}, ensure_ascii=False))
 
 
+def _resolve_gui_port(cli_port: int | None) -> int:
+    """Resolve GUI port from explicit CLI input or a validated environment default."""
+    if cli_port is not None:
+        port = cli_port
+    else:
+        raw = os.environ.get("AXIOM_GUI_PORT", "40507").strip()
+        try:
+            port = int(raw)
+        except ValueError:
+            raise ValueError("AXIOM_GUI_PORT must be an integer from 0 to 65535.") from None
+    if isinstance(port, bool) or not isinstance(port, int) or not 0 <= port <= 65535:
+        raise ValueError("GUI port must be an integer from 0 to 65535.")
+    return port
+
+
 @app.command("gui")
 @app.command("ui")
 def start_gui(
-    port: int = typer.Option(
-        40507,
+    port: int | None = typer.Option(
+        None,
         "--port",
         min=0,
         max=65535,
-        help="Local port to use (default 40507); use 0 for an ephemeral port. Keep the port stable to retain this browser origin's local account and sign-in state.",
+        help="Local port to use; defaults to AXIOM_GUI_PORT or 40507. Use 0 for an ephemeral port. Keep the port stable to retain this browser origin's local account and sign-in state.",
     ),
     open_browser: bool = typer.Option(
         True,
@@ -369,6 +384,10 @@ def start_gui(
     ),
 ) -> None:
     """Start the local API and open the AXIOM Control Center."""
+    try:
+        port = _resolve_gui_port(port)
+    except ValueError as exc:
+        _cli_error(str(exc))
     webui_dir = Path(__file__).resolve().parent.parent / "webui"
     if not (webui_dir / "index.html").is_file():
         _cli_error("The bundled Control Center is missing. Build the web UI before running axiom gui.")

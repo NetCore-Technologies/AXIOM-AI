@@ -13,7 +13,7 @@ feature exists or a delivery-date promise.
 
 - [R001 · Implemented; tests passing] Publish a versioned API contract and compatibility policy.
 - [R002 · Implemented; tests passing] Resolve the workspace using explicit override, `AXIOM_WORKSPACE`, nearest parent `axiom.yaml`, then the current directory; reject explicit symlink roots.
-- [R003 · Planned] Make API configuration environment-backed and documented.
+- [R003 · In progress; validation pending] Make API configuration environment-backed and documented; GUI port now accepts AXIOM_GUI_PORT, CORS origins and trusted model roots are documented, and a cross-platform compatibility report is being added.
 - [R004 · Implemented; tests passing] Normalize validation and error response envelopes.
 - [R005 · Implemented; tests passing] Add request IDs and correlation across CLI, API, and GUI.
 - [R006 · In progress; validation pending] Add bounded pagination to every collection endpoint.
@@ -21,8 +21,8 @@ feature exists or a delivery-date promise.
 - [R008 · Planned] Add cancellation and timeout semantics to long operations.
 - [R009 · Planned] Separate read-only plans from side-effecting jobs in API scopes.
 - [R010 · Implemented; tests passing] Add read-only workspace health checks for config parsing, path safety, file permissions, free disk, Python compatibility, and required dependency imports.
-- [R011 · Planned] Document data retention, local storage, and deletion behavior.
-- [R012 · Planned] Add release compatibility checks for Python, Node, and OS targets.
+- [R011 · In progress; validation pending] Document data retention, browser-local account settings, in-memory request traces, workspace metadata, generated files, and deletion boundaries in Settings and the retention guide.
+- [R012 · In progress; validation pending] Add automated Python/Node/OS runtime compatibility checks to cross-platform release CI.
 
 ### 02 · CLI experience
 
@@ -57,7 +57,7 @@ feature exists or a delivery-date promise.
 ### 04 · Model lifecycle and compatibility
 
 - [R037 · In progress; validation pending] Expand registry metadata with architecture, size, source, and license; CLI add/update, schema-checked import/export, and hash/tag fields are exposed, while registry/UI validation remains to be completed.
-- [R038 · In progress; validation pending] Add safe local-folder discovery without following directory symlinks; file symlinks are accepted only when resolved targets remain inside trusted roots.
+- [R038 · Implemented; tests passing] Add safe local-folder discovery without following directory symlinks; file symlinks are accepted only when resolved targets remain inside trusted roots.
 - [R039 · In progress; validation pending] Add model inspection summaries in the GUI.
 - [R040 · In progress; validation pending] Add duplicate detection by source and content metadata.
 - [R041 · In progress; validation pending] Add model tags, favorites, and workspace labels.
@@ -116,16 +116,16 @@ feature exists or a delivery-date promise.
 
 ### 08 · Runtime, optimization, and quantization
 
-- [R085 · Planned] Add runtime connector discovery and capability negotiation.
+- [R085 · Implemented; tests passing] Add passive runtime connector discovery and capability reporting without assuming a connection or credentials.
 - [R086 · Planned] Add explicit connect/disconnect controls with secret-safe storage.
-- [R087 · In progress; validation pending] Report native-engine dependency readiness, supported Llama/Mistral checkpoint formats, execution backend, loaded architecture, and local-only execution scope.
-- [R088 · In progress; validation pending] Measure actual local inference latency and token throughput through the loopback runtime API, reporting token-count coverage and wall time.
-- [R089 · In progress; validation pending] Add prompt/token-limit inputs, excluded warm-up runs, bounded measured iterations, and explicit concurrency controls to the existing Runtime page.
+- [R087 · Implemented; tests passing] Report native-engine dependency readiness, supported Llama/Mistral checkpoint formats, execution backend, loaded architecture, and local-only execution scope.
+- [R088 · Implemented; tests passing] Measure actual local inference latency and token throughput through the loopback runtime API, reporting token-count coverage and wall time.
+- [R089 · Implemented; tests passing] Add prompt/token-limit inputs, excluded warm-up runs, bounded measured iterations, and explicit concurrency controls to the existing Runtime page.
 - [R090 · Planned] Add quantization estimates with formulas and overhead assumptions.
 - [R091 · Planned] Compare quantization candidates against selected memory budgets.
 - [R092 · Planned] Keep estimated fit separate from measured quality and speed.
-- [R093 · In progress; validation pending] Add bounded in-memory runtime request traces with request IDs, metadata-only records, export, and explicit clear controls.
-- [R094 · In progress; validation pending] Add explicit model unload and cache cleanup, plus one-model-at-a-time cache replacement; framework allocator release remains best-effort.
+- [R093 · Implemented; tests passing] Add bounded in-memory runtime request traces with request IDs, metadata-only records, export, and explicit clear controls.
+- [R094 · Implemented; tests passing] Add explicit model unload and cache cleanup, plus one-model-at-a-time cache replacement; framework allocator release remains best-effort.
 - [R095 · Planned] Add adapter compatibility checks for CPU, CUDA, Metal, and ROCm.
 - [R096 · Planned] Add runtime failure recovery and actionable connector diagnostics.
 
@@ -146,7 +146,7 @@ feature exists or a delivery-date promise.
 
 ### 10 · API, telemetry, diagnostics, and delivery
 
-- [R109 · Planned] Add an allowlisted API playground with bounded payloads and timeouts.
+- [R109 · Implemented; tests passing] Add an allowlisted API playground with bounded payloads and timeouts.
 - [R110 · Planned] Add typed API examples generated from the supported contract.
 - [R111 · Planned] Add local hardware snapshot history with opt-in retention.
 - [R112 · Planned] Add sampled CPU, memory, GPU, and disk telemetry where available.
@@ -154,7 +154,7 @@ feature exists or a delivery-date promise.
 - [R114 · Planned] Add telemetry export, clear-history, and privacy controls.
 - [R115 · Planned] Add diagnostic checks for config, paths, dependencies, and storage.
 - [R116 · Planned] Add copyable support bundles with explicit secret/data redaction.
-- [R117 · Planned] Add release smoke checks for CLI, API, and bundled UI together.
+- [R117 · Implemented; tests passing] Add release smoke checks for CLI, API, production UI build, and browser acceptance coverage together.
 - [R118 · Planned] Add cross-platform packaging verification for supported targets.
 - [R119 · Planned] Add migration/rollback notes for every persisted-data schema change.
 - [R120 · Planned] Add end-to-end acceptance coverage for each shipped workflow.

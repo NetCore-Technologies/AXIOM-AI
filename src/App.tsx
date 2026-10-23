@@ -1500,7 +1500,7 @@ function WorkspacePage({
     case "logs":
       return <LogsPage />;
     case "settings":
-      return <SettingsPage theme={theme} setTheme={setTheme} onChangePassword={onChangePassword} />;
+      return <SettingsPage theme={theme} setTheme={setTheme} setPage={setPage} onChangePassword={onChangePassword} />;
   }
 }
 
@@ -3399,10 +3399,12 @@ function LogsPage() {
 function SettingsPage({
   theme,
   setTheme,
+  setPage,
   onChangePassword,
 }: {
   theme: Theme;
   setTheme: (theme: Theme) => void;
+  setPage: (page: Page) => void;
   onChangePassword: () => void;
 }) {
   return <FeaturePage page="settings">
@@ -3416,6 +3418,13 @@ function SettingsPage({
         <div className="setting-row"><div><b>Administrator password</b><span>Changing it ends the current session and returns to sign in.</span></div><button type="button" className="button secondary-button" onClick={onChangePassword}><KeyRound size={15} /> Change password</button></div>
         <div className="surface-divider" />
         <div className="setting-row"><div><b>Session timeout</b><span>Automatic sign out after inactivity.</span></div><StatusPill tone="neutral">10 MINUTES</StatusPill></div>
+      </Surface>
+      <Surface title="Data and retention" eyebrow="LOCAL / REVIEWABLE">
+        <p className="quiet-note">AXIOM keeps project metadata and generated files on your computer. Runtime request traces are bounded to 200 metadata-only records in memory; prompt and response bodies are not stored in that trace buffer.</p>
+        <div className="setting-row"><div><b>Runtime request traces</b><span>Review trace metadata or clear the in-memory history from the Runtime page.</span></div><button type="button" className="button secondary-button" onClick={() => setPage("runtime")}>Review traces</button></div>
+        <div className="surface-divider" />
+        <p className="quiet-note">Deleting a registry entry or saved plan does not delete a checkpoint, dataset, or run output. Files at chosen output paths remain until you remove them yourself.</p>
+        <a href="https://github.com/NetCore-Technologies/AXIOM-AI/blob/latest/development/docs/DATA-RETENTION.md" target="_blank" rel="noreferrer">Read the data retention and deletion guide</a>
       </Surface>
       <Surface title="Integration boundary" eyebrow="HONEST STATE">
         <Callout tone="info" title="Local API integration">The dashboard, model registry, dataset profiler, training planner, hardware snapshot, persistent plan history, diagnostics, and event log share the local FastAPI contract.</Callout>

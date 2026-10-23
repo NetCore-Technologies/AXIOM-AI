@@ -52,7 +52,7 @@ The training command makes a plan; it does not start a job. For the browser inte
 axiom gui
 ```
 
-AXIOM opens its Control Center in your browser and serves it from your computer. Press `Ctrl-C` in the terminal to stop it.
+AXIOM opens its Control Center in your browser and serves it from your computer. Press `Ctrl-C` in the terminal to stop it. Set `AXIOM_GUI_PORT` to change the default port (an explicit `axiom gui --port` takes precedence); see [API configuration](docs/API.md).
 
 ## Install
 
@@ -166,7 +166,9 @@ The local API and Control Center use loopback addresses by default. The optional
 - [Local inference via Ollama](docs/Local-Inference.md)
 - [Inference Benchmarking](docs/Inference-Benchmarking.md)
 - [AXIOM Engine](docs/Local-Engine.md)
-- [API](docs/API.md)
+- [API and environment configuration](docs/API.md)
+- [Data retention and deletion](docs/DATA-RETENTION.md)
+- [Runtime compatibility checks](scripts/check_compatibility.py)
 - [Roadmap](ROADMAP.md)
 - [Community and adoption strategy](docs/Community-and-Adoption-Strategy.md)
 - [Contributing](CONTRIBUTING.md)
