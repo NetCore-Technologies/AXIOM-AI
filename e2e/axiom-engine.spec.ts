@@ -64,11 +64,13 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
     expect(requestBody.top_k).toBe(4);
     expect(requestBody.repetition_penalty).toBe(1.1);
     expect(requestBody.seed).toBe(42);
+    expect(requestBody.stop_sequences).toEqual(["<END>", "###"]);
     const completed = {
       engine: "axiom-native-engine", execution_backend: "pytorch-native-axiom", transformers_generation_used: false, ollama_used: false,
       model: "llama-test", architecture: "LlamaForCausalLM", model_type: "llama", device: "cpu", checkpoint_format: "safetensors", decoder: "axiom-autoregressive-kv-cache", attention_backend: "pytorch-scaled-dot-product-attention",
       adapter: "my-lora-adapter", response: "AXIOM local engine test response.",
       sampling: { temperature: 0.7, top_p: 0.8, top_k: 4, repetition_penalty: 1.1, seed: 42 },
+      stop_sequences: ["<END>", "###"], stop_reason: "stop_sequence",
       prefill_ms: 40.2, decode_ms: 30.3, time_to_first_token_ms: 40.2, generation_tokens_per_second: 85.106,
       prompt_tokens: 5, completion_tokens: 6, elapsed_ms: 120.5,
       generated_at: "2026-10-21T00:00:00Z", local_only: true,
@@ -112,10 +114,11 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
   await engine.getByLabel("Top-k").fill("4");
   await engine.getByLabel("Repetition penalty").fill("1.1");
   await engine.getByLabel("Sampling seed").fill("42");
+  await engine.getByLabel("Stop sequences").fill("<END>\n###");
   await engine.getByRole("button", { name: "Run with AXIOM Engine" }).click();
 
   await expect(engine.getByTestId("axiom-engine-output")).toContainText("AXIOM local engine test response.");
-  await expect(engine).toContainText("Attention: pytorch-scaled-dot-product-attention · Measured: 40.2 ms prefill · 30.3 ms decode · 85.106 tok/s · Sampling: temperature 0.7 · top-p 0.8 · top-k 4 · repetition penalty 1.1 · seed 42");
+  await expect(engine).toContainText("Attention: pytorch-scaled-dot-product-attention · Finish: stop sequence · Stop sequences: 2 · Attention: pytorch-scaled-dot-product-attention · Sampling: temperature 0.7 · top-p 0.8 · top-k 4 · repetition penalty 1.1 · seed 42");
   await expect(engine).toContainText("LlamaForCausalLM");
   await expect(engine.getByRole("button", { name: "Unload model" })).toBeVisible();
 
@@ -142,6 +145,7 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
             adapter: null, device: "cpu", checkpoint_format: "safetensors",
             decoder: "axiom-autoregressive-kv-cache", attention_backend: "pytorch-scaled-dot-product-attention", response: "Should not arrive",
             sampling: { temperature: 0.7, top_p: 0.9, top_k: 0, repetition_penalty: 1, seed: null },
+            stop_sequences: [], stop_reason: "cancelled",
             prefill_ms: 10, decode_ms: 1, time_to_first_token_ms: 10, generation_tokens_per_second: 90.909,
             prompt_tokens: 3, completion_tokens: 1, elapsed_ms: 100,
             generated_at: "2026-10-22T00:00:00Z", local_only: true,
