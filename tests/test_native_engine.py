@@ -143,6 +143,58 @@ def test_native_decoder_stops_before_emitting_eos_and_does_not_step_past_output_
     assert runtime.last_generation["completion_tokens"] == 1
 
 
+def test_native_iterator_honors_cancellation_before_prompt_prefill(monkeypatch) -> None:
+    from threading import Event
+
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    config = NativeLlamaConfig.from_mapping(_config())
+    runtime = NativeLlamaRuntime(config, _tiny_weights(torch), torch, torch.device("cpu"))
+    cancel_event = Event()
+    cancel_event.set()
+
+    def unexpected_forward(input_ids, past_key_values=None, *, cancel_event=None):
+        pytest.fail("A pre-cancelled request must not start model forward execution.")
+
+    monkeypatch.setattr(runtime, "forward", unexpected_forward)
+    assert list(runtime.iter_generate(
+        [1, 3], max_new_tokens=4, temperature=0, eos_token_ids=(), cancel_event=cancel_event
+    )) == []
+    assert runtime.last_generation["completion_tokens"] == 0
+
+
+def test_native_iterator_stops_before_next_token_forward_when_cancelled(monkeypatch) -> None:
+    from threading import Event
+
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    config = NativeLlamaConfig.from_mapping(_config())
+    runtime = NativeLlamaRuntime(config, _tiny_weights(torch), torch, torch.device("cpu"))
+    cancel_event = Event()
+    original_forward = runtime.forward
+    forward_calls = 0
+
+    def counted_forward(input_ids, past_key_values=None, *, cancel_event=None):
+        nonlocal forward_calls
+        forward_calls += 1
+        return original_forward(input_ids, past_key_values, cancel_event=cancel_event)
+
+    monkeypatch.setattr(runtime, "forward", counted_forward)
+    iterator = runtime.iter_generate(
+        [1, 3], max_new_tokens=4, temperature=0, eos_token_ids=(), cancel_event=cancel_event
+    )
+    first_token = next(iterator)
+    assert 0 <= first_token < config.vocab_size
+    assert forward_calls == 1
+    cancel_event.set()
+    with pytest.raises(StopIteration):
+        next(iterator)
+    assert forward_calls == 1
+    assert runtime.last_generation["completion_tokens"] == 1
+
+
 def test_native_adapter_delta_is_applied_in_axiom_linear_path() -> None:
     torch = pytest.importorskip("torch")
     from axiom.core.native_engine import NativeLlamaRuntime
