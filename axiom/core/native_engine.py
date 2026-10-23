@@ -186,6 +186,210 @@ def _safetensor_keys(files: list[Path], trusted_roots: tuple[Path, ...]) -> dict
             result[key] = path.name
     return result
 
+
+def inspect_native_adapter_compatibility(
+    model_dir: Path,
+    adapter_dir: Path,
+    *,
+    trusted_roots: tuple[Path, ...],
+) -> dict[str, Any]:
+    """Preflight native LoRA structure without loading the full base-model weights."""
+    issues: list[str] = []
+    config: NativeLlamaConfig | None = None
+    model_type: str | None = None
+    architecture: str | None = None
+    base_weight_names: set[str] = set()
+    layer_count = 0
+    target_set: set[str] = set()
+    rank: int | None = None
+    alpha: float | None = None
+    adapter_tensor_count = 0
+    pair_shapes: dict[str, dict[str, tuple[int, ...]]] = {}
+    roots = tuple(root.resolve() for root in trusted_roots)
+
+    try:
+        mapping = _read_json_object(model_dir / "config.json", _MAX_CONFIG_BYTES, "Model config.json", roots)
+        config = NativeLlamaConfig.from_mapping(mapping)
+        model_type = config.model_type
+        architecture = "LlamaForCausalLM" if model_type == "llama" else "MistralForCausalLM"
+        layer_count = config.num_hidden_layers
+        tokenizer_path = _resolve_trusted_file(model_dir / "tokenizer.json", roots, "Tokenizer file")
+        if tokenizer_path.stat().st_size > _MAX_TOKENIZER_BYTES:
+            issues.append("The local tokenizer.json exceeds the 64 MiB native-engine limit.")
+        base_files, _ = _resolve_safetensor_files(model_dir, roots)
+        base_weight_names = set(_safetensor_keys(base_files, roots))
+        missing = [
+            name for name in NativeLlamaRuntime._required_weight_names(config)
+            if name not in base_weight_names
+        ]
+        if missing:
+            issues.append("Base checkpoint is missing required native weights: " + ", ".join(missing[:5]) + ".")
+    except (NativeEngineError, NativeDependencyError, OSError, ValueError) as exc:
+        issues.append("Base model: " + str(exc))
+
+    try:
+        adapter_config = _read_json_object(
+            adapter_dir / "adapter_config.json", _MAX_CONFIG_BYTES, "LoRA adapter config", roots
+        )
+        for flag in ("use_dora", "use_qalora", "use_rslora"):
+            if adapter_config.get(flag) is True:
+                issues.append(f"LoRA option {flag} is not supported by AXIOM Native Engine.")
+        if adapter_config.get("bias", "none") != "none":
+            issues.append("Bias-enabled LoRA adapters are unsupported.")
+        if (
+            adapter_config.get("modules_to_save")
+            or adapter_config.get("rank_pattern")
+            or adapter_config.get("alpha_pattern")
+        ):
+            issues.append("Per-module rank/alpha patterns and modules_to_save are unsupported.")
+        if adapter_config.get("fan_in_fan_out") is True:
+            issues.append("fan_in_fan_out adapters are unsupported.")
+        if adapter_config.get("task_type") not in (None, "CAUSAL_LM"):
+            issues.append("Only CAUSAL_LM LoRA adapters are supported.")
+        raw_targets = adapter_config.get("target_modules")
+        if isinstance(raw_targets, str):
+            target_set = {raw_targets}
+        elif isinstance(raw_targets, list) and all(isinstance(item, str) and item for item in raw_targets):
+            target_set = set(raw_targets)
+        if not target_set:
+            issues.append("LoRA adapter must declare target_modules as non-empty strings.")
+        raw_rank, raw_alpha = adapter_config.get("r"), adapter_config.get("lora_alpha")
+        if isinstance(raw_rank, int) and not isinstance(raw_rank, bool) and 1 <= raw_rank <= 4096:
+            rank = raw_rank
+        else:
+            issues.append("LoRA adapter rank r must be an integer from 1 through 4096.")
+        if (
+            isinstance(raw_alpha, (int, float))
+            and not isinstance(raw_alpha, bool)
+            and math.isfinite(float(raw_alpha))
+            and raw_alpha > 0
+        ):
+            alpha = float(raw_alpha)
+        else:
+            issues.append("LoRA adapter lora_alpha must be a finite positive number.")
+    except (NativeEngineError, NativeDependencyError, OSError, ValueError) as exc:
+        issues.append("LoRA adapter config: " + str(exc))
+
+    try:
+        adapter_file = _resolve_trusted_file(
+            adapter_dir / "adapter_model.safetensors", roots, "LoRA safetensors checkpoint"
+        )
+        from safetensors import safe_open
+        with safe_open(str(adapter_file), framework="pt", device="cpu") as handle:
+            for key in handle.keys():
+                match = re.fullmatch(r"(.+)\\.lora_([AB])(?:\\.default)?\\.weight", key)
+                if not match:
+                    issues.append(f"Unsupported LoRA tensor key {key!r}.")
+                    continue
+                module_path, side = match.group(1), match.group(2)
+                if module_path.startswith("base_model.model."):
+                    module_path = module_path[len("base_model.model."):]
+                elif module_path.startswith("base_model."):
+                    module_path = module_path[len("base_model."):]
+                if module_path.split(".")[-1] not in target_set:
+                    issues.append(f"LoRA tensor {key!r} targets a module not declared in target_modules.")
+                module_match = re.fullmatch(
+                    r"model\\.layers\\.(\\d+)\\.(self_attn\\.(?:q_proj|k_proj|v_proj|o_proj)|mlp\\.(?:gate_proj|up_proj|down_proj))",
+                    module_path,
+                )
+                if config is None or module_match is None:
+                    issues.append(f"LoRA tensor {key!r} does not map to a supported native projection.")
+                    continue
+                layer_index = int(module_match.group(1))
+                if not 0 <= layer_index < config.num_hidden_layers:
+                    issues.append(f"LoRA tensor {key!r} references a layer outside the base model.")
+                    continue
+                if module_path + ".weight" not in base_weight_names:
+                    issues.append(f"LoRA target {module_path!r} has no matching base projection tensor.")
+                    continue
+                projection = module_match.group(2).split(".")[-1]
+                head_dim = config.hidden_size // config.num_attention_heads
+                if projection == "q_proj":
+                    output_dim, input_dim = config.num_attention_heads * head_dim, config.hidden_size
+                elif projection in {"k_proj", "v_proj"}:
+                    output_dim, input_dim = config.num_key_value_heads * head_dim, config.hidden_size
+                elif projection == "o_proj":
+                    output_dim, input_dim = config.hidden_size, config.hidden_size
+                elif projection in {"gate_proj", "up_proj"}:
+                    output_dim, input_dim = config.intermediate_size, config.hidden_size
+                else:
+                    output_dim, input_dim = config.hidden_size, config.intermediate_size
+                shape = tuple(int(dimension) for dimension in handle.get_slice(key).get_shape())
+                pair_shapes.setdefault(module_path, {})[side] = shape
+                if side == "A" and (rank is None or shape != (rank, input_dim)):
+                    issues.append(f"LoRA A tensor shape {shape} for {module_path!r} must be ({rank}, {input_dim}).")
+                if side == "B" and (rank is None or shape != (output_dim, rank)):
+                    issues.append(f"LoRA B tensor shape {shape} for {module_path!r} must be ({output_dim}, {rank}).")
+                adapter_tensor_count += 1
+    except (NativeEngineError, NativeDependencyError, OSError, ValueError, RuntimeError) as exc:
+        issues.append("LoRA safetensors inspection failed: " + str(exc))
+
+    if not pair_shapes:
+        issues.append("No supported LoRA A/B projection pairs were found.")
+    for module_path, sides in pair_shapes.items():
+        if "A" not in sides or "B" not in sides:
+            issues.append(f"LoRA module {module_path!r} must contain both A and B tensors.")
+
+    try:
+        import torch
+    except (ImportError, OSError):
+        torch = None
+
+    cpu_available = torch is not None
+    cuda_available = False
+    rocm_available = False
+    mps_available = False
+    if torch is not None:
+        try:
+            cuda_available = bool(torch.cuda.is_available())
+            rocm_available = cuda_available and bool(getattr(torch.version, "hip", None))
+            cuda_available = cuda_available and not rocm_available
+        except (RuntimeError, AttributeError):
+            cuda_available = False
+            rocm_available = False
+        try:
+            mps = getattr(getattr(torch, "backends", None), "mps", None)
+            mps_available = bool(mps and mps.is_available())
+        except (RuntimeError, AttributeError):
+            mps_available = False
+
+    structurally_compatible = not issues
+    devices = []
+    for name, available in (
+        ("CPU", cpu_available),
+        ("CUDA", cuda_available),
+        ("ROCm", rocm_available),
+        ("Metal/MPS", mps_available),
+    ):
+        compatible = structurally_compatible and available
+        if not available:
+            reason = "PyTorch is not installed." if torch is None else f"{name} is not available in the current PyTorch environment."
+        elif issues:
+            reason = "Structural compatibility checks failed; see issues."
+        else:
+            reason = "Adapter metadata and tensor shapes match the native architecture. Real allocation and execution still need testing."
+        devices.append({
+            "name": name,
+            "available": available,
+            "compatible": compatible,
+            "status": "compatible" if compatible else "incompatible" if available else "unavailable",
+            "reason": reason,
+        })
+
+    return {
+        "schema_version": 1,
+        "base_model": {"name": model_dir.name, "model_type": model_type, "architecture": architecture},
+        "adapter": {"name": adapter_dir.name, "rank": rank, "alpha": alpha, "target_modules": sorted(target_set)},
+        "structurally_compatible": structurally_compatible,
+        "compatible_on_any_device": any(item["compatible"] for item in devices),
+        "adapter_tensor_count": adapter_tensor_count,
+        "checked_layers": layer_count,
+        "devices": devices,
+        "issues": list(dict.fromkeys(issues)),
+        "scope_note": "Metadata/tensor-shape preflight only. This does not load the full model, allocate VRAM, execute a forward pass, or guarantee device/driver execution.",
+    }
+
+
 class NativeLlamaRuntime:
     """AXIOM-owned implementation of Llama/Mistral forward and decode steps."""
 
