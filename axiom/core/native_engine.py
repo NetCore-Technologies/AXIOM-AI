@@ -686,9 +686,11 @@ class NativeLlamaRuntime:
         cache: tuple[Any, ...] = ()
         prefill_ms = 0.0
         decode_ms = 0.0
+        stop_reason = "max_new_tokens"
         try:
             with torch.inference_mode():
                 if cancel_event is not None and cancel_event.is_set():
+                    stop_reason = "cancelled"
                     return
                 prefill_started = time.perf_counter()
                 try:
@@ -696,9 +698,11 @@ class NativeLlamaRuntime:
                     prefill_ms = (time.perf_counter() - prefill_started) * 1000
                 except NativeGenerationCancelled:
                     prefill_ms = (time.perf_counter() - prefill_started) * 1000
+                    stop_reason = "cancelled"
                     return
                 for step in range(max_new_tokens):
                     if cancel_event is not None and cancel_event.is_set():
+                        stop_reason = "cancelled"
                         break
                     scores = logits.float()
                     if repetition_penalty != 1.0:
@@ -734,11 +738,13 @@ class NativeLlamaRuntime:
                     if token_id < 0 or token_id >= self.config.vocab_size:
                         raise NativeEngineError("Native decoder produced a token ID outside vocab_size.")
                     if token_id in eos:
+                        stop_reason = "eos_token"
                         break
                     generated.append(token_id)
                     yield token_id
                     # Cancellation must not start another decode step.
                     if cancel_event is not None and cancel_event.is_set():
+                        stop_reason = "cancelled"
                         break
                     if step + 1 < max_new_tokens:
                         decode_started = time.perf_counter()
@@ -748,6 +754,7 @@ class NativeLlamaRuntime:
                             )
                         except NativeGenerationCancelled:
                             decode_ms += (time.perf_counter() - decode_started) * 1000
+                            stop_reason = "cancelled"
                             break
                         decode_ms += (time.perf_counter() - decode_started) * 1000
         finally:
@@ -760,6 +767,7 @@ class NativeLlamaRuntime:
                 "top_k": top_k,
                 "repetition_penalty": float(repetition_penalty),
                 "seed": seed,
+                "stop_reason": stop_reason,
                 "prefill_ms": round(prefill_ms, 3),
                 "decode_ms": round(decode_ms, 3),
                 "time_to_first_token_ms": round(prefill_ms, 3),
