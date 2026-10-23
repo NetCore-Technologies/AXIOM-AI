@@ -52,7 +52,7 @@ def test_shell_completion_can_be_viewed_for_supported_shells_without_installing(
     assert "--show-completion" in option_flags
 
     markers = {
-        "bash": "__AXIOM_COMPLETE=",
+        "bash": "_AXIOM_COMPLETE=complete_bash",
         "zsh": "#compdef axiom",
         "fish": "complete -c axiom",
         "powershell": "Register-ArgumentCompleter",
