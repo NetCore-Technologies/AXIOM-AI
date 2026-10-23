@@ -98,6 +98,7 @@ def engine_run(
     adapter_path: Path | None = typer.Option(None, "--adapter-path", exists=True, file_okay=False, dir_okay=True, help="Optional local native-compatible LoRA adapter directory."),
     max_new_tokens: int = typer.Option(256, "--max-new-tokens", min=1, max=2048, help="Maximum generated tokens (1–2048)."),
     temperature: float = typer.Option(0.7, "--temperature", min=0, max=2, help="Sampling temperature; 0 disables sampling."),
+    stop_sequences: list[str] = typer.Option([], "--stop-sequence", help="Stop when this exact text is generated; repeat the option for multiple stop strings."),
     json_output: bool = typer.Option(False, "--json", help="Print response and metrics as JSON."),
     stream_output: bool = typer.Option(False, "--stream", help="Show decoded output updates while the model generates."),
 ) -> None:
@@ -126,6 +127,7 @@ def engine_run(
                 adapter_path=adapter_value,
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
+                stop_sequences=stop_sequences,
             )
             try:
                 with Live(console=console, refresh_per_second=12, transient=False) as live:
@@ -150,6 +152,7 @@ def engine_run(
                 adapter_path=adapter_value,
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
+                stop_sequences=stop_sequences,
             )
     except (ValueError, AxiomEngineError) as exc:
         _fail(str(exc))
@@ -158,7 +161,7 @@ def engine_run(
         return
     console.print(Panel.fit(
         f"Engine: AXIOM Native Engine\nModel: {result['model']}\nArchitecture: {result['architecture']}\n"
-        f"Generated tokens: {result['completion_tokens']}\nElapsed: {result['elapsed_ms']} ms",
+        f"Generated tokens: {result['completion_tokens']}\nFinish reason: {result.get('stop_reason', 'unknown')}\nElapsed: {result['elapsed_ms']} ms",
         title="AXIOM ENGINE",
     ))
     if not stream_output:
