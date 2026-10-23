@@ -277,7 +277,7 @@ def inspect_native_adapter_compatibility(
         from safetensors import safe_open
         with safe_open(str(adapter_file), framework="pt", device="cpu") as handle:
             for key in handle.keys():
-                match = re.fullmatch(r"(.+)\\.lora_([AB])(?:\\.default)?\\.weight", key)
+                match = re.fullmatch(r"(.+)\.lora_([AB])(?:\.default)?\.weight", key)
                 if not match:
                     issues.append(f"Unsupported LoRA tensor key {key!r}.")
                     continue
@@ -289,7 +289,7 @@ def inspect_native_adapter_compatibility(
                 if module_path.split(".")[-1] not in target_set:
                     issues.append(f"LoRA tensor {key!r} targets a module not declared in target_modules.")
                 module_match = re.fullmatch(
-                    r"model\\.layers\\.(\\d+)\\.(self_attn\\.(?:q_proj|k_proj|v_proj|o_proj)|mlp\\.(?:gate_proj|up_proj|down_proj))",
+                    r"model\.layers\.(\d+)\.(self_attn\.(?:q_proj|k_proj|v_proj|o_proj)|mlp\.(?:gate_proj|up_proj|down_proj))",
                     module_path,
                 )
                 if config is None or module_match is None:
