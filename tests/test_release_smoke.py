@@ -239,7 +239,7 @@ def test_native_stop_sequences_are_integrated_and_regression_gated() -> None:
     issues = release_smoke.engine_security_and_lifecycle_issues(
         engine_source, native_source, api_source, client_source, broken_panel, e2e_source
     )
-    assert any("Stop sequences" in issue for issue in issues)
+    assert any("stop_sequences: stopSequences" in issue for issue in issues)
 
 
 def test_api_playground_smoke_checks_typed_get_only_contract() -> None:
