@@ -203,7 +203,7 @@ async def engine_generate_stream(
                     break
                 if cancel_event.is_set():
                     break
-                yield json.dumps(item, ensure_ascii=False, separators=(",", ":")) + "\\n"
+                yield json.dumps(item, ensure_ascii=False, separators=(",", ":")) + "\n"
         finally:
             cancel_event.set()
             monitor.cancel()
