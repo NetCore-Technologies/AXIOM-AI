@@ -18,7 +18,7 @@ feature exists or a delivery-date promise.
 - [R005 · Implemented; tests passing] Add request IDs and correlation across CLI, API, and GUI.
 - [R006 · In progress; validation pending] Add bounded pagination to every collection endpoint.
 - [R007 · In progress; validation pending] Define stable resource IDs and schema migration behavior.
-- [R008 · In progress; validation pending] Add cancellation and timeout semantics to long operations; cooperative cancellation is now wired through AXIOM-native streamed inference, while other long operations still need cancellation support.
+- [R008 · In progress; validation pending] Add cancellation and timeout semantics to long operations; AXIOM-native streaming now supports cooperative cancellation, stop-string termination, and explicit finish reasons, while other long operations still need cancellation support.
 - [R009 · Planned] Separate read-only plans from side-effecting jobs in API scopes.
 - [R010 · Implemented; tests passing] Add read-only workspace health checks for config parsing, path safety, file permissions, free disk, Python compatibility, and required dependency imports.
 - [R011 · In progress; validation pending] Document data retention, browser-local account settings, in-memory request traces, workspace metadata, generated files, and deletion boundaries in Settings and the retention guide.
