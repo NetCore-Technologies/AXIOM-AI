@@ -6,7 +6,7 @@ import json
 import logging
 from queue import Empty, Full, Queue
 from threading import Event, Thread
-from typing import Any, Iterator
+from typing import Any, AsyncIterator, Iterator
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
@@ -147,12 +147,20 @@ def _produce_native_stream(
                 close()
             except (RuntimeError, ValueError):
                 _LOG.debug("Native stream iterator cleanup was already in progress.")
-        # Do not block a disconnecting client on a full buffer. The consumer
-        # exits as soon as it observes the shared cancellation event.
-        try:
-            output.put_nowait(_STREAM_END)
-        except Full:
-            pass
+        # On a healthy stream, wait for buffer capacity so the consumer always
+        # receives an explicit end marker. After disconnect, the consumer exits
+        # from the shared cancellation event and no sentinel is required.
+        while not cancel_event.is_set():
+            try:
+                output.put(_STREAM_END, timeout=0.1)
+                break
+            except Full:
+                continue
+        if cancel_event.is_set():
+            try:
+                output.put_nowait(_STREAM_END)
+            except Full:
+                pass
 
 
 @router.post("/generate/stream")
@@ -178,7 +186,7 @@ async def engine_generate_stream(
         daemon=True,
     )
 
-    async def events() -> Iterator[str]:
+    async def events() -> AsyncIterator[str]:
         async def watch_disconnect() -> None:
             while not cancel_event.is_set():
                 if await http_request.is_disconnected():
