@@ -105,6 +105,30 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
     assert events[1]["result"]["execution_backend"] == "pytorch-native-axiom"
 
 
+def test_adapter_compatibility_api_returns_per_device_report(monkeypatch) -> None:
+    monkeypatch.setattr(engine_api, "resolve_local_model_directory", lambda value, label: value)
+    expected = {
+        "schema_version": 1,
+        "base_model": {"name": "base", "model_type": "llama", "architecture": "LlamaForCausalLM"},
+        "adapter": {"name": "lora", "rank": 8, "alpha": 16.0, "target_modules": ["q_proj", "v_proj"]},
+        "structurally_compatible": True,
+        "compatible_on_any_device": True,
+        "adapter_tensor_count": 4,
+        "checked_layers": 12,
+        "devices": [{"name": "CPU", "available": True, "compatible": True, "status": "compatible", "reason": "Preflight passed."}],
+        "issues": [],
+        "scope_note": "Metadata only.",
+    }
+    monkeypatch.setattr(engine_api, "check_local_adapter_compatibility", lambda model_path, adapter_path: expected)
+    response = _client().post("/api/engine/adapters/compatibility", json={
+        "model_path": "/trusted/models/base",
+        "adapter_path": "/trusted/models/lora",
+    })
+
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
 def test_native_model_discovery_lists_local_metadata_without_loading_weights(tmp_path, monkeypatch) -> None:
     root = tmp_path / "models"
     model = root / "tiny-llama"
