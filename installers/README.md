@@ -1,73 +1,76 @@
 # Installing AXIOM
 
-These scripts install the `axiom` command. AXIOM is operated from the
-terminal; the website is not a binary download surface.
+Choose the installation method that fits your machine. The installer downloads published release assets; it does not build models, install model weights, or configure provider credentials.
 
-## macOS and Linux
+## Quick install
 
-<!-- markdownlint-disable MD013 -->
-```bash
-curl -fsSL https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.sh | bash
-```
-<!-- markdownlint-enable MD013 -->
+### Windows (PowerShell)
 
-The shell installer creates `~/.local/share/axiom` for AXIOM files and links
-the command at `~/.local/bin/axiom`.
+Open PowerShell as your normal user; administrator rights are not required. Run:
 
-- On Linux `x86_64`, it downloads and verifies the latest release tarball.
-  The extracted onedir bundle avoids unpacking a large executable on every
-  CLI or daemon launch.
-- On macOS and non-x86 Linux, it creates an isolated Python environment and
-  installs from the repository. Python 3.11+ is required for these
-  source-install paths.
-
-If `~/.local/bin` is not already on `PATH`, the installer prints the export
-command to add it. Verify the result with:
-
-```bash
-axiom version
-axiom guide
-axiom daemon
-```
-
-The installer downloads `SHA256SUMS` with the Linux bundle and refuses to
-install when the checksum does not match.
-
-## Windows PowerShell
-
-<!-- markdownlint-disable MD013 -->
 ```powershell
 irm https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.ps1 | iex
 ```
-<!-- markdownlint-enable MD013 -->
 
-The PowerShell installer downloads the latest non-draft Windows release to
-`%LOCALAPPDATA%\AXIOM\AXIOM.exe` and adds `%LOCALAPPDATA%\AXIOM` to the user
-`PATH`. Restart PowerShell before verifying:
+The script finds the latest published release, downloads the Windows x64 executable and checksum manifest, verifies SHA-256 before installing, adds the per-user directory to PATH, and runs a version check. It asks before replacing an existing installation.
+
+To inspect the script first or pin a release, download it and run it locally:
 
 ```powershell
-axiom version
-axiom guide
-axiom daemon
+Invoke-WebRequest https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.ps1 -OutFile .\install-axiom.ps1
+Get-Help .\install-axiom.ps1 -Full
+.\install-axiom.ps1 -Tag v0.3.0-beta.5
 ```
 
-## After installation
+Options include `-Tag` to pin a published release, `-InstallDir` to choose the install directory, `-Force` to skip the overwrite prompt, and `-NoPathUpdate` to leave PATH unchanged. The installer refuses a missing or mismatched checksum.
 
-Start a local project and validate its scaffold:
+### Linux x86_64, macOS, and other Linux architectures
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.sh | bash
+```
+
+On Linux x86_64, the script downloads the onedir release bundle and verifies it against `SHA256SUMS` before activation. On macOS and non-x86 Linux, it creates a Python virtual environment and installs from the selected source ref; Python 3.11+ and Git are required for these source installs.
+
+## Useful Bash options
+
+Set environment variables before running the script to customise the installation:
+
+| Variable | Purpose |
+| --- | --- |
+| `AXIOM_RELEASE_TAG` | Pin a published release, e.g. `v0.3.0-beta.5` |
+| `AXIOM_SOURCE_REF` | Git ref for source-based installs |
+| `AXIOM_INSTALL_DIR` | Absolute path for release files and the virtual environment |
+| `AXIOM_BIN_DIR` | Absolute path for the `axiom` launcher |
+
+Use `--help` to see shell installer usage. Both installers verify downloaded release payloads before use.
+
+## Verify and try it
+
+Open a new terminal after installation and run:
+
+```bash
+axiom version
+axiom --help
+axiom doctor
 axiom init my-ai
 cd my-ai
 axiom project validate
 axiom config validate
 ```
 
-For the model, dataset, training-plan, and MCP examples, see the
-[first five minutes](../README.md#first-five-minutes) section in the root
-README.
+On PowerShell, the same commands work after reopening the terminal. If `axiom` is not found, check that `~/.local/bin` (Linux/macOS) or `%LOCALAPPDATA%\AXIOM` (Windows) is on PATH.
 
-The installers never contain Hugging Face, SuperCompress, or other API
-credentials. Configure those integrations through AXIOM after installation.
+## Troubleshooting
 
-`axiom daemon` binds to loopback and asks the operating system for a free
-port. It prints the URL for local scripts; stop it with Ctrl-C.
+- **No published release found:** open [GitHub Releases](https://github.com/NetCore-Technologies/AXIOM-AI/releases). A tag in the source tree is not necessarily a published release with downloadable assets.
+- **Checksum missing or incorrect:** stop; do not bypass verification. Check the release assets and retry later.
+- **Python or Git missing:** source installs on macOS/non-x86 Linux require Python 3.11+ and Git.
+- **Command not found:** reopen the terminal after PATH changes, or add the printed bin directory to PATH.
+- **Permission errors:** prefer a user-owned install directory; do not run the installer as root unless you intentionally configured user paths and understand the consequences.
+
+## Privacy and network behavior
+
+The installer contacts GitHub to identify a release and download assets. It does not include API keys or model weights. Local project checks run on your machine; commands that query model hubs or providers may use the network. Review a generated support bundle before sharing it.
+
+See the [project README](../README.md), [CLI guide](../docs/CLI-GUIDE.md), and [changelog](../docs/CHANGELOG.md) for next steps and release details.
