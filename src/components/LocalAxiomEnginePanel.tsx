@@ -14,6 +14,10 @@ export default function LocalAxiomEnginePanel() {
   const [prompt, setPrompt] = useState("");
   const [maxNewTokens, setMaxNewTokens] = useState("256");
   const [temperature, setTemperature] = useState("0.7");
+  const [topP, setTopP] = useState("0.9");
+  const [topK, setTopK] = useState("0");
+  const [repetitionPenalty, setRepetitionPenalty] = useState("1.0");
+  const [seed, setSeed] = useState("");
   const [result, setResult] = useState<AxiomEngineResult | null>(null);
   const [streamResponse, setStreamResponse] = useState("");
   const [streamTokenCount, setStreamTokenCount] = useState(0);
@@ -97,10 +101,21 @@ export default function LocalAxiomEnginePanel() {
     streamTokenCountRef.current = 0;
     const tokenLimit = Number(maxNewTokens);
     const temp = Number(temperature);
+    const p = Number(topP);
+    const k = Number(topK);
+    const repeatPenalty = Number(repetitionPenalty);
+    const seedValue = seed.trim() === "" ? null : Number(seed);
     if (!modelPath.trim()) { setError("Choose a discovered native model or enter a trusted local Llama/Mistral model path."); return; }
     if (!prompt.trim()) { setError("Enter a prompt first."); return; }
     if (!Number.isInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 2048) { setError("Maximum generated tokens must be between 1 and 2048."); return; }
     if (!Number.isFinite(temp) || temp < 0 || temp > 2) { setError("Temperature must be between 0 and 2."); return; }
+    if (!Number.isFinite(p) || p <= 0 || p > 1) { setError("Top-p must be greater than 0 and at most 1."); return; }
+    if (!Number.isInteger(k) || k < 0 || k > 100000) { setError("Top-k must be an integer from 0 through 100000; 0 disables top-k."); return; }
+    if (!Number.isFinite(repeatPenalty) || repeatPenalty < 0.1 || repeatPenalty > 5) { setError("Repetition penalty must be between 0.1 and 5."); return; }
+    if (seed.trim() !== "" && (!Number.isSafeInteger(seedValue) || seedValue! < 0 || seedValue! > Number.MAX_SAFE_INTEGER)) {
+      setError("Seed must be a whole number from 0 through 9007199254740991, or blank for a non-fixed seed.");
+      return;
+    }
     const controller = new AbortController();
     activeStreamRef.current = controller;
     setRunning(true);
@@ -111,6 +126,10 @@ export default function LocalAxiomEnginePanel() {
         prompt,
         max_new_tokens: tokenLimit,
         temperature: temp,
+        top_p: p,
+        top_k: k,
+        repetition_penalty: repeatPenalty,
+        seed: seedValue,
       }, (event: AxiomEngineStreamEvent) => {
         if (event.type === "token") {
           streamTokenCountRef.current = event.completion_tokens;
@@ -205,8 +224,12 @@ export default function LocalAxiomEnginePanel() {
         <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={12000} rows={5} required placeholder="Ask the local model to do something…" />
       </label>
       <div className="two-column-grid">
-        <label className="field"><span className="field-label-row"><span>Maximum generated tokens</span></span><input type="number" min={1} max={2048} step={1} value={maxNewTokens} onChange={(event) => setMaxNewTokens(event.target.value)} required /></label>
-        <label className="field"><span className="field-label-row"><span>Temperature (0 = deterministic)</span></span><input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(event) => setTemperature(event.target.value)} required /></label>
+        <label className="field"><span className="field-label-row"><span>Maximum generated tokens</span></span><input aria-label="Maximum generated tokens" type="number" min={1} max={2048} step={1} value={maxNewTokens} onChange={(event) => setMaxNewTokens(event.target.value)} required /></label>
+        <label className="field"><span className="field-label-row"><span>Temperature (0 = deterministic)</span></span><input aria-label="Temperature" type="number" min={0} max={2} step={0.1} value={temperature} onChange={(event) => setTemperature(event.target.value)} required /></label>
+        <label className="field"><span className="field-label-row"><span>Top-p nucleus sampling</span></span><input aria-label="Top-p" type="number" min={0.01} max={1} step={0.01} value={topP} onChange={(event) => setTopP(event.target.value)} required /><small>Keep the smallest high-probability token set reaching this cumulative probability (0, 1].</small></label>
+        <label className="field"><span className="field-label-row"><span>Top-k sampling</span></span><input aria-label="Top-k" type="number" min={0} max={100000} step={1} value={topK} onChange={(event) => setTopK(event.target.value)} required /><small>0 disables top-k. A non-zero value must not exceed the selected model's vocabulary size.</small></label>
+        <label className="field"><span className="field-label-row"><span>Repetition penalty</span></span><input aria-label="Repetition penalty" type="number" min={0.1} max={5} step={0.05} value={repetitionPenalty} onChange={(event) => setRepetitionPenalty(event.target.value)} required /><small>1.0 disables repetition adjustment; other values penalize or boost previously seen token scores.</small></label>
+        <label className="field"><span className="field-label-row"><span>Sampling seed (optional)</span></span><input aria-label="Sampling seed" type="number" min={0} max={Number.MAX_SAFE_INTEGER} step={1} value={seed} onChange={(event) => setSeed(event.target.value)} placeholder="Leave blank to vary sampling" /><small>A seed makes token sampling reproducible on the same model, device and runtime. This does not guarantee cross-device bitwise reproducibility.</small></label>
       </div>
       <div className="integration-form-actions">
         <button type="submit" className="button primary-button" disabled={!status?.ready || loading || running || !modelPath.trim() || !prompt.trim() || Boolean(adapterCompatibility && !adapterCompatibility.structurally_compatible)}><Play size={15} /> {running ? "Generating locally…" : "Run with AXIOM Engine"}</button>
@@ -220,6 +243,7 @@ export default function LocalAxiomEnginePanel() {
       <div className="surface-head"><div>
         <p className="surface-eyebrow">{result ? `GENERATED ON THIS MACHINE · ${result.architecture}` : running ? "STREAMING TOKEN OUTPUT · LOCAL ONLY" : "PARTIAL LOCAL OUTPUT"}</p>
         <h3>{result ? `${result.model}${result.adapter ? ` + ${result.adapter}` : ""}` : (assets?.models.find((model) => model.path === modelPath)?.name || "AXIOM Native Engine")}</h3>
+        {result && <p className="quiet-note">Sampling: temperature {result.sampling.temperature} · top-p {result.sampling.top_p} · top-k {result.sampling.top_k || "off"} · repetition penalty {result.sampling.repetition_penalty} · seed {result.sampling.seed ?? "random"}</p>}
       </div><span className={`status-pill ${result ? "success" : running ? "warning" : "neutral"}`}><i />{result ? "COMPLETED" : running ? "GENERATING" : "CANCELLED"}</span></div>
       <pre data-testid={result ? "axiom-engine-output" : "axiom-engine-live-output"} className="local-inference-output">{(result ? result.response : streamResponse) || "(The model has not emitted printable text yet.)"}</pre>
       {!result && <p className="quiet-note">Cumulative text snapshots update as the native decoder emits tokens. {streamTokenCount} token(s) received.</p>}
