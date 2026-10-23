@@ -114,7 +114,7 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
             prompt_tokens: 3, completion_tokens: 1, elapsed_ms: 100,
             generated_at: "2026-10-22T00:00:00Z", local_only: true,
           },
-        }) + "\\n",
+        }) + "\n",
       });
     } catch {
       // The browser has already aborted the request, which is the case under test.
