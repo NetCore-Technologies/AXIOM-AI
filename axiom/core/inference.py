@@ -245,6 +245,7 @@ def run_local_inference_benchmark(
             "requests_per_second": round(measured_requests / total_wall_seconds, 3),
             "completion_tokens_known": len(completion_counts),
             "prompt_tokens_known": len(prompt_counts),
+            "total_prompt_tokens": total_prompt_tokens if prompt_counts else None,
             "total_completion_tokens": total_completion_tokens if completion_counts else None,
             "completion_tokens_per_second": round(total_completion_tokens / total_wall_seconds, 3) if completion_counts else None,
             "latency_ms": {
