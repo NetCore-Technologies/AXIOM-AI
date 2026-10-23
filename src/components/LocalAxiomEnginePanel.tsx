@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Activity, Cpu, Play, RefreshCcw, Unplug } from "lucide-react";
-import { axiomApi, type AxiomEngineAdapterCompatibility, type AxiomEngineAssets, type AxiomEngineResult, type AxiomEngineStatus, type AxiomEngineStreamEvent } from "../api/client";
+import { axiomApi, type AxiomEngineAdapterCompatibility, type AxiomEngineAssets, type AxiomEngineResult, type AxiomEngineStatus, type AxiomEngineStreamEvent, type AxiomQuantizationEstimate } from "../api/client";
 
 export default function LocalAxiomEnginePanel() {
   const [status, setStatus] = useState<AxiomEngineStatus | null>(null);
@@ -29,6 +29,13 @@ export default function LocalAxiomEnginePanel() {
   const [unloading, setUnloading] = useState(false);
   const [lifecycleNotice, setLifecycleNotice] = useState("");
   const [error, setError] = useState("");
+  const [quantContextLength, setQuantContextLength] = useState("4096");
+  const [quantBatchSize, setQuantBatchSize] = useState("1");
+  const [ramBudgetGiB, setRamBudgetGiB] = useState("16");
+  const [vramBudgetGiB, setVramBudgetGiB] = useState("");
+  const [quantizationPlan, setQuantizationPlan] = useState<AxiomQuantizationEstimate | null>(null);
+  const [planningQuantization, setPlanningQuantization] = useState(false);
+  const [quantizationError, setQuantizationError] = useState("");
 
   const refresh = async () => {
     setLoading(true);
@@ -89,6 +96,52 @@ export default function LocalAxiomEnginePanel() {
       setError(cause instanceof Error ? cause.message : "Adapter compatibility preflight failed.");
     } finally {
       setCheckingAdapter(false);
+    }
+  };
+
+  const estimateQuantization = async () => {
+    setQuantizationError("");
+    setQuantizationPlan(null);
+    if (!modelPath.trim()) {
+      setQuantizationError("Choose a discovered model before estimating memory.");
+      return;
+    }
+    const contextLength = Number(quantContextLength);
+    const batchSize = Number(quantBatchSize);
+    const ram = ramBudgetGiB.trim() === "" ? null : Number(ramBudgetGiB);
+    const vram = vramBudgetGiB.trim() === "" ? null : Number(vramBudgetGiB);
+    if (!Number.isInteger(contextLength) || contextLength < 1 || contextLength > 131072) {
+      setQuantizationError("Context length must be an integer from 1 through 131072.");
+      return;
+    }
+    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 16) {
+      setQuantizationError("Batch size must be an integer from 1 through 16.");
+      return;
+    }
+    if (ram === null && vram === null) {
+      setQuantizationError("Enter a RAM budget, a VRAM budget, or both.");
+      return;
+    }
+    for (const [label, budget] of [["RAM", ram], ["VRAM", vram]] as const) {
+      if (budget !== null && (!Number.isFinite(budget) || budget < 0.1 || budget > 2048)) {
+        setQuantizationError(label + " budget must be between 0.1 and 2048 GiB.");
+        return;
+      }
+    }
+    setPlanningQuantization(true);
+    try {
+      const plan = await axiomApi.estimateAxiomQuantization({
+        model_path: modelPath.trim(),
+        context_length: contextLength,
+        batch_size: batchSize,
+        ram_budget_gib: ram,
+        vram_budget_gib: vram,
+      });
+      setQuantizationPlan(plan);
+    } catch (cause) {
+      setQuantizationError(cause instanceof Error ? cause.message : "Memory planning failed.");
+    } finally {
+      setPlanningQuantization(false);
     }
   };
 
@@ -251,6 +304,58 @@ export default function LocalAxiomEnginePanel() {
         {!result && streamTokenCount > 0 && <span className="quiet-note"><Activity size={14} /> {streamTokenCount} token(s) streamed</span>}
       </div>
     </form>
+    <section className="surface axiom-quantization-planner" aria-label="Memory and quantization planner">
+      <div className="surface-head">
+        <div>
+          <p className="surface-eyebrow">OPTIMIZER · MEMORY PLANNING</p>
+          <h3>Quantization and memory fit</h3>
+          <p className="quiet-note">Config-based estimate only. INT4/INT8 candidates are sizing comparisons, not formats the current native engine can load.</p>
+        </div>
+      </div>
+      <div className="two-column-grid">
+        <label className="field">
+          <span className="field-label-row"><span>Planner context length</span></span>
+          <input aria-label="Planner context length" type="number" min={1} max={131072} step={1} value={quantContextLength} onChange={(event) => setQuantContextLength(event.target.value)} />
+        </label>
+        <label className="field">
+          <span className="field-label-row"><span>Planner batch size</span></span>
+          <input aria-label="Planner batch size" type="number" min={1} max={16} step={1} value={quantBatchSize} onChange={(event) => setQuantBatchSize(event.target.value)} />
+        </label>
+        <label className="field">
+          <span className="field-label-row"><span>RAM budget (GiB)</span></span>
+          <input aria-label="RAM budget GiB" type="number" min={0.1} max={2048} step={0.5} value={ramBudgetGiB} onChange={(event) => setRamBudgetGiB(event.target.value)} placeholder="Leave blank to skip RAM" />
+        </label>
+        <label className="field">
+          <span className="field-label-row"><span>VRAM budget (GiB)</span></span>
+          <input aria-label="VRAM budget GiB" type="number" min={0.1} max={2048} step={0.5} value={vramBudgetGiB} onChange={(event) => setVramBudgetGiB(event.target.value)} placeholder="Optional GPU memory budget" />
+        </label>
+      </div>
+      <button type="button" className="button secondary-button" onClick={() => void estimateQuantization()} disabled={planningQuantization || !modelPath.trim()}>
+        {planningQuantization ? "Estimating memory…" : "Estimate memory fit"}
+      </button>
+      {quantizationError && <div className="inline-alert warning" role="alert">{quantizationError}</div>}
+      {quantizationPlan && <section aria-label="Quantization estimate results">
+        <div className="surface-head">
+          <div>
+            <h4>{quantizationPlan.model.name} · {quantizationPlan.model.architecture}</h4>
+            <p className="quiet-note">Estimated {quantizationPlan.model.estimated_parameter_count.toLocaleString()} parameters · Context {quantizationPlan.request.context_length.toLocaleString()} · Batch {quantizationPlan.request.batch_size}</p>
+          </div>
+        </div>
+        <p className="quiet-note">{quantizationPlan.scope_note}</p>
+        <div className="two-column-grid">
+          {quantizationPlan.candidates.map((candidate) => <article className="surface" key={candidate.format} aria-label={candidate.format + " memory candidate"}>
+            <h4>{candidate.format.toUpperCase()}</h4>
+            <p><strong>{candidate.estimated_total_gib.toFixed(2)} GiB estimated</strong></p>
+            <p className="quiet-note">Uncertainty range {candidate.estimated_range_gib[0].toFixed(2)}–{candidate.estimated_range_gib[1].toFixed(2)} GiB</p>
+            <p className="quiet-note">Weights {candidate.estimated_weight_gib.toFixed(2)} GiB · KV cache {candidate.estimated_kv_cache_gib.toFixed(2)} GiB · Workspace {candidate.estimated_workspace_gib.toFixed(2)} GiB</p>
+            {candidate.fits_ram_budget !== null && <p>RAM budget: {candidate.fits_ram_budget ? "Estimated fit" : "Over estimated budget"}</p>}
+            {candidate.fits_vram_budget !== null && <p>VRAM budget: {candidate.fits_vram_budget ? "Estimated fit" : "Over estimated budget"}</p>}
+            <p>{candidate.native_checkpoint_supported ? "Floating-point format supported by native loader (actual load still required)." : "Sizing only — native loader does not support this quantized format."}</p>
+          </article>)}
+        </div>
+        <p className="quiet-note">Estimated fit is not measured memory, quality, or speed. Confirm quality with evaluation and speed/memory with an actual run.</p>
+      </section>}
+    </section>
     {error && <div className="inline-alert warning" role="alert">{error}</div>}
     {(result || streamResponse) && <section className="local-inference-result" aria-label="AXIOM Engine generated response">
       <div className="surface-head"><div>
