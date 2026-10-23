@@ -484,7 +484,8 @@ def inspect(root: Path) -> dict[str, Any]:
         "e2e/helpers/auth.ts", "e2e/modules.spec.ts", "e2e/workflows.spec.ts",
         "e2e/evaluation.spec.ts", "e2e/api-playground.spec.ts",
         "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
-        "e2e/model-registry-filters.spec.ts", "e2e/inference-benchmark.spec.ts", "e2e/runtime-traces.spec.ts",
+        "e2e/model-registry-filters.spec.ts", "e2e/inference-benchmark.spec.ts",
+        "e2e/runtime-traces.spec.ts", "e2e/settings-retention.spec.ts",
     ):
         target = root / relative
         if not target.is_file():
