@@ -71,7 +71,7 @@ export default function RuntimeTracePanel() {
       <div className="surface-head">
         <div>
           <p className="surface-eyebrow">BOUNDED · IN-MEMORY · METADATA ONLY</p>
-          <h3 id="runtime-traces-title"><ShieldCheck size={17} style={{ verticalAlign: "middle", marginRight: 8 }} />Runtime request traces</h3>
+          <h3 id="runtime-traces-title"><ShieldCheck size={17} style={{ verticalAlign: "middle", marginRight: 8 }} />Runtime request trace history</h3>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button type="button" className="button secondary-button" onClick={() => void refresh()} disabled={loading || busy}><RefreshCcw size={14} />{loading ? "Refreshing…" : "Refresh traces"}</button>
