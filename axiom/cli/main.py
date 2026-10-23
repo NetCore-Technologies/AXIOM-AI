@@ -199,13 +199,23 @@ def shell_completion_script(
     completion_param = next(
         (
             parameter for parameter in command.params
-            if isinstance(parameter, click.Option) and "--show-completion" in parameter.opts
+            if "--show-completion" in (
+                tuple(getattr(parameter, "opts", ()))
+                + tuple(getattr(parameter, "secondary_opts", ()))
+            )
         ),
         None,
     )
+    # Typer/Click versions differ in how root completion options are exposed
+    # from get_command(app). A valid explicit option keeps script generation
+    # usable even when the wrapper does not expose the implicit Typer option.
     if completion_param is None:
-        _cli_error("The CLI has no completion option to derive its shell script from.")
-        return
+        completion_param = click.Option(
+            ["--show-completion"],
+            is_flag=True,
+            hidden=True,
+            help="Generate shell completion source.",
+        )
     # Click's ShellComplete API takes (command, context, parameter, complete_var).
     script = completion_type(command, context, completion_param, "_AXIOM_COMPLETE").source()
     typer.echo(script, nl=False)
