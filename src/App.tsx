@@ -127,9 +127,11 @@ type Page =
 
 type Theme = "dark" | "light";
 type LayoutDensity = "comfortable" | "compact";
+type AccentColor = "lime" | "blue" | "violet";
 type AppPreferences = {
   sessionTimeoutMinutes: number;
   density: LayoutDensity;
+  accentColor: AccentColor;
   reduceMotion: boolean;
   lowPowerMode: boolean;
   dashboardRefreshSeconds: number;
@@ -438,6 +440,7 @@ const LAST_ACTIVITY_KEY = "axiom-last-activity";
 const DEFAULT_PREFERENCES: AppPreferences = {
   sessionTimeoutMinutes: 30,
   density: "comfortable",
+  accentColor: "lime",
   reduceMotion: false,
   lowPowerMode: false,
   dashboardRefreshSeconds: 10,
@@ -463,6 +466,7 @@ function readPreferences(): AppPreferences {
     return {
       sessionTimeoutMinutes,
       density: stored.density === "compact" ? "compact" : "comfortable",
+      accentColor: stored.accentColor === "blue" || stored.accentColor === "violet" ? stored.accentColor : "lime",
       reduceMotion: stored.reduceMotion === true,
       lowPowerMode,
       // Low-power and recurring dashboard polling are incompatible; normalize
@@ -700,6 +704,7 @@ function App() {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
     document.documentElement.dataset.density = preferences.density;
+    document.documentElement.dataset.accent = preferences.accentColor;
     document.documentElement.dataset.reducedMotion = String(preferences.reduceMotion || preferences.lowPowerMode);
   }, [theme, preferences]);
 
@@ -3600,6 +3605,13 @@ function SettingsPage({
               <span className="field-label-row"><span>Session timeout (minutes)</span><span>1–300</span></span>
               <input aria-label="Session timeout (minutes)" type="number" min={1} max={300} step={1} value={draft.sessionTimeoutMinutes} onChange={(event) => update("sessionTimeoutMinutes", Number(event.target.value))} required />
               <small>Sign out after this period without activity, including remembered sessions. The timer runs in this browser profile.</small>
+            </label>
+            <label className="field settings-field">
+              <span className="field-label-row"><span>Accent color</span></span>
+              <select aria-label="Accent color" value={draft.accentColor} onChange={(event) => update("accentColor", event.target.value as AccentColor)}>
+                <option value="lime">AXIOM lime</option><option value="blue">Cobalt blue</option><option value="violet">Violet</option>
+              </select>
+              <small>Changes interactive highlights and focus indicators across the interface.</small>
             </label>
             <label className="field settings-field">
               <span className="field-label-row"><span>Interface density</span></span>
