@@ -2129,3 +2129,68 @@ html, body { width: 100%; max-width: 100%; overflow-x: clip; }
 .model-studio-progress span { display: block; height: 100%; background: var(--accent); transition: width .2s ease; }
 .model-studio-log { margin: 0; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-deep); color: var(--ink); font: 12px/1.55 "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
 @media (max-width: 900px) { .model-studio-status-grid { grid-template-columns: 1fr; } .model-studio-layout { grid-template-columns: minmax(0, 1fr); } }
+
+
+/* User-configurable preferences follow the existing AXIOM design tokens. */
+.settings-preference-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 18px;
+}
+.settings-field { min-width: 0; margin-top: 12px; }
+.settings-field > input,
+.settings-field > select {
+  width: 100%;
+  min-height: 39px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  outline: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 11px;
+}
+.settings-field > input:focus,
+.settings-field > select:focus { border-color: var(--accent); }
+.settings-field .field-label-row > span:first-child { color: var(--muted); font-size: 10px; font-weight: 700; }
+.settings-field .field-label-row > span + span { color: var(--faint); font-size: 9px; }
+.setting-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  cursor: pointer;
+}
+.setting-toggle > span { display: grid; gap: 4px; }
+.setting-toggle b { color: var(--ink); font-size: 11px; }
+.setting-toggle small { color: var(--muted); font-size: 10px; line-height: 1.5; }
+.setting-toggle input[type="checkbox"] {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.settings-save-row { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 16px; }
+.cli-map-row { align-items: center; }
+.cli-map-row > div { flex: 1; min-width: 0; }
+.cli-map-row .button { flex-shrink: 0; white-space: nowrap; }
+html[data-density="compact"] .surface { padding: 14px; }
+html[data-density="compact"] .setting-row { gap: 10px; padding: 8px 0; }
+html[data-density="compact"] .surface-divider { margin: 10px 0; }
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+@media (max-width: 760px) {
+  .settings-preference-grid { grid-template-columns: minmax(0, 1fr); }
+  .cli-map-row { align-items: flex-start; flex-direction: column; }
+}
