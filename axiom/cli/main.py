@@ -11,7 +11,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from threading import Thread
 
+import click
 import typer
+from click.shell_completion import get_completion_class
+from typer.main import get_command
 from huggingface_hub import HfApi, login, logout, snapshot_download, whoami
 from rich.console import Console
 from rich.panel import Panel
@@ -175,6 +178,26 @@ def _run_default_session(*, show_banner: bool = True) -> None:
         run_daemon()
     except (OSError, ValueError) as exc:
         _cli_error(str(exc))
+
+
+@app.command("completion")
+def shell_completion_script(
+    shell: str = typer.Argument(..., help="Shell name: bash, zsh, fish, or powershell."),
+) -> None:
+    """Print a supported shell completion script without installing it."""
+    normalized = shell.strip().casefold()
+    supported = {"bash", "zsh", "fish", "powershell"}
+    if normalized not in supported:
+        _cli_error("Unsupported shell. Choose bash, zsh, fish, or powershell.")
+        return
+    completion_type = get_completion_class(normalized)
+    if completion_type is None:
+        _cli_error(f"Shell completion for {normalized} is not supported by the installed Click version.")
+        return
+    command = get_command(app)
+    context = click.Context(command, info_name="axiom")
+    script = completion_type(command, context, "axiom").source()
+    typer.echo(script, nl=False)
 
 
 @app.command()
