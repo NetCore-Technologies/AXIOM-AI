@@ -392,6 +392,29 @@ def validate_generation(prompt: str, max_new_tokens: int, temperature: float) ->
     return prompt, max_new_tokens, float(temperature)
 
 
+def validate_sampling_parameters(
+    top_p: float,
+    top_k: int,
+    repetition_penalty: float,
+    seed: int | None,
+) -> tuple[float, int, float, int | None]:
+    if isinstance(top_p, bool) or not isinstance(top_p, (int, float)) or not 0 < float(top_p) <= 1:
+        raise ValueError("Top-p must be greater than 0 and at most 1.")
+    if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
+        raise ValueError("Top-k must be an integer from 0 through 100000; 0 disables top-k.")
+    if (
+        isinstance(repetition_penalty, bool)
+        or not isinstance(repetition_penalty, (int, float))
+        or not 0.1 <= float(repetition_penalty) <= 5
+    ):
+        raise ValueError("Repetition penalty must be between 0.1 and 5.")
+    if seed is not None and (
+        isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= (2**63 - 1)
+    ):
+        raise ValueError("Sampling seed must be an integer from 0 through 2^63-1.")
+    return float(top_p), top_k, float(repetition_penalty), seed
+
+
 def _load_local_model(model_path: str, adapter_path: str | None):
     global _LOADED_RUNTIME, _LOADED_ARCHITECTURE
     try:
@@ -508,6 +531,10 @@ def generate_local_stream(
     adapter_path: str | None = None,
     max_new_tokens: int = 256,
     temperature: float = 0.7,
+    top_p: float = 0.9,
+    top_k: int = 0,
+    repetition_penalty: float = 1.0,
+    seed: int | None = None,
     include_token_events: bool = True,
     cancel_event: threading.Event | None = None,
 ) -> Iterator[dict[str, Any]]:
@@ -518,6 +545,7 @@ def generate_local_stream(
     the iterator closes the native token iterator and releases that lock.
     """
     prompt, max_new_tokens, temperature = validate_generation(prompt, max_new_tokens, temperature)
+    top_p, top_k, repetition_penalty, seed = validate_sampling_parameters(top_p, top_k, repetition_penalty, seed)
     with _ENGINE_LOCK:
         model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path)
         context_cap = max(2, min(model.config.max_position_embeddings, _MAX_INPUT_TOKENS + max_new_tokens))
@@ -547,7 +575,10 @@ def generate_local_stream(
             prompt_ids,
             max_new_tokens=effective_max_new_tokens,
             temperature=temperature,
-            top_p=0.9,
+            top_p=top_p,
+            top_k=top_k,
+            repetition_penalty=repetition_penalty,
+            seed=seed,
             eos_token_ids=model.config.eos_token_ids,
             cancel_event=cancel_event,
         )
@@ -580,6 +611,13 @@ def generate_local_stream(
                 "device": str(device),
                 "checkpoint_format": "safetensors",
                 "decoder": model.last_generation.get("decoder", "axiom-autoregressive-kv-cache"),
+                "sampling": {
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "top_k": top_k,
+                    "repetition_penalty": repetition_penalty,
+                    "seed": seed,
+                },
                 "response": response,
                 "prompt_tokens": model.last_generation.get("prompt_tokens", len(prompt_ids)),
                 "completion_tokens": model.last_generation.get("completion_tokens", len(generated_ids)),
@@ -609,6 +647,10 @@ def generate_local(
     adapter_path: str | None = None,
     max_new_tokens: int = 256,
     temperature: float = 0.7,
+    top_p: float = 0.9,
+    top_k: int = 0,
+    repetition_penalty: float = 1.0,
+    seed: int | None = None,
 ) -> dict[str, Any]:
     """Generate a complete local response through the streaming decoder."""
     completed: dict[str, Any] | None = None
@@ -618,6 +660,10 @@ def generate_local(
         adapter_path=adapter_path,
         max_new_tokens=max_new_tokens,
         temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
+        repetition_penalty=repetition_penalty,
+        seed=seed,
         include_token_events=False,
     ):
         if event.get("type") == "complete" and isinstance(event.get("result"), dict):
