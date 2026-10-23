@@ -94,6 +94,34 @@ export type RuntimeTraceReport = {
   max_retained: number;
   privacy: { prompt_bodies_stored: false; response_bodies_stored: false; disk_persistence: false };
 };
+export type AxiomQuantizationCandidate = {
+  format: "int4" | "int8" | "bf16" | "fp16" | "fp32";
+  nominal_weight_bits: number;
+  estimated_weight_gib: number;
+  estimated_kv_cache_gib: number;
+  estimated_workspace_gib: number;
+  estimated_total_gib: number;
+  estimated_range_gib: [number, number];
+  fits_ram_budget: boolean | null;
+  fits_vram_budget: boolean | null;
+  native_checkpoint_supported: boolean;
+  native_support_note: string | null;
+};
+export type AxiomQuantizationEstimate = {
+  schema_version: number;
+  model: {
+    name: string; model_type: "llama" | "mistral"; architecture: string;
+    estimated_parameter_count: number; parameter_count_method: string;
+  };
+  request: {
+    context_length: number; batch_size: number;
+    ram_budget_gib: number | null; vram_budget_gib: number | null;
+  };
+  assumptions: Record<string, unknown>;
+  candidates: AxiomQuantizationCandidate[];
+  scope_note: string;
+};
+
 export type AxiomEngineModel = {
   path: string; name: string; model_type: "llama" | "mistral";
   architecture: string; weight_format: string; ready_for_native_attempt: boolean;
@@ -1258,6 +1286,15 @@ export const axiomApi = {
     requestJson<LocalInferenceBenchmark>("/api/inference/benchmark", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
+  estimateAxiomQuantization: (input: {
+    model_path: string;
+    context_length: number;
+    batch_size: number;
+    ram_budget_gib: number | null;
+    vram_budget_gib: number | null;
+  }) => requestJson<AxiomQuantizationEstimate>("/api/engine/quantization/estimate", {
+    method: "POST", body: JSON.stringify(input),
+  }),
   axiomEngineStatus: () => requestJson<AxiomEngineStatus>("/api/engine/status"),
   axiomEngineModels: () => requestJson<AxiomEngineAssets>("/api/engine/models"),
   checkAxiomEngineAdapterCompatibility: (input: { model_path: string; adapter_path: string }) =>
