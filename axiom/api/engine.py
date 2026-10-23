@@ -9,13 +9,14 @@ from threading import Event, Thread
 from typing import Any, AsyncIterator, Iterator
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from starlette.responses import StreamingResponse
 
 from axiom.core.engine import (
     AxiomEngineError,
     check_local_adapter_compatibility,
     discover_local_engine_assets,
+    estimate_native_quantization,
     generate_local,
     generate_local_stream,
     resolve_local_model_directory,
@@ -82,6 +83,25 @@ class GenerateRequest(BaseModel):
         return value
 
 
+class QuantizationEstimateRequest(BaseModel):
+    model_path: str = Field(min_length=1, max_length=4096)
+    context_length: int = Field(default=4096, ge=1, le=131072)
+    batch_size: int = Field(default=1, ge=1, le=16)
+    ram_budget_gib: float | None = Field(default=None, ge=0.1, le=2048)
+    vram_budget_gib: float | None = Field(default=None, ge=0.1, le=2048)
+
+    @field_validator("model_path", mode="before")
+    @classmethod
+    def base_model_path_must_be_trusted(cls, value: Any) -> Any:
+        return _validated_path(value, "Base model")
+
+    @model_validator(mode="after")
+    def must_set_at_least_one_memory_budget(self) -> "QuantizationEstimateRequest":
+        if self.ram_budget_gib is None and self.vram_budget_gib is None:
+            raise ValueError("Provide a RAM and/or VRAM budget to compare estimates.")
+        return self
+
+
 class AdapterCompatibilityRequest(BaseModel):
     model_path: str = Field(min_length=1, max_length=4096)
     adapter_path: str = Field(min_length=1, max_length=4096)
@@ -102,6 +122,23 @@ def engine_adapter_compatibility(request: AdapterCompatibilityRequest) -> dict[s
     """Check adapter structure and per-device readiness without loading the full base model."""
     try:
         return check_local_adapter_compatibility(request.model_path, request.adapter_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except AxiomEngineError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+
+
+@router.post("/quantization/estimate")
+def engine_quantization_estimate(request: QuantizationEstimateRequest) -> dict[str, Any]:
+    """Estimate memory for candidate weight formats without loading weights or quantizing."""
+    try:
+        return estimate_native_quantization(
+            request.model_path,
+            context_length=request.context_length,
+            batch_size=request.batch_size,
+            ram_budget_gib=request.ram_budget_gib,
+            vram_budget_gib=request.vram_budget_gib,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
     except AxiomEngineError as exc:
