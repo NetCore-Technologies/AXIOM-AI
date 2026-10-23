@@ -288,6 +288,9 @@ def engine_security_and_lifecycle_issues(engine_source: str, native_source: str,
         '"generation_tokens_per_second": model.last_generation.get("generation_tokens_per_second", 0.0)',
         "def discover_local_engine_assets(",
         "def check_local_adapter_compatibility(",
+        "def validate_stop_sequences(",
+        '"stop_sequences": list(stop_sequences)',
+        '"stop_reason": stop_reason',
         "inspect_native_adapter_compatibility(",
         "cancel_event=cancel_event",
         "NativeEngineError",
@@ -309,7 +312,7 @@ def engine_security_and_lifecycle_issues(engine_source: str, native_source: str,
     for forbidden in ("AutoModelForCausalLM.from_pretrained", "model.generate(**kwargs)", "requests.post("):
         if forbidden in native_source:
             issues.append("Native inference implementation delegates instead of executing locally: " + forbidden)
-    for token in ("_validated_path(value, \"Base model\")", "_validated_path(value, \"LoRA adapter\")", '@router.get("/models")', "discover_local_engine_assets()", '@router.post("/generate/stream")', "generate_local_stream(", "watch_disconnect", "is_disconnected()", "Thread(", "Queue(maxsize=_STREAM_QUEUE_SIZE)", "cancel_event=cancel_event", "output.put(_STREAM_END, timeout=0.1)", '@router.post("/adapters/compatibility")', "check_local_adapter_compatibility(", '@router.post("/unload")', "unload_local_model()"):
+    for token in ("_validated_path(value, \"Base model\")", "_validated_path(value, \"LoRA adapter\")", "stop_sequences_must_be_bounded", '@router.get("/models")', "discover_local_engine_assets()", '@router.post("/generate/stream")', "generate_local_stream(", "watch_disconnect", "is_disconnected()", "Thread(", "Queue(maxsize=_STREAM_QUEUE_SIZE)", "cancel_event=cancel_event", "output.put(_STREAM_END, timeout=0.1)", '@router.post("/adapters/compatibility")', "check_local_adapter_compatibility(", '@router.post("/unload")', "unload_local_model()"):
         if token not in api_source:
             issues.append("AXIOM Engine API is missing trusted path validation or unload route: " + token)
     if "PurePath" in api_source or "paths_must_be_safe_relative" in api_source:
@@ -317,10 +320,10 @@ def engine_security_and_lifecycle_issues(engine_source: str, native_source: str,
     for token in ("axiomEngineModels:", '"/api/engine/models"', "checkAxiomEngineAdapterCompatibility:", '"/api/engine/adapters/compatibility"', "streamAxiomEngine:", 'api/engine/generate/stream', "unloadAxiomEngine:", '"/api/engine/unload"'):
         if token not in client_source:
             issues.append("Typed AXIOM Engine client is missing unload lifecycle support: " + token)
-    for token in ("Select discovered native model", "axiomApi.axiomEngineModels()", "Check adapter compatibility", "axiomApi.checkAxiomEngineAdapterCompatibility(", "LoRA device compatibility report", "axiomApi.streamAxiomEngine(", "Stop generation", "Generation cancelled after", "AXIOM Native Engine prompt", "Unload model", "axiomApi.unloadAxiomEngine()", "AXIOM_MODEL_ROOTS", "tokenizer.json", "safetensors"):
+    for token in ("Select discovered native model", "axiomApi.axiomEngineModels()", "Check adapter compatibility", "axiomApi.checkAxiomEngineAdapterCompatibility(", "LoRA device compatibility report", "axiomApi.streamAxiomEngine(", "Stop generation", "Generation cancelled after", "AXIOM Native Engine prompt", "Stop sequences", "stopSequencesText", "Unload model", "axiomApi.unloadAxiomEngine()", "AXIOM_MODEL_ROOTS", "tokenizer.json", "safetensors"):
         if token not in panel_source:
             issues.append("AXIOM Native Engine GUI is missing native support/path safety controls: " + token)
-    for token in ("then unloads it", "api/engine/models", 'selectOption("/models/llama-test")', "api/engine/adapters/compatibility", 'name: "Check adapter compatibility"', "LoRA device compatibility report", "api/engine/generate/stream", 'contentType: "application/x-ndjson"', "api/engine/unload", 'name: "Unload model"', 'name: "Stop generation"', "Generation cancelled after 0 token(s)"):
+    for token in ("then unloads it", "api/engine/models", 'selectOption("/models/llama-test")', '"stop_sequences": ["<END>", "###"]', "api/engine/adapters/compatibility", 'name: "Check adapter compatibility"', "LoRA device compatibility report", "api/engine/generate/stream", 'contentType: "application/x-ndjson"', "api/engine/unload", 'name: "Unload model"', 'name: "Stop generation"', "Generation cancelled after 0 token(s)"):
         if token not in e2e_source:
             issues.append("AXIOM Engine browser acceptance test is missing lifecycle coverage: " + token)
     return issues
