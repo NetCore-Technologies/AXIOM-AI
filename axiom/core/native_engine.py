@@ -625,6 +625,9 @@ class NativeLlamaRuntime:
         max_new_tokens: int,
         temperature: float,
         top_p: float = 0.9,
+        top_k: int = 0,
+        repetition_penalty: float = 1.0,
+        seed: int | None = None,
         eos_token_ids: tuple[int, ...] | None = None,
         cancel_event: threading.Event | None = None,
     ) -> Iterator[int]:
@@ -637,7 +640,22 @@ class NativeLlamaRuntime:
             raise NativeEngineError("Native generation temperature must be between 0 and 2.")
         if not math.isfinite(float(top_p)) or not 0 < float(top_p) <= 1:
             raise NativeEngineError("Native generation top_p must be greater than 0 and at most 1.")
+        if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
+            raise NativeEngineError("Native generation top_k must be an integer from 0 through 100000 (0 disables top-k).")
+        if not math.isfinite(float(repetition_penalty)) or not 0.1 <= float(repetition_penalty) <= 5:
+            raise NativeEngineError("Native repetition_penalty must be between 0.1 and 5.")
+        if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= (2**63 - 1)):
+            raise NativeEngineError("Native sampling seed must be an integer from 0 through 2^63-1.")
+        if top_k > self.config.vocab_size:
+            raise NativeEngineError("top_k cannot exceed the checkpoint vocabulary size.")
         torch = self.torch
+        sampling_generator = None
+        if seed is not None:
+            try:
+                sampling_generator = torch.Generator(device=self.device)
+                sampling_generator.manual_seed(seed)
+            except (RuntimeError, TypeError, AttributeError):
+                raise NativeEngineError("Seeded sampling is not supported by the selected tensor device.") from None
         eos = set(self.config.eos_token_ids if eos_token_ids is None else eos_token_ids)
         tokens = torch.tensor([prompt_token_ids], device=self.device, dtype=torch.long)
         generated: list[int] = []
@@ -653,10 +671,25 @@ class NativeLlamaRuntime:
                 for step in range(max_new_tokens):
                     if cancel_event is not None and cancel_event.is_set():
                         break
+                    scores = logits.float()
+                    if repetition_penalty != 1.0:
+                        history = sorted(set(prompt_token_ids + generated))
+                        if history:
+                            history_ids = torch.tensor(history, device=self.device, dtype=torch.long)
+                            prior_scores = scores.index_select(-1, history_ids)
+                            adjusted_scores = torch.where(
+                                prior_scores < 0,
+                                prior_scores * float(repetition_penalty),
+                                prior_scores / float(repetition_penalty),
+                            )
+                            scores.scatter_(-1, history_ids.view(1, -1), adjusted_scores)
                     if temperature == 0:
-                        next_token = torch.argmax(logits, dim=-1)
+                        next_token = torch.argmax(scores, dim=-1)
                     else:
-                        scores = logits.float() / float(temperature)
+                        scores = scores / float(temperature)
+                        if top_k > 0 and top_k < self.config.vocab_size:
+                            threshold = torch.topk(scores, top_k, dim=-1).values[:, -1].unsqueeze(-1)
+                            scores = scores.masked_fill(scores < threshold, float("-inf"))
                         if top_p < 1:
                             sorted_scores, sorted_ids = torch.sort(scores, descending=True, dim=-1)
                             cumulative = torch.softmax(sorted_scores, dim=-1).cumsum(dim=-1)
@@ -665,7 +698,9 @@ class NativeLlamaRuntime:
                             remove[..., 0] = False
                             sorted_scores = sorted_scores.masked_fill(remove, float("-inf"))
                             scores = torch.full_like(scores, float("-inf")).scatter(dim=-1, index=sorted_ids, src=sorted_scores)
-                        next_token = torch.multinomial(torch.softmax(scores, dim=-1), num_samples=1).squeeze(-1)
+                        next_token = torch.multinomial(
+                            torch.softmax(scores, dim=-1), num_samples=1, generator=sampling_generator
+                        ).squeeze(-1)
                     token_id = int(next_token.item())
                     if token_id < 0 or token_id >= self.config.vocab_size:
                         raise NativeEngineError("Native decoder produced a token ID outside vocab_size.")
@@ -689,6 +724,10 @@ class NativeLlamaRuntime:
                 "completion_tokens": len(generated),
                 "cache_layers": len(cache),
                 "decoder": "axiom-autoregressive-kv-cache",
+                "top_p": float(top_p),
+                "top_k": top_k,
+                "repetition_penalty": float(repetition_penalty),
+                "seed": seed,
             }
 
     def generate(
@@ -698,6 +737,9 @@ class NativeLlamaRuntime:
         max_new_tokens: int,
         temperature: float,
         top_p: float = 0.9,
+        top_k: int = 0,
+        repetition_penalty: float = 1.0,
+        seed: int | None = None,
         eos_token_ids: tuple[int, ...] | None = None,
     ) -> list[int]:
         """Return the complete generated sequence; uses the same native streaming decoder."""
@@ -706,6 +748,9 @@ class NativeLlamaRuntime:
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             top_p=top_p,
+            top_k=top_k,
+            repetition_penalty=repetition_penalty,
+            seed=seed,
             eos_token_ids=eos_token_ids,
         ))
 
