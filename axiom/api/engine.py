@@ -45,6 +45,10 @@ class GenerateRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=12000)
     max_new_tokens: int = Field(default=256, ge=1, le=2048)
     temperature: float = Field(default=0.7, ge=0, le=2)
+    top_p: float = Field(default=0.9, gt=0, le=1)
+    top_k: int = Field(default=0, ge=0, le=100000)
+    repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
+    seed: int | None = Field(default=None, ge=0, le=9223372036854775807)
 
     @field_validator("model_path", mode="before")
     @classmethod
@@ -116,6 +120,10 @@ def engine_generate(request: GenerateRequest) -> dict[str, Any]:
             adapter_path=request.adapter_path,
             max_new_tokens=request.max_new_tokens,
             temperature=request.temperature,
+            top_p=request.top_p,
+            top_k=request.top_k,
+            repetition_penalty=request.repetition_penalty,
+            seed=request.seed,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
@@ -204,6 +212,10 @@ async def engine_generate_stream(
         adapter_path=request.adapter_path,
         max_new_tokens=request.max_new_tokens,
         temperature=request.temperature,
+        top_p=request.top_p,
+        top_k=request.top_k,
+        repetition_penalty=request.repetition_penalty,
+        seed=request.seed,
         cancel_event=cancel_event,
     )
     producer = Thread(
