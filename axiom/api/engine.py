@@ -14,6 +14,7 @@ from starlette.responses import StreamingResponse
 
 from axiom.core.engine import (
     AxiomEngineError,
+    check_local_adapter_compatibility,
     discover_local_engine_assets,
     generate_local,
     generate_local_stream,
@@ -61,6 +62,32 @@ class GenerateRequest(BaseModel):
         if not value.strip():
             raise ValueError("Prompt must contain at least one non-whitespace character.")
         return value
+
+
+class AdapterCompatibilityRequest(BaseModel):
+    model_path: str = Field(min_length=1, max_length=4096)
+    adapter_path: str = Field(min_length=1, max_length=4096)
+
+    @field_validator("model_path", mode="before")
+    @classmethod
+    def base_model_path_must_be_trusted(cls, value: Any) -> Any:
+        return _validated_path(value, "Base model")
+
+    @field_validator("adapter_path", mode="before")
+    @classmethod
+    def adapter_path_must_be_trusted(cls, value: Any) -> Any:
+        return _validated_path(value, "LoRA adapter")
+
+
+@router.post("/adapters/compatibility")
+def engine_adapter_compatibility(request: AdapterCompatibilityRequest) -> dict[str, Any]:
+    """Check adapter structure and per-device readiness without loading the full base model."""
+    try:
+        return check_local_adapter_compatibility(request.model_path, request.adapter_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except AxiomEngineError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
 
 
 @router.get("/models")
