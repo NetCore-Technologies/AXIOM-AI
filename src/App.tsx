@@ -929,6 +929,8 @@ function App() {
             username={username}
             theme={theme}
             setTheme={setAndPersistTheme}
+            preferences={preferences}
+            onSavePreferences={savePreferences}
             setPage={navigate}
             onNotify={notify}
             onChangePassword={() => setChangePasswordOpen(true)}
@@ -1578,6 +1580,8 @@ function WorkspacePage({
   username,
   theme,
   setTheme,
+  preferences,
+  onSavePreferences,
   setPage,
   onNotify,
   onChangePassword,
@@ -1586,6 +1590,8 @@ function WorkspacePage({
   username: string;
   theme: Theme;
   setTheme: (theme: Theme) => void;
+  preferences: AppPreferences;
+  onSavePreferences: (preferences: AppPreferences) => string | null;
   setPage: (page: Page) => void;
   onNotify: (message: string, tone?: Tone) => void;
   onChangePassword: () => void;
@@ -1630,11 +1636,11 @@ function WorkspacePage({
     case "settings":
       return <SettingsPage
         theme={theme}
-        setTheme={setAndPersistTheme}
+        setTheme={setTheme}
         setPage={setPage}
         onChangePassword={onChangePassword}
         preferences={preferences}
-        onSavePreferences={savePreferences}
+        onSavePreferences={onSavePreferences}
       />;
   }
 }
