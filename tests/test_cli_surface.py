@@ -37,19 +37,30 @@ def test_help_surfaces_first_run_commands_and_guide_if_available(
 
 
 def test_shell_completion_can_be_viewed_for_supported_shells_without_installing(tmp_path: Path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    help_result = runner.invoke(app, ["--help"])
-    assert help_result.exit_code == 0, help_result.stdout
-    # Click/Typer can route help text to stderr on newer releases; output
-    # combines both streams and tests the public CLI surface rather than a
-    # version-specific capture detail.
-    assert "--install-completion" in help_result.output
-    assert "--show-completion" in help_result.output
+    from typer.main import get_command
 
-    for shell in ("bash", "zsh", "fish", "powershell"):
+    monkeypatch.chdir(tmp_path)
+    # Inspect the actual Click command parameters instead of help rendering:
+    # Rich help layout differs between Click versions and is not the feature.
+    command = get_command(app)
+    option_flags = {
+        option
+        for parameter in command.params
+        for option in (*getattr(parameter, "opts", ()), *getattr(parameter, "secondary_opts", ()))
+    }
+    assert "--install-completion" in option_flags
+    assert "--show-completion" in option_flags
+
+    markers = {
+        "bash": "__AXIOM_COMPLETE=",
+        "zsh": "#compdef axiom",
+        "fish": "complete -c axiom",
+        "powershell": "Register-ArgumentCompleter",
+    }
+    for shell, marker in markers.items():
         result = runner.invoke(app, ["--show-completion", shell])
-        assert result.exit_code == 0, f"{shell}: {result.stdout}"
-        assert result.output.strip()
+        assert result.exit_code == 0, f"{shell}: {result.output}"
+        assert marker in result.output, f"{shell} completion script was not generated: {result.output[:500]}"
 
 
 def test_init_creates_a_project_that_project_commands_can_use(
