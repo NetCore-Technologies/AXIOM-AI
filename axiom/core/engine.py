@@ -496,6 +496,7 @@ def generate_local_stream(
     max_new_tokens: int = 256,
     temperature: float = 0.7,
     include_token_events: bool = True,
+    cancel_event: threading.Event | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Yield cumulative decoded text updates and one final metrics event.
 
@@ -527,12 +528,15 @@ def generate_local_stream(
         started = time.perf_counter()
         generated_ids: list[int] = []
         response = ""
+        if cancel_event is not None and cancel_event.is_set():
+            return
         iterator = model.iter_generate(
             prompt_ids,
             max_new_tokens=effective_max_new_tokens,
             temperature=temperature,
             top_p=0.9,
             eos_token_ids=model.config.eos_token_ids,
+            cancel_event=cancel_event,
         )
         try:
             for token_id in iterator:
