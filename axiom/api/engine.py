@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from queue import Empty, Full, Queue
+from queue import Full, Queue
 from threading import Event, Thread
 from typing import Any, AsyncIterator, Iterator
 
@@ -243,11 +243,8 @@ def _produce_native_stream(
                 break
             except Full:
                 continue
-        if cancel_event.is_set():
-            try:
-                output.put_nowait(_STREAM_END)
-            except Full:
-                pass
+        # On disconnect the async consumer exits via cancel_event; it does not
+        # require a sentinel, especially when the bounded queue is already full.
 
 
 @router.post("/generate/stream")
@@ -302,7 +299,9 @@ async def engine_generate_stream(
             try:
                 await monitor
             except asyncio.CancelledError:
-                pass
+                # monitor.cancel() makes cancellation the expected cleanup path.
+                if not monitor.cancelled():
+                    raise
             # The model checks cancellation between transformer layers/tokens.
             # Never wait indefinitely for a slow device kernel during disconnect.
             await asyncio.to_thread(producer.join, 2.0)
