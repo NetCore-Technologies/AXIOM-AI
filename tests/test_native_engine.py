@@ -28,6 +28,97 @@ def _config(**overrides):
     return value
 
 
+def test_stop_sequences_are_bounded_and_deduplicated() -> None:
+    from axiom.core.engine import validate_stop_sequences
+
+    assert validate_stop_sequences(["<END>", "###", "<END>"]) == ("<END>", "###")
+    assert validate_stop_sequences([]) == ()
+    with pytest.raises(ValueError, match="non-whitespace"):
+        validate_stop_sequences(["   "])
+    with pytest.raises(ValueError, match="256 characters"):
+        validate_stop_sequences(["S" * 257])
+    with pytest.raises(ValueError, match="At most 16"):
+        validate_stop_sequences([str(index) for index in range(17)])
+
+
+def test_native_stream_stops_on_a_sequence_spanning_token_boundaries(monkeypatch) -> None:
+    from types import SimpleNamespace
+    from axiom.core import engine
+
+    class TokenizerFixture:
+        def encode(self, _prompt, add_special_tokens=False):
+            return SimpleNamespace(ids=[1])
+
+        def decode(self, token_ids, skip_special_tokens=True):
+            lookup = {
+                (): "",
+                (101,): "answer<",
+                (101, 102): "answer<END>discarded",
+                (101, 102, 103): "answer<END>discarded extra",
+            }
+            return lookup.get(tuple(token_ids), "")
+
+    class RuntimeFixture:
+        config = SimpleNamespace(max_position_embeddings=64, bos_token_id=None, eos_token_ids=())
+        last_attention_backend = "axiom-manual-matmul-attention"
+
+        def __init__(self):
+            self.requested = 0
+            self.last_generation = {}
+
+        def iter_generate(self, _prompt_ids, **_kwargs):
+            try:
+                for token_id in (101, 102, 103):
+                    self.requested += 1
+                    yield token_id
+            finally:
+                self.last_generation.update({
+                    "decoder": "axiom-autoregressive-kv-cache",
+                    "prompt_tokens": 1,
+                    "completion_tokens": self.requested,
+                    "cache_layers": 1,
+                    "prefill_ms": 2.0,
+                    "decode_ms": 1.0,
+                    "time_to_first_token_ms": 2.0,
+                    "generation_tokens_per_second": 666.667,
+                    "stop_reason": "max_new_tokens",
+                })
+
+    runtime = RuntimeFixture()
+    tokenizer = TokenizerFixture()
+    monkeypatch.setattr(
+        engine,
+        "_load_local_model",
+        lambda *_args: (
+            runtime,
+            tokenizer,
+            None,
+            "cpu",
+            {
+                "model_directory_name": "fixture",
+                "adapter_directory_name": None,
+                "architecture": "LlamaForCausalLM",
+                "model_type": "llama",
+                "add_bos_token": False,
+            },
+        ),
+    )
+
+    events = list(engine.generate_local_stream(
+        "/trusted/models/fixture", "question",
+        max_new_tokens=10, temperature=0,
+        stop_sequences=["<END>"],
+    ))
+    token_events = [event for event in events if event["type"] == "token"]
+    completion = events[-1]["result"]
+    assert len(token_events) == 2
+    assert all(event["response"] == "answer" for event in token_events)
+    assert completion["response"] == "answer"
+    assert completion["stop_reason"] == "stop_sequence"
+    assert completion["stop_sequences"] == ["<END>"]
+    assert runtime.requested == 2
+
+
 def test_native_config_accepts_standard_llama_and_mistral() -> None:
     assert NativeLlamaConfig.from_mapping(_config()).model_type == "llama"
     assert NativeLlamaConfig.from_mapping(
