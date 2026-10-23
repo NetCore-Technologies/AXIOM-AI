@@ -140,7 +140,7 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
   const memoryEstimate = engine.getByRole("region", { name: "Quantization estimate results" });
   await expect(memoryEstimate).toContainText("Budget-based planning recommendation: BF16.");
   await expect(memoryEstimate).toContainText("3.15 KiB estimated");
-  await expect(memoryEstimate.getByLabel("int4 memory candidate")).toContainText("Sizing only");
+  await expect(memoryEstimate.getByRole("article", { name: "int4 memory candidate" })).toContainText("Sizing only");
   await engine.getByLabel("Select discovered LoRA adapter").selectOption("/runs/my-lora-adapter");
   await expect(engine.getByLabel("Optional LoRA adapter directory")).toHaveValue("/runs/my-lora-adapter");
   await engine.getByRole("button", { name: "Check adapter compatibility" }).click();
