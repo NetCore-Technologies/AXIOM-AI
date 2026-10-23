@@ -1,10 +1,14 @@
 """HTTP API for AXIOM's direct local model engine."""
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+from queue import Empty, Full, Queue
+from threading import Event, Thread
 from typing import Any, Iterator
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from starlette.responses import StreamingResponse
 
@@ -91,23 +95,117 @@ def engine_generate(request: GenerateRequest) -> dict[str, Any]:
     except AxiomEngineError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from None
 
-@router.post("/generate/stream")
-def engine_generate_stream(request: GenerateRequest) -> StreamingResponse:
-    """Stream newline-delimited token snapshots and one final metrics record."""
-    def events() -> Iterator[str]:
+
+_STREAM_END = object()
+_STREAM_QUEUE_SIZE = 2
+_LOG = logging.getLogger(__name__)
+
+
+def _enqueue_stream_item(output: Queue, item: object, cancel_event: Event) -> bool:
+    while not cancel_event.is_set():
         try:
-            for event in generate_local_stream(
-                request.model_path,
-                request.prompt,
-                adapter_path=request.adapter_path,
-                max_new_tokens=request.max_new_tokens,
-                temperature=request.temperature,
-            ):
-                yield json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n"
-        except ValueError as exc:
-            yield json.dumps({"type": "error", "code": "invalid_request", "message": str(exc)}) + "\n"
-        except AxiomEngineError as exc:
-            yield json.dumps({"type": "error", "code": "native_engine_error", "message": str(exc)}) + "\n"
+            output.put(item, timeout=0.1)
+            return True
+        except Full:
+            continue
+    return False
+
+
+def _produce_native_stream(
+    iterator: Iterator[dict[str, Any]],
+    output: Queue,
+    cancel_event: Event,
+) -> None:
+    """Advance a model stream on one dedicated thread and apply backpressure."""
+    try:
+        for event in iterator:
+            if not _enqueue_stream_item(output, event, cancel_event):
+                break
+    except ValueError as exc:
+        _enqueue_stream_item(output, {
+            "type": "error",
+            "code": "invalid_request",
+            "message": str(exc),
+        }, cancel_event)
+    except AxiomEngineError as exc:
+        _enqueue_stream_item(output, {
+            "type": "error",
+            "code": "native_engine_error",
+            "message": str(exc),
+        }, cancel_event)
+    except Exception:
+        _LOG.exception("Unexpected failure in AXIOM Native Engine stream producer.")
+        _enqueue_stream_item(output, {
+            "type": "error",
+            "code": "native_engine_error",
+            "message": "AXIOM Native Engine stream failed unexpectedly.",
+        }, cancel_event)
+    finally:
+        close = getattr(iterator, "close", None)
+        if callable(close):
+            try:
+                close()
+            except (RuntimeError, ValueError):
+                _LOG.debug("Native stream iterator cleanup was already in progress.")
+        # Do not block a disconnecting client on a full buffer. The consumer
+        # exits as soon as it observes the shared cancellation event.
+        try:
+            output.put_nowait(_STREAM_END)
+        except Full:
+            pass
+
+
+@router.post("/generate/stream")
+async def engine_generate_stream(
+    request: GenerateRequest,
+    http_request: Request,
+) -> StreamingResponse:
+    """Stream native token snapshots while detecting disconnects cooperatively."""
+    cancel_event = Event()
+    output: Queue = Queue(maxsize=_STREAM_QUEUE_SIZE)
+    iterator = generate_local_stream(
+        request.model_path,
+        request.prompt,
+        adapter_path=request.adapter_path,
+        max_new_tokens=request.max_new_tokens,
+        temperature=request.temperature,
+        cancel_event=cancel_event,
+    )
+    producer = Thread(
+        target=_produce_native_stream,
+        args=(iterator, output, cancel_event),
+        name="axiom-native-inference-stream",
+        daemon=True,
+    )
+
+    async def events() -> Iterator[str]:
+        async def watch_disconnect() -> None:
+            while not cancel_event.is_set():
+                if await http_request.is_disconnected():
+                    cancel_event.set()
+                    return
+                await asyncio.sleep(0.1)
+
+        monitor = asyncio.create_task(watch_disconnect())
+        producer.start()
+        try:
+            while True:
+                item = await asyncio.to_thread(output.get)
+                if item is _STREAM_END:
+                    break
+                if cancel_event.is_set():
+                    break
+                yield json.dumps(item, ensure_ascii=False, separators=(",", ":")) + "\\n"
+        finally:
+            cancel_event.set()
+            monitor.cancel()
+            try:
+                await monitor
+            except asyncio.CancelledError:
+                pass
+            # The model checks cancellation between transformer layers/tokens.
+            # Never wait indefinitely for a slow device kernel during disconnect.
+            await asyncio.to_thread(producer.join, 2.0)
 
     return StreamingResponse(
         events(),
