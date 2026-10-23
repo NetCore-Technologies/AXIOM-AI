@@ -47,6 +47,7 @@
 
 ### Added
 
+- Added bounded native stop sequences across Runtime GUI, API and CLI; split-token stop matching is held back in streaming output, stop text is excluded from the final response, and finish reason distinguishes EOS, stop string, token limit and cancellation.
 - Added measured native prefill latency, cached decode time, time-to-first-token and completion tokens/second to Runtime results, with API typing, UI display and tiny-checkpoint/E2E assertions.
 - Exposed temperature, top-p, top-k, repetition penalty and optional seed in the native Runtime form; typed API streaming carries every setting into AXIOM's decoder and reports effective sampling metadata.
 - Added a searchable Control Center Module Explorer across GUI pages, CLI command families, and API surfaces.
