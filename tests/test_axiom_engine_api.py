@@ -135,10 +135,12 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
     }
 
 
-def test_generate_request_rejects_invalid_stop_sequence_lists() -> None:
+def test_generate_request_rejects_invalid_stop_sequence_lists(monkeypatch) -> None:
     from pydantic import ValidationError
+    from axiom.api import engine as engine_module
     from axiom.api.engine import GenerateRequest
 
+    monkeypatch.setattr(engine_module, "resolve_local_model_directory", lambda value, label: value)
     base = {"model_path": "/trusted/models/tiny", "prompt": "hello"}
     with pytest.raises(ValidationError, match="stop sequences|Stop sequences"):
         GenerateRequest(**base, stop_sequences=[" "])
