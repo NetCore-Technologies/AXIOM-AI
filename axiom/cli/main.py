@@ -196,7 +196,6 @@ def shell_completion_script(
         _cli_error(f"Shell completion for {normalized} is not supported by the installed Click version.")
         return
     command = get_command(app)
-    context = click.Context(command, info_name="axiom")
     # Click 8.3+ uses (cli, ctx_args, prog_name, complete_var); older
     # versions expose (cli, ctx, complete_var). Select by the installed class
     # signature rather than passing a Typer/Click option as a variable name.
