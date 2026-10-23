@@ -58,7 +58,10 @@ def test_shell_completion_can_be_viewed_for_supported_shells_without_installing(
         "powershell": "Register-ArgumentCompleter",
     }
     for shell, marker in markers.items():
-        result = runner.invoke(app, ["--show-completion", shell])
+        # Use Click's explicit optional-value syntax; otherwise some
+        # supported Typer/Click combinations treat the shell name as an
+        # ignored positional token and silently emit the default Bash script.
+        result = runner.invoke(app, [f"--show-completion={shell}"])
         assert result.exit_code == 0, f"{shell}: {result.output}"
         assert marker in result.output, f"{shell} completion script was not generated: {result.output[:500]}"
 
