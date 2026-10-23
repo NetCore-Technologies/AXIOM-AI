@@ -51,15 +51,18 @@ def test_shell_completion_can_be_viewed_for_supported_shells_without_installing(
     assert "--show-completion" in option_flags
 
     markers = {
-        "bash": "_AXIOM_COMPLETE=complete_bash",
-        "zsh": "#compdef axiom",
-        "fish": "complete -c axiom",
-        "powershell": "Register-ArgumentCompleter",
+        # Click renamed its Bash completion variable between releases.
+        "bash": ("_AXIOM_COMPLETE=complete_bash", "_AXIOM_COMPLETE=bash_complete"),
+        "zsh": ("#compdef axiom",),
+        "fish": ("complete -c axiom",),
+        "powershell": ("Register-ArgumentCompleter",),
     }
-    for shell, marker in markers.items():
+    for shell, accepted_markers in markers.items():
         result = runner.invoke(app, ["completion", shell])
         assert result.exit_code == 0, f"{shell}: {result.output}"
-        assert marker in result.output, f"{shell} completion script was not generated: {result.output[:500]}"
+        assert any(marker in result.output for marker in accepted_markers), (
+            f"{shell} completion script was not generated: {result.output[:500]}"
+        )
 
     unsupported = runner.invoke(app, ["completion", "tcsh"])
     assert unsupported.exit_code != 0
