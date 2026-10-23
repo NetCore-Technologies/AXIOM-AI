@@ -92,17 +92,93 @@ def test_module_entrypoint_registers_mcp_command():
     assert "serve" in result.stdout
 
 
-def test_config_validate_rejects_invalid_yaml(tmp_path: Path):
+def test_config_validate_rejects_invalid_yaml_with_safe_repair_suggestions(tmp_path: Path):
     config = tmp_path / "axiom.yaml"
-    config.write_text("project: [", encoding="utf-8")
+    original = "project: [\napi_token: DO_NOT_PRINT_THIS_SECRET\n"
+    config.write_text(original, encoding="utf-8")
 
     result = runner.invoke(
         app,
-        ["config", "validate", "--path", str(config)],
+        ["config", "validate", "--path", str(config), "--json"],
     )
 
     assert result.exit_code == 1
-    assert "invalid axiom.yaml" in result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["schema_version"] == 1
+    assert payload["status"] == "invalid"
+    assert payload["valid"] is False
+    assert payload["error_code"] == "config_invalid"
+    assert payload["repair_mode"] == "suggestions_only"
+    assert payload["repair_applied"] is False
+    assert payload["suggestions"]
+    assert "DO_NOT_PRINT_THIS_SECRET" not in result.stdout
+    assert config.read_text(encoding="utf-8") == original
+
+
+
+
+
+def test_config_validate_suggests_safe_action_when_file_is_missing(tmp_path: Path):
+    config = tmp_path / "missing.yaml"
+    result = runner.invoke(app, ["config", "validate", "--path", str(config), "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["error_code"] == "config_not_found"
+    assert payload["valid"] is False
+    assert payload["repair_applied"] is False
+    assert any("axiom init" in item for item in payload["suggestions"])
+    assert not config.exists()
+
+
+def test_config_validate_reports_wrong_top_level_shape_without_rewriting(tmp_path: Path):
+    config = tmp_path / "axiom.yaml"
+    original = "- one\n- two\n"
+    config.write_text(original, encoding="utf-8")
+
+    result = runner.invoke(app, ["config", "validate", "--path", str(config), "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["error_code"] == "config_not_mapping"
+    assert payload["suggestions"]
+    assert payload["repair_applied"] is False
+    assert config.read_text(encoding="utf-8") == original
+
+
+def test_config_validate_reports_oversized_file_without_rewriting(tmp_path: Path):
+    config = tmp_path / "axiom.yaml"
+    original = "x" * (256 * 1024 + 1)
+    config.write_text(original, encoding="utf-8")
+
+    result = runner.invoke(app, ["config", "validate", "--path", str(config), "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["error_code"] == "config_too_large"
+    assert payload["repair_applied"] is False
+    assert config.read_text(encoding="utf-8") == original
+
+
+def test_config_validate_rejects_symlink_without_following_or_replacing_it(tmp_path: Path):
+    import pytest
+
+    target = tmp_path / "target.yaml"
+    target.write_text("project:\n  name: do-not-change\n", encoding="utf-8")
+    config = tmp_path / "axiom.yaml"
+    try:
+        config.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"File symlinks are unavailable on this platform: {exc}")
+
+    result = runner.invoke(app, ["config", "validate", "--path", str(config), "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["error_code"] == "config_symlink_forbidden"
+    assert payload["repair_applied"] is False
+    assert config.is_symlink()
+    assert target.read_text(encoding="utf-8") == "project:\n  name: do-not-change\n"
 
 
 def test_config_validate_accepts_yaml_mapping(tmp_path: Path):

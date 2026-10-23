@@ -524,39 +524,105 @@ def register(app, model_app, dataset_app) -> None:
         path: str = typer.Option("axiom.yaml", "--path", help="Path to a local axiom.yaml file"),
         json_output: bool = typer.Option(False, "--json", help="Emit a stable machine-readable result."),
     ) -> None:
-        """Validate a local YAML mapping without echoing configuration values."""
+        """Validate a local YAML mapping and suggest safe, non-mutating repairs."""
         config = Path(path)
         status = "invalid"
         valid = False
+        error_code: str | None = None
+        suggestions: list[str] = []
+        message = "Configuration is invalid."
+
         if config.is_symlink():
+            error_code = "config_symlink_forbidden"
             message = "Configuration path must not be a symbolic link."
+            suggestions = [
+                "Choose a regular local file path.",
+                "Review the symlink target yourself before copying content; AXIOM will not follow or replace it.",
+            ]
         elif not config.is_file():
+            error_code = "config_not_found"
             message = "Configuration file was not found."
+            suggestions = [
+                "Pass an existing configuration file with --path.",
+                "Create a starter project with axiom init <project-name> if you need a new axiom.yaml.",
+            ]
         else:
             try:
-                if config.stat().st_size > 256 * 1024:
-                    raise ValueError("configuration exceeds the 256 KiB validation limit")
-                contents = config.read_text(encoding="utf-8")
-                parsed = yaml.safe_load(contents)
-                if not contents.strip() or not isinstance(parsed, dict):
-                    raise ValueError("configuration must be a non-empty YAML mapping")
-                bad_sections = [key for key in ("project", "model", "dataset", "training", "evaluation", "deployment") if key in parsed and parsed[key] is not None and not isinstance(parsed[key], dict)]
-                if bad_sections:
-                    raise ValueError("known configuration sections must be YAML mappings")
-            except (OSError, UnicodeError, yaml.YAMLError, ValueError):
-                message = "invalid axiom.yaml: invalid axiom.yaml: Configuration could not be parsed as a bounded, compatible YAML mapping; values are withheld."
+                config_size = config.stat().st_size
+            except OSError:
+                error_code = "config_unreadable"
+                message = "Configuration metadata could not be read."
+                suggestions = [
+                    "Check that the file exists and your account has permission to read it.",
+                    "Choose a regular local file that is at most 256 KiB.",
+                ]
             else:
-                valid = True
-                status = "valid"
-                message = "Configuration is valid YAML and known sections have compatible types."
+                if config_size > 256 * 1024:
+                    error_code = "config_too_large"
+                    message = "Configuration exceeds the 256 KiB validation limit."
+                    suggestions = [
+                        "Review the file and remove unrelated or generated content before validating again.",
+                        "Keep only the sections AXIOM needs; AXIOM will not rewrite the file automatically.",
+                    ]
+                else:
+                    try:
+                        contents = config.read_text(encoding="utf-8")
+                        parsed = yaml.safe_load(contents)
+                    except (OSError, UnicodeError, yaml.YAMLError):
+                        error_code = "config_invalid"
+                        message = "invalid axiom.yaml: configuration could not be parsed as bounded UTF-8 YAML; file values are withheld."
+                        suggestions = [
+                            "Check YAML indentation, colons, brackets, and quoting in your editor.",
+                            "Ensure the document is UTF-8 and within the 256 KiB limit.",
+                            "Re-run axiom config validate --path <file> after editing; AXIOM will not edit it for you.",
+                        ]
+                    else:
+                        if not contents.strip() or not isinstance(parsed, dict):
+                            error_code = "config_not_mapping"
+                            message = "Configuration must be a non-empty YAML mapping."
+                            suggestions = [
+                                "Use YAML key/value pairs at the top level rather than a list, scalar, or empty document.",
+                                "Put settings under mapping sections such as project, model, dataset, training, evaluation, or deployment.",
+                            ]
+                        else:
+                            known_sections = ("project", "model", "dataset", "training", "evaluation", "deployment")
+                            bad_sections = [
+                                key for key in known_sections
+                                if key in parsed and parsed[key] is not None and not isinstance(parsed[key], dict)
+                            ]
+                            if bad_sections:
+                                error_code = "config_section_not_mapping"
+                                message = "Known configuration sections must be YAML mappings."
+                                suggestions = [
+                                    "Convert each incorrectly shaped section into a YAML key/value mapping.",
+                                    "Validate again after editing; section contents are never printed or rewritten by this command.",
+                                ]
+                            else:
+                                valid = True
+                                status = "valid"
+                                message = "Configuration is valid YAML and known sections have compatible types."
 
-        result = {"schema_version": 1, "status": status, "valid": valid, "path": str(config), "message": message}
+        result = {
+            "schema_version": 1,
+            "status": status,
+            "valid": valid,
+            "path": str(config),
+            "message": message,
+            "error_code": error_code,
+            "suggestions": suggestions,
+            "repair_applied": False,
+            "repair_mode": "suggestions_only",
+        }
         if json_output:
             typer.echo(json.dumps(result, indent=2, sort_keys=True))
         elif valid:
             console.print(f"[green]✓ {message}[/green]")
         else:
             console.print(f"[red]Error:[/red] {message}")
+            if suggestions:
+                console.print("[bold]Suggested next steps:[/bold]")
+                for suggestion in suggestions:
+                    console.print(f"  • {suggestion}")
         if not valid:
             raise typer.Exit(code=1)
 
