@@ -134,8 +134,8 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
   await expect(engine.getByLabel("Local Llama / Mistral model directory")).toHaveValue("/models/llama-test");
   await engine.getByLabel("Planner context length").fill("16");
   await engine.getByLabel("Planner batch size").fill("1");
-  await engine.getByLabel("RAM budget GiB").fill("8");
-  await engine.getByLabel("VRAM budget GiB").fill("4");
+  await engine.getByLabel("RAM budget GiB", { exact: true }).fill("8");
+  await engine.getByLabel("VRAM budget GiB", { exact: true }).fill("4");
   await engine.getByRole("button", { name: "Estimate memory fit" }).click();
   const memoryEstimate = engine.getByRole("region", { name: "Quantization estimate results" });
   await expect(memoryEstimate).toContainText("Budget-based planning recommendation: BF16.");
