@@ -12,6 +12,7 @@ from pathlib import Path
 from threading import Thread
 
 import click
+import inspect
 import typer
 from click.shell_completion import get_completion_class
 from typer.main import get_command
@@ -196,19 +197,18 @@ def shell_completion_script(
         return
     command = get_command(app)
     context = click.Context(command, info_name="axiom")
-    # Click's completion constructor changed between supported versions.
-    # Prefer the current three-argument signature and fall back to older
-    # versions that still require a parameter object.
-    try:
-        completion = completion_type(command, context, "_AXIOM_COMPLETE")
-    except TypeError:
-        completion_param = click.Option(
-            ["--show-completion"],
-            is_flag=True,
-            hidden=True,
-            help="Generate shell completion source.",
+    # Click 8.3+ uses (cli, ctx_args, prog_name, complete_var); older
+    # versions expose (cli, ctx, complete_var). Select by the installed class
+    # signature rather than passing a Typer/Click option as a variable name.
+    parameters = inspect.signature(completion_type).parameters
+    if "ctx_args" in parameters and "prog_name" in parameters:
+        completion = completion_type(command, {}, "axiom", "_AXIOM_COMPLETE")
+    else:
+        completion = completion_type(
+            command,
+            click.Context(command, info_name="axiom"),
+            "_AXIOM_COMPLETE",
         )
-        completion = completion_type(command, context, completion_param, "_AXIOM_COMPLETE")
     script = completion.source()
     typer.echo(script, nl=False)
 
