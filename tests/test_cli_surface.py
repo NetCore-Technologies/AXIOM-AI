@@ -36,6 +36,19 @@ def test_help_surfaces_first_run_commands_and_guide_if_available(
     assert "https://" not in guide_result.stdout.lower()
 
 
+def test_shell_completion_can_be_viewed_for_supported_shells_without_installing(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    help_result = runner.invoke(app, ["--help"])
+    assert help_result.exit_code == 0, help_result.stdout
+    assert "--install-completion" in help_result.stdout
+    assert "--show-completion" in help_result.stdout
+
+    for shell in ("bash", "zsh", "fish", "powershell"):
+        result = runner.invoke(app, ["--show-completion", shell])
+        assert result.exit_code == 0, f"{shell}: {result.stdout}"
+        assert result.stdout.strip()
+
+
 def test_init_creates_a_project_that_project_commands_can_use(
     tmp_path: Path,
     monkeypatch,

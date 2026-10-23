@@ -168,6 +168,7 @@ The local API and Control Center use loopback addresses by default. The optional
 - [AXIOM Engine](docs/Local-Engine.md)
 - [API and environment configuration](docs/API.md)
 - [Data retention and deletion](docs/DATA-RETENTION.md)
+- [CLI guide and shell completion](docs/CLI-GUIDE.md)
 - [Runtime compatibility checks](scripts/check_compatibility.py)
 - [Roadmap](ROADMAP.md)
 - [Community and adoption strategy](docs/Community-and-Adoption-Strategy.md)

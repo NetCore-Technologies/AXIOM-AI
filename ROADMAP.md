@@ -28,11 +28,11 @@ feature exists or a delivery-date promise.
 
 - [R013 · Implemented; tests passing] Add discoverable command groups for workflow and evaluation.
 - [R014 · In progress; validation pending] Add consistent JSON output to every list and inspect command; model add/list/info/inspect/analyze/search/import/export/remove/favorite, integration list, system info, and dataset inspect/validate/stats/clean now have versioned outputs and focused CLI tests. Remaining command families still need coverage.
-- [R015 · Planned] Add shell completion for Bash, Zsh, Fish, and PowerShell.
+- [R015 · In progress; validation pending] Expose and document Typer shell completion for Bash, Zsh, Fish, and PowerShell; add no-write completion smoke coverage.
 - [R016 · Planned] Add interactive prompts only where a non-interactive flag exists.
 - [R017 · Planned] Add global verbosity, quiet, and machine-readable error modes.
 - [R018 · Planned] Add operation progress and cancellation for downloads and scans.
-- [R019 · Planned] Add workspace-aware `axiom status` summaries.
+- [R019 · Implemented; tests passing] Add workspace-aware `axiom status` summaries with JSON health, workspace path, version, and Git working-tree state.
 - [R020 · Planned] Add import/export commands for workspace metadata.
 - [R021 · Planned] Add plan diff and reproducible plan printing.
 - [R022 · Planned] Add configuration validation and safe repair suggestions.
