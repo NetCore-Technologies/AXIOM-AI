@@ -248,6 +248,13 @@ def test_engine_stream_endpoint_yields_token_snapshots_and_final_metrics(tmp_pat
         "device": "cpu",
         "checkpoint_format": "safetensors",
         "decoder": "axiom-autoregressive-kv-cache",
+        "sampling": {
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "top_k": 0,
+            "repetition_penalty": 1.0,
+            "seed": None,
+        },
         "response": "Hello",
         "prompt_tokens": 1,
         "completion_tokens": 1,
