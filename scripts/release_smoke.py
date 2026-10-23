@@ -293,10 +293,10 @@ def engine_security_and_lifecycle_issues(engine_source: str, native_source: str,
         if forbidden in engine_source:
             issues.append("AXIOM Engine must not delegate inference or reevaluate raw path expressions: " + forbidden)
     for token in (
-        "class NativeLlamaRuntime", "def forward(", "def generate(", "def _rms_norm(",
+        "class NativeLlamaRuntime", "def forward(", "def generate(", "def _rms_norm(", "def _attention(", "scaled_dot_product_attention",
         "def _apply_rope(", "past_key_values", "repeat_interleave", "safe_open", "NativeGenerationCancelled", "cancel_event.is_set()",
         "model.safetensors", "NativeGenerationCancelled", "cancel_event.is_set()", "def inspect_native_adapter_compatibility(", "handle.get_slice(key).get_shape()", '"ROCm", rocm_available', '"Metal/MPS", mps_available',
-        '"execution_backend": "pytorch-native-axiom"',
+        '"execution_backend": "pytorch-native-axiom"', '"attention_backend": model.last_attention_backend',
         '"transformers_generation_used": False', '"ollama_used": False',
     ):
         if token not in native_source:
