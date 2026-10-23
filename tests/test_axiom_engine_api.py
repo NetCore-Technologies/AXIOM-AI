@@ -73,7 +73,19 @@ def test_engine_unload_endpoint_calls_lifecycle_handler(monkeypatch) -> None:
 def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch) -> None:
     monkeypatch.setattr(engine_api, "resolve_local_model_directory", lambda value, label: value)
 
-    def fake_stream(model_path, prompt, *, adapter_path=None, max_new_tokens=256, temperature=0.7, cancel_event=None):
+    observed: dict[str, object] = {}
+
+    def fake_stream(
+        model_path, prompt, *, adapter_path=None, max_new_tokens=256, temperature=0.7,
+        top_p=0.9, top_k=0, repetition_penalty=1.0, seed=None, include_token_events=True,
+        cancel_event=None,
+    ):
+        observed.update({
+            "model_path": model_path, "prompt": prompt, "max_new_tokens": max_new_tokens,
+            "temperature": temperature, "top_p": top_p, "top_k": top_k,
+            "repetition_penalty": repetition_penalty, "seed": seed,
+            "include_token_events": include_token_events,
+        })
         yield {"type": "token", "response": "hi", "completion_tokens": 1}
         yield {
             "type": "complete",
@@ -94,6 +106,10 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
             "prompt": "hello",
             "max_new_tokens": 3,
             "temperature": 0,
+            "top_p": 0.8,
+            "top_k": 4,
+            "repetition_penalty": 1.1,
+            "seed": 42,
         },
     )
 
@@ -103,6 +119,17 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
     assert events[0] == {"type": "token", "response": "hi", "completion_tokens": 1}
     assert events[1]["type"] == "complete"
     assert events[1]["result"]["execution_backend"] == "pytorch-native-axiom"
+    assert observed == {
+        "model_path": "/trusted/models/tiny",
+        "prompt": "hello",
+        "max_new_tokens": 3,
+        "temperature": 0,
+        "top_p": 0.8,
+        "top_k": 4,
+        "repetition_penalty": 1.1,
+        "seed": 42,
+        "include_token_events": True,
+    }
 
 
 def test_adapter_compatibility_api_returns_per_device_report(monkeypatch) -> None:
