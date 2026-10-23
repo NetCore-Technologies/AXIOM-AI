@@ -40,8 +40,7 @@ def test_shell_completion_can_be_viewed_for_supported_shells_without_installing(
     from typer.main import get_command
 
     monkeypatch.chdir(tmp_path)
-    # Inspect the actual Click command parameters instead of help rendering:
-    # Rich help layout differs between Click versions and is not the feature.
+    # Typer's built-in switches are still available for install/default viewing.
     command = get_command(app)
     option_flags = {
         option
@@ -58,12 +57,14 @@ def test_shell_completion_can_be_viewed_for_supported_shells_without_installing(
         "powershell": "Register-ArgumentCompleter",
     }
     for shell, marker in markers.items():
-        # Use Click's explicit optional-value syntax; otherwise some
-        # supported Typer/Click combinations treat the shell name as an
-        # ignored positional token and silently emit the default Bash script.
-        result = runner.invoke(app, [f"--show-completion={shell}"])
+        result = runner.invoke(app, ["completion", shell])
         assert result.exit_code == 0, f"{shell}: {result.output}"
         assert marker in result.output, f"{shell} completion script was not generated: {result.output[:500]}"
+
+    unsupported = runner.invoke(app, ["completion", "tcsh"])
+    assert unsupported.exit_code != 0
+    assert "Unsupported shell" in unsupported.output
+
 
 
 def test_init_creates_a_project_that_project_commands_can_use(
