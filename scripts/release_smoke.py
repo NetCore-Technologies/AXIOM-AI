@@ -282,6 +282,7 @@ def engine_security_and_lifecycle_issues(engine_source: str, native_source: str,
         "_LOADED_RUNTIME: dict[str, Any] | None = None",
         "load_native_runtime(",
         "def discover_local_engine_assets(",
+        "cancel_event=cancel_event",
         "NativeEngineError",
     ):
         if token not in engine_source:
@@ -292,7 +293,8 @@ def engine_security_and_lifecycle_issues(engine_source: str, native_source: str,
     for token in (
         "class NativeLlamaRuntime", "def forward(", "def generate(", "def _rms_norm(",
         "def _apply_rope(", "past_key_values", "repeat_interleave", "safe_open",
-        "model.safetensors", '"execution_backend": "pytorch-native-axiom"',
+        "model.safetensors", "NativeGenerationCancelled", "cancel_event.is_set()",
+        '"execution_backend": "pytorch-native-axiom"',
         '"transformers_generation_used": False', '"ollama_used": False',
     ):
         if token not in native_source:
@@ -300,7 +302,7 @@ def engine_security_and_lifecycle_issues(engine_source: str, native_source: str,
     for forbidden in ("AutoModelForCausalLM.from_pretrained", "model.generate(**kwargs)", "requests.post("):
         if forbidden in native_source:
             issues.append("Native inference implementation delegates instead of executing locally: " + forbidden)
-    for token in ("_validated_path(value, \"Base model\")", "_validated_path(value, \"LoRA adapter\")", '@router.get("/models")', "discover_local_engine_assets()", '@router.post("/generate/stream")', "generate_local_stream(", '@router.post("/unload")', "unload_local_model()"):
+    for token in ("_validated_path(value, \"Base model\")", "_validated_path(value, \"LoRA adapter\")", '@router.get("/models")', "discover_local_engine_assets()", '@router.post("/generate/stream")', "generate_local_stream(", "watch_disconnect", "is_disconnected()", "Thread(", "Queue(maxsize=_STREAM_QUEUE_SIZE)", "cancel_event=cancel_event", "output.put(_STREAM_END, timeout=0.1)", '@router.post("/unload")', "unload_local_model()"):
         if token not in api_source:
             issues.append("AXIOM Engine API is missing trusted path validation or unload route: " + token)
     if "PurePath" in api_source or "paths_must_be_safe_relative" in api_source:
