@@ -76,9 +76,13 @@ def test_engine_run_stream_shows_live_output_and_final_metrics(tmp_path: Path, m
         "response": "Hello from the native stream.",
         "completion_tokens": 4,
         "elapsed_ms": 21.5,
+        "stop_sequences": ["<END>", "###"],
+        "stop_reason": "stop_sequence",
     }
+    observed: dict[str, object] = {}
 
-    def fake_stream(*_args, **_kwargs):
+    def fake_stream(*_args, **kwargs):
+        observed.update(kwargs)
         yield {"type": "token", "response": "Hel", "completion_tokens": 2}
         yield {"type": "token", "response": "Hello from the native stream.", "completion_tokens": 4}
         yield {"type": "complete", "result": final_result}
@@ -87,12 +91,15 @@ def test_engine_run_stream_shows_live_output_and_final_metrics(tmp_path: Path, m
     result = runner.invoke(engine_app, [
         "run", "--model-path", str(model_path), "--prompt", "Say hello.",
         "--stream", "--max-new-tokens", "4", "--temperature", "0",
+        "--stop-sequence", "<END>", "--stop-sequence", "###",
     ])
 
     assert result.exit_code == 0, result.output
     assert "AXIOM ENGINE" in result.output
     assert "Hello from the native stream." in result.output
     assert "Generated tokens: 4" in result.output
+    assert "Finish reason: stop_sequence" in result.output
+    assert observed["stop_sequences"] == ["<END>", "###"]
 
 
 def test_engine_run_rejects_stream_with_json_mode(tmp_path: Path) -> None:
