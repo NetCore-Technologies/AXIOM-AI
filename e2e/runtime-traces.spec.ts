@@ -49,7 +49,7 @@ test("Runtime request traces show safe metadata, export JSON, and clear the in-m
   ];
   let clearCount = 0;
 
-  await page.route("**/api/**", async (route) => {
+  await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname === "/api/workspace/runtime") {

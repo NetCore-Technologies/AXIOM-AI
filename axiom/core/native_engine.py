@@ -9,7 +9,7 @@ checkpoints are accepted; unsupported formats are rejected, not delegated.
 from __future__ import annotations
 from contextlib import ExitStack
 from dataclasses import dataclass
-import json, math, re
+import json, math, re, threading, time
 from pathlib import Path
 from typing import Any, Iterator, Mapping
 
@@ -21,6 +21,9 @@ _SUPPORTED_MODEL_TYPES = {"llama", "mistral"}
 
 class NativeEngineError(ValueError):
     """An unsupported, unsafe, or invalid native-engine checkpoint."""
+
+class NativeGenerationCancelled(RuntimeError):
+    """Internal cooperative cancellation signal for native inference."""
 
 class NativeDependencyError(RuntimeError):
     """A required runtime dependency for the native engine is unavailable."""
@@ -183,6 +186,210 @@ def _safetensor_keys(files: list[Path], trusted_roots: tuple[Path, ...]) -> dict
             result[key] = path.name
     return result
 
+
+def inspect_native_adapter_compatibility(
+    model_dir: Path,
+    adapter_dir: Path,
+    *,
+    trusted_roots: tuple[Path, ...],
+) -> dict[str, Any]:
+    """Preflight native LoRA structure without loading the full base-model weights."""
+    issues: list[str] = []
+    config: NativeLlamaConfig | None = None
+    model_type: str | None = None
+    architecture: str | None = None
+    base_weight_names: set[str] = set()
+    layer_count = 0
+    target_set: set[str] = set()
+    rank: int | None = None
+    alpha: float | None = None
+    adapter_tensor_count = 0
+    pair_shapes: dict[str, dict[str, tuple[int, ...]]] = {}
+    roots = tuple(root.resolve() for root in trusted_roots)
+
+    try:
+        mapping = _read_json_object(model_dir / "config.json", _MAX_CONFIG_BYTES, "Model config.json", roots)
+        config = NativeLlamaConfig.from_mapping(mapping)
+        model_type = config.model_type
+        architecture = "LlamaForCausalLM" if model_type == "llama" else "MistralForCausalLM"
+        layer_count = config.num_hidden_layers
+        tokenizer_path = _resolve_trusted_file(model_dir / "tokenizer.json", roots, "Tokenizer file")
+        if tokenizer_path.stat().st_size > _MAX_TOKENIZER_BYTES:
+            issues.append("The local tokenizer.json exceeds the 64 MiB native-engine limit.")
+        base_files, _ = _resolve_safetensor_files(model_dir, roots)
+        base_weight_names = set(_safetensor_keys(base_files, roots))
+        missing = [
+            name for name in NativeLlamaRuntime._required_weight_names(config)
+            if name not in base_weight_names
+        ]
+        if missing:
+            issues.append("Base checkpoint is missing required native weights: " + ", ".join(missing[:5]) + ".")
+    except (NativeEngineError, NativeDependencyError, OSError, ValueError) as exc:
+        issues.append("Base model: " + str(exc))
+
+    try:
+        adapter_config = _read_json_object(
+            adapter_dir / "adapter_config.json", _MAX_CONFIG_BYTES, "LoRA adapter config", roots
+        )
+        for flag in ("use_dora", "use_qalora", "use_rslora"):
+            if adapter_config.get(flag) is True:
+                issues.append(f"LoRA option {flag} is not supported by AXIOM Native Engine.")
+        if adapter_config.get("bias", "none") != "none":
+            issues.append("Bias-enabled LoRA adapters are unsupported.")
+        if (
+            adapter_config.get("modules_to_save")
+            or adapter_config.get("rank_pattern")
+            or adapter_config.get("alpha_pattern")
+        ):
+            issues.append("Per-module rank/alpha patterns and modules_to_save are unsupported.")
+        if adapter_config.get("fan_in_fan_out") is True:
+            issues.append("fan_in_fan_out adapters are unsupported.")
+        if adapter_config.get("task_type") not in (None, "CAUSAL_LM"):
+            issues.append("Only CAUSAL_LM LoRA adapters are supported.")
+        raw_targets = adapter_config.get("target_modules")
+        if isinstance(raw_targets, str):
+            target_set = {raw_targets}
+        elif isinstance(raw_targets, list) and all(isinstance(item, str) and item for item in raw_targets):
+            target_set = set(raw_targets)
+        if not target_set:
+            issues.append("LoRA adapter must declare target_modules as non-empty strings.")
+        raw_rank, raw_alpha = adapter_config.get("r"), adapter_config.get("lora_alpha")
+        if isinstance(raw_rank, int) and not isinstance(raw_rank, bool) and 1 <= raw_rank <= 4096:
+            rank = raw_rank
+        else:
+            issues.append("LoRA adapter rank r must be an integer from 1 through 4096.")
+        if (
+            isinstance(raw_alpha, (int, float))
+            and not isinstance(raw_alpha, bool)
+            and math.isfinite(float(raw_alpha))
+            and raw_alpha > 0
+        ):
+            alpha = float(raw_alpha)
+        else:
+            issues.append("LoRA adapter lora_alpha must be a finite positive number.")
+    except (NativeEngineError, NativeDependencyError, OSError, ValueError) as exc:
+        issues.append("LoRA adapter config: " + str(exc))
+
+    try:
+        adapter_file = _resolve_trusted_file(
+            adapter_dir / "adapter_model.safetensors", roots, "LoRA safetensors checkpoint"
+        )
+        from safetensors import safe_open
+        with safe_open(str(adapter_file), framework="pt", device="cpu") as handle:
+            for key in handle.keys():
+                match = re.fullmatch(r"(.+)\.lora_([AB])(?:\.default)?\.weight", key)
+                if not match:
+                    issues.append(f"Unsupported LoRA tensor key {key!r}.")
+                    continue
+                module_path, side = match.group(1), match.group(2)
+                if module_path.startswith("base_model.model."):
+                    module_path = module_path[len("base_model.model."):]
+                elif module_path.startswith("base_model."):
+                    module_path = module_path[len("base_model."):]
+                if module_path.split(".")[-1] not in target_set:
+                    issues.append(f"LoRA tensor {key!r} targets a module not declared in target_modules.")
+                module_match = re.fullmatch(
+                    r"model\.layers\.(\d+)\.(self_attn\.(?:q_proj|k_proj|v_proj|o_proj)|mlp\.(?:gate_proj|up_proj|down_proj))",
+                    module_path,
+                )
+                if config is None or module_match is None:
+                    issues.append(f"LoRA tensor {key!r} does not map to a supported native projection.")
+                    continue
+                layer_index = int(module_match.group(1))
+                if not 0 <= layer_index < config.num_hidden_layers:
+                    issues.append(f"LoRA tensor {key!r} references a layer outside the base model.")
+                    continue
+                if module_path + ".weight" not in base_weight_names:
+                    issues.append(f"LoRA target {module_path!r} has no matching base projection tensor.")
+                    continue
+                projection = module_match.group(2).split(".")[-1]
+                head_dim = config.hidden_size // config.num_attention_heads
+                if projection == "q_proj":
+                    output_dim, input_dim = config.num_attention_heads * head_dim, config.hidden_size
+                elif projection in {"k_proj", "v_proj"}:
+                    output_dim, input_dim = config.num_key_value_heads * head_dim, config.hidden_size
+                elif projection == "o_proj":
+                    output_dim, input_dim = config.hidden_size, config.hidden_size
+                elif projection in {"gate_proj", "up_proj"}:
+                    output_dim, input_dim = config.intermediate_size, config.hidden_size
+                else:
+                    output_dim, input_dim = config.hidden_size, config.intermediate_size
+                shape = tuple(int(dimension) for dimension in handle.get_slice(key).get_shape())
+                pair_shapes.setdefault(module_path, {})[side] = shape
+                if side == "A" and (rank is None or shape != (rank, input_dim)):
+                    issues.append(f"LoRA A tensor shape {shape} for {module_path!r} must be ({rank}, {input_dim}).")
+                if side == "B" and (rank is None or shape != (output_dim, rank)):
+                    issues.append(f"LoRA B tensor shape {shape} for {module_path!r} must be ({output_dim}, {rank}).")
+                adapter_tensor_count += 1
+    except (NativeEngineError, NativeDependencyError, OSError, ValueError, RuntimeError) as exc:
+        issues.append("LoRA safetensors inspection failed: " + str(exc))
+
+    if not pair_shapes:
+        issues.append("No supported LoRA A/B projection pairs were found.")
+    for module_path, sides in pair_shapes.items():
+        if "A" not in sides or "B" not in sides:
+            issues.append(f"LoRA module {module_path!r} must contain both A and B tensors.")
+
+    try:
+        import torch
+    except (ImportError, OSError):
+        torch = None
+
+    cpu_available = torch is not None
+    cuda_available = False
+    rocm_available = False
+    mps_available = False
+    if torch is not None:
+        try:
+            cuda_available = bool(torch.cuda.is_available())
+            rocm_available = cuda_available and bool(getattr(torch.version, "hip", None))
+            cuda_available = cuda_available and not rocm_available
+        except (RuntimeError, AttributeError):
+            cuda_available = False
+            rocm_available = False
+        try:
+            mps = getattr(getattr(torch, "backends", None), "mps", None)
+            mps_available = bool(mps and mps.is_available())
+        except (RuntimeError, AttributeError):
+            mps_available = False
+
+    structurally_compatible = not issues
+    devices = []
+    for name, available in (
+        ("CPU", cpu_available),
+        ("CUDA", cuda_available),
+        ("ROCm", rocm_available),
+        ("Metal/MPS", mps_available),
+    ):
+        compatible = structurally_compatible and available
+        if not available:
+            reason = "PyTorch is not installed." if torch is None else f"{name} is not available in the current PyTorch environment."
+        elif issues:
+            reason = "Structural compatibility checks failed; see issues."
+        else:
+            reason = "Adapter metadata and tensor shapes match the native architecture. Real allocation and execution still need testing."
+        devices.append({
+            "name": name,
+            "available": available,
+            "compatible": compatible,
+            "status": "compatible" if compatible else "incompatible" if available else "unavailable",
+            "reason": reason,
+        })
+
+    return {
+        "schema_version": 1,
+        "base_model": {"name": model_dir.name, "model_type": model_type, "architecture": architecture},
+        "adapter": {"name": adapter_dir.name, "rank": rank, "alpha": alpha, "target_modules": sorted(target_set)},
+        "structurally_compatible": structurally_compatible,
+        "compatible_on_any_device": any(item["compatible"] for item in devices),
+        "adapter_tensor_count": adapter_tensor_count,
+        "checked_layers": layer_count,
+        "devices": devices,
+        "issues": list(dict.fromkeys(issues)),
+        "scope_note": "Metadata/tensor-shape preflight only. This does not load the full model, allocate VRAM, execute a forward pass, or guarantee device/driver execution.",
+    }
+
+
 class NativeLlamaRuntime:
     """AXIOM-owned implementation of Llama/Mistral forward and decode steps."""
 
@@ -192,6 +399,7 @@ class NativeLlamaRuntime:
         self.dtype = weights["model.embed_tokens.weight"].dtype
         self.name = "axiom-native-pytorch-llama"
         self.last_generation: dict[str, Any] = {}
+        self.last_attention_backend = "pytorch-scaled-dot-product-attention"
 
     @staticmethod
     def _required_weight_names(c: NativeLlamaConfig) -> list[str]:
@@ -348,6 +556,32 @@ class NativeLlamaRuntime:
             result = result + functional.linear(functional.linear(hidden, adapter["A"]), adapter["B"]) * self.adapter_scaling[module]
         return result
 
+    def _attention(self, query: Any, key: Any, value: Any, blocked_mask: Any) -> Any:
+        """Run explicit AXIOM masks through optimized tensor attention, with a manual fallback."""
+        torch = self.torch
+        functional = torch.nn.functional
+        scaled_dot_product = getattr(functional, "scaled_dot_product_attention", None)
+        if callable(scaled_dot_product):
+            # A boolean SDPA mask uses True for visible positions. Invert AXIOM's
+            # blocked causal/sliding-window mask and keep is_causal=False because
+            # the exact cache-aware mask is already computed for these positions.
+            self.last_attention_backend = "pytorch-scaled-dot-product-attention"
+            return scaled_dot_product(
+                query,
+                key,
+                value,
+                attn_mask=~blocked_mask,
+                dropout_p=0.0,
+                is_causal=False,
+            )
+        # Older/minimal tensor backends keep working through AXIOM's own masked
+        # attention math. This path remains numerically equivalent to SDPA.
+        scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(query.shape[-1])
+        scores = scores.masked_fill(blocked_mask[None, None, :, :], float("-inf"))
+        probabilities = self.torch.softmax(scores.float(), dim=-1).to(dtype=query.dtype)
+        self.last_attention_backend = "axiom-manual-matmul-attention"
+        return self.torch.matmul(probabilities, value)
+
     def _rms_norm(self, hidden: Any, weight: Any) -> Any:
         variance = hidden.float().pow(2).mean(dim=-1, keepdim=True)
         return hidden * self.torch.rsqrt(variance + self.config.rms_norm_eps).to(dtype=hidden.dtype) * weight
@@ -361,7 +595,13 @@ class NativeLlamaRuntime:
         half = dim // 2
         return values * cos + torch.cat((-values[..., half:], values[..., :half]), dim=-1) * sin
 
-    def forward(self, input_ids: Any, past_key_values: Any = None) -> tuple[Any, tuple[Any, ...]]:
+    def forward(
+        self,
+        input_ids: Any,
+        past_key_values: Any = None,
+        *,
+        cancel_event: threading.Event | None = None,
+    ) -> tuple[Any, tuple[Any, ...]]:
         torch, c = self.torch, self.config
         if input_ids.ndim != 2 or input_ids.shape[0] != 1:
             raise NativeEngineError("AXIOM Native Engine currently accepts one prompt sequence per request.")
@@ -374,6 +614,8 @@ class NativeLlamaRuntime:
         cache, head_dim = [], c.hidden_size // c.num_attention_heads
         repeat_factor = c.num_attention_heads // c.num_key_value_heads
         for i in range(c.num_hidden_layers):
+            if cancel_event is not None and cancel_event.is_set():
+                raise NativeGenerationCancelled("Native generation was cancelled.")
             p = f"model.layers.{i}."
             residual = hidden
             normed = self._rms_norm(hidden, self.weights[p + "input_layernorm.weight"])
@@ -387,14 +629,11 @@ class NativeLlamaRuntime:
             cache.append((k, v))
             ak = k.repeat_interleave(repeat_factor, dim=1) if repeat_factor > 1 else k
             av = v.repeat_interleave(repeat_factor, dim=1) if repeat_factor > 1 else v
-            scores = torch.matmul(q, ak.transpose(-2, -1)) / math.sqrt(head_dim)
             keys = torch.arange(ak.shape[-2], device=self.device)
-            causal = keys[None, :] > positions[:, None]
+            blocked = keys[None, :] > positions[:, None]
             if c.sliding_window:
-                causal = causal | (keys[None, :] <= positions[:, None] - c.sliding_window)
-            scores = scores.masked_fill(causal[None, None, :, :], float("-inf"))
-            probabilities = torch.softmax(scores.float(), dim=-1).to(dtype=q.dtype)
-            attended = torch.matmul(probabilities, av).transpose(1, 2).contiguous().view(1, seq_len, c.hidden_size)
+                blocked = blocked | (keys[None, :] <= positions[:, None] - c.sliding_window)
+            attended = self._attention(q, ak, av, blocked).transpose(1, 2).contiguous().view(1, seq_len, c.hidden_size)
             hidden = residual + self._linear(attended, p + "self_attn.o_proj")
             residual = hidden
             normed = self._rms_norm(hidden, self.weights[p + "post_attention_layernorm.weight"])
@@ -410,9 +649,13 @@ class NativeLlamaRuntime:
         max_new_tokens: int,
         temperature: float,
         top_p: float = 0.9,
+        top_k: int = 0,
+        repetition_penalty: float = 1.0,
+        seed: int | None = None,
         eos_token_ids: tuple[int, ...] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> Iterator[int]:
-        """Yield each newly decoded token ID from AXIOM's KV-cached decode loop."""
+        """Yield decoded tokens and stop cooperatively when cancellation is requested."""
         if not prompt_token_ids:
             raise NativeEngineError("Tokenizer returned no IDs for the prompt.")
         if isinstance(max_new_tokens, bool) or not isinstance(max_new_tokens, int) or not 1 <= max_new_tokens <= 2048:
@@ -421,19 +664,65 @@ class NativeLlamaRuntime:
             raise NativeEngineError("Native generation temperature must be between 0 and 2.")
         if not math.isfinite(float(top_p)) or not 0 < float(top_p) <= 1:
             raise NativeEngineError("Native generation top_p must be greater than 0 and at most 1.")
+        if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
+            raise NativeEngineError("Native generation top_k must be an integer from 0 through 100000 (0 disables top-k).")
+        if not math.isfinite(float(repetition_penalty)) or not 0.1 <= float(repetition_penalty) <= 5:
+            raise NativeEngineError("Native repetition_penalty must be between 0.1 and 5.")
+        if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= (2**63 - 1)):
+            raise NativeEngineError("Native sampling seed must be an integer from 0 through 2^63-1.")
+        if top_k > self.config.vocab_size:
+            raise NativeEngineError("top_k cannot exceed the checkpoint vocabulary size.")
         torch = self.torch
+        sampling_generator = None
+        if seed is not None:
+            try:
+                sampling_generator = torch.Generator(device=self.device)
+                sampling_generator.manual_seed(seed)
+            except (RuntimeError, TypeError, AttributeError):
+                raise NativeEngineError("Seeded sampling is not supported by the selected tensor device.") from None
         eos = set(self.config.eos_token_ids if eos_token_ids is None else eos_token_ids)
         tokens = torch.tensor([prompt_token_ids], device=self.device, dtype=torch.long)
         generated: list[int] = []
         cache: tuple[Any, ...] = ()
+        prefill_ms = 0.0
+        decode_ms = 0.0
+        stop_reason = "max_new_tokens"
         try:
             with torch.inference_mode():
-                logits, cache = self.forward(tokens)
+                if cancel_event is not None and cancel_event.is_set():
+                    stop_reason = "cancelled"
+                    return
+                prefill_started = time.perf_counter()
+                try:
+                    logits, cache = self.forward(tokens, cancel_event=cancel_event)
+                    prefill_ms = (time.perf_counter() - prefill_started) * 1000
+                except NativeGenerationCancelled:
+                    prefill_ms = (time.perf_counter() - prefill_started) * 1000
+                    stop_reason = "cancelled"
+                    return
                 for step in range(max_new_tokens):
+                    if cancel_event is not None and cancel_event.is_set():
+                        stop_reason = "cancelled"
+                        break
+                    scores = logits.float()
+                    if repetition_penalty != 1.0:
+                        history = sorted(set(prompt_token_ids + generated))
+                        if history:
+                            history_ids = torch.tensor(history, device=self.device, dtype=torch.long)
+                            prior_scores = scores.index_select(-1, history_ids)
+                            adjusted_scores = torch.where(
+                                prior_scores < 0,
+                                prior_scores * float(repetition_penalty),
+                                prior_scores / float(repetition_penalty),
+                            )
+                            scores.scatter_(-1, history_ids.view(1, -1), adjusted_scores)
                     if temperature == 0:
-                        next_token = torch.argmax(logits, dim=-1)
+                        next_token = torch.argmax(scores, dim=-1)
                     else:
-                        scores = logits.float() / float(temperature)
+                        scores = scores / float(temperature)
+                        if top_k > 0 and top_k < self.config.vocab_size:
+                            threshold = torch.topk(scores, top_k, dim=-1).values[:, -1].unsqueeze(-1)
+                            scores = scores.masked_fill(scores < threshold, float("-inf"))
                         if top_p < 1:
                             sorted_scores, sorted_ids = torch.sort(scores, descending=True, dim=-1)
                             cumulative = torch.softmax(sorted_scores, dim=-1).cumsum(dim=-1)
@@ -442,23 +731,49 @@ class NativeLlamaRuntime:
                             remove[..., 0] = False
                             sorted_scores = sorted_scores.masked_fill(remove, float("-inf"))
                             scores = torch.full_like(scores, float("-inf")).scatter(dim=-1, index=sorted_ids, src=sorted_scores)
-                        next_token = torch.multinomial(torch.softmax(scores, dim=-1), num_samples=1).squeeze(-1)
+                        next_token = torch.multinomial(
+                            torch.softmax(scores, dim=-1), num_samples=1, generator=sampling_generator
+                        ).squeeze(-1)
                     token_id = int(next_token.item())
                     if token_id < 0 or token_id >= self.config.vocab_size:
                         raise NativeEngineError("Native decoder produced a token ID outside vocab_size.")
                     if token_id in eos:
+                        stop_reason = "eos_token"
                         break
                     generated.append(token_id)
                     yield token_id
-                    # Avoid a needless forward pass after the output limit.
+                    # Cancellation must not start another decode step.
+                    if cancel_event is not None and cancel_event.is_set():
+                        stop_reason = "cancelled"
+                        break
                     if step + 1 < max_new_tokens:
-                        logits, cache = self.forward(next_token.view(1, 1), cache)
+                        decode_started = time.perf_counter()
+                        try:
+                            logits, cache = self.forward(
+                                next_token.view(1, 1), cache, cancel_event=cancel_event
+                            )
+                        except NativeGenerationCancelled:
+                            decode_ms += (time.perf_counter() - decode_started) * 1000
+                            stop_reason = "cancelled"
+                            break
+                        decode_ms += (time.perf_counter() - decode_started) * 1000
         finally:
             self.last_generation = {
                 "prompt_tokens": len(prompt_token_ids),
                 "completion_tokens": len(generated),
                 "cache_layers": len(cache),
                 "decoder": "axiom-autoregressive-kv-cache",
+                "top_p": float(top_p),
+                "top_k": top_k,
+                "repetition_penalty": float(repetition_penalty),
+                "seed": seed,
+                "stop_reason": stop_reason,
+                "prefill_ms": round(prefill_ms, 3),
+                "decode_ms": round(decode_ms, 3),
+                "time_to_first_token_ms": round(prefill_ms, 3),
+                "generation_tokens_per_second": round(
+                    len(generated) * 1000 / (prefill_ms + decode_ms), 3
+                ) if prefill_ms + decode_ms > 0 and generated else 0.0,
             }
 
     def generate(
@@ -468,6 +783,9 @@ class NativeLlamaRuntime:
         max_new_tokens: int,
         temperature: float,
         top_p: float = 0.9,
+        top_k: int = 0,
+        repetition_penalty: float = 1.0,
+        seed: int | None = None,
         eos_token_ids: tuple[int, ...] | None = None,
     ) -> list[int]:
         """Return the complete generated sequence; uses the same native streaming decoder."""
@@ -476,6 +794,9 @@ class NativeLlamaRuntime:
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             top_p=top_p,
+            top_k=top_k,
+            repetition_penalty=repetition_penalty,
+            seed=seed,
             eos_token_ids=eos_token_ids,
         ))
 

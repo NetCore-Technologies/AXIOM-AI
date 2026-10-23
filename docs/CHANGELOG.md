@@ -1,8 +1,28 @@
 # Changelog
+## Unreleased — safer configuration guidance
+
+- Add stable configuration validation error codes, bounded YAML shape checks, and non-mutating repair suggestions.
+- Regression-test that malformed, missing, oversized, and symlinked configs are not echoed or modified by validation.
+
+
+## Unreleased — environment, compatibility, and retention
+
+- Allow `AXIOM_GUI_PORT` to set the default local Control Center port; explicit `--port` remains authoritative and invalid values fail clearly.
+- Add a dependency-free compatibility report for Python, Node.js, and validated OS targets, run in cross-platform CI.
+- Add a data-retention guide and a Settings shortcut to review and clear the in-memory runtime trace buffer.
+- Update delivery status for native engine discovery, runtime benchmarking, trace lifecycle, connector discovery, API Playground, and release smoke coverage after the existing end-to-end checks passed.
+
 
 ## Unreleased — latest/development
 
 ### Added
+- Add native LoRA adapter compatibility preflight to the Runtime GUI and API: inspect target modules and tensor shapes without loading full base weights, and report CPU/CUDA/ROCm/MPS availability separately.
+- Added cooperative cancellation for native inference streams: browser disconnects are monitored asynchronously, cancellation reaches the AXIOM decoder, and tests cover cancellation before prompt prefill and between tokens.
+- Added explicit workspace-root resolution with environment override and nearest-project discovery, plus bounded read-only workspace diagnostics and safe support bundles exposed through CLI and API.
+- Added metadata-only discovery of trusted native model/LoRA directories, newline-delimited token streaming with Stop/partial-output retention in the GUI, and `axiom engine discover [--json]` / `axiom engine run --stream` in the CLI.
+- Added versioned `--json` output for model/integration inventory, Hugging Face metadata inspection, local model inspection/search, and dataset inspect/validate/stats; dataset commands now share one JSON schema and preserve validation exit codes.
+- Added schema-versioned JSON output to `axiom dataset clean`, including per-category removal counts and source-preservation semantics; added model registry export/import/remove/favorite commands with duplicate-batch checks and live-registry overwrite protection.
+- Exposed architecture, license, repeatable tags, content SHA-256 and validated metadata updates through `axiom model add/update`; failed metadata edits leave the existing record unchanged.
 
 - Added AXIOM-owned Llama/Mistral inference execution with custom RMSNorm, RoPE, grouped-query attention, KV cache, supported LoRA deltas, sampling and autoregressive decode over local safetensors; the inference path does not call Transformers model.generate or Ollama.
 - Constrained direct AXIOM Engine model/adapter paths to configured trusted roots (including post-resolution symlink checks), replaced path-derived API names with names from validated directories, and added explicit model unload/resource cleanup.
@@ -27,6 +47,9 @@
 
 ### Added
 
+- Added bounded native stop sequences across Runtime GUI, API and CLI; split-token stop matching is held back in streaming output, stop text is excluded from the final response, and finish reason distinguishes EOS, stop string, token limit and cancellation.
+- Added measured native prefill latency, cached decode time, time-to-first-token and completion tokens/second to Runtime results, with API typing, UI display and tiny-checkpoint/E2E assertions.
+- Exposed temperature, top-p, top-k, repetition penalty and optional seed in the native Runtime form; typed API streaming carries every setting into AXIOM's decoder and reports effective sampling metadata.
 - Added a searchable Control Center Module Explorer across GUI pages, CLI command families, and API surfaces.
 - Added workspace diagnostics with machine-readable CLI output using `axiom doctor --json`.
 - Added a roadmap audit command, `axiom roadmap audit --json`, and GUI roadmap integrity reporting.

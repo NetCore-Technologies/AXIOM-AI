@@ -1,10 +1,20 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Activity, Cpu, Play, RefreshCcw, Unplug } from "lucide-react";
-import { axiomApi, type AxiomEngineAssets, type AxiomEngineResult, type AxiomEngineStatus } from "../api/client";
+const formatEstimatedMemory = (gib: number): string => {
+  if (!Number.isFinite(gib) || gib < 0) return "n/a";
+  if (gib >= 0.01) return `${gib.toFixed(2)} GiB`;
+  if (gib >= 0.001) return `${gib.toFixed(4)} GiB`;
+  if (gib >= 1 / (1024 * 1024)) return `${(gib * 1024 * 1024).toFixed(2)} KiB`;
+  return `${(gib * 1024 ** 3).toFixed(0)} bytes`;
+};
+
+import { axiomApi, type AxiomEngineAdapterCompatibility, type AxiomEngineAssets, type AxiomEngineResult, type AxiomEngineStatus, type AxiomEngineStreamEvent, type AxiomQuantizationEstimate } from "../api/client";
 
 export default function LocalAxiomEnginePanel() {
   const [status, setStatus] = useState<AxiomEngineStatus | null>(null);
   const [assets, setAssets] = useState<AxiomEngineAssets | null>(null);
+  const [adapterCompatibility, setAdapterCompatibility] = useState<AxiomEngineAdapterCompatibility | null>(null);
+  const [checkingAdapter, setCheckingAdapter] = useState(false);
   const [modelPath, setModelPath] = useState("");
   const [selectedModelPath, setSelectedModelPath] = useState("");
   const [adapterPath, setAdapterPath] = useState("");
@@ -12,12 +22,28 @@ export default function LocalAxiomEnginePanel() {
   const [prompt, setPrompt] = useState("");
   const [maxNewTokens, setMaxNewTokens] = useState("256");
   const [temperature, setTemperature] = useState("0.7");
+  const [topP, setTopP] = useState("0.9");
+  const [topK, setTopK] = useState("0");
+  const [repetitionPenalty, setRepetitionPenalty] = useState("1.0");
+  const [seed, setSeed] = useState("");
+  const [stopSequencesText, setStopSequencesText] = useState("");
   const [result, setResult] = useState<AxiomEngineResult | null>(null);
+  const [streamResponse, setStreamResponse] = useState("");
+  const [streamTokenCount, setStreamTokenCount] = useState(0);
+  const activeStreamRef = useRef<AbortController | null>(null);
+  const streamTokenCountRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [unloading, setUnloading] = useState(false);
   const [lifecycleNotice, setLifecycleNotice] = useState("");
   const [error, setError] = useState("");
+  const [quantContextLength, setQuantContextLength] = useState("4096");
+  const [quantBatchSize, setQuantBatchSize] = useState("1");
+  const [ramBudgetGiB, setRamBudgetGiB] = useState("16");
+  const [vramBudgetGiB, setVramBudgetGiB] = useState("");
+  const [quantizationPlan, setQuantizationPlan] = useState<AxiomQuantizationEstimate | null>(null);
+  const [planningQuantization, setPlanningQuantization] = useState(false);
+  const [quantizationError, setQuantizationError] = useState("");
 
   const refresh = async () => {
     setLoading(true);
@@ -38,7 +64,10 @@ export default function LocalAxiomEnginePanel() {
     }
   };
 
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    void refresh();
+    return () => activeStreamRef.current?.abort();
+  }, []);
 
   const unload = async () => {
     setUnloading(true);
@@ -58,29 +87,139 @@ export default function LocalAxiomEnginePanel() {
     }
   };
 
+  const checkAdapterCompatibility = async () => {
+    if (!modelPath.trim() || !adapterPath.trim()) {
+      setError("Select both a native base model and a LoRA adapter before checking compatibility.");
+      return;
+    }
+    setCheckingAdapter(true);
+    setError("");
+    setAdapterCompatibility(null);
+    try {
+      setAdapterCompatibility(await axiomApi.checkAxiomEngineAdapterCompatibility({
+        model_path: modelPath.trim(),
+        adapter_path: adapterPath.trim(),
+      }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Adapter compatibility preflight failed.");
+    } finally {
+      setCheckingAdapter(false);
+    }
+  };
+
+  const estimateQuantization = async () => {
+    setQuantizationError("");
+    setQuantizationPlan(null);
+    if (!modelPath.trim()) {
+      setQuantizationError("Choose a discovered model before estimating memory.");
+      return;
+    }
+    const contextLength = Number(quantContextLength);
+    const batchSize = Number(quantBatchSize);
+    const ram = ramBudgetGiB.trim() === "" ? null : Number(ramBudgetGiB);
+    const vram = vramBudgetGiB.trim() === "" ? null : Number(vramBudgetGiB);
+    if (!Number.isInteger(contextLength) || contextLength < 1 || contextLength > 131072) {
+      setQuantizationError("Context length must be an integer from 1 through 131072.");
+      return;
+    }
+    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 16) {
+      setQuantizationError("Batch size must be an integer from 1 through 16.");
+      return;
+    }
+    if (ram === null && vram === null) {
+      setQuantizationError("Enter a RAM budget, a VRAM budget, or both.");
+      return;
+    }
+    for (const [label, budget] of [["RAM", ram], ["VRAM", vram]] as const) {
+      if (budget !== null && (!Number.isFinite(budget) || budget < 0.1 || budget > 2048)) {
+        setQuantizationError(label + " budget must be between 0.1 and 2048 GiB.");
+        return;
+      }
+    }
+    setPlanningQuantization(true);
+    try {
+      const plan = await axiomApi.estimateAxiomQuantization({
+        model_path: modelPath.trim(),
+        context_length: contextLength,
+        batch_size: batchSize,
+        ram_budget_gib: ram,
+        vram_budget_gib: vram,
+      });
+      setQuantizationPlan(plan);
+    } catch (cause) {
+      setQuantizationError(cause instanceof Error ? cause.message : "Memory planning failed.");
+    } finally {
+      setPlanningQuantization(false);
+    }
+  };
+
   const run = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
+    setLifecycleNotice("");
     setResult(null);
+    setStreamResponse("");
+    setStreamTokenCount(0);
+    streamTokenCountRef.current = 0;
     const tokenLimit = Number(maxNewTokens);
     const temp = Number(temperature);
+    const p = Number(topP);
+    const k = Number(topK);
+    const repeatPenalty = Number(repetitionPenalty);
+    const seedValue = seed.trim() === "" ? null : Number(seed);
+    const stopSequences = stopSequencesText.split("\n").map((value) => value.replace(/\r$/, "")).filter((value) => value.length > 0);
     if (!modelPath.trim()) { setError("Choose a discovered native model or enter a trusted local Llama/Mistral model path."); return; }
     if (!prompt.trim()) { setError("Enter a prompt first."); return; }
     if (!Number.isInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 2048) { setError("Maximum generated tokens must be between 1 and 2048."); return; }
     if (!Number.isFinite(temp) || temp < 0 || temp > 2) { setError("Temperature must be between 0 and 2."); return; }
+    if (!Number.isFinite(p) || p <= 0 || p > 1) { setError("Top-p must be greater than 0 and at most 1."); return; }
+    if (!Number.isInteger(k) || k < 0 || k > 100000) { setError("Top-k must be an integer from 0 through 100000; 0 disables top-k."); return; }
+    if (!Number.isFinite(repeatPenalty) || repeatPenalty < 0.1 || repeatPenalty > 5) { setError("Repetition penalty must be between 0.1 and 5."); return; }
+    if (seed.trim() !== "" && (!Number.isSafeInteger(seedValue) || seedValue! < 0 || seedValue! > Number.MAX_SAFE_INTEGER)) {
+      setError("Seed must be a whole number from 0 through 9007199254740991, or blank for a non-fixed seed.");
+      return;
+    }
+    if (stopSequences.length > 16) { setError("At most 16 stop sequences may be configured."); return; }
+    if (stopSequences.some((value) => !value.trim() || value.length > 256)) {
+      setError("Each stop sequence must contain non-whitespace text and be no longer than 256 characters.");
+      return;
+    }
+    const controller = new AbortController();
+    activeStreamRef.current = controller;
     setRunning(true);
     try {
-      setResult(await axiomApi.runAxiomEngine({
+      const completed = await axiomApi.streamAxiomEngine({
         model_path: modelPath.trim(),
         adapter_path: adapterPath.trim() || undefined,
         prompt,
         max_new_tokens: tokenLimit,
         temperature: temp,
-      }));
+        top_p: p,
+        top_k: k,
+        repetition_penalty: repeatPenalty,
+        seed: seedValue,
+        stop_sequences: stopSequences,
+      }, (event: AxiomEngineStreamEvent) => {
+        if (event.type === "token") {
+          streamTokenCountRef.current = event.completion_tokens;
+          setStreamTokenCount(event.completion_tokens);
+          setStreamResponse(event.response);
+        } else if (event.type === "complete") {
+          streamTokenCountRef.current = event.result.completion_tokens;
+          setStreamTokenCount(event.result.completion_tokens);
+          setStreamResponse(event.result.response);
+        }
+      }, controller.signal);
+      setResult(completed);
       void refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "AXIOM Engine generation failed.");
+      if (controller.signal.aborted) {
+        setError(`Generation cancelled after ${streamTokenCountRef.current} token(s). Partial output remains visible.`);
+      } else {
+        setError(cause instanceof Error ? cause.message : "AXIOM Native Engine generation failed.");
+      }
     } finally {
+      if (activeStreamRef.current === controller) activeStreamRef.current = null;
       setRunning(false);
     }
   };
@@ -105,7 +244,7 @@ export default function LocalAxiomEnginePanel() {
     <form onSubmit={(event) => void run(event)}>
       <label className="field">
         <span className="field-label-row"><span>Discovered native model</span><span>{assets?.models.length ?? 0} found</span></span>
-        <select aria-label="Select discovered native model" value={selectedModelPath} onChange={(event) => { setSelectedModelPath(event.target.value); if (event.target.value) setModelPath(event.target.value); }}>
+        <select aria-label="Select discovered native model" value={selectedModelPath} onChange={(event) => { setSelectedModelPath(event.target.value); if (event.target.value) setModelPath(event.target.value); setAdapterCompatibility(null); }}>
           <option value="">{assets?.models.length ? "Choose a discovered model or enter a path below" : "No supported local models discovered"}</option>
           {(assets?.models ?? []).map((model) => <option key={model.path} value={model.path}>{model.name} · {model.model_type} · {model.weight_format}</option>)}
         </select>
@@ -113,38 +252,133 @@ export default function LocalAxiomEnginePanel() {
       </label>
       <label className="field">
         <span className="field-label-row"><span>Local Llama / Mistral model directory</span></span>
-        <input value={modelPath} onChange={(event) => { setModelPath(event.target.value); if (event.target.value !== selectedModelPath) setSelectedModelPath(""); }} required maxLength={4096} placeholder="/home/user/models/my-llama-model" autoComplete="off" />
+        <input value={modelPath} onChange={(event) => { setModelPath(event.target.value); if (event.target.value !== selectedModelPath) setSelectedModelPath(""); setAdapterCompatibility(null); }} required maxLength={4096} placeholder="/home/user/models/my-llama-model" autoComplete="off" />
         <small>Existing directory with config.json, tokenizer.json and model.safetensors (or the safetensors shard index). GGUF, quantized formats and pickle .bin weights are not supported by this native path. Paths must match a directory discovered under a trusted root; set AXIOM_MODEL_ROOTS for additional locations.</small>
       </label>
       <label className="field">
         <span className="field-label-row"><span>Discovered LoRA adapter (optional)</span><span>{assets?.adapters.length ?? 0} found</span></span>
-        <select aria-label="Select discovered LoRA adapter" value={selectedAdapterPath} onChange={(event) => { setSelectedAdapterPath(event.target.value); if (event.target.value) setAdapterPath(event.target.value); }}>
+        <select aria-label="Select discovered LoRA adapter" value={selectedAdapterPath} onChange={(event) => { setSelectedAdapterPath(event.target.value); if (event.target.value) setAdapterPath(event.target.value); setAdapterCompatibility(null); }}>
           <option value="">No adapter</option>
           {(assets?.adapters ?? []).map((adapter) => <option key={adapter.path} value={adapter.path}>{adapter.name} · {adapter.weight_format}</option>)}
         </select>
       </label>
       <label className="field">
         <span className="field-label-row"><span>Optional LoRA adapter directory</span></span>
-        <input value={adapterPath} onChange={(event) => { setAdapterPath(event.target.value); if (event.target.value !== selectedAdapterPath) setSelectedAdapterPath(""); }} maxLength={4096} placeholder="/home/user/runs/my-lora-adapter" autoComplete="off" />
+        <input value={adapterPath} onChange={(event) => { setAdapterPath(event.target.value); if (event.target.value !== selectedAdapterPath) setSelectedAdapterPath(""); setAdapterCompatibility(null); }} maxLength={4096} placeholder="/home/user/runs/my-lora-adapter" autoComplete="off" />
         <small>Use a standard bias-free CAUSAL_LM adapter with adapter_config.json and adapter_model.safetensors. Compatibility is checked during model loading; unsupported adapter options are rejected.</small>
       </label>
+      <div className="integration-form-actions">
+        <button type="button" className="button secondary-button" onClick={() => void checkAdapterCompatibility()} disabled={checkingAdapter || running || !modelPath.trim() || !adapterPath.trim()}>
+          {checkingAdapter ? "Checking adapter…" : "Check adapter compatibility"}
+        </button>
+      </div>
+      {adapterCompatibility && <section className="panel-surface" aria-label="LoRA device compatibility report" style={{ padding: 14, marginBottom: 14 }}>
+        <div className="surface-head">
+          <div><p className="surface-eyebrow">NATIVE ADAPTER PREFLIGHT</p><h3>{adapterCompatibility.structurally_compatible ? "Adapter structure supported" : "Adapter incompatible"}</h3></div>
+          <span className={"status-pill " + (adapterCompatibility.structurally_compatible ? "success" : "warning")}>{adapterCompatibility.structurally_compatible ? "STRUCTURE OK" : "ISSUES FOUND"}</span>
+        </div>
+        <p className="quiet-note">{adapterCompatibility.adapter_tensor_count} adapter tensors · {adapterCompatibility.checked_layers} model layers checked · rank {adapterCompatibility.adapter.rank ?? "unknown"} · alpha {adapterCompatibility.adapter.alpha ?? "unknown"}</p>
+        <div className="two-column-grid">
+          {adapterCompatibility.devices.map((device) => <div key={device.name} className="panel-surface" style={{ padding: 10 }}>
+            <strong>{device.name}</strong>
+            <span className={"status-pill " + (device.compatible ? "success" : device.available ? "warning" : "neutral")}>{device.status.toUpperCase()}</span>
+            <p className="quiet-note">{device.reason}</p>
+          </div>)}
+        </div>
+        {adapterCompatibility.issues.length > 0 && <div className="inline-alert warning" role="alert"><strong>Compatibility blockers</strong><ul>{adapterCompatibility.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
+        <p className="quiet-note">{adapterCompatibility.scope_note}</p>
+      </section>}
       <label className="field">
         <span className="field-label-row"><span>AXIOM Native Engine prompt</span><span>{prompt.length.toLocaleString()} / 12,000 characters</span></span>
         <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={12000} rows={5} required placeholder="Ask the local model to do something…" />
       </label>
       <div className="two-column-grid">
-        <label className="field"><span className="field-label-row"><span>Maximum generated tokens</span></span><input type="number" min={1} max={2048} step={1} value={maxNewTokens} onChange={(event) => setMaxNewTokens(event.target.value)} required /></label>
-        <label className="field"><span className="field-label-row"><span>Temperature (0 = deterministic)</span></span><input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(event) => setTemperature(event.target.value)} required /></label>
+        <label className="field"><span className="field-label-row"><span>Maximum generated tokens</span></span><input aria-label="Maximum generated tokens" type="number" min={1} max={2048} step={1} value={maxNewTokens} onChange={(event) => setMaxNewTokens(event.target.value)} required /></label>
+        <label className="field"><span className="field-label-row"><span>Temperature (0 = deterministic)</span></span><input aria-label="Temperature" type="number" min={0} max={2} step={0.1} value={temperature} onChange={(event) => setTemperature(event.target.value)} required /></label>
+        <label className="field"><span className="field-label-row"><span>Top-p nucleus sampling</span></span><input aria-label="Top-p" type="number" min={0.01} max={1} step={0.01} value={topP} onChange={(event) => setTopP(event.target.value)} required /><small>Keep the smallest high-probability token set reaching this cumulative probability (0, 1].</small></label>
+        <label className="field"><span className="field-label-row"><span>Top-k sampling</span></span><input aria-label="Top-k" type="number" min={0} max={100000} step={1} value={topK} onChange={(event) => setTopK(event.target.value)} required /><small>0 disables top-k. A non-zero value must not exceed the selected model's vocabulary size.</small></label>
+        <label className="field"><span className="field-label-row"><span>Repetition penalty</span></span><input aria-label="Repetition penalty" type="number" min={0.1} max={5} step={0.05} value={repetitionPenalty} onChange={(event) => setRepetitionPenalty(event.target.value)} required /><small>1.0 disables repetition adjustment; other values penalize or boost previously seen token scores.</small></label>
+        <label className="field"><span className="field-label-row"><span>Sampling seed (optional)</span></span><input aria-label="Sampling seed" type="number" min={0} max={Number.MAX_SAFE_INTEGER} step={1} value={seed} onChange={(event) => setSeed(event.target.value)} placeholder="Leave blank to vary sampling" /><small>A seed makes token sampling reproducible on the same model, device and runtime. This does not guarantee cross-device bitwise reproducibility.</small></label>
       </div>
+      <label className="field">
+        <span className="field-label-row"><span>Stop sequences (optional)</span><span>{stopSequencesText.split("\n").filter((value) => value.length > 0).length} / 16</span></span>
+        <textarea aria-label="Stop sequences" value={stopSequencesText} onChange={(event) => setStopSequencesText(event.target.value)} rows={3} maxLength={4112} placeholder={"One exact stop string per line, e.g.\n<END>\n###"} />
+        <small>AXIOM stops at the first full match, holds back partial matches across tokens, and excludes the stop text from the answer. Maximum 16 strings, 256 characters each.</small>
+      </label>
       <div className="integration-form-actions">
-        <button type="submit" className="button primary-button" disabled={!status?.ready || loading || running || !modelPath.trim() || !prompt.trim()}><Play size={15} /> {running ? "Generating locally…" : "Run with AXIOM Engine"}</button>
-        {result && <span className="quiet-note"><Activity size={14} /> {result.completion_tokens} tokens · {result.elapsed_ms} ms</span>}
+        <button type="submit" className="button primary-button" disabled={!status?.ready || loading || running || !modelPath.trim() || !prompt.trim() || Boolean(adapterCompatibility && !adapterCompatibility.structurally_compatible)}><Play size={15} /> {running ? "Generating locally…" : "Run with AXIOM Engine"}</button>
+        {running && <button type="button" className="button secondary-button" onClick={() => activeStreamRef.current?.abort()}><Unplug size={14} /> Stop generation</button>}
+        {result && <span className="quiet-note"><Activity size={14} /> {result.completion_tokens} tokens · {result.elapsed_ms} ms wall time · {result.prefill_ms} ms prefill · {result.decode_ms} ms decode · {result.generation_tokens_per_second} tok/s</span>}
+        {!result && streamTokenCount > 0 && <span className="quiet-note"><Activity size={14} /> {streamTokenCount} token(s) streamed</span>}
       </div>
     </form>
+    <section className="surface axiom-quantization-planner" aria-label="Memory and quantization planner">
+      <div className="surface-head">
+        <div>
+          <p className="surface-eyebrow">OPTIMIZER · MEMORY PLANNING</p>
+          <h3>Quantization and memory fit</h3>
+          <p className="quiet-note">Config-based estimate only. INT4/INT8 candidates are sizing comparisons, not formats the current native engine can load.</p>
+        </div>
+      </div>
+      <div className="two-column-grid">
+        <label className="field">
+          <span className="field-label-row"><span>Planner context length</span></span>
+          <input aria-label="Planner context length" type="number" min={1} max={131072} step={1} value={quantContextLength} onChange={(event) => setQuantContextLength(event.target.value)} />
+        </label>
+        <label className="field">
+          <span className="field-label-row"><span>Planner batch size</span></span>
+          <input aria-label="Planner batch size" type="number" min={1} max={16} step={1} value={quantBatchSize} onChange={(event) => setQuantBatchSize(event.target.value)} />
+        </label>
+        <label className="field">
+          <span className="field-label-row"><span>RAM budget (GiB)</span></span>
+          <input aria-label="RAM budget GiB" type="number" min={0.1} max={2048} step={0.5} value={ramBudgetGiB} onChange={(event) => setRamBudgetGiB(event.target.value)} placeholder="Leave blank to skip RAM" />
+        </label>
+        <label className="field">
+          <span className="field-label-row"><span>VRAM budget (GiB)</span></span>
+          <input aria-label="VRAM budget GiB" type="number" min={0.1} max={2048} step={0.5} value={vramBudgetGiB} onChange={(event) => setVramBudgetGiB(event.target.value)} placeholder="Optional GPU memory budget" />
+        </label>
+      </div>
+      <button type="button" className="button secondary-button" onClick={() => void estimateQuantization()} disabled={planningQuantization || !modelPath.trim()}>
+        {planningQuantization ? "Estimating memory…" : "Estimate memory fit"}
+      </button>
+      {quantizationError && <div className="inline-alert warning" role="alert">{quantizationError}</div>}
+      {quantizationPlan && <section aria-label="Quantization estimate results">
+        <div className="surface-head">
+          <div>
+            <h4>{quantizationPlan.model.name} · {quantizationPlan.model.architecture}</h4>
+            <p className="quiet-note">Estimated {quantizationPlan.model.estimated_parameter_count.toLocaleString()} parameters · Context {quantizationPlan.request.context_length.toLocaleString()} · Batch {quantizationPlan.request.batch_size}</p>
+          </div>
+        </div>
+        <p className="quiet-note">{quantizationPlan.scope_note}</p>
+        <p className="quiet-note">
+          <strong>{quantizationPlan.recommendation.format
+            ? `Budget-based planning recommendation: ${quantizationPlan.recommendation.format.toUpperCase()}.`
+            : "No native precision is estimated to fit all supplied budgets."}</strong>
+          {" "}{quantizationPlan.recommendation.note}
+        </p>
+        <div className="two-column-grid">
+          {quantizationPlan.candidates.map((candidate) => <article className="surface" key={candidate.format} aria-label={candidate.format + " memory candidate"}>
+            <h4>{candidate.format.toUpperCase()}</h4>
+            <p><strong>{formatEstimatedMemory(candidate.estimated_total_gib)} estimated</strong></p>
+            <p className="quiet-note">Uncertainty range {formatEstimatedMemory(candidate.estimated_range_gib[0])}–{formatEstimatedMemory(candidate.estimated_range_gib[1])}</p>
+            <p className="quiet-note">Weights {formatEstimatedMemory(candidate.estimated_weight_gib)} · KV cache {formatEstimatedMemory(candidate.estimated_kv_cache_gib)} · Workspace {formatEstimatedMemory(candidate.estimated_workspace_gib)}</p>
+            {candidate.fits_ram_budget !== null && <p>RAM budget: {candidate.fits_ram_budget ? "Estimated fit" : "Over estimated budget"}</p>}
+            {candidate.fits_vram_budget !== null && <p>VRAM budget: {candidate.fits_vram_budget ? "Estimated fit" : "Over estimated budget"}</p>}
+            <p>{candidate.native_checkpoint_supported ? "Floating-point format supported by native loader (actual load still required)." : "Sizing only — native loader does not support this quantized format."}</p>
+          </article>)}
+        </div>
+        <p className="quiet-note">Estimated fit is not measured memory, quality, or speed. Confirm quality with evaluation and speed/memory with an actual run.</p>
+      </section>}
+    </section>
     {error && <div className="inline-alert warning" role="alert">{error}</div>}
-    {result && <section className="local-inference-result" aria-label="AXIOM Engine generated response">
-      <div className="surface-head"><div><p className="surface-eyebrow">GENERATED ON THIS MACHINE · {result.architecture}</p><h3>{result.model}{result.adapter ? ` + ${result.adapter}` : ""}</h3></div><span className="status-pill success"><i />COMPLETED</span></div>
-      <pre data-testid="axiom-engine-output" className="local-inference-output">{result.response || "(The model returned an empty response.)"}</pre>
+    {(result || streamResponse) && <section className="local-inference-result" aria-label="AXIOM Engine generated response">
+      <div className="surface-head"><div>
+        <p className="surface-eyebrow">{result ? `GENERATED ON THIS MACHINE · ${result.architecture}` : running ? "STREAMING TOKEN OUTPUT · LOCAL ONLY" : "PARTIAL LOCAL OUTPUT"}</p>
+        <h3>{result ? `${result.model}${result.adapter ? ` + ${result.adapter}` : ""}` : (assets?.models.find((model) => model.path === modelPath)?.name || "AXIOM Native Engine")}</h3>
+        {result && <p className="quiet-note">Finish: {result.stop_reason.replaceAll("_", " ")} · Stop sequences: {result.stop_sequences.length ? result.stop_sequences.length : "off"} · Attention: {result.attention_backend} · Sampling: temperature {result.sampling.temperature} · top-p {result.sampling.top_p} · top-k {result.sampling.top_k || "off"} · repetition penalty {result.sampling.repetition_penalty} · seed {result.sampling.seed ?? "random"}</p>}
+      </div><span className={`status-pill ${result ? "success" : running ? "warning" : "neutral"}`}><i />{result ? "COMPLETED" : running ? "GENERATING" : "CANCELLED"}</span></div>
+      <pre data-testid={result ? "axiom-engine-output" : "axiom-engine-live-output"} className="local-inference-output">{(result ? result.response : streamResponse) || "(The model has not emitted printable text yet.)"}</pre>
+      {!result && <p className="quiet-note">Cumulative text snapshots update as the native decoder emits tokens. {streamTokenCount} token(s) received.</p>}
     </section>}
     <p className="quiet-note"><Cpu size={14} /> AXIOM owns this runtime and the LoRA training loop; the underlying pretrained base weights retain their original model licence.</p>
   </section>;

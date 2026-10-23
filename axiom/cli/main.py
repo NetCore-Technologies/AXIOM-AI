@@ -11,7 +11,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from threading import Thread
 
+import click
+import inspect
 import typer
+from click.shell_completion import get_completion_class
+from typer.main import get_command
 from huggingface_hub import HfApi, login, logout, snapshot_download, whoami
 from rich.console import Console
 from rich.panel import Panel
@@ -41,6 +45,7 @@ from axiom.datasets.inspector import inspect_dataset
 from axiom.models.analysis import analyze_config, disk_info
 from axiom.models.inspector import inspect_model
 from axiom.models.registry import Model, ModelRegistry
+from axiom.core.storage import atomic_write_text
 from axiom.runtime.supercompress import compress_context, redacted_base_url
 from axiom.training.planner import create_training_plan
 from axiom.version import __version__
@@ -49,6 +54,7 @@ app = typer.Typer(
     name="axiom",
     help="Inspect AI work, plan around your hardware, and keep it local.",
     invoke_without_command=True,
+    add_completion=True,
 )
 
 model_app = typer.Typer(help="Manage AI models.")
@@ -89,7 +95,7 @@ register_evaluation_cli(evaluation_app)
 
 # Extended AXIOM CLI
 from axiom.cli.dataset_profile import register as register_dataset_profile
-from axiom.cli.extended import register as register_extended_cli
+from axiom.cli.extended import dataset_inspection_payload, register as register_extended_cli
 from axiom.cli.agent_profiles import register as register_agent_profiles
 from axiom.cli.model_studio import register_model_studio
 from axiom.cli.fine_tuning import register as register_fine_tuning_cli
@@ -173,6 +179,38 @@ def _run_default_session(*, show_banner: bool = True) -> None:
         run_daemon()
     except (OSError, ValueError) as exc:
         _cli_error(str(exc))
+
+
+@app.command("completion")
+def shell_completion_script(
+    shell: str = typer.Argument(..., help="Shell name: bash, zsh, fish, or powershell."),
+) -> None:
+    """Print a supported shell completion script without installing it."""
+    normalized = shell.strip().casefold()
+    supported = {"bash", "zsh", "fish", "powershell"}
+    if normalized not in supported:
+        _cli_error("Unsupported shell. Choose bash, zsh, fish, or powershell.")
+        return
+    completion_type = get_completion_class(normalized)
+    if completion_type is None:
+        _cli_error(f"Shell completion for {normalized} is not supported by the installed Click version.")
+        return
+    command = get_command(app)
+    context = click.Context(command, info_name="axiom")
+    # Click 8.3+ uses (cli, ctx_args, prog_name, complete_var); older
+    # versions expose (cli, ctx, complete_var). Select by the installed class
+    # signature rather than passing a Typer/Click option as a variable name.
+    parameters = inspect.signature(completion_type).parameters
+    if "ctx_args" in parameters and "prog_name" in parameters:
+        completion = completion_type(command, {}, "axiom", "_AXIOM_COMPLETE")
+    else:
+        completion = completion_type(
+            command,
+            click.Context(command, info_name="axiom"),
+            "_AXIOM_COMPLETE",
+        )
+    script = completion.source()
+    typer.echo(script, nl=False)
 
 
 @app.command()
@@ -351,15 +389,30 @@ def experiment_delete(
     console.print_json(json.dumps({"deleted": removed, "run_artifacts_deleted": False}, ensure_ascii=False))
 
 
+def _resolve_gui_port(cli_port: int | None) -> int:
+    """Resolve GUI port from explicit CLI input or a validated environment default."""
+    if cli_port is not None:
+        port = cli_port
+    else:
+        raw = os.environ.get("AXIOM_GUI_PORT", "40507").strip()
+        try:
+            port = int(raw)
+        except ValueError:
+            raise ValueError("AXIOM_GUI_PORT must be an integer from 0 to 65535.") from None
+    if isinstance(port, bool) or not isinstance(port, int) or not 0 <= port <= 65535:
+        raise ValueError("GUI port must be an integer from 0 to 65535.")
+    return port
+
+
 @app.command("gui")
 @app.command("ui")
 def start_gui(
-    port: int = typer.Option(
-        40507,
+    port: int | None = typer.Option(
+        None,
         "--port",
         min=0,
         max=65535,
-        help="Local port to use (default 40507); use 0 for an ephemeral port. Keep the port stable to retain this browser origin's local account and sign-in state.",
+        help="Local port to use; defaults to AXIOM_GUI_PORT or 40507. Use 0 for an ephemeral port. Keep the port stable to retain this browser origin's local account and sign-in state.",
     ),
     open_browser: bool = typer.Option(
         True,
@@ -368,6 +421,10 @@ def start_gui(
     ),
 ) -> None:
     """Start the local API and open the AXIOM Control Center."""
+    try:
+        port = _resolve_gui_port(port)
+    except ValueError as exc:
+        _cli_error(str(exc))
     webui_dir = Path(__file__).resolve().parent.parent / "webui"
     if not (webui_dir / "index.html").is_file():
         _cli_error("The bundled Control Center is missing. Build the web UI before running axiom gui.")
@@ -663,10 +720,19 @@ def supercompress_compress(
 
 
 @integration_app.command("list")
-def integration_list():
+def integration_list(
+    json_output: bool = typer.Option(False, "--json", help="Emit integration records as JSON."),
+) -> None:
     """List configured AI agent integrations."""
     registry = IntegrationRegistry()
     integrations = registry.list()
+    if json_output:
+        typer.echo(json.dumps({
+            "schema_version": 1,
+            "total": len(integrations),
+            "integrations": [item.to_dict() for item in integrations],
+        }, ensure_ascii=False, sort_keys=True))
+        return
 
     if not integrations:
         console.print("[yellow]No agent integrations configured.[/yellow]")
@@ -680,15 +746,8 @@ def integration_list():
 
     for item in integrations:
         target = item.command or item.url or "-"
-        table.add_row(
-            item.name,
-            item.type.value,
-            target,
-            item.description or "-",
-        )
-
+        table.add_row(item.name, item.type.value, target, item.description or "-")
     console.print(table)
-
 
 @integration_app.command("add")
 def integration_add(
@@ -817,40 +876,56 @@ def integration_doctor():
 
 
 @system_app.command("info")
-def system_info():
+def system_info(
+    json_output: bool = typer.Option(False, "--json", help="Emit detected hardware and fit estimates as JSON."),
+):
     """Show detected hardware and AI runtime capability."""
     hardware = detect_hardware()
+    fit_estimates = []
+    if hardware.vram_gb is not None:
+        for billions in (1, 3, 7, 8, 14, 32, 70):
+            fit_estimates.append({
+                "parameters_billions": billions,
+                "precision_candidates": "FP16 / Q4",
+                "assessment": estimate_model_fit(billions, hardware),
+            })
+    if json_output:
+        typer.echo(json.dumps({
+            "schema_version": 1,
+            "hardware": {
+                "os_name": hardware.os_name,
+                "architecture": hardware.architecture,
+                "cpu_cores": hardware.cpu_cores,
+                "ram_gb": hardware.ram_gb,
+                "gpu_name": hardware.gpu_name,
+                "vram_gb": hardware.vram_gb,
+                "cuda_available": hardware.cuda_available,
+            },
+            "model_fit_estimates": fit_estimates,
+            "fit_scope_note": "Fit values are heuristic screening estimates, not measured runtime capacity or benchmark results.",
+        }, ensure_ascii=False, sort_keys=True))
+        return
 
     gpu = hardware.gpu_name or "Not detected"
     vram = f"{hardware.vram_gb:.2f} GB" if hardware.vram_gb is not None else "N/A"
-
-    console.print(
-        Panel.fit(
-            f"[bold cyan]AXIOM HARDWARE[/bold cyan]\n\n"
-            f"OS:              {hardware.os_name}\n"
-            f"Architecture:    {hardware.architecture}\n"
-            f"CPU cores:       {hardware.cpu_cores}\n"
-            f"RAM:             {hardware.ram_gb:.2f} GB\n"
-            f"GPU:             {gpu}\n"
-            f"VRAM:            {vram}\n"
-            f"CUDA available:  {'✓' if hardware.cuda_available else '✗'}",
-            title="AXIOM",
-        )
-    )
-
-    if hardware.vram_gb is not None:
+    console.print(Panel.fit(
+        f"[bold cyan]AXIOM HARDWARE[/bold cyan]\n\n"
+        f"OS:              {hardware.os_name}\n"
+        f"Architecture:    {hardware.architecture}\n"
+        f"CPU cores:       {hardware.cpu_cores}\n"
+        f"RAM:             {hardware.ram_gb:.2f} GB\n"
+        f"GPU:             {gpu}\n"
+        f"VRAM:            {vram}\n"
+        f"CUDA available:  {'✓' if hardware.cuda_available else '✗'}",
+        title="AXIOM",
+    ))
+    if fit_estimates:
         table = Table(title="Model Fit Estimates")
         table.add_column("Model")
         table.add_column("FP16 / Q4")
-
-        for billions in (1, 3, 7, 8, 14, 32, 70):
-            table.add_row(
-                f"{billions}B",
-                estimate_model_fit(billions, hardware),
-            )
-
+        for item in fit_estimates:
+            table.add_row(f"{item['parameters_billions']}B", item["assessment"])
         console.print(table)
-
 
 @train_app.command("plan")
 def train_plan(
@@ -964,10 +1039,19 @@ def train_plan(
 
 
 @model_app.command("list")
-def model_list():
+def model_list(
+    json_output: bool = typer.Option(False, "--json", help="Emit registered model records as JSON."),
+) -> None:
     """List registered models."""
     registry = ModelRegistry()
     models = registry.list()
+    if json_output:
+        typer.echo(json.dumps({
+            "schema_version": 1,
+            "total": len(models),
+            "models": [model.to_dict() for model in models],
+        }, ensure_ascii=False, sort_keys=True))
+        return
 
     if not models:
         console.print("[yellow]No models registered.[/yellow]")
@@ -979,43 +1063,164 @@ def model_list():
     table.add_column("Format")
     table.add_column("Parameters")
     table.add_column("Quantization")
-
     for model in models:
-        table.add_row(
-            model.name,
-            model.source,
-            model.format,
-            model.parameters or "-",
-            model.quantization or "-",
-        )
-
+        table.add_row(model.name, model.source, model.format, model.parameters or "-", model.quantization or "-")
     console.print(table)
+
+@model_app.command("export")
+def model_export(
+    path: str = typer.Option("models.registry.json", "--path", help="Destination JSON file."),
+    json_output: bool = typer.Option(False, "--json", help="Emit the export operation result as JSON."),
+) -> None:
+    """Export registered model metadata to a versioned JSON file."""
+    registry = ModelRegistry()
+    target = Path(path).expanduser()
+    try:
+        if target.resolve(strict=False) == registry.registry_file.resolve(strict=False):
+            raise ValueError("Export destination must not be the live model registry file.")
+        models = registry.list()
+        payload = {
+            "schema_version": 1,
+            "models": [model.to_dict() for model in models],
+            "total": len(models),
+            "exported_at": datetime.now(UTC).isoformat(),
+        }
+        target.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(target, json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n")
+    except (OSError, ValueError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_export_failed", "message": str(exc)}}, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    if json_output:
+        typer.echo(json.dumps({"schema_version": 1, "exported": True, "path": str(target.resolve()), "total": len(models)}, sort_keys=True))
+        return
+    console.print(f"[green]✓[/green] Exported {len(models)} model record(s) to {target}")
+
+
+@model_app.command("import")
+def model_import(
+    path: str,
+    json_output: bool = typer.Option(False, "--json", help="Emit imported model records as JSON."),
+) -> None:
+    """Import up to 1000 registered model metadata records from versioned JSON."""
+    source = Path(path).expanduser()
+    try:
+        if not source.is_file():
+            raise ValueError("Model import path must be an existing file.")
+        if source.stat().st_size > ModelRegistry.MAX_BYTES:
+            raise ValueError("Model import exceeds the 4 MB size limit.")
+        raw = json.loads(source.read_text(encoding="utf-8"))
+        if isinstance(raw, list):
+            values = raw
+        elif isinstance(raw, dict) and raw.get("schema_version") == 1 and isinstance(raw.get("models"), list):
+            values = raw["models"]
+        else:
+            raise ValueError("Model import must be a JSON array or a schema_version 1 export object.")
+        registry = ModelRegistry()
+        imported = registry.import_models(values)
+        after_count = len(registry.list())
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_import_failed", "message": str(exc)}}, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] Model import failed: {exc}")
+        raise typer.Exit(code=1) from exc
+    payload = {
+        "schema_version": 1,
+        "imported": len(imported),
+        "total_models_after_import": after_count,
+        "models": [model.to_dict() for model in imported],
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        console.print(f"[green]✓[/green] Imported {len(imported)} model record(s). Registry now contains {after_count} model(s).")
+
+
+@model_app.command("remove")
+def model_remove(
+    model_id: str,
+    json_output: bool = typer.Option(False, "--json", help="Emit the removed record as JSON."),
+) -> None:
+    """Remove one model record by its stable registry ID."""
+    registry = ModelRegistry()
+    try:
+        removed = registry.remove(model_id)
+    except (OSError, ValueError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_remove_failed", "message": str(exc)}}, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] Could not remove model record: {exc}")
+        raise typer.Exit(code=1) from exc
+    if removed is None:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_not_found", "message": "No registered model has that ID."}}, sort_keys=True))
+        else:
+            console.print("[yellow]No registered model has that ID.[/yellow]")
+        raise typer.Exit(code=1)
+    payload = {"schema_version": 1, "removed": True, "model": removed.to_dict()}
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        console.print(f"[green]✓[/green] Removed model: {removed.name} ({removed.id})")
+
+
+@model_app.command("favorite")
+def model_favorite(
+    model_id: str,
+    favorite: bool = typer.Option(True, "--favorite/--unfavorite", help="Set or clear the model's favorite flag."),
+    json_output: bool = typer.Option(False, "--json", help="Emit the updated model record as JSON."),
+) -> None:
+    """Mark a registered model as favorite or clear its favorite flag."""
+    registry = ModelRegistry()
+    try:
+        updated = registry.update(model_id, {"favorite": favorite})
+    except (OSError, TypeError, ValueError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_favorite_failed", "message": str(exc)}}, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] Could not update model favorite state: {exc}")
+        raise typer.Exit(code=1) from exc
+    if updated is None:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_not_found", "message": "No registered model has that ID."}}, sort_keys=True))
+        else:
+            console.print("[yellow]No registered model has that ID.[/yellow]")
+        raise typer.Exit(code=1)
+    payload = {"schema_version": 1, "updated": True, "model": updated.to_dict()}
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        action = "Favorited" if favorite else "Unfavorited"
+        console.print(f"[green]✓[/green] {action} model: {updated.name}")
 
 
 @model_app.command("info")
-def model_info(repo_id: str):
-    """Show metadata for a Hugging Face model."""
+def model_info(
+    repo_id: str,
+    json_output: bool = typer.Option(False, "--json", help="Emit bounded Hugging Face metadata as JSON."),
+) -> None:
+    """Show metadata for a Hugging Face model without downloading weights."""
     api = HfApi()
-
     try:
         info = api.model_info(repo_id=repo_id, files_metadata=True)
-    except Exception as exc:  # noqa: BLE001
-        console.print(f"[red]Error:[/red] Could not retrieve model information: {exc}")
+    except Exception:  # noqa: BLE001
+        if json_output:
+            typer.echo(json.dumps({
+                "schema_version": 1,
+                "error": {"code": "model_metadata_unavailable", "message": "Could not retrieve model information."},
+            }, sort_keys=True))
+        else:
+            console.print("[red]Error:[/red] Could not retrieve model information.")
         raise typer.Exit(code=1)
 
     files = getattr(info, "siblings", None) or []
-
-    file_names = []
-    for item in files:
-        name = getattr(item, "rfilename", None)
-        if name:
-            file_names.append(name)
-
-    formats = set()
-
+    file_names = [name for item in files if (name := getattr(item, "rfilename", None))]
+    formats: set[str] = set()
     for name in file_names:
         lower = name.lower()
-
         if lower.endswith(".safetensors"):
             formats.add("Safetensors")
         elif lower.endswith(".gguf"):
@@ -1023,37 +1228,53 @@ def model_info(repo_id: str):
         elif lower.endswith((".bin", ".pt", ".pth")):
             formats.add("PyTorch")
 
-    format_text = ", ".join(sorted(formats)) if formats else "Not detected"
-
     tags = getattr(info, "tags", None) or []
     library = getattr(info, "library_name", None) or "Unknown"
     pipeline = getattr(info, "pipeline_tag", None) or "Unknown"
-
     downloads = getattr(info, "downloads", 0) or 0
     likes = getattr(info, "likes", 0) or 0
-
     gated = getattr(info, "gated", False)
     private = getattr(info, "private", False)
+    author = getattr(info, "author", None) or "Unknown"
 
-    console.print(
-        Panel.fit(
-            f"[bold cyan]AXIOM HUGGING FACE MODEL[/bold cyan]\n\n"
-            f"Repository:   {info.id}\n"
-            f"Author:       {getattr(info, 'author', None) or 'Unknown'}\n"
-            f"Library:      {library}\n"
-            f"Task:         {pipeline}\n"
-            f"Formats:      {format_text}\n"
-            f"Downloads:    {downloads:,}\n"
-            f"Likes:        {likes:,}\n"
-            f"Gated:        {'✓' if gated else '✗'}\n"
-            f"Private:      {'✓' if private else '✗'}\n\n"
-            f"Files:        {len(file_names):,}\n"
-            f"Tags:         {', '.join(tags[:8]) if tags else '-'}\n\n"
-            "[dim]Metadata only — no model weights were downloaded.[/dim]",
-            title="AXIOM",
-        )
-    )
+    if json_output:
+        payload = {
+            "schema_version": 1,
+            "model": {
+                "id": info.id,
+                "author": author,
+                "library": library,
+                "task": pipeline,
+                "formats": sorted(formats),
+                "downloads": downloads,
+                "likes": likes,
+                "gated": gated,
+                "private": private,
+                "files": {"items": file_names[:500], "total": len(file_names), "truncated": len(file_names) > 500},
+                "tags": {"items": tags[:100], "total": len(tags), "truncated": len(tags) > 100},
+            },
+            "scope_note": "Metadata only; no model weights were downloaded.",
+        }
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        return
 
+    format_text = ", ".join(sorted(formats)) if formats else "Not detected"
+    console.print(Panel.fit(
+        f"[bold cyan]AXIOM HUGGING FACE MODEL[/bold cyan]\n\n"
+        f"Repository:   {info.id}\n"
+        f"Author:       {author}\n"
+        f"Library:      {library}\n"
+        f"Task:         {pipeline}\n"
+        f"Formats:      {format_text}\n"
+        f"Downloads:    {downloads:,}\n"
+        f"Likes:        {likes:,}\n"
+        f"Gated:        {'✓' if gated else '✗'}\n"
+        f"Private:      {'✓' if private else '✗'}\n\n"
+        f"Files:        {len(file_names):,}\n"
+        f"Tags:         {', '.join(tags[:8]) if tags else '-'}\n\n"
+        "Metadata only — no model weights were downloaded.",
+        title="AXIOM",
+    ))
 
 @model_app.command("add-hf")
 def model_add_hf(repo_id: str):
@@ -1121,108 +1342,216 @@ def model_add(
     format: str = "unknown",
     parameters: str | None = None,
     quantization: str | None = None,
+    architecture: str | None = typer.Option(None, "--architecture", help="Known model architecture."),
+    license_name: str | None = typer.Option(None, "--license", help="Source/license identifier from trusted metadata."),
+    tag: list[str] | None = typer.Option(None, "--tag", help="Repeat for each model tag."),
+    content_sha256: str | None = typer.Option(None, "--content-sha256", help="Optional 64-hex digest for inspected local weights."),
+    json_output: bool = typer.Option(False, "--json", help="Emit the created model record as JSON."),
 ):
-    """Register a model with AXIOM."""
+    """Register model metadata without downloading or moving weights."""
     registry = ModelRegistry()
-
     try:
-        registry.add(
-            Model(
-                name=name,
-                source=source,
-                format=format,
-                parameters=parameters,
-                quantization=quantization,
-            )
+        model = Model(
+            name=name,
+            source=source,
+            format=format,
+            parameters=parameters,
+            quantization=quantization,
+            architecture=architecture,
+            license=license_name,
+            tags=tag or [],
+            content_sha256=content_sha256,
         )
-    except ValueError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=1)
-
+        registry.add(model)
+    except (TypeError, ValueError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_add_failed", "message": str(exc)}}, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    if json_output:
+        typer.echo(json.dumps({"schema_version": 1, "created": True, "model": model.to_dict()}, ensure_ascii=False, sort_keys=True))
+        return
     console.print(f"[green]✓[/green] Registered model: [cyan]{name}[/cyan]")
 
 
-@model_app.command("analyze")
-def model_analyze(repo_id: str):
-    """Analyze a Hugging Face model without downloading weights."""
-    api = HfApi()
-
-    try:
-        info = api.model_info(repo_id=repo_id, files_metadata=True)
-    except Exception as exc:  # noqa: BLE001
-        console.print(f"[red]Error:[/red] Could not retrieve model information: {exc}")
+@model_app.command("update")
+def model_update(
+    model_id: str,
+    name: str | None = typer.Option(None, "--name"),
+    source: str | None = typer.Option(None, "--source"),
+    format: str | None = typer.Option(None, "--format"),
+    parameters: str | None = typer.Option(None, "--parameters"),
+    quantization: str | None = typer.Option(None, "--quantization"),
+    architecture: str | None = typer.Option(None, "--architecture"),
+    license_name: str | None = typer.Option(None, "--license"),
+    tag: list[str] | None = typer.Option(None, "--tag", help="Replace all tags; repeat for each tag."),
+    clear_tags: bool = typer.Option(False, "--clear-tags", help="Clear all tags."),
+    content_sha256: str | None = typer.Option(None, "--content-sha256"),
+    favorite: bool | None = typer.Option(None, "--favorite/--unfavorite"),
+    json_output: bool = typer.Option(False, "--json", help="Emit the updated model record as JSON."),
+):
+    """Update validated registry metadata without touching model weights."""
+    changes: dict[str, object] = {}
+    for key, value in (
+        ("name", name),
+        ("source", source),
+        ("format", format),
+        ("parameters", parameters),
+        ("quantization", quantization),
+        ("architecture", architecture),
+        ("license", license_name),
+        ("content_sha256", content_sha256),
+    ):
+        if value is not None:
+            changes[key] = value
+    if tag is not None:
+        changes["tags"] = tag
+    if clear_tags:
+        if tag is not None:
+            message = "--clear-tags cannot be combined with --tag."
+            if json_output:
+                typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_update_invalid", "message": message}}, sort_keys=True))
+            else:
+                console.print(f"[red]Error:[/red] {message}")
+            raise typer.Exit(code=1)
+        changes["tags"] = []
+    if favorite is not None:
+        changes["favorite"] = favorite
+    if not changes:
+        message = "Specify at least one metadata option to update."
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_update_empty", "message": message}}, sort_keys=True))
+        else:
+            console.print(f"[yellow]No model changes requested.[/yellow] {message}")
         raise typer.Exit(code=1)
 
-    files = [
-        getattr(item, "rfilename", "")
-        for item in (getattr(info, "siblings", None) or [])
-        if getattr(item, "rfilename", None)
-    ]
-
-    config = {}
-
+    registry = ModelRegistry()
     try:
-        config_file = api.hf_hub_download(
-            repo_id=repo_id,
-            filename="config.json",
-        )
+        updated = registry.update(model_id, changes)
+    except (OSError, TypeError, ValueError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_update_failed", "message": str(exc)}}, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] Could not update model metadata: {exc}")
+        raise typer.Exit(code=1) from exc
+    if updated is None:
+        message = "No registered model has that ID."
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "error": {"code": "model_not_found", "message": message}}, sort_keys=True))
+        else:
+            console.print(f"[yellow]{message}[/yellow]")
+        raise typer.Exit(code=1)
+    payload = {"schema_version": 1, "updated": True, "model": updated.to_dict()}
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        console.print(f"[green]✓[/green] Updated model metadata: {updated.name}")
 
+@model_app.command("analyze")
+def model_analyze(
+    repo_id: str,
+    json_output: bool = typer.Option(False, "--json", help="Emit versioned model analysis as JSON."),
+):
+    """Analyze Hugging Face model metadata/config without downloading model weights."""
+    api = HfApi()
+    try:
+        info = api.model_info(repo_id=repo_id, files_metadata=True)
+    except Exception:  # noqa: BLE001
+        if json_output:
+            typer.echo(json.dumps({
+                "schema_version": 1,
+                "error": {"code": "model_analysis_unavailable", "message": "Could not retrieve model metadata."},
+            }, sort_keys=True))
+        else:
+            console.print("[red]Error:[/red] Could not retrieve model information.")
+        raise typer.Exit(code=1)
+
+    siblings = getattr(info, "siblings", None) or []
+    files = [
+        name
+        for item in siblings
+        if (name := getattr(item, "rfilename", None))
+    ]
+    config = {}
+    warnings = []
+    try:
+        config_file = api.hf_hub_download(repo_id=repo_id, filename="config.json")
         config_path = Path(config_file)
-
         if config_path.is_file():
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        console.print(f"[yellow]Warning:[/yellow] Could not read config.json: {exc}")
+            loaded_config = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(loaded_config, dict):
+                config = loaded_config
+            else:
+                warnings.append("config.json did not contain a JSON object; architecture-derived values are unavailable.")
+        else:
+            warnings.append("config.json was not found in the metadata cache; analysis may be incomplete.")
+    except Exception:  # noqa: BLE001
+        warnings.append("Could not read config.json; analysis may be incomplete.")
 
     total_size = 0
-
-    for item in getattr(info, "siblings", None) or []:
+    sizes_known = 0
+    for item in siblings:
         name = getattr(item, "rfilename", "") or ""
         size = getattr(item, "size", None)
-
-        if size is not None and name.endswith(
-            (".safetensors", ".gguf", ".bin", ".pt", ".pth")
-        ):
-            total_size += int(size)
-
+        if size is not None and name.lower().endswith((".safetensors", ".gguf", ".bin", ".pt", ".pth")):
+            try:
+                total_size += int(size)
+                sizes_known += 1
+            except (TypeError, ValueError):
+                warnings.append("Some checkpoint size metadata was not numeric.")
     analysis = analyze_config(
         repo_id=repo_id,
         config=config,
         files=files,
-        weight_size_bytes=total_size,
+        weight_size_bytes=total_size if sizes_known else None,
     )
 
-    parameters = (
-        f"{analysis.parameter_count / 1_000_000_000:.2f}B"
-        if analysis.parameter_count
-        else "Unknown"
-    )
+    if json_output:
+        payload = {
+            "schema_version": 1,
+            "analysis": {
+                "repo_id": analysis.repo_id,
+                "architecture": analysis.architecture,
+                "model_type": analysis.model_type,
+                "parameter_count": analysis.parameter_count,
+                "parameter_source": analysis.parameter_source,
+                "context_length": analysis.context_length,
+                "precision": analysis.precision,
+                "weight_size_gb": analysis.weight_size_gb,
+                "file_count": analysis.file_count,
+                "files": {
+                    "items": analysis.files[:500],
+                    "total": analysis.file_count,
+                    "truncated": analysis.file_count > 500,
+                },
+            },
+            "warnings": warnings,
+            "scope_note": "Metadata/config analysis only; no model weights were downloaded. Parameter counts and precision can be inferred from configuration metadata and are not runtime measurements.",
+        }
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        return
 
+    if warnings:
+        for warning in warnings:
+            console.print(f"[yellow]Warning:[/yellow] {warning}")
+    parameters = f"{analysis.parameter_count / 1_000_000_000:.2f}B" if analysis.parameter_count else "Unknown"
     context = f"{analysis.context_length:,}" if analysis.context_length else "Unknown"
-
-    weight_size = (
-        f"{analysis.weight_size_gb:.2f} GB"
-        if analysis.weight_size_gb is not None
-        else "Unknown"
-    )
-
-    console.print(
-        Panel.fit(
-            f"[bold cyan]AXIOM MODEL ANALYSIS[/bold cyan]\n\n"
-            f"Repository:      {analysis.repo_id}\n"
-            f"Architecture:    {analysis.architecture}\n"
-            f"Model type:      {analysis.model_type}\n"
-            f"Parameters:      {parameters}\n"
-            f"Parameter basis: {analysis.parameter_source}\n"
-            f"Context length:  {context}\n"
-            f"Precision:       {analysis.precision}\n"
-            f"Weight size:     {weight_size}\n"
-            f"Files:           {analysis.file_count:,}\n\n"
-            f"[dim]No model weights were downloaded.[/dim]",
-            title="AXIOM",
-        )
-    )
-
+    weight_size = f"{analysis.weight_size_gb:.2f} GB" if analysis.weight_size_gb is not None else "Unknown"
+    console.print(Panel.fit(
+        f"[bold cyan]AXIOM MODEL ANALYSIS[/bold cyan]\n\n"
+        f"Repository:      {analysis.repo_id}\n"
+        f"Architecture:    {analysis.architecture}\n"
+        f"Model type:      {analysis.model_type}\n"
+        f"Parameters:      {parameters}\n"
+        f"Parameter basis: {analysis.parameter_source}\n"
+        f"Context length:  {context}\n"
+        f"Precision:       {analysis.precision}\n"
+        f"Weight size:     {weight_size}\n"
+        f"Files:           {analysis.file_count:,}\n\n"
+        "Metadata/config analysis only — no model weights were downloaded.",
+        title="AXIOM",
+    ))
 
 @model_app.command("pull")
 def model_pull(
@@ -1303,125 +1632,173 @@ def model_pull(
 
 
 @model_app.command("inspect")
-def model_inspect(path: str):
+def model_inspect(
+    path: str,
+    json_output: bool = typer.Option(False, "--json", help="Emit the complete local model inspection as JSON."),
+) -> None:
     """Inspect a local AI model directory."""
     try:
         result = inspect_model(path)
     except (FileNotFoundError, ValueError) as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        if json_output:
+            typer.echo(json.dumps({
+                "schema_version": 1,
+                "error": {"code": "model_inspection_failed", "message": str(exc)},
+            }, ensure_ascii=False, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1)
 
-    parameters = (
-        f"{result.parameter_count / 1_000_000_000:.2f}B"
-        if result.parameter_count
-        else "Unknown"
-    )
+    if json_output:
+        typer.echo(json.dumps({
+            "schema_version": 1,
+            "inspection": {
+                "path": str(result.path),
+                "architecture": result.architecture,
+                "model_type": result.model_type,
+                "parameter_count": result.parameter_count,
+                "parameter_source": result.parameter_source,
+                "model_format": result.model_format,
+                "weight_size_bytes": result.weight_size_bytes,
+                "has_config": result.has_config,
+                "has_tokenizer": result.has_tokenizer,
+                "has_safetensors": result.has_safetensors,
+                "has_gguf": result.has_gguf,
+                "has_pytorch_weights": result.has_pytorch_weights,
+                "capabilities": result.capabilities,
+                "estimated_vram_gb": result.estimated_vram_gb,
+                "status": result.status,
+            },
+        }, ensure_ascii=False, sort_keys=True))
+        return
 
+    parameters = f"{result.parameter_count / 1_000_000_000:.2f}B" if result.parameter_count else "Unknown"
     size_gb = result.weight_size_bytes / (1024**3)
-
-    vram = (
-        f"{result.estimated_vram_gb:.2f} GB"
-        if result.estimated_vram_gb is not None
-        else "Unknown"
-    )
-
-    console.print(
-        Panel.fit(
-            f"[bold cyan]AXIOM MODEL INSPECTION[/bold cyan]\n\n"
-            f"Path:           {result.path}\n"
-            f"Architecture:   {result.architecture or 'Unknown'}\n"
-            f"Model type:     {result.model_type or 'Unknown'}\n"
-            f"Format:         {result.model_format}\n"
-            f"Parameters:     {parameters}\n"
-            f"Parameter basis: {result.parameter_source}\n"
-            f"Weight size:    {size_gb:.2f} GB\n"
-            f"Estimated VRAM: {vram}\n\n"
-            f"Config:         {'✓' if result.has_config else '✗'}\n"
-            f"Tokenizer:      {'✓' if result.has_tokenizer else '✗'}\n"
-            f"Safetensors:    {'✓' if result.has_safetensors else '✗'}\n"
-            f"GGUF:           {'✓' if result.has_gguf else '✗'}\n"
-            f"PyTorch:        {'✓' if result.has_pytorch_weights else '✗'}\n\n"
-            f"Capabilities:   {', '.join(result.capabilities)}\n\n"
-            f"Status:         {result.status}",
-            title="AXIOM",
-        )
-    )
-
+    vram = f"{result.estimated_vram_gb:.2f} GB" if result.estimated_vram_gb is not None else "Unknown"
+    console.print(Panel.fit(
+        f"[bold cyan]AXIOM MODEL INSPECTION[/bold cyan]\n\n"
+        f"Path:           {result.path}\n"
+        f"Architecture:   {result.architecture or 'Unknown'}\n"
+        f"Model type:     {result.model_type or 'Unknown'}\n"
+        f"Format:         {result.model_format}\n"
+        f"Parameters:     {parameters}\n"
+        f"Parameter basis: {result.parameter_source}\n"
+        f"Weight size:    {size_gb:.2f} GB\n"
+        f"Estimated VRAM: {vram}\n\n"
+        f"Config:         {'✓' if result.has_config else '✗'}\n"
+        f"Tokenizer:      {'✓' if result.has_tokenizer else '✗'}\n"
+        f"Safetensors:    {'✓' if result.has_safetensors else '✗'}\n"
+        f"GGUF:           {'✓' if result.has_gguf else '✗'}\n"
+        f"PyTorch:        {'✓' if result.has_pytorch_weights else '✗'}\n\n"
+        f"Capabilities:   {', '.join(result.capabilities)}\n\n"
+        f"Status:         {result.status}",
+        title="AXIOM",
+    ))
 
 @dataset_app.command("inspect")
-def dataset_inspect(path: str):
+def dataset_inspect(
+    path: str,
+    json_output: bool = typer.Option(False, "--json", help="Emit the complete dataset inspection as JSON."),
+) -> None:
     """Inspect a dataset and report its quality."""
     try:
         result = inspect_dataset(path)
     except (FileNotFoundError, ValueError) as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        if json_output:
+            typer.echo(json.dumps({
+                "schema_version": 1,
+                "error": {"code": "dataset_inspection_failed", "message": str(exc)},
+            }, ensure_ascii=False, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1)
 
-    console.print(
-        Panel.fit(
-            f"[bold cyan]AXIOM DATASET INSPECTION[/bold cyan]\n\n"
-            f"File: {result.path}\n"
-            f"Format: {result.format}\n\n"
-            f"Samples:          {result.samples:,}\n"
-            f"Valid:            {result.valid:,}\n"
-            f"Invalid:          {result.invalid:,}\n"
-            f"Empty:            {result.empty:,}\n"
-            f"Duplicates:       {result.duplicates:,}\n"
-            f"Estimated tokens: {result.estimated_tokens:,}\n\n"
-            f"Fields: {', '.join(result.fields) if result.fields else '-'}\n"
-            f"Invalid records: {result.invalid:,}",
-            title="AXIOM",
-        )
-    )
+    if json_output:
+        typer.echo(json.dumps(dataset_inspection_payload(result), ensure_ascii=False, sort_keys=True))
+        return
+
+    console.print(Panel.fit(
+        f"[bold cyan]AXIOM DATASET INSPECTION[/bold cyan]\n\n"
+        f"File: {result.path}\n"
+        f"Format: {result.format}\n\n"
+        f"Samples:          {result.samples:,}\n"
+        f"Valid:            {result.valid:,}\n"
+        f"Invalid:          {result.invalid:,}\n"
+        f"Empty:            {result.empty:,}\n"
+        f"Duplicates:       {result.duplicates:,}\n"
+        f"Estimated tokens: {result.estimated_tokens:,}\n\n"
+        f"Fields: {', '.join(result.fields) if result.fields else '-'}\n"
+        f"Invalid records: {result.invalid:,}",
+        title="AXIOM",
+    ))
     for line_number, message in result.errors:
         console.print(f"[red]INVALID[/red] line {line_number}: {message}")
-
 
 @dataset_app.command("clean")
 def dataset_clean(
     path: str,
     output: str | None = None,
+    json_output: bool = typer.Option(False, "--json", help="Emit cleaning counts as JSON."),
 ):
     """Clean a JSONL dataset without modifying the original."""
     source = Path(path)
 
+    def report_error(code: str, message: str) -> None:
+        if json_output:
+            typer.echo(json.dumps({
+                "schema_version": 1,
+                "error": {"code": code, "message": message},
+            }, ensure_ascii=False, sort_keys=True))
+        else:
+            console.print(f"[red]Error:[/red] {message}")
+
     if not source.exists():
-        console.print(f"[red]Error:[/red] Dataset not found: {source}")
+        report_error("dataset_not_found", "Dataset not found.")
         raise typer.Exit(code=1)
-
     if not source.is_file():
-        console.print(f"[red]Error:[/red] Not a file: {source}")
+        report_error("dataset_not_file", "Dataset path is not a file.")
         raise typer.Exit(code=1)
-
     if source.suffix.lower() != ".jsonl":
-        console.print("[red]Error:[/red] Cleaning currently supports .jsonl files.")
+        report_error("unsupported_dataset_format", "Cleaning currently supports .jsonl files.")
         raise typer.Exit(code=1)
 
-    destination = (
-        Path(output) if output else source.with_name(f"{source.stem}.cleaned.jsonl")
-    )
-
+    destination = Path(output) if output else source.with_name(f"{source.stem}.cleaned.jsonl")
     try:
         result = clean_jsonl(source, destination)
     except OSError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=1)
+        report_error("dataset_cleaning_failed", str(exc))
+        raise typer.Exit(code=1) from exc
 
-    console.print(
-        Panel.fit(
-            f"[bold cyan]AXIOM DATASET CLEANING[/bold cyan]\n\n"
-            f"Source:             {result.source}\n"
-            f"Output:             {result.output}\n\n"
-            f"Input rows:         {result.total_lines:,}\n"
-            f"Kept:               {result.kept:,}\n"
-            f"Invalid removed:    {result.removed_invalid:,}\n"
-            f"Empty removed:      {result.removed_empty:,}\n"
-            f"Duplicates removed: {result.removed_duplicates:,}\n"
-            f"Non-object rows:    {result.removed_non_objects:,}",
-            title="AXIOM",
-        )
-    )
+    payload = {
+        "schema_version": 1,
+        "cleaning": {
+            "source": str(result.source),
+            "output": str(result.output),
+            "total_lines": result.total_lines,
+            "kept": result.kept,
+            "removed_invalid": result.removed_invalid,
+            "removed_empty": result.removed_empty,
+            "removed_duplicates": result.removed_duplicates,
+            "removed_non_objects": result.removed_non_objects,
+        },
+        "scope_note": "The original dataset is never modified; cleaned rows are written to a distinct output path using an atomic replacement.",
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        return
 
+    console.print(Panel.fit(
+        f"[bold cyan]AXIOM DATASET CLEANING[/bold cyan]\n\n"
+        f"Source:             {result.source}\n"
+        f"Output:             {result.output}\n\n"
+        f"Input rows:         {result.total_lines:,}\n"
+        f"Kept:               {result.kept:,}\n"
+        f"Invalid removed:    {result.removed_invalid:,}\n"
+        f"Empty removed:      {result.removed_empty:,}\n"
+        f"Duplicates removed: {result.removed_duplicates:,}\n"
+        f"Non-object rows:    {result.removed_non_objects:,}",
+        title="AXIOM",
+    ))
 
 @mcp_app.command("serve")
 def mcp_serve():

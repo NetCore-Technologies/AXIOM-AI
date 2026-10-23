@@ -13,20 +13,22 @@ import importlib.metadata
 import importlib.util
 import json
 import logging
+import math
 import os
 import re
 import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 _MAX_PROMPT_CHARS = 12_000
 _MAX_NEW_TOKENS = 2_048
 _MAX_INPUT_TOKENS = 8_192
 _MAX_CONFIG_BYTES = 1_048_576
 _LOG = logging.getLogger(__name__)
-_ENGINE_LOCK = threading.RLock()
+# A plain Lock is deliberate: the streaming generator may resume on a different worker thread.
+_ENGINE_LOCK = threading.Lock()
 _LOADED_RUNTIME: dict[str, Any] | None = None
 _LOADED_ARCHITECTURE: str | None = None
 _MODEL_ROOT_ENV = "AXIOM_MODEL_ROOTS"
@@ -271,6 +273,177 @@ def resolve_local_model_directory(value: str, label: str = "Model") -> str:
     return str(_resolve_model_directory(value, label))
 
 
+def check_local_adapter_compatibility(model_path: str, adapter_path: str) -> dict[str, Any]:
+    """Preflight a local LoRA adapter against the native model and available device backends."""
+    model_dir = _resolve_model_directory(model_path, "Base model")
+    adapter_dir = _resolve_model_directory(adapter_path, "LoRA adapter")
+    from axiom.core.native_engine import inspect_native_adapter_compatibility
+
+    return inspect_native_adapter_compatibility(
+        model_dir,
+        adapter_dir,
+        trusted_roots=_allowed_model_roots(),
+    )
+
+
+def estimate_native_quantization(
+    model_path: str,
+    *,
+    context_length: int = 4096,
+    batch_size: int = 1,
+    ram_budget_gib: float | None = None,
+    vram_budget_gib: float | None = None,
+) -> dict[str, Any]:
+    """Estimate model/KV/workspace memory using config dimensions without loading tensors.
+
+    Quantized candidates are planning-only until an AXIOM-native quantized kernel
+    and checkpoint loader are implemented. The estimate is never presented as a
+    measured memory or model-quality result.
+    """
+    if isinstance(context_length, bool) or not isinstance(context_length, int) or not 1 <= context_length <= 131072:
+        raise ValueError("Context length must be an integer from 1 through 131072.")
+    if isinstance(batch_size, bool) or not isinstance(batch_size, int) or not 1 <= batch_size <= 16:
+        raise ValueError("Batch size must be an integer from 1 through 16.")
+    for label, budget in (("RAM", ram_budget_gib), ("VRAM", vram_budget_gib)):
+        if budget is not None and (
+            not isinstance(budget, (int, float))
+            or isinstance(budget, bool)
+            or not math.isfinite(float(budget))
+            or not 0.1 <= float(budget) <= 2048
+        ):
+            raise ValueError(f"{label} budget must be between 0.1 and 2048 GiB.")
+
+    model_dir = _resolve_model_directory(model_path, "Base model")
+    inspected = _inspect_model_config(model_dir)
+    model_config = inspected["config"]
+    from axiom.core.native_engine import NativeLlamaConfig
+    native_config = NativeLlamaConfig.from_mapping(model_config)
+    if context_length > native_config.max_position_embeddings:
+        raise ValueError(
+            f"Context length {context_length} exceeds this checkpoint's limit "
+            f"of {native_config.max_position_embeddings} tokens."
+        )
+
+    hidden = native_config.hidden_size
+    intermediate = native_config.intermediate_size
+    heads = native_config.num_attention_heads
+    kv_heads = native_config.num_key_value_heads
+    head_dim = hidden // heads
+    layers = native_config.num_hidden_layers
+    vocab = native_config.vocab_size
+    kv_width = kv_heads * head_dim
+
+    embedding_params = vocab * hidden
+    lm_head_params = 0 if native_config.tie_word_embeddings else vocab * hidden
+    per_layer_params = (
+        2 * hidden * hidden
+        + 2 * hidden * kv_width
+        + 3 * hidden * intermediate
+        + 2 * hidden
+    )
+    if model_config.get("attention_bias") is True:
+        per_layer_params += 2 * hidden + 2 * kv_width
+    if model_config.get("mlp_bias") is True:
+        per_layer_params += 2 * intermediate + hidden
+    estimated_parameters = embedding_params + lm_head_params + layers * per_layer_params + hidden
+
+    gib = 1024 ** 3
+    workspace_bytes = max(
+        batch_size * context_length * intermediate * 4,
+        batch_size * heads * context_length * context_length * 4,
+    )
+    candidates = [
+        ("int4", 4, 0.5, 1.15, 2, False, "Quantized weights are not supported by AXIOM Native Engine yet."),
+        ("int8", 8, 1.0, 1.05, 2, False, "Quantized weights are not supported by AXIOM Native Engine yet."),
+        ("bf16", 16, 2.0, 1.0, 2, True, None),
+        ("fp16", 16, 2.0, 1.0, 2, True, None),
+        ("fp32", 32, 4.0, 1.0, 4, True, None),
+    ]
+    candidate_results: list[dict[str, Any]] = []
+    for name, bits, bytes_per_parameter, storage_overhead, kv_bytes, native_supported, reason in candidates:
+        weight_bytes = estimated_parameters * bytes_per_parameter * storage_overhead
+        kv_bytes_total = 2 * layers * kv_heads * head_dim * context_length * batch_size * kv_bytes
+        unbuffered_total = weight_bytes + kv_bytes_total + workspace_bytes
+        total_bytes = unbuffered_total * 1.20
+        total_gib = total_bytes / gib
+        uncertainty_low = total_gib * 0.85
+        uncertainty_high = total_gib * 1.25
+        candidate_results.append({
+            "format": name,
+            "nominal_weight_bits": bits,
+            # Preserve enough precision that small test/checkpoint models do
+            # not collapse all candidate formats to 0.000 GiB.
+            "estimated_weight_gib": round(weight_bytes / gib, 9),
+            "estimated_kv_cache_gib": round(kv_bytes_total / gib, 9),
+            "estimated_workspace_gib": round(workspace_bytes / gib, 9),
+            "estimated_total_gib": round(total_gib, 9),
+            "estimated_range_gib": [round(uncertainty_low, 9), round(uncertainty_high, 9)],
+            "fits_ram_budget": None if ram_budget_gib is None else total_gib <= float(ram_budget_gib),
+            "fits_vram_budget": None if vram_budget_gib is None else total_gib <= float(vram_budget_gib),
+            "native_checkpoint_supported": native_supported,
+            "native_support_note": reason,
+        })
+
+    native_candidates = [item for item in candidate_results if item["native_checkpoint_supported"]]
+    fitting_candidates = [
+        item for item in native_candidates
+        if (ram_budget_gib is None or item["fits_ram_budget"] is True)
+        and (vram_budget_gib is None or item["fits_vram_budget"] is True)
+    ]
+    recommended = min(fitting_candidates, key=lambda item: item["estimated_total_gib"]) if fitting_candidates else None
+    recommendation = {
+        "format": recommended["format"] if recommended else None,
+        "status": "fits_budget" if recommended else "no_native_candidate_fits",
+        "note": (
+            "Lowest estimated-memory native format that fits every supplied budget. This is a planning suggestion, "
+            "not a conversion and not a guarantee that the checkpoint's stored dtype or device kernels are compatible."
+            if recommended else
+            "No currently native-supported precision is estimated to fit every supplied budget. Reduce context/batch "
+            "or increase the budget; INT4/INT8 are planning-only and cannot be loaded by the native engine."
+        ),
+    }
+
+    return {
+        "schema_version": 1,
+        "model": {
+            "name": model_dir.name,
+            "model_type": native_config.model_type,
+            "architecture": inspected["architecture"],
+            "estimated_parameter_count": estimated_parameters,
+            "parameter_count_method": "analytic estimate from config dimensions; not a tensor-index count",
+        },
+        "request": {
+            "context_length": context_length,
+            "batch_size": batch_size,
+            "ram_budget_gib": ram_budget_gib,
+            "vram_budget_gib": vram_budget_gib,
+        },
+        "assumptions": {
+            "weight_storage": {
+                "fp32": "4 bytes/parameter",
+                "fp16": "2 bytes/parameter",
+                "bf16": "2 bytes/parameter",
+                "int8": "1 byte/parameter plus 5% scales/metadata",
+                "int4": "0.5 bytes/parameter plus 15% scales/metadata",
+            },
+            "kv_cache_formula": "2 × layers × KV heads × head dimension × context × batch × KV element bytes",
+            "kv_cache_precision": "FP32 candidate uses 4-byte cache elements; all other candidates assume 2-byte cache elements",
+            "workspace_formula": "max(batch × context × intermediate × 4, batch × attention heads × context² × 4)",
+            "safety_margin_percent": 20,
+            "uncertainty_range_percent": {"low": -15, "high": 25},
+            "quality_and_speed": "Not estimated; must be measured through model evaluation and runtime benchmarks.",
+        },
+        "candidates": candidate_results,
+        "recommendation": recommendation,
+        "scope_note": (
+            "Planning estimates only. They do not inspect tensor contents or measure physical memory, and do not predict model quality/speed. "
+            "INT4/INT8 are sizing-only and cannot be loaded by the current AXIOM Native Engine. "
+            "FP16/BF16/FP32 availability still depends on the actual checkpoint dtype, device kernels and free memory. "
+            "Estimated fit is not a guarantee of successful loading."
+        ),
+    }
+
+
 def discover_local_engine_assets() -> dict[str, Any]:
     """List metadata for native-compatible local folders without loading model weights."""
     roots = _allowed_model_roots()
@@ -376,6 +549,62 @@ def validate_generation(prompt: str, max_new_tokens: int, temperature: float) ->
     if isinstance(temperature, bool) or not isinstance(temperature, (int, float)) or not 0 <= float(temperature) <= 2:
         raise ValueError("Temperature must be between 0 and 2.")
     return prompt, max_new_tokens, float(temperature)
+
+
+def validate_sampling_parameters(
+    top_p: float,
+    top_k: int,
+    repetition_penalty: float,
+    seed: int | None,
+) -> tuple[float, int, float, int | None]:
+    if isinstance(top_p, bool) or not isinstance(top_p, (int, float)) or not 0 < float(top_p) <= 1:
+        raise ValueError("Top-p must be greater than 0 and at most 1.")
+    if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
+        raise ValueError("Top-k must be an integer from 0 through 100000; 0 disables top-k.")
+    if (
+        isinstance(repetition_penalty, bool)
+        or not isinstance(repetition_penalty, (int, float))
+        or not 0.1 <= float(repetition_penalty) <= 5
+    ):
+        raise ValueError("Repetition penalty must be between 0.1 and 5.")
+    if seed is not None and (
+        isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= (2**63 - 1)
+    ):
+        raise ValueError("Sampling seed must be an integer from 0 through 2^63-1.")
+    return float(top_p), top_k, float(repetition_penalty), seed
+
+
+def validate_stop_sequences(stop_sequences: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    """Validate bounded stop strings while preserving intentional surrounding spaces."""
+    if stop_sequences is None:
+        return ()
+    if not isinstance(stop_sequences, (list, tuple)):
+        raise ValueError("Stop sequences must be a list of text strings.")
+    if len(stop_sequences) > 16:
+        raise ValueError("At most 16 stop sequences may be configured per inference request.")
+    validated: list[str] = []
+    for sequence in stop_sequences:
+        if not isinstance(sequence, str):
+            raise ValueError("Every stop sequence must be text.")
+        if not sequence or not sequence.strip():
+            raise ValueError("Stop sequences must contain at least one non-whitespace character.")
+        if len(sequence) > 256:
+            raise ValueError("Each stop sequence is limited to 256 characters.")
+        if sequence not in validated:
+            validated.append(sequence)
+    return tuple(validated)
+
+
+def _pending_stop_prefix_length(text: str, stop_sequences: tuple[str, ...]) -> int:
+    """Length of the longest text suffix that could become a stop sequence."""
+    longest = 0
+    for sequence in stop_sequences:
+        upper = min(len(sequence) - 1, len(text))
+        for size in range(upper, 0, -1):
+            if size > longest and text.endswith(sequence[:size]):
+                longest = size
+                break
+    return longest
 
 
 def _load_local_model(model_path: str, adapter_path: str | None):
@@ -487,15 +716,30 @@ def unload_local_model() -> dict[str, Any]:
         }
 
 
-def generate_local(
+def generate_local_stream(
     model_path: str,
     prompt: str,
     *,
     adapter_path: str | None = None,
     max_new_tokens: int = 256,
     temperature: float = 0.7,
-) -> dict[str, Any]:
+    top_p: float = 0.9,
+    top_k: int = 0,
+    repetition_penalty: float = 1.0,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] = (),
+    include_token_events: bool = True,
+    cancel_event: threading.Event | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Yield cumulative decoded text updates and one final metrics event.
+
+    The engine lock is held for the duration of the stream so another request
+    cannot replace or unload the model while its KV cache is active. Closing
+    the iterator closes the native token iterator and releases that lock.
+    """
     prompt, max_new_tokens, temperature = validate_generation(prompt, max_new_tokens, temperature)
+    top_p, top_k, repetition_penalty, seed = validate_sampling_parameters(top_p, top_k, repetition_penalty, seed)
+    stop_sequences = validate_stop_sequences(stop_sequences)
     with _ENGINE_LOCK:
         model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path)
         context_cap = max(2, min(model.config.max_position_embeddings, _MAX_INPUT_TOKENS + max_new_tokens))
@@ -517,17 +761,110 @@ def generate_local(
                 prompt_ids[0] = bos_id
         effective_max_new_tokens = min(effective_max_new_tokens, max(1, context_cap - len(prompt_ids)))
         started = time.perf_counter()
+        generated_ids: list[int] = []
+        response = ""
+        if cancel_event is not None and cancel_event.is_set():
+            return
+        iterator = model.iter_generate(
+            prompt_ids,
+            max_new_tokens=effective_max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            repetition_penalty=repetition_penalty,
+            seed=seed,
+            eos_token_ids=model.config.eos_token_ids,
+            cancel_event=cancel_event,
+        )
+        stop_reason = "max_new_tokens"
         try:
-            with torch.inference_mode():
-                generated_ids = model.generate(
-                    prompt_ids,
-                    max_new_tokens=effective_max_new_tokens,
-                    temperature=temperature,
-                    top_p=0.9,
-                    eos_token_ids=model.config.eos_token_ids,
-                )
-            response = tokenizer.decode(generated_ids, skip_special_tokens=True)[:100_000]
-        except ValueError:
+            for token_id in iterator:
+                if cancel_event is not None and cancel_event.is_set():
+                    stop_reason = "cancelled"
+                    break
+                generated_ids.append(token_id)
+                if not include_token_events and not stop_sequences:
+                    continue
+                try:
+                    decoded_response = tokenizer.decode(generated_ids, skip_special_tokens=True)[:100_000]
+                except Exception:
+                    raise AxiomEngineError("Generated token stream could not be decoded by tokenizer.json.") from None
+
+                matches = [
+                    (decoded_response.find(sequence), sequence)
+                    for sequence in stop_sequences
+                    if sequence in decoded_response
+                ]
+                if matches:
+                    stop_at = min(position for position, _sequence in matches)
+                    response = decoded_response[:stop_at]
+                    stop_reason = "stop_sequence"
+                    if include_token_events:
+                        yield {
+                            "type": "token",
+                            "response": response,
+                            "completion_tokens": len(generated_ids),
+                        }
+                    # Closing now finalizes the native generator's metrics and
+                    # releases the KV cache before the completion event is built.
+                    close_iterator = getattr(iterator, "close", None)
+                    if callable(close_iterator):
+                        close_iterator()
+                    break
+
+                pending = _pending_stop_prefix_length(decoded_response, stop_sequences)
+                response = decoded_response[:-pending] if pending else decoded_response
+                if include_token_events:
+                    yield {
+                        "type": "token",
+                        "response": response,
+                        "completion_tokens": len(generated_ids),
+                    }
+
+            if stop_reason != "stop_sequence":
+                # Flush any partial stop-prefix back into the final text if no
+                # complete stop sequence was ever observed.
+                response = tokenizer.decode(generated_ids, skip_special_tokens=True)[:100_000]
+                if cancel_event is not None and cancel_event.is_set():
+                    stop_reason = "cancelled"
+                else:
+                    stop_reason = model.last_generation.get("stop_reason", stop_reason)
+            elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
+            result = {
+                "engine": "axiom-native-engine",
+                "execution_backend": "pytorch-native-axiom",
+                "transformers_generation_used": False,
+                "ollama_used": False,
+                "model": details["model_directory_name"] or "local-model",
+                "architecture": details["architecture"],
+                "model_type": details["model_type"],
+                "adapter": details["adapter_directory_name"],
+                "device": str(device),
+                "checkpoint_format": "safetensors",
+                "decoder": model.last_generation.get("decoder", "axiom-autoregressive-kv-cache"),
+                "attention_backend": model.last_attention_backend,
+                "prefill_ms": model.last_generation.get("prefill_ms", 0.0),
+                "decode_ms": model.last_generation.get("decode_ms", 0.0),
+                "time_to_first_token_ms": model.last_generation.get("time_to_first_token_ms", 0.0),
+                "generation_tokens_per_second": model.last_generation.get("generation_tokens_per_second", 0.0),
+                "sampling": {
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "top_k": top_k,
+                    "repetition_penalty": repetition_penalty,
+                    "seed": seed,
+                },
+                "stop_sequences": list(stop_sequences),
+                "stop_reason": stop_reason,
+                "response": response,
+                "prompt_tokens": model.last_generation.get("prompt_tokens", len(prompt_ids)),
+                "completion_tokens": len(generated_ids),
+                "elapsed_ms": elapsed_ms,
+                "generated_at": datetime.now(UTC).isoformat(),
+                "local_only": True,
+            }
+            yield {"type": "complete", "result": result}
+        except (ValueError, GeneratorExit):
             raise
         except Exception:
             _LOG.debug("AXIOM Native Engine token generation failed.", exc_info=True)
@@ -535,23 +872,42 @@ def generate_local(
                 "AXIOM Native Engine generation failed. The prompt/context may exceed memory, "
                 "or the checkpoint may be incompatible with the implemented architecture."
             ) from None
-        elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
-        return {
-            "engine": "axiom-native-engine",
-            "execution_backend": "pytorch-native-axiom",
-            "transformers_generation_used": False,
-            "ollama_used": False,
-            "model": details["model_directory_name"] or "local-model",
-            "architecture": details["architecture"],
-            "model_type": details["model_type"],
-            "adapter": details["adapter_directory_name"],
-            "device": str(device),
-            "checkpoint_format": "safetensors",
-            "decoder": model.last_generation.get("decoder", "axiom-autoregressive-kv-cache"),
-            "response": response,
-            "prompt_tokens": model.last_generation.get("prompt_tokens", len(prompt_ids)),
-            "completion_tokens": model.last_generation.get("completion_tokens", len(generated_ids)),
-            "elapsed_ms": elapsed_ms,
-            "generated_at": datetime.now(UTC).isoformat(),
-            "local_only": True,
-        }
+        finally:
+            close_iterator = getattr(iterator, "close", None)
+            if callable(close_iterator):
+                close_iterator()
+
+
+def generate_local(
+    model_path: str,
+    prompt: str,
+    *,
+    adapter_path: str | None = None,
+    max_new_tokens: int = 256,
+    temperature: float = 0.7,
+    top_p: float = 0.9,
+    top_k: int = 0,
+    repetition_penalty: float = 1.0,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] = (),
+) -> dict[str, Any]:
+    """Generate a complete local response through the streaming decoder."""
+    completed: dict[str, Any] | None = None
+    for event in generate_local_stream(
+        model_path,
+        prompt,
+        adapter_path=adapter_path,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
+        repetition_penalty=repetition_penalty,
+        seed=seed,
+        stop_sequences=stop_sequences,
+        include_token_events=False,
+    ):
+        if event.get("type") == "complete" and isinstance(event.get("result"), dict):
+            completed = event["result"]
+    if completed is None:
+        raise AxiomEngineError("Native generation ended before a completion event was produced.")
+    return completed

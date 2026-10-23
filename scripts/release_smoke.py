@@ -281,7 +281,18 @@ def engine_security_and_lifecycle_issues(engine_source: str, native_source: str,
         "def unload_local_model(",
         "_LOADED_RUNTIME: dict[str, Any] | None = None",
         "load_native_runtime(",
+        '"attention_backend": model.last_attention_backend',
+        '"prefill_ms": model.last_generation.get("prefill_ms", 0.0)',
+        '"decode_ms": model.last_generation.get("decode_ms", 0.0)',
+        '"time_to_first_token_ms": model.last_generation.get("time_to_first_token_ms", 0.0)',
+        '"generation_tokens_per_second": model.last_generation.get("generation_tokens_per_second", 0.0)',
         "def discover_local_engine_assets(",
+        "def check_local_adapter_compatibility(",
+        "def validate_stop_sequences(",
+        '"stop_sequences": list(stop_sequences)',
+        '"stop_reason": stop_reason',
+        "inspect_native_adapter_compatibility(",
+        "cancel_event=cancel_event",
         "NativeEngineError",
     ):
         if token not in engine_source:
@@ -290,9 +301,10 @@ def engine_security_and_lifecycle_issues(engine_source: str, native_source: str,
         if forbidden in engine_source:
             issues.append("AXIOM Engine must not delegate inference or reevaluate raw path expressions: " + forbidden)
     for token in (
-        "class NativeLlamaRuntime", "def forward(", "def generate(", "def _rms_norm(",
-        "def _apply_rope(", "past_key_values", "repeat_interleave", "safe_open",
-        "model.safetensors", '"execution_backend": "pytorch-native-axiom"',
+        "class NativeLlamaRuntime", "def forward(", "def generate(", "def _rms_norm(", "def _attention(", "scaled_dot_product_attention",
+        "def _apply_rope(", "past_key_values", "repeat_interleave", "safe_open", "NativeGenerationCancelled", "cancel_event.is_set()",
+        "model.safetensors", "NativeGenerationCancelled", "cancel_event.is_set()", "def inspect_native_adapter_compatibility(", "handle.get_slice(key).get_shape()", '"ROCm", rocm_available', '"Metal/MPS", mps_available',
+        '"execution_backend": "pytorch-native-axiom"',
         '"transformers_generation_used": False', '"ollama_used": False',
     ):
         if token not in native_source:
@@ -300,18 +312,18 @@ def engine_security_and_lifecycle_issues(engine_source: str, native_source: str,
     for forbidden in ("AutoModelForCausalLM.from_pretrained", "model.generate(**kwargs)", "requests.post("):
         if forbidden in native_source:
             issues.append("Native inference implementation delegates instead of executing locally: " + forbidden)
-    for token in ("resolve_local_model_directory(candidate", '@router.get("/models")', "discover_local_engine_assets()", '@router.post("/unload")', "unload_local_model()"):
+    for token in ("_validated_path(value, \"Base model\")", "_validated_path(value, \"LoRA adapter\")", "stop_sequences_must_be_bounded", '@router.get("/models")', "discover_local_engine_assets()", '@router.post("/generate/stream")', "generate_local_stream(", "watch_disconnect", "is_disconnected()", "Thread(", "Queue(maxsize=_STREAM_QUEUE_SIZE)", "cancel_event=cancel_event", "output.put(_STREAM_END, timeout=0.1)", '@router.post("/adapters/compatibility")', "check_local_adapter_compatibility(", '@router.post("/unload")', "unload_local_model()"):
         if token not in api_source:
             issues.append("AXIOM Engine API is missing trusted path validation or unload route: " + token)
     if "PurePath" in api_source or "paths_must_be_safe_relative" in api_source:
         issues.append("AXIOM Engine API has legacy path checks that conflict with the trusted-root resolver.")
-    for token in ("axiomEngineModels:", '"/api/engine/models"', "unloadAxiomEngine:", '"/api/engine/unload"'):
+    for token in ("axiomEngineModels:", '"/api/engine/models"', "checkAxiomEngineAdapterCompatibility:", '"/api/engine/adapters/compatibility"', "streamAxiomEngine:", 'api/engine/generate/stream', "unloadAxiomEngine:", '"/api/engine/unload"'):
         if token not in client_source:
             issues.append("Typed AXIOM Engine client is missing unload lifecycle support: " + token)
-    for token in ("Select discovered native model", "axiomApi.axiomEngineModels()", "Unload model", "axiomApi.unloadAxiomEngine()", "AXIOM_MODEL_ROOTS", "tokenizer.json", "safetensors"):
+    for token in ("Select discovered native model", "axiomApi.axiomEngineModels()", "Check adapter compatibility", "axiomApi.checkAxiomEngineAdapterCompatibility(", "LoRA device compatibility report", "axiomApi.streamAxiomEngine(", "Stop generation", "Generation cancelled after", "AXIOM Native Engine prompt", "Stop sequences", "stopSequencesText", "stop_sequences: stopSequences", "Unload model", "axiomApi.unloadAxiomEngine()", "AXIOM_MODEL_ROOTS", "tokenizer.json", "safetensors"):
         if token not in panel_source:
             issues.append("AXIOM Native Engine GUI is missing native support/path safety controls: " + token)
-    for token in ("then unloads it", "api/engine/models", 'selectOption("/models/llama-test")', "api/engine/unload", 'name: "Unload model"'):
+    for token in ("then unloads it", "api/engine/models", 'selectOption("/models/llama-test")', 'requestBody.stop_sequences', "api/engine/adapters/compatibility", 'name: "Check adapter compatibility"', "LoRA device compatibility report", "api/engine/generate/stream", 'contentType: "application/x-ndjson"', "api/engine/unload", 'name: "Unload model"', 'name: "Stop generation"', "Generation cancelled after 0 token(s)"):
         if token not in e2e_source:
             issues.append("AXIOM Engine browser acceptance test is missing lifecycle coverage: " + token)
     return issues
@@ -404,6 +416,41 @@ def inspect(root: Path) -> dict[str, Any]:
     engine_panel = (root / "src/components/LocalAxiomEnginePanel.tsx").read_text(encoding="utf-8")
     engine_e2e = (root / "e2e/axiom-engine.spec.ts").read_text(encoding="utf-8")
     failures.extend(engine_security_and_lifecycle_issues(engine_source, native_source, engine_api, client, engine_panel, engine_e2e))
+    cli_main_source = (root / "axiom/cli/main.py").read_text(encoding="utf-8")
+    cli_extended_source = (root / "axiom/cli/extended.py").read_text(encoding="utf-8")
+    cli_json_tests = (root / "tests/test_cli_json.py").read_text(encoding="utf-8")
+    for token in ('def model_list(', 'def model_add(', 'def model_update(', 'def model_export(', 'def model_import(', 'def model_remove(', 'def model_favorite(', 'def model_info(', 'def model_inspect(', 'def model_analyze(', 'def dataset_inspect(', 'def dataset_clean(', 'def integration_list(', 'def system_info('):
+        if token not in cli_main_source:
+            failures.append("CLI JSON output support is missing from a primary command: " + token)
+    for token in ("def model_search(", "def dataset_validate(", "def dataset_stats(", "def dataset_inspection_payload("):
+        if token not in cli_extended_source:
+            failures.append("CLI JSON output support is missing from an extended command: " + token)
+    for token in (
+        '["model", "list", "--json"]',
+        '["model", "info", "org/tiny", "--json"]',
+        '["model", "inspect", str(model), "--json"]',
+        '["dataset", "inspect", str(dataset), "--json"]',
+        '["integration", "list", "--json"]',
+        '["model", "analyze", "org/tiny", "--json"]',
+        '["system", "info", "--json"]',
+        '["dataset", "clean", str(dataset), "--output", str(output), "--json"]',
+        "test_model_add_and_update_json_preserve_metadata_fields",
+        "test_model_update_validation_failure_does_not_mutate_registry",
+        '["model", "export", "--path", str(export_path), "--json"]',
+        '["model", "import", str(export_path), "--json"]',
+        '["model", "remove", first_model["id"], "--json"]',
+        '["model", "favorite", first_model["id"], "--unfavorite", "--json"]',
+    ):
+        if token not in cli_json_tests:
+            failures.append("CLI JSON acceptance coverage is missing: " + token)
+    engine_cli_source = (root / "axiom/cli/engine.py").read_text(encoding="utf-8")
+    engine_cli_tests = (root / "tests/test_axiom_engine_cli.py").read_text(encoding="utf-8")
+    for token in ('@engine_app.command("discover")', "def engine_discover(", "discover_local_engine_assets()", "generate_local_stream(", '"--stream"', '"--json"'):
+        if token not in engine_cli_source:
+            failures.append("Native Engine CLI discovery wiring is missing: " + token)
+    for token in ('["discover", "--json"]', "test_engine_discover_json_lists_local_model_and_adapter_metadata", '"--stream"', "test_engine_run_stream_shows_live_output_and_final_metrics"):
+        if token not in engine_cli_tests:
+            failures.append("Native Engine CLI discovery regression coverage is missing: " + token)
     for path in (
         "/api/health", "/api/meta", "/api/workspace/runtime",
         "/api/workspace/models?offset=0&limit=5", "/api/workspace/datasets",
@@ -449,7 +496,8 @@ def inspect(root: Path) -> dict[str, Any]:
         "e2e/helpers/auth.ts", "e2e/modules.spec.ts", "e2e/workflows.spec.ts",
         "e2e/evaluation.spec.ts", "e2e/api-playground.spec.ts",
         "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
-        "e2e/model-registry-filters.spec.ts", "e2e/inference-benchmark.spec.ts", "e2e/runtime-traces.spec.ts",
+        "e2e/model-registry-filters.spec.ts", "e2e/inference-benchmark.spec.ts",
+        "e2e/runtime-traces.spec.ts", "e2e/settings-retention.spec.ts",
     ):
         target = root / relative
         if not target.is_file():

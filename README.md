@@ -52,7 +52,7 @@ The training command makes a plan; it does not start a job. For the browser inte
 axiom gui
 ```
 
-AXIOM opens its Control Center in your browser and serves it from your computer. Press `Ctrl-C` in the terminal to stop it.
+AXIOM opens its Control Center in your browser and serves it from your computer. Press `Ctrl-C` in the terminal to stop it. Set `AXIOM_GUI_PORT` to change the default port (an explicit `axiom gui --port` takes precedence); see [API configuration](docs/API.md).
 
 ## Install
 
@@ -128,7 +128,7 @@ axiom infer run qwen2.5:0.5b --prompt "Say hello in one sentence."
 
 ### AXIOM Engine (direct local inference)
 
-The Control Center's **AXIOM Native Engine** runs an AXIOM-owned Llama/Mistral forward pass and autoregressive KV-cache decoder on PyTorch tensor kernels, including RMSNorm, RoPE, grouped-query attention, SwiGLU and supported LoRA deltas. It does not call Ollama or Transformers model.generate. The current native path requires local tokenizer.json plus floating-point safetensors checkpoints; GGUF, quantized weights, pickle .bin files and unsupported architectures are explicitly rejected. Model weights are supplied separately by you. The Runtime panel discovers compatible local models and LoRA adapter folders under trusted roots so you can select them rather than guess paths.
+The Control Center's **AXIOM Native Engine** runs an AXIOM-owned Llama/Mistral forward pass and autoregressive KV-cache decoder on PyTorch tensor kernels, including RMSNorm, RoPE, grouped-query attention, SwiGLU and supported LoRA deltas. It does not call Ollama or Transformers model.generate. The current native path requires local tokenizer.json plus floating-point safetensors checkpoints; GGUF, quantized weights, pickle .bin files and unsupported architectures are explicitly rejected. Model weights are supplied separately by you. The Runtime panel discovers compatible local models and LoRA adapter folders under trusted roots so you can select them rather than guess paths. It supports configurable stop sequences and reports why generation ended.
 
 Install the local model dependencies, then use the AXIOM Engine panel in the Control Center:
 
@@ -166,7 +166,10 @@ The local API and Control Center use loopback addresses by default. The optional
 - [Local inference via Ollama](docs/Local-Inference.md)
 - [Inference Benchmarking](docs/Inference-Benchmarking.md)
 - [AXIOM Engine](docs/Local-Engine.md)
-- [API](docs/API.md)
+- [API and environment configuration](docs/API.md)
+- [Data retention and deletion](docs/DATA-RETENTION.md)
+- [CLI guide and shell completion](docs/CLI-GUIDE.md)
+- [Runtime compatibility checks](scripts/check_compatibility.py)
 - [Roadmap](ROADMAP.md)
 - [Community and adoption strategy](docs/Community-and-Adoption-Strategy.md)
 - [Contributing](CONTRIBUTING.md)
@@ -187,3 +190,8 @@ npm run e2e
 ## License
 
 AXIOM is available under the [MIT License](LICENSE).
+
+
+## Machine-readable CLI output
+
+The following inventory and inspection commands expose versioned JSON payloads with `--json`: `axiom model list`, `axiom model info`, `axiom model inspect`, `axiom model search`, `axiom dataset inspect`, `axiom dataset validate`, `axiom dataset stats`, `axiom dataset clean --output out.jsonl --json`, `axiom integration list`, and `axiom engine discover`, `axiom model export`, `axiom model import`, `axiom model remove`, and `axiom model favorite`, and `axiom model update`. Dataset inspect/validate/stats share the same field names and include bounded line-level errors. JSON mode keeps useful output on stdout so it can be piped into scripts; validation failures preserve a non-zero exit code. `axiom model analyze --json` adds metadata/config-derived estimates and warnings; `axiom system info --json` includes detected hardware and clearly scoped fit heuristics.

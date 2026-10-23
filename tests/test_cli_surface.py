@@ -2,6 +2,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+import axiom.cli.main as cli_main
 from axiom.cli.main import app
 
 runner = CliRunner()
@@ -33,6 +34,40 @@ def test_help_surfaces_first_run_commands_and_guide_if_available(
     assert "axiom init" in guide_result.stdout or "axiom project" in guide_result.stdout
     assert "http://" not in guide_result.stdout.lower()
     assert "https://" not in guide_result.stdout.lower()
+
+
+def test_shell_completion_can_be_viewed_for_supported_shells_without_installing(tmp_path: Path, monkeypatch):
+    from typer.main import get_command
+
+    monkeypatch.chdir(tmp_path)
+    # Typer's built-in switches are still available for install/default viewing.
+    command = get_command(app)
+    option_flags = {
+        option
+        for parameter in command.params
+        for option in (*getattr(parameter, "opts", ()), *getattr(parameter, "secondary_opts", ()))
+    }
+    assert "--install-completion" in option_flags
+    assert "--show-completion" in option_flags
+
+    markers = {
+        # Click renamed its Bash completion variable between releases.
+        "bash": ("_AXIOM_COMPLETE=complete_bash", "_AXIOM_COMPLETE=bash_complete"),
+        "zsh": ("#compdef axiom",),
+        "fish": ("complete -c axiom",),
+        "powershell": ("Register-ArgumentCompleter",),
+    }
+    for shell, accepted_markers in markers.items():
+        result = runner.invoke(app, ["completion", shell])
+        assert result.exit_code == 0, f"{shell}: {result.output}"
+        assert any(marker in result.output for marker in accepted_markers), (
+            f"{shell} completion script was not generated: {result.output[:500]}"
+        )
+
+    unsupported = runner.invoke(app, ["completion", "tcsh"])
+    assert unsupported.exit_code != 0
+    assert "Unsupported shell" in unsupported.output
+
 
 
 def test_init_creates_a_project_that_project_commands_can_use(
@@ -69,3 +104,28 @@ def test_init_creates_a_project_that_project_commands_can_use(
     assert "README:" in info_result.stdout
     assert validate_result.exit_code == 0, validate_result.stdout
     assert "valid" in validate_result.stdout.lower()
+
+
+
+def test_gui_port_uses_environment_default_and_explicit_flag_precedence(monkeypatch):
+    monkeypatch.setenv("AXIOM_GUI_PORT", "40123")
+    assert cli_main._resolve_gui_port(None) == 40123
+    assert cli_main._resolve_gui_port(40234) == 40234
+
+
+def test_gui_port_rejects_invalid_environment_configuration(monkeypatch):
+    monkeypatch.setenv("AXIOM_GUI_PORT", "not-a-port")
+    try:
+        cli_main._resolve_gui_port(None)
+    except ValueError as exc:
+        assert "AXIOM_GUI_PORT" in str(exc)
+    else:
+        raise AssertionError("Invalid AXIOM_GUI_PORT must be rejected")
+
+    monkeypatch.setenv("AXIOM_GUI_PORT", "65536")
+    try:
+        cli_main._resolve_gui_port(None)
+    except ValueError as exc:
+        assert "0 to 65535" in str(exc)
+    else:
+        raise AssertionError("Out-of-range AXIOM_GUI_PORT must be rejected")

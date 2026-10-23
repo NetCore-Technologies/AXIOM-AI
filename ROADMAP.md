@@ -12,30 +12,30 @@ feature exists or a delivery-date promise.
 ### 01 · Platform foundation
 
 - [R001 · Implemented; tests passing] Publish a versioned API contract and compatibility policy.
-- [R002 · Planned] Add workspace discovery with explicit project-root rules.
-- [R003 · Planned] Make API configuration environment-backed and documented.
+- [R002 · Implemented; tests passing] Resolve the workspace using explicit override, `AXIOM_WORKSPACE`, nearest parent `axiom.yaml`, then the current directory; reject explicit symlink roots.
+- [R003 · In progress; validation pending] Make API configuration environment-backed and documented; GUI port now accepts AXIOM_GUI_PORT, CORS origins and trusted model roots are documented, and a cross-platform compatibility report is being added.
 - [R004 · Implemented; tests passing] Normalize validation and error response envelopes.
 - [R005 · Implemented; tests passing] Add request IDs and correlation across CLI, API, and GUI.
 - [R006 · In progress; validation pending] Add bounded pagination to every collection endpoint.
 - [R007 · In progress; validation pending] Define stable resource IDs and schema migration behavior.
-- [R008 · Planned] Add cancellation and timeout semantics to long operations.
+- [R008 · In progress; validation pending] Add cancellation and timeout semantics to long operations; AXIOM-native streaming now supports cooperative cancellation, stop-string termination, and explicit finish reasons, while other long operations still need cancellation support.
 - [R009 · Planned] Separate read-only plans from side-effecting jobs in API scopes.
-- [R010 · Planned] Add workspace health checks for filesystem and permissions.
-- [R011 · Planned] Document data retention, local storage, and deletion behavior.
-- [R012 · Planned] Add release compatibility checks for Python, Node, and OS targets.
+- [R010 · Implemented; tests passing] Add read-only workspace health checks for config parsing, path safety, file permissions, free disk, Python compatibility, and required dependency imports.
+- [R011 · In progress; validation pending] Document data retention, browser-local account settings, in-memory request traces, workspace metadata, generated files, and deletion boundaries in Settings and the retention guide.
+- [R012 · In progress; validation pending] Add automated Python/Node/OS runtime compatibility checks to cross-platform release CI.
 
 ### 02 · CLI experience
 
 - [R013 · Implemented; tests passing] Add discoverable command groups for workflow and evaluation.
-- [R014 · Planned] Add consistent JSON output to every list and inspect command.
-- [R015 · Planned] Add shell completion for Bash, Zsh, Fish, and PowerShell.
+- [R014 · In progress; validation pending] Add consistent JSON output to every list and inspect command; model add/list/info/inspect/analyze/search/import/export/remove/favorite, integration list, system info, and dataset inspect/validate/stats/clean now have versioned outputs and focused CLI tests. Remaining command families still need coverage.
+- [R015 · In progress; validation pending] Expose and document Typer shell completion for Bash, Zsh, Fish, and PowerShell; add no-write completion smoke coverage.
 - [R016 · Planned] Add interactive prompts only where a non-interactive flag exists.
 - [R017 · Planned] Add global verbosity, quiet, and machine-readable error modes.
 - [R018 · Planned] Add operation progress and cancellation for downloads and scans.
-- [R019 · Planned] Add workspace-aware `axiom status` summaries.
+- [R019 · Implemented; tests passing] Add workspace-aware `axiom status` summaries with JSON health, workspace path, version, and Git working-tree state.
 - [R020 · Planned] Add import/export commands for workspace metadata.
 - [R021 · Planned] Add plan diff and reproducible plan printing.
-- [R022 · Planned] Add configuration validation and safe repair suggestions.
+- [R022 · In progress; validation pending] Add configuration validation and safe repair suggestions; validation reports stable error codes and non-mutating suggestions for missing, malformed, oversized, symlinked, or wrong-shaped YAML.
 - [R023 · Planned] Add clear exit-code documentation and stable failure codes.
 - [R024 · Planned] Keep CLI/API feature parity documented in the command reference.
 
@@ -56,8 +56,8 @@ feature exists or a delivery-date promise.
 
 ### 04 · Model lifecycle and compatibility
 
-- [R037 · In progress; validation pending] Expand registry metadata with architecture, size, source, and license.
-- [R038 · In progress; validation pending] Add safe local-folder discovery without following directory symlinks; file symlinks are accepted only when resolved targets remain inside trusted roots.
+- [R037 · In progress; validation pending] Expand registry metadata with architecture, size, source, and license; CLI add/update, schema-checked import/export, and hash/tag fields are exposed, while registry/UI validation remains to be completed.
+- [R038 · Implemented; tests passing] Add safe local-folder discovery without following directory symlinks; file symlinks are accepted only when resolved targets remain inside trusted roots.
 - [R039 · In progress; validation pending] Add model inspection summaries in the GUI.
 - [R040 · In progress; validation pending] Add duplicate detection by source and content metadata.
 - [R041 · In progress; validation pending] Add model tags, favorites, and workspace labels.
@@ -116,17 +116,17 @@ feature exists or a delivery-date promise.
 
 ### 08 · Runtime, optimization, and quantization
 
-- [R085 · Planned] Add runtime connector discovery and capability negotiation.
+- [R085 · Implemented; tests passing] Add passive runtime connector discovery and capability reporting without assuming a connection or credentials.
 - [R086 · Planned] Add explicit connect/disconnect controls with secret-safe storage.
-- [R087 · In progress; validation pending] Report native-engine dependency readiness, supported Llama/Mistral checkpoint formats, execution backend, loaded architecture, and local-only execution scope.
-- [R088 · In progress; validation pending] Measure actual local inference latency and token throughput through the loopback runtime API, reporting token-count coverage and wall time.
-- [R089 · In progress; validation pending] Add prompt/token-limit inputs, excluded warm-up runs, bounded measured iterations, and explicit concurrency controls to the existing Runtime page.
+- [R087 · Implemented; tests passing] Report native-engine dependency readiness, supported Llama/Mistral checkpoint formats, execution backend, loaded architecture, and local-only execution scope.
+- [R088 · In progress; validation pending] Report actual local inference wall time, prefill latency, cached-decode latency, time to first token, and generated tokens/second from AXIOM's native token loop; wall time includes stream processing while throughput is based on prefill+decode compute time.
+- [R089 · Implemented; tests passing] Add prompt/token-limit inputs, excluded warm-up runs, bounded measured iterations, and explicit concurrency controls to the existing Runtime page.
 - [R090 · Planned] Add quantization estimates with formulas and overhead assumptions.
 - [R091 · Planned] Compare quantization candidates against selected memory budgets.
 - [R092 · Planned] Keep estimated fit separate from measured quality and speed.
-- [R093 · In progress; validation pending] Add bounded in-memory runtime request traces with request IDs, metadata-only records, export, and explicit clear controls.
-- [R094 · In progress; validation pending] Add explicit model unload and cache cleanup, plus one-model-at-a-time cache replacement; framework allocator release remains best-effort.
-- [R095 · Planned] Add adapter compatibility checks for CPU, CUDA, Metal, and ROCm.
+- [R093 · Implemented; tests passing] Add bounded in-memory runtime request traces with request IDs, metadata-only records, export, and explicit clear controls.
+- [R094 · Implemented; tests passing] Add explicit model unload and cache cleanup, plus one-model-at-a-time cache replacement; framework allocator release remains best-effort.
+- [R095 · In progress; validation pending] Add adapter compatibility checks for CPU, CUDA, Metal, and ROCm; metadata/tensor-shape preflight and per-device availability reporting are now wired but require the release test gate to pass.
 - [R096 · Planned] Add runtime failure recovery and actionable connector diagnostics.
 
 ### 09 · Agent profiles, MCP, and security
@@ -146,7 +146,7 @@ feature exists or a delivery-date promise.
 
 ### 10 · API, telemetry, diagnostics, and delivery
 
-- [R109 · Planned] Add an allowlisted API playground with bounded payloads and timeouts.
+- [R109 · Implemented; tests passing] Add an allowlisted API playground with bounded payloads and timeouts.
 - [R110 · Planned] Add typed API examples generated from the supported contract.
 - [R111 · Planned] Add local hardware snapshot history with opt-in retention.
 - [R112 · Planned] Add sampled CPU, memory, GPU, and disk telemetry where available.
@@ -154,7 +154,7 @@ feature exists or a delivery-date promise.
 - [R114 · Planned] Add telemetry export, clear-history, and privacy controls.
 - [R115 · Planned] Add diagnostic checks for config, paths, dependencies, and storage.
 - [R116 · Planned] Add copyable support bundles with explicit secret/data redaction.
-- [R117 · Planned] Add release smoke checks for CLI, API, and bundled UI together.
+- [R117 · Implemented; tests passing] Add release smoke checks for CLI, API, production UI build, and browser acceptance coverage together.
 - [R118 · Planned] Add cross-platform packaging verification for supported targets.
 - [R119 · Planned] Add migration/rollback notes for every persisted-data schema change.
 - [R120 · Planned] Add end-to-end acceptance coverage for each shipped workflow.

@@ -6,10 +6,12 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
-from axiom.core.engine import AxiomEngineError, generate_local, runtime_status
+from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, generate_local, generate_local_stream, runtime_status
 
 engine_app = typer.Typer(help="Run causal language models directly through AXIOM's local engine.", no_args_is_help=True)
 console = Console()
@@ -18,6 +20,50 @@ console = Console()
 def _fail(message: str) -> None:
     console.print(f"[red]Error:[/red] {message}")
     raise typer.Exit(code=1)
+
+
+@engine_app.command("discover")
+def engine_discover(
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """Discover native-compatible local models and LoRA adapters below trusted roots."""
+    report = discover_local_engine_assets()
+    if json_output:
+        typer.echo(json.dumps(report, indent=2, ensure_ascii=False))
+        return
+
+    models = report["models"]
+    adapters = report["adapters"]
+    if models:
+        table = Table(title=f"Native models ({len(models)})")
+        table.add_column("Name", style="cyan")
+        table.add_column("Type")
+        table.add_column("Architecture")
+        table.add_column("Checkpoint")
+        table.add_column("Path")
+        for model in models:
+            table.add_row(
+                model["name"], model["model_type"], model["architecture"],
+                model["weight_format"], model["path"],
+            )
+        console.print(table)
+    else:
+        console.print("[yellow]No compatible native models found under trusted roots.[/yellow]")
+
+    if adapters:
+        table = Table(title=f"LoRA adapters ({len(adapters)})")
+        table.add_column("Name", style="cyan")
+        table.add_column("Format")
+        table.add_column("Path")
+        for adapter in adapters:
+            table.add_row(adapter["name"], adapter["weight_format"], adapter["path"])
+        console.print(table)
+    elif not models:
+        console.print("No native-compatible LoRA adapters found.")
+
+    if report["truncated"]:
+        console.print("[yellow]The inventory reached its result cap. Narrow AXIOM_MODEL_ROOTS to inspect a smaller set.[/yellow]")
+    console.print(report["scope_note"])
 
 
 @engine_app.command("status")
@@ -52,7 +98,9 @@ def engine_run(
     adapter_path: Path | None = typer.Option(None, "--adapter-path", exists=True, file_okay=False, dir_okay=True, help="Optional local native-compatible LoRA adapter directory."),
     max_new_tokens: int = typer.Option(256, "--max-new-tokens", min=1, max=2048, help="Maximum generated tokens (1–2048)."),
     temperature: float = typer.Option(0.7, "--temperature", min=0, max=2, help="Sampling temperature; 0 disables sampling."),
+    stop_sequences: list[str] = typer.Option([], "--stop-sequence", help="Stop when this exact text is generated; repeat the option for multiple stop strings."),
     json_output: bool = typer.Option(False, "--json", help="Print response and metrics as JSON."),
+    stream_output: bool = typer.Option(False, "--stream", help="Show decoded output updates while the model generates."),
 ) -> None:
     """Generate text locally without requiring Ollama or downloading model weights."""
     if (prompt is None) == (prompt_file is None):
@@ -67,14 +115,45 @@ def engine_run(
             _fail("Prompt file exceeds AXIOM Engine's 12,000-character limit.")
     else:
         prompt_value = prompt or ""
+    if json_output and stream_output:
+        _fail("--stream cannot be combined with --json; JSON mode emits one complete result.")
     try:
-        result = generate_local(
-            str(model_path),
-            prompt_value,
-            adapter_path=str(adapter_path) if adapter_path is not None else None,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-        )
+        adapter_value = str(adapter_path) if adapter_path is not None else None
+        if stream_output:
+            result = None
+            events = generate_local_stream(
+                str(model_path),
+                prompt_value,
+                adapter_path=adapter_value,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                stop_sequences=stop_sequences,
+            )
+            try:
+                with Live(console=console, refresh_per_second=12, transient=False) as live:
+                    for event in events:
+                        if event.get("type") == "token":
+                            visible = event.get("response") or "(Waiting for printable output…)"
+                            live.update(Panel(Text(str(visible), overflow="fold"), title="AXIOM ENGINE · LIVE OUTPUT"))
+                        elif event.get("type") == "complete" and isinstance(event.get("result"), dict):
+                            result = event["result"]
+                            visible = result.get("response") or "(The model returned an empty response.)"
+                            live.update(Panel(Text(str(visible), overflow="fold"), title="AXIOM ENGINE · COMPLETE"))
+            finally:
+                close = getattr(events, "close", None)
+                if callable(close):
+                    close()
+            if result is None:
+                _fail("Native generation ended before a completion event was produced.")
+        else:
+            result = generate_local(
+                str(model_path),
+                prompt_value,
+                adapter_path=adapter_value,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                stop_sequences=stop_sequences,
+            )
     except (ValueError, AxiomEngineError) as exc:
         _fail(str(exc))
     if json_output:
@@ -82,10 +161,11 @@ def engine_run(
         return
     console.print(Panel.fit(
         f"Engine: AXIOM Native Engine\nModel: {result['model']}\nArchitecture: {result['architecture']}\n"
-        f"Generated tokens: {result['completion_tokens']}\nElapsed: {result['elapsed_ms']} ms",
+        f"Generated tokens: {result['completion_tokens']}\nFinish reason: {result.get('stop_reason', 'unknown')}\nElapsed: {result['elapsed_ms']} ms",
         title="AXIOM ENGINE",
     ))
-    console.print(result["response"], markup=False)
+    if not stream_output:
+        console.print(result["response"], markup=False)
 
 
 __all__ = ["engine_app"]

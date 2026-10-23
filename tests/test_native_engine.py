@@ -28,6 +28,97 @@ def _config(**overrides):
     return value
 
 
+def test_stop_sequences_are_bounded_and_deduplicated() -> None:
+    from axiom.core.engine import validate_stop_sequences
+
+    assert validate_stop_sequences(["<END>", "###", "<END>"]) == ("<END>", "###")
+    assert validate_stop_sequences([]) == ()
+    with pytest.raises(ValueError, match="non-whitespace"):
+        validate_stop_sequences(["   "])
+    with pytest.raises(ValueError, match="256 characters"):
+        validate_stop_sequences(["S" * 257])
+    with pytest.raises(ValueError, match="At most 16"):
+        validate_stop_sequences([str(index) for index in range(17)])
+
+
+def test_native_stream_stops_on_a_sequence_spanning_token_boundaries(monkeypatch) -> None:
+    from types import SimpleNamespace
+    from axiom.core import engine
+
+    class TokenizerFixture:
+        def encode(self, _prompt, add_special_tokens=False):
+            return SimpleNamespace(ids=[1])
+
+        def decode(self, token_ids, skip_special_tokens=True):
+            lookup = {
+                (): "",
+                (101,): "answer<",
+                (101, 102): "answer<END>discarded",
+                (101, 102, 103): "answer<END>discarded extra",
+            }
+            return lookup.get(tuple(token_ids), "")
+
+    class RuntimeFixture:
+        config = SimpleNamespace(max_position_embeddings=64, bos_token_id=None, eos_token_ids=())
+        last_attention_backend = "axiom-manual-matmul-attention"
+
+        def __init__(self):
+            self.requested = 0
+            self.last_generation = {}
+
+        def iter_generate(self, _prompt_ids, **_kwargs):
+            try:
+                for token_id in (101, 102, 103):
+                    self.requested += 1
+                    yield token_id
+            finally:
+                self.last_generation.update({
+                    "decoder": "axiom-autoregressive-kv-cache",
+                    "prompt_tokens": 1,
+                    "completion_tokens": self.requested,
+                    "cache_layers": 1,
+                    "prefill_ms": 2.0,
+                    "decode_ms": 1.0,
+                    "time_to_first_token_ms": 2.0,
+                    "generation_tokens_per_second": 666.667,
+                    "stop_reason": "max_new_tokens",
+                })
+
+    runtime = RuntimeFixture()
+    tokenizer = TokenizerFixture()
+    monkeypatch.setattr(
+        engine,
+        "_load_local_model",
+        lambda *_args: (
+            runtime,
+            tokenizer,
+            None,
+            "cpu",
+            {
+                "model_directory_name": "fixture",
+                "adapter_directory_name": None,
+                "architecture": "LlamaForCausalLM",
+                "model_type": "llama",
+                "add_bos_token": False,
+            },
+        ),
+    )
+
+    events = list(engine.generate_local_stream(
+        "/trusted/models/fixture", "question",
+        max_new_tokens=10, temperature=0,
+        stop_sequences=["<END>"],
+    ))
+    token_events = [event for event in events if event["type"] == "token"]
+    completion = events[-1]["result"]
+    assert len(token_events) == 2
+    assert all(event["response"] == "answer" for event in token_events)
+    assert completion["response"] == "answer"
+    assert completion["stop_reason"] == "stop_sequence"
+    assert completion["stop_sequences"] == ["<END>"]
+    assert runtime.requested == 2
+
+
 def test_native_config_accepts_standard_llama_and_mistral() -> None:
     assert NativeLlamaConfig.from_mapping(_config()).model_type == "llama"
     assert NativeLlamaConfig.from_mapping(
@@ -107,6 +198,31 @@ def _tiny_weights(torch, vocab_size=8, hidden=8, intermediate=12):
     return weights
 
 
+@pytest.mark.parametrize("force_manual", [False, True])
+def test_native_attention_sdpa_and_manual_paths_match_reference(force_manual: bool, monkeypatch) -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    config = NativeLlamaConfig.from_mapping(_config())
+    runtime = NativeLlamaRuntime(config, _tiny_weights(torch), torch, torch.device("cpu"))
+    if force_manual:
+        monkeypatch.setattr(torch.nn.functional, "scaled_dot_product_attention", None)
+
+    query = torch.randn((1, 2, 3, 4), dtype=torch.float32)
+    key = torch.randn((1, 2, 3, 4), dtype=torch.float32)
+    value = torch.randn((1, 2, 3, 4), dtype=torch.float32)
+    blocked = torch.triu(torch.ones((3, 3), dtype=torch.bool), diagonal=1)
+    actual = runtime._attention(query, key, value, blocked)
+
+    scores = torch.matmul(query, key.transpose(-2, -1)) / (4 ** 0.5)
+    expected_probs = torch.softmax(scores.masked_fill(blocked[None, None], float("-inf")), dim=-1)
+    expected = torch.matmul(expected_probs, value)
+    assert torch.allclose(actual, expected, atol=2e-5, rtol=1e-4)
+    assert runtime.last_attention_backend == (
+        "axiom-manual-matmul-attention" if force_manual else "pytorch-scaled-dot-product-attention"
+    )
+
+
 def test_native_forward_and_incremental_kv_cache_run_without_transformers() -> None:
     torch = pytest.importorskip("torch")
     from axiom.core.native_engine import NativeLlamaRuntime
@@ -143,6 +259,120 @@ def test_native_decoder_stops_before_emitting_eos_and_does_not_step_past_output_
     assert runtime.last_generation["completion_tokens"] == 1
 
 
+def test_native_iterator_honors_cancellation_before_prompt_prefill(monkeypatch) -> None:
+    from threading import Event
+
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    config = NativeLlamaConfig.from_mapping(_config())
+    runtime = NativeLlamaRuntime(config, _tiny_weights(torch), torch, torch.device("cpu"))
+    cancel_event = Event()
+    cancel_event.set()
+
+    def unexpected_forward(input_ids, past_key_values=None, *, cancel_event=None):
+        pytest.fail("A pre-cancelled request must not start model forward execution.")
+
+    monkeypatch.setattr(runtime, "forward", unexpected_forward)
+    assert list(runtime.iter_generate(
+        [1, 3], max_new_tokens=4, temperature=0, eos_token_ids=(), cancel_event=cancel_event
+    )) == []
+    assert runtime.last_generation["completion_tokens"] == 0
+
+
+def test_native_iterator_stops_before_next_token_forward_when_cancelled(monkeypatch) -> None:
+    from threading import Event
+
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    config = NativeLlamaConfig.from_mapping(_config())
+    runtime = NativeLlamaRuntime(config, _tiny_weights(torch), torch, torch.device("cpu"))
+    cancel_event = Event()
+    original_forward = runtime.forward
+    forward_calls = 0
+
+    def counted_forward(input_ids, past_key_values=None, *, cancel_event=None):
+        nonlocal forward_calls
+        forward_calls += 1
+        return original_forward(input_ids, past_key_values, cancel_event=cancel_event)
+
+    monkeypatch.setattr(runtime, "forward", counted_forward)
+    iterator = runtime.iter_generate(
+        [1, 3], max_new_tokens=4, temperature=0, eos_token_ids=(), cancel_event=cancel_event
+    )
+    first_token = next(iterator)
+    assert 0 <= first_token < config.vocab_size
+    assert forward_calls == 1
+    cancel_event.set()
+    with pytest.raises(StopIteration):
+        next(iterator)
+    assert forward_calls == 1
+    assert runtime.last_generation["completion_tokens"] == 1
+
+
+def _tiny_adapter_file(safetensors_torch, torch, root: Path, *, bad_a_shape: bool = False) -> Path:
+    adapter = root / "tiny-lora"
+    adapter.mkdir()
+    (adapter / "adapter_config.json").write_text(json.dumps({
+        "task_type": "CAUSAL_LM", "bias": "none", "r": 1,
+        "lora_alpha": 2, "target_modules": ["q_proj"],
+    }), encoding="utf-8")
+    a_shape = (1, 7) if bad_a_shape else (1, 8)
+    safetensors_torch.save_file({
+        "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": torch.ones(a_shape),
+        "base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": torch.ones((8, 1)),
+    }, str(adapter / "adapter_model.safetensors"))
+    return adapter
+
+
+def test_native_adapter_compatibility_checks_tensor_shapes_and_device_presence(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    safetensors_torch = pytest.importorskip("safetensors.torch")
+    from axiom.core.native_engine import inspect_native_adapter_compatibility
+
+    root = tmp_path / "trusted"
+    model = root / "base"
+    model.mkdir(parents=True)
+    (model / "config.json").write_text(json.dumps(_config()), encoding="utf-8")
+    (model / "tokenizer.json").write_text("{}", encoding="utf-8")
+    safetensors_torch.save_file(_tiny_weights(torch), str(model / "model.safetensors"))
+    adapter = _tiny_adapter_file(safetensors_torch, torch, root)
+
+    report = inspect_native_adapter_compatibility(model, adapter, trusted_roots=(root.resolve(),))
+
+    assert report["schema_version"] == 1
+    assert report["structurally_compatible"] is True
+    assert report["issues"] == []
+    assert report["adapter"]["rank"] == 1
+    assert report["adapter"]["target_modules"] == ["q_proj"]
+    assert report["adapter_tensor_count"] == 2
+    assert {device["name"] for device in report["devices"]} == {"CPU", "CUDA", "ROCm", "Metal/MPS"}
+    cpu = next(device for device in report["devices"] if device["name"] == "CPU")
+    assert cpu["available"] is True
+    assert cpu["compatible"] is True
+
+
+def test_native_adapter_compatibility_rejects_projection_shape_mismatch(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    safetensors_torch = pytest.importorskip("safetensors.torch")
+    from axiom.core.native_engine import inspect_native_adapter_compatibility
+
+    root = tmp_path / "trusted"
+    model = root / "base"
+    model.mkdir(parents=True)
+    (model / "config.json").write_text(json.dumps(_config()), encoding="utf-8")
+    (model / "tokenizer.json").write_text("{}", encoding="utf-8")
+    safetensors_torch.save_file(_tiny_weights(torch), str(model / "model.safetensors"))
+    adapter = _tiny_adapter_file(safetensors_torch, torch, root, bad_a_shape=True)
+
+    report = inspect_native_adapter_compatibility(model, adapter, trusted_roots=(root.resolve(),))
+
+    assert report["structurally_compatible"] is False
+    assert any("LoRA A tensor shape" in issue for issue in report["issues"])
+    assert next(device for device in report["devices"] if device["name"] == "CPU")["compatible"] is False
+
+
 def test_native_adapter_delta_is_applied_in_axiom_linear_path() -> None:
     torch = pytest.importorskip("torch")
     from axiom.core.native_engine import NativeLlamaRuntime
@@ -174,7 +404,7 @@ def test_tiny_safetensors_checkpoint_generates_through_axiom_native_loop(
     pytest.importorskip("tokenizers")
     safetensors_torch = pytest.importorskip("safetensors.torch")
     from tokenizers import AddedToken, Tokenizer, models, pre_tokenizers
-    from axiom.core.engine import generate_local
+    from axiom.core.engine import generate_local, generate_local_stream
 
     model_root = tmp_path / "models"
     model_dir = model_root / "tiny-llama"
@@ -205,4 +435,25 @@ def test_tiny_safetensors_checkpoint_generates_through_axiom_native_loop(
     assert result["prompt_tokens"] == 3
     assert result["completion_tokens"] == 2
     assert result["decoder"] == "axiom-autoregressive-kv-cache"
+    assert result["attention_backend"] in {
+        "pytorch-scaled-dot-product-attention",
+        "axiom-manual-matmul-attention",
+    }
+    assert result["prefill_ms"] >= 0
+    assert result["decode_ms"] >= 0
+    assert result["time_to_first_token_ms"] == result["prefill_ms"]
+    assert result["generation_tokens_per_second"] >= 0
+    assert result["sampling"] == {
+        "temperature": 0,
+        "top_p": 0.9,
+        "top_k": 0,
+        "repetition_penalty": 1.0,
+        "seed": None,
+    }
+
+    events = list(generate_local_stream(str(model_dir), "hello world", max_new_tokens=2, temperature=0))
+    assert events[-1]["type"] == "complete"
+    assert events[-1]["result"]["response"] == result["response"]
+    assert all(event["type"] == "token" for event in events[:-1])
+    assert len(events[:-1]) == events[-1]["result"]["completion_tokens"]
     assert isinstance(result["response"], str)
