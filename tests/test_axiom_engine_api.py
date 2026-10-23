@@ -248,6 +248,7 @@ def test_engine_stream_endpoint_yields_token_snapshots_and_final_metrics(tmp_pat
         "device": "cpu",
         "checkpoint_format": "safetensors",
         "decoder": "axiom-autoregressive-kv-cache",
+        "attention_backend": "pytorch-scaled-dot-product-attention",
         "sampling": {
             "temperature": 0.7,
             "top_p": 0.9,
