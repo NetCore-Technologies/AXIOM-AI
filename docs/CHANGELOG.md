@@ -1,4 +1,18 @@
 # Changelog
+
+## 0.3.0-beta.5 — Release preparation
+
+### Added and improved
+- Added workspace diagnostics and privacy-minimized support bundles through the CLI, API, and Control Center.
+- Added a roadmap audit command and GUI integrity reporting to make delivery status easier to verify.
+- Improved saved workflow design with templates, revision history, duplication, validation, and dry-run resource estimates.
+- Improved API Playground safety with a fixed read-only GET allowlist, bounded reads, request timeouts, and capped previews.
+- Continued hardening native inference controls, cancellation, runtime metrics, and CLI/API/GUI diagnostics.
+
+### Release status
+- This entry records the intended beta.5 scope; it is not a claim that release validation or publishing has completed.
+- Installer, cross-platform, interactive GUI, full test-suite, PyPI, and npm release verification must pass before publishing.
+
 ## Unreleased — safer configuration guidance
 
 - Add stable configuration validation error codes, bounded YAML shape checks, and non-mutating repair suggestions.
