@@ -196,7 +196,18 @@ def shell_completion_script(
         return
     command = get_command(app)
     context = click.Context(command, info_name="axiom")
-    script = completion_type(command, context, "axiom").source()
+    completion_param = next(
+        (
+            parameter for parameter in command.params
+            if isinstance(parameter, click.Option) and "--show-completion" in parameter.opts
+        ),
+        None,
+    )
+    if completion_param is None:
+        _cli_error("The CLI has no completion option to derive its shell script from.")
+        return
+    # Click's ShellComplete API takes (command, context, parameter, complete_var).
+    script = completion_type(command, context, completion_param, "_AXIOM_COMPLETE").source()
     typer.echo(script, nl=False)
 
 
