@@ -128,11 +128,12 @@ def test_model_search_json_skips_symlink_entries(tmp_path: Path) -> None:
     linked = root / "linked-llama.safetensors"
     try:
         linked.symlink_to(outside)
-    except (OSError, NotImplementedError):
-        # Windows and restricted containers may disable symlink creation.
-        symlink_created = False
+    except (OSError, NotImplementedError) as exc:
+        # Windows and restricted containers may disable symlink creation. A
+        # failed attempt must not leave a partial path behind.
+        assert not linked.exists(), f"Failed symlink creation left an entry: {exc}"
     else:
-        symlink_created = True
+        assert linked.is_symlink()
 
     result = runner.invoke(app, ["model", "search", "llama", "--path", str(root), "--json"])
     assert result.exit_code == 0, result.stdout
