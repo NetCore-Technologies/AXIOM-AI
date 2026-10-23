@@ -56,7 +56,6 @@ def assess_compatibility(
     node_unavailable = node_version is None or node_version == "unavailable"
     if node_unavailable:
         node_status = "fail" if require_node else "skipped"
-        node_supported = not require_node
         node_text = "not installed or not usable on PATH"
     else:
         node_supported = node_version_supported(node_version)
