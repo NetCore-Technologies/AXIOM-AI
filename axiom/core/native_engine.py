@@ -9,7 +9,7 @@ checkpoints are accepted; unsupported formats are rejected, not delegated.
 from __future__ import annotations
 from contextlib import ExitStack
 from dataclasses import dataclass
-import json, math, re
+import json, math, re, threading
 from pathlib import Path
 from typing import Any, Iterator, Mapping
 
@@ -21,6 +21,9 @@ _SUPPORTED_MODEL_TYPES = {"llama", "mistral"}
 
 class NativeEngineError(ValueError):
     """An unsupported, unsafe, or invalid native-engine checkpoint."""
+
+class NativeGenerationCancelled(RuntimeError):
+    """Internal cooperative cancellation signal for native inference."""
 
 class NativeDependencyError(RuntimeError):
     """A required runtime dependency for the native engine is unavailable."""
@@ -361,7 +364,13 @@ class NativeLlamaRuntime:
         half = dim // 2
         return values * cos + torch.cat((-values[..., half:], values[..., :half]), dim=-1) * sin
 
-    def forward(self, input_ids: Any, past_key_values: Any = None) -> tuple[Any, tuple[Any, ...]]:
+    def forward(
+        self,
+        input_ids: Any,
+        past_key_values: Any = None,
+        *,
+        cancel_event: threading.Event | None = None,
+    ) -> tuple[Any, tuple[Any, ...]]:
         torch, c = self.torch, self.config
         if input_ids.ndim != 2 or input_ids.shape[0] != 1:
             raise NativeEngineError("AXIOM Native Engine currently accepts one prompt sequence per request.")
@@ -374,6 +383,8 @@ class NativeLlamaRuntime:
         cache, head_dim = [], c.hidden_size // c.num_attention_heads
         repeat_factor = c.num_attention_heads // c.num_key_value_heads
         for i in range(c.num_hidden_layers):
+            if cancel_event is not None and cancel_event.is_set():
+                raise NativeGenerationCancelled("Native generation was cancelled.")
             p = f"model.layers.{i}."
             residual = hidden
             normed = self._rms_norm(hidden, self.weights[p + "input_layernorm.weight"])
@@ -411,8 +422,9 @@ class NativeLlamaRuntime:
         temperature: float,
         top_p: float = 0.9,
         eos_token_ids: tuple[int, ...] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> Iterator[int]:
-        """Yield each newly decoded token ID from AXIOM's KV-cached decode loop."""
+        """Yield decoded tokens and stop cooperatively when cancellation is requested."""
         if not prompt_token_ids:
             raise NativeEngineError("Tokenizer returned no IDs for the prompt.")
         if isinstance(max_new_tokens, bool) or not isinstance(max_new_tokens, int) or not 1 <= max_new_tokens <= 2048:
@@ -428,8 +440,15 @@ class NativeLlamaRuntime:
         cache: tuple[Any, ...] = ()
         try:
             with torch.inference_mode():
-                logits, cache = self.forward(tokens)
+                if cancel_event is not None and cancel_event.is_set():
+                    return
+                try:
+                    logits, cache = self.forward(tokens, cancel_event=cancel_event)
+                except NativeGenerationCancelled:
+                    return
                 for step in range(max_new_tokens):
+                    if cancel_event is not None and cancel_event.is_set():
+                        break
                     if temperature == 0:
                         next_token = torch.argmax(logits, dim=-1)
                     else:
@@ -450,9 +469,16 @@ class NativeLlamaRuntime:
                         break
                     generated.append(token_id)
                     yield token_id
-                    # Avoid a needless forward pass after the output limit.
+                    # Cancellation must not start another decode step.
+                    if cancel_event is not None and cancel_event.is_set():
+                        break
                     if step + 1 < max_new_tokens:
-                        logits, cache = self.forward(next_token.view(1, 1), cache)
+                        try:
+                            logits, cache = self.forward(
+                                next_token.view(1, 1), cache, cancel_event=cancel_event
+                            )
+                        except NativeGenerationCancelled:
+                            break
         finally:
             self.last_generation = {
                 "prompt_tokens": len(prompt_token_ids),
