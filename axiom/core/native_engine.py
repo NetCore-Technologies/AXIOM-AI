@@ -399,6 +399,7 @@ class NativeLlamaRuntime:
         self.dtype = weights["model.embed_tokens.weight"].dtype
         self.name = "axiom-native-pytorch-llama"
         self.last_generation: dict[str, Any] = {}
+        self.last_attention_backend = "pytorch-scaled-dot-product-attention"
 
     @staticmethod
     def _required_weight_names(c: NativeLlamaConfig) -> list[str]:
@@ -555,6 +556,31 @@ class NativeLlamaRuntime:
             result = result + functional.linear(functional.linear(hidden, adapter["A"]), adapter["B"]) * self.adapter_scaling[module]
         return result
 
+    def _attention(self, query: Any, key: Any, value: Any, blocked_mask: Any) -> Any:
+        """Run explicit AXIOM masks through optimized tensor attention, with a manual fallback."""
+        functional = self.torch.nn.functional
+        scaled_dot_product = getattr(functional, "scaled_dot_product_attention", None)
+        if callable(scaled_dot_product):
+            # A boolean SDPA mask uses True for visible positions. Invert AXIOM's
+            # blocked causal/sliding-window mask and keep is_causal=False because
+            # the exact cache-aware mask is already computed for these positions.
+            self.last_attention_backend = "pytorch-scaled-dot-product-attention"
+            return scaled_dot_product(
+                query,
+                key,
+                value,
+                attn_mask=~blocked_mask,
+                dropout_p=0.0,
+                is_causal=False,
+            )
+        # Older/minimal tensor backends keep working through AXIOM's own masked
+        # attention math. This path remains numerically equivalent to SDPA.
+        scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(query.shape[-1])
+        scores = scores.masked_fill(blocked_mask[None, None, :, :], float("-inf"))
+        probabilities = self.torch.softmax(scores.float(), dim=-1).to(dtype=query.dtype)
+        self.last_attention_backend = "axiom-manual-matmul-attention"
+        return self.torch.matmul(probabilities, value)
+
     def _rms_norm(self, hidden: Any, weight: Any) -> Any:
         variance = hidden.float().pow(2).mean(dim=-1, keepdim=True)
         return hidden * self.torch.rsqrt(variance + self.config.rms_norm_eps).to(dtype=hidden.dtype) * weight
@@ -602,14 +628,11 @@ class NativeLlamaRuntime:
             cache.append((k, v))
             ak = k.repeat_interleave(repeat_factor, dim=1) if repeat_factor > 1 else k
             av = v.repeat_interleave(repeat_factor, dim=1) if repeat_factor > 1 else v
-            scores = torch.matmul(q, ak.transpose(-2, -1)) / math.sqrt(head_dim)
             keys = torch.arange(ak.shape[-2], device=self.device)
-            causal = keys[None, :] > positions[:, None]
+            blocked = keys[None, :] > positions[:, None]
             if c.sliding_window:
-                causal = causal | (keys[None, :] <= positions[:, None] - c.sliding_window)
-            scores = scores.masked_fill(causal[None, None, :, :], float("-inf"))
-            probabilities = torch.softmax(scores.float(), dim=-1).to(dtype=q.dtype)
-            attended = torch.matmul(probabilities, av).transpose(1, 2).contiguous().view(1, seq_len, c.hidden_size)
+                blocked = blocked | (keys[None, :] <= positions[:, None] - c.sliding_window)
+            attended = self._attention(q, ak, av, blocked).transpose(1, 2).contiguous().view(1, seq_len, c.hidden_size)
             hidden = residual + self._linear(attended, p + "self_attn.o_proj")
             residual = hidden
             normed = self._rms_norm(hidden, self.weights[p + "post_attention_layernorm.weight"])
