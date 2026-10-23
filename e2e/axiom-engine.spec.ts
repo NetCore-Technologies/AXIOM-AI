@@ -59,10 +59,16 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
   } }));
   await page.route("**/api/engine/generate/stream", (route) => {
     engineLoaded = true;
+    const requestBody = route.request().postDataJSON() as Record<string, unknown>;
+    expect(requestBody.top_p).toBe(0.8);
+    expect(requestBody.top_k).toBe(4);
+    expect(requestBody.repetition_penalty).toBe(1.1);
+    expect(requestBody.seed).toBe(42);
     const completed = {
       engine: "axiom-native-engine", execution_backend: "pytorch-native-axiom", transformers_generation_used: false, ollama_used: false,
       model: "llama-test", architecture: "LlamaForCausalLM", model_type: "llama", device: "cpu", checkpoint_format: "safetensors", decoder: "axiom-autoregressive-kv-cache",
       adapter: "my-lora-adapter", response: "AXIOM local engine test response.",
+      sampling: { temperature: 0.7, top_p: 0.9, top_k: 0, repetition_penalty: 1, seed: null },
       prompt_tokens: 5, completion_tokens: 6, elapsed_ms: 120.5,
       generated_at: "2026-10-21T00:00:00Z", local_only: true,
     };
@@ -101,9 +107,14 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
   await expect(engine.getByRole("region", { name: "LoRA device compatibility report" })).toContainText("CPU");
   await expect(engine.getByRole("region", { name: "LoRA device compatibility report" })).toContainText("ROCm");
   await engine.getByLabel("AXIOM Native Engine prompt").fill("Say hello.");
+  await engine.getByLabel("Top-p").fill("0.8");
+  await engine.getByLabel("Top-k").fill("4");
+  await engine.getByLabel("Repetition penalty").fill("1.1");
+  await engine.getByLabel("Sampling seed").fill("42");
   await engine.getByRole("button", { name: "Run with AXIOM Engine" }).click();
 
   await expect(engine.getByTestId("axiom-engine-output")).toContainText("AXIOM local engine test response.");
+  await expect(engine).toContainText("Sampling: temperature 0.7 · top-p 0.9 · top-k off · repetition penalty 1 · seed random");
   await expect(engine).toContainText("LlamaForCausalLM");
   await expect(engine.getByRole("button", { name: "Unload model" })).toBeVisible();
 
@@ -129,6 +140,7 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
             model: "llama-test", architecture: "LlamaForCausalLM", model_type: "llama",
             adapter: null, device: "cpu", checkpoint_format: "safetensors",
             decoder: "axiom-autoregressive-kv-cache", response: "Should not arrive",
+            sampling: { temperature: 0.7, top_p: 0.9, top_k: 0, repetition_penalty: 1, seed: null },
             prompt_tokens: 3, completion_tokens: 1, elapsed_ms: 100,
             generated_at: "2026-10-22T00:00:00Z", local_only: true,
           },
