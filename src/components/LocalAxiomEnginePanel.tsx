@@ -156,7 +156,7 @@ export default function LocalAxiomEnginePanel() {
     <form onSubmit={(event) => void run(event)}>
       <label className="field">
         <span className="field-label-row"><span>Discovered native model</span><span>{assets?.models.length ?? 0} found</span></span>
-        <select aria-label="Select discovered native model" value={selectedModelPath} onChange={(event) => { setSelectedModelPath(event.target.value); if (event.target.value) setModelPath(event.target.value); }}>
+        <select aria-label="Select discovered native model" value={selectedModelPath} onChange={(event) => { setSelectedModelPath(event.target.value); if (event.target.value) setModelPath(event.target.value); setAdapterCompatibility(null); }}>
           <option value="">{assets?.models.length ? "Choose a discovered model or enter a path below" : "No supported local models discovered"}</option>
           {(assets?.models ?? []).map((model) => <option key={model.path} value={model.path}>{model.name} · {model.model_type} · {model.weight_format}</option>)}
         </select>
@@ -209,7 +209,7 @@ export default function LocalAxiomEnginePanel() {
         <label className="field"><span className="field-label-row"><span>Temperature (0 = deterministic)</span></span><input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(event) => setTemperature(event.target.value)} required /></label>
       </div>
       <div className="integration-form-actions">
-        <button type="submit" className="button primary-button" disabled={!status?.ready || loading || running || !modelPath.trim() || !prompt.trim()}><Play size={15} /> {running ? "Generating locally…" : "Run with AXIOM Engine"}</button>
+        <button type="submit" className="button primary-button" disabled={!status?.ready || loading || running || !modelPath.trim() || !prompt.trim() || Boolean(adapterCompatibility && !adapterCompatibility.structurally_compatible)}><Play size={15} /> {running ? "Generating locally…" : "Run with AXIOM Engine"}</button>
         {running && <button type="button" className="button secondary-button" onClick={() => activeStreamRef.current?.abort()}><Unplug size={14} /> Stop generation</button>}
         {result && <span className="quiet-note"><Activity size={14} /> {result.completion_tokens} tokens · {result.elapsed_ms} ms</span>}
         {!result && streamTokenCount > 0 && <span className="quiet-note"><Activity size={14} /> {streamTokenCount} token(s) streamed</span>}
