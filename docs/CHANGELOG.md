@@ -1,4 +1,9 @@
 # Changelog
+## Unreleased — safer configuration guidance
+
+- Add stable configuration validation error codes, bounded YAML shape checks, and non-mutating repair suggestions.
+- Regression-test that malformed, missing, oversized, and symlinked configs are not echoed or modified by validation.
+
 
 ## Unreleased — environment, compatibility, and retention
 

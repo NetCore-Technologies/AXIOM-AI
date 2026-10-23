@@ -35,7 +35,7 @@ feature exists or a delivery-date promise.
 - [R019 · Implemented; tests passing] Add workspace-aware `axiom status` summaries with JSON health, workspace path, version, and Git working-tree state.
 - [R020 · Planned] Add import/export commands for workspace metadata.
 - [R021 · Planned] Add plan diff and reproducible plan printing.
-- [R022 · Planned] Add configuration validation and safe repair suggestions.
+- [R022 · In progress; validation pending] Add configuration validation and safe repair suggestions; validation reports stable error codes and non-mutating suggestions for missing, malformed, oversized, symlinked, or wrong-shaped YAML.
 - [R023 · Planned] Add clear exit-code documentation and stable failure codes.
 - [R024 · Planned] Keep CLI/API feature parity documented in the command reference.
 

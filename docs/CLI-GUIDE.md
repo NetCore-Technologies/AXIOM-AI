@@ -27,6 +27,15 @@ file only when you deliberately want to inspect or manage that generated file.
 If the shell was already open, restart it or source the appropriate generated
 completion script according to the shell's own conventions.
 
+## Configuration validation and repair guidance
+
+The command `axiom config validate --path axiom.yaml --json` emits a
+versioned validation report with a stable `error_code` and safe
+`suggestions` when it finds a problem. The suggestions are advisory:
+`repair_applied` remains false and the command never rewrites the supplied
+file. Symlinks are rejected, file contents are not echoed, and oversized files are
+rejected before their contents are read.
+
 ## Machine-readable output
 
 Commands that support `--json` emit a versioned payload on standard output.
