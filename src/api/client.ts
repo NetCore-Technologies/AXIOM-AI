@@ -119,6 +119,11 @@ export type AxiomQuantizationEstimate = {
   };
   assumptions: Record<string, unknown>;
   candidates: AxiomQuantizationCandidate[];
+  recommendation: {
+    format: "bf16" | "fp16" | "fp32" | null;
+    status: "fits_budget" | "no_native_candidate_fits";
+    note: string;
+  };
   scope_note: string;
 };
 
