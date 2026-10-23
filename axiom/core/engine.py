@@ -285,6 +285,142 @@ def check_local_adapter_compatibility(model_path: str, adapter_path: str) -> dic
     )
 
 
+def estimate_native_quantization(
+    model_path: str,
+    *,
+    context_length: int = 4096,
+    batch_size: int = 1,
+    ram_budget_gib: float | None = None,
+    vram_budget_gib: float | None = None,
+) -> dict[str, Any]:
+    """Estimate model/KV/workspace memory using config dimensions without loading tensors.
+
+    Quantized candidates are planning-only until an AXIOM-native quantized kernel
+    and checkpoint loader are implemented. The estimate is never presented as a
+    measured memory or model-quality result.
+    """
+    if isinstance(context_length, bool) or not isinstance(context_length, int) or not 1 <= context_length <= 131072:
+        raise ValueError("Context length must be an integer from 1 through 131072.")
+    if isinstance(batch_size, bool) or not isinstance(batch_size, int) or not 1 <= batch_size <= 16:
+        raise ValueError("Batch size must be an integer from 1 through 16.")
+    for label, budget in (("RAM", ram_budget_gib), ("VRAM", vram_budget_gib)):
+        if budget is not None and (
+            not isinstance(budget, (int, float))
+            or isinstance(budget, bool)
+            or not math.isfinite(float(budget))
+            or not 0.1 <= float(budget) <= 2048
+        ):
+            raise ValueError(f"{label} budget must be between 0.1 and 2048 GiB.")
+
+    model_dir = _resolve_model_directory(model_path, "Base model")
+    inspected = _inspect_model_config(model_dir)
+    model_config = inspected["config"]
+    from axiom.core.native_engine import NativeLlamaConfig
+    native_config = NativeLlamaConfig.from_mapping(model_config)
+    if context_length > native_config.max_position_embeddings:
+        raise ValueError(
+            f"Context length {context_length} exceeds this checkpoint's limit "
+            f"of {native_config.max_position_embeddings} tokens."
+        )
+
+    hidden = native_config.hidden_size
+    intermediate = native_config.intermediate_size
+    heads = native_config.num_attention_heads
+    kv_heads = native_config.num_key_value_heads
+    head_dim = hidden // heads
+    layers = native_config.num_hidden_layers
+    vocab = native_config.vocab_size
+    kv_width = kv_heads * head_dim
+
+    embedding_params = vocab * hidden
+    lm_head_params = 0 if native_config.tie_word_embeddings else vocab * hidden
+    per_layer_params = (
+        2 * hidden * hidden
+        + 2 * hidden * kv_width
+        + 3 * hidden * intermediate
+        + 2 * hidden
+    )
+    if model_config.get("attention_bias") is True:
+        per_layer_params += 2 * hidden + 2 * kv_width
+    if model_config.get("mlp_bias") is True:
+        per_layer_params += 2 * intermediate + hidden
+    estimated_parameters = embedding_params + lm_head_params + layers * per_layer_params + hidden
+
+    gib = 1024 ** 3
+    workspace_bytes = max(
+        batch_size * context_length * intermediate * 4,
+        batch_size * heads * context_length * context_length * 4,
+    )
+    candidates = [
+        ("int4", 4, 0.5, 1.15, 2, False, "Quantized weights are not supported by AXIOM Native Engine yet."),
+        ("int8", 8, 1.0, 1.05, 2, False, "Quantized weights are not supported by AXIOM Native Engine yet."),
+        ("bf16", 16, 2.0, 1.0, 2, True, None),
+        ("fp16", 16, 2.0, 1.0, 2, True, None),
+        ("fp32", 32, 4.0, 1.0, 4, True, None),
+    ]
+    candidate_results: list[dict[str, Any]] = []
+    for name, bits, bytes_per_parameter, storage_overhead, kv_bytes, native_supported, reason in candidates:
+        weight_bytes = estimated_parameters * bytes_per_parameter * storage_overhead
+        kv_bytes_total = 2 * layers * kv_heads * head_dim * context_length * batch_size * kv_bytes
+        unbuffered_total = weight_bytes + kv_bytes_total + workspace_bytes
+        total_bytes = unbuffered_total * 1.20
+        total_gib = total_bytes / gib
+        uncertainty_low = total_gib * 0.85
+        uncertainty_high = total_gib * 1.25
+        candidate_results.append({
+            "format": name,
+            "nominal_weight_bits": bits,
+            "estimated_weight_gib": round(weight_bytes / gib, 3),
+            "estimated_kv_cache_gib": round(kv_bytes_total / gib, 3),
+            "estimated_workspace_gib": round(workspace_bytes / gib, 3),
+            "estimated_total_gib": round(total_gib, 3),
+            "estimated_range_gib": [round(uncertainty_low, 3), round(uncertainty_high, 3)],
+            "fits_ram_budget": None if ram_budget_gib is None else total_gib <= float(ram_budget_gib),
+            "fits_vram_budget": None if vram_budget_gib is None else total_gib <= float(vram_budget_gib),
+            "native_checkpoint_supported": native_supported,
+            "native_support_note": reason,
+        })
+
+    return {
+        "schema_version": 1,
+        "model": {
+            "name": model_dir.name,
+            "model_type": native_config.model_type,
+            "architecture": inspected["architecture"],
+            "estimated_parameter_count": estimated_parameters,
+            "parameter_count_method": "analytic estimate from config dimensions; not a tensor-index count",
+        },
+        "request": {
+            "context_length": context_length,
+            "batch_size": batch_size,
+            "ram_budget_gib": ram_budget_gib,
+            "vram_budget_gib": vram_budget_gib,
+        },
+        "assumptions": {
+            "weight_storage": {
+                "fp32": "4 bytes/parameter",
+                "fp16": "2 bytes/parameter",
+                "bf16": "2 bytes/parameter",
+                "int8": "1 byte/parameter plus 5% scales/metadata",
+                "int4": "0.5 bytes/parameter plus 15% scales/metadata",
+            },
+            "kv_cache_formula": "2 × layers × KV heads × head dimension × context × batch × KV element bytes",
+            "kv_cache_precision": "FP32 candidate uses 4-byte cache elements; all other candidates assume 2-byte cache elements",
+            "workspace_formula": "max(batch × context × intermediate × 4, batch × attention heads × context² × 4)",
+            "safety_margin_percent": 20,
+            "uncertainty_range_percent": {"low": -15, "high": 25},
+            "quality_and_speed": "Not estimated; must be measured through model evaluation and runtime benchmarks.",
+        },
+        "candidates": candidate_results,
+        "scope_note": (
+            "Planning estimates only. They do not inspect tensor contents, measure physical memory, or predict model quality/speed. "
+            "INT4/INT8 are sizing-only and cannot be loaded by the current AXIOM Native Engine. "
+            "FP16/BF16/FP32 availability still depends on the actual checkpoint dtype, device kernels and free memory. "
+            "Estimated fit is not a guarantee of successful loading."
+        ),
+    }
+
+
 def discover_local_engine_assets() -> dict[str, Any]:
     """List metadata for native-compatible local folders without loading model weights."""
     roots = _allowed_model_roots()
