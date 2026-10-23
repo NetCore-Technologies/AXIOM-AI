@@ -93,4 +93,36 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
   await expect(engine.getByRole("status")).toContainText("released its loaded model and tokenizer references");
   await expect(engine.getByRole("button", { name: "Unload model" })).toHaveCount(0);
   expect(unloadCalls).toBe(1);
+
+  // Starting a second request and stopping it must keep the UI responsive and
+  // preserve the partial-output/cancellation status rather than reporting a
+  // successful completion.
+  await page.route("**/api/engine/generate/stream", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    try {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/x-ndjson",
+        body: JSON.stringify({
+          type: "complete",
+          result: {
+            engine: "axiom-native-engine", execution_backend: "pytorch-native-axiom",
+            transformers_generation_used: false, ollama_used: false,
+            model: "llama-test", architecture: "LlamaForCausalLM", model_type: "llama",
+            adapter: null, device: "cpu", checkpoint_format: "safetensors",
+            decoder: "axiom-autoregressive-kv-cache", response: "Should not arrive",
+            prompt_tokens: 3, completion_tokens: 1, elapsed_ms: 100,
+            generated_at: "2026-10-22T00:00:00Z", local_only: true,
+          },
+        }) + "\\n",
+      });
+    } catch {
+      // The browser has already aborted the request, which is the case under test.
+    }
+  });
+  await engine.getByRole("button", { name: "Run with AXIOM Engine" }).click();
+  await expect(engine.getByRole("button", { name: "Stop generation" })).toBeVisible();
+  await engine.getByRole("button", { name: "Stop generation" }).click();
+  await expect(engine.getByRole("alert")).toContainText("Generation cancelled after 0 token(s)");
+  await expect(engine.getByTestId("axiom-engine-output")).toHaveCount(0);
 });
