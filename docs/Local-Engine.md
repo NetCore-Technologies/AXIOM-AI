@@ -1,6 +1,6 @@
 # AXIOM Native Engine: independent local inference execution
 
-AXIOM Native Engine executes Llama/Mistral-family causal language models directly inside AXIOM's Python process. PyTorch supplies tensor operations and device kernels; AXIOM implements the model's forward pass, RMSNorm, rotary position embeddings (RoPE), grouped-query attention, causal/sliding-window masks, per-layer key/value cache, SwiGLU MLP, LoRA deltas, sampling and token-by-token decoding.
+AXIOM Native Engine executes Llama/Mistral-family causal language models directly inside AXIOM's Python process. PyTorch supplies tensor operations and device kernels; AXIOM implements the model's forward pass, RMSNorm, rotary position embeddings (RoPE), grouped-query attention, causal/sliding-window masks, per-layer key/value cache, SwiGLU MLP, LoRA deltas, sampling and token-by-token decoding. AXIOM uses PyTorch's scaled-dot-product attention kernel when available to benefit from fused/optimized kernels; the exact cache-aware causal and sliding-window mask is built by AXIOM, with a manual attention implementation as the fallback.
 
 **It is not an Ollama wrapper.** The inference request does not start, call, or require an Ollama service. It does not call Transformers' AutoModel loader or model.generate. Checkpoint weights are read from the safetensors format and run through AXIOM's own native execution code. Tokenization is performed by the local tokenizers package using the checkpoint's tokenizer.json; AXIOM does not download a tokenizer or model.
 
