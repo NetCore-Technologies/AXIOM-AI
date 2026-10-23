@@ -18,6 +18,7 @@ export default function LocalAxiomEnginePanel() {
   const [topK, setTopK] = useState("0");
   const [repetitionPenalty, setRepetitionPenalty] = useState("1.0");
   const [seed, setSeed] = useState("");
+  const [stopSequencesText, setStopSequencesText] = useState("");
   const [result, setResult] = useState<AxiomEngineResult | null>(null);
   const [streamResponse, setStreamResponse] = useState("");
   const [streamTokenCount, setStreamTokenCount] = useState(0);
@@ -105,6 +106,7 @@ export default function LocalAxiomEnginePanel() {
     const k = Number(topK);
     const repeatPenalty = Number(repetitionPenalty);
     const seedValue = seed.trim() === "" ? null : Number(seed);
+    const stopSequences = stopSequencesText.split("\n").map((value) => value.replace(/\r$/, "")).filter((value) => value.length > 0);
     if (!modelPath.trim()) { setError("Choose a discovered native model or enter a trusted local Llama/Mistral model path."); return; }
     if (!prompt.trim()) { setError("Enter a prompt first."); return; }
     if (!Number.isInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 2048) { setError("Maximum generated tokens must be between 1 and 2048."); return; }
@@ -114,6 +116,11 @@ export default function LocalAxiomEnginePanel() {
     if (!Number.isFinite(repeatPenalty) || repeatPenalty < 0.1 || repeatPenalty > 5) { setError("Repetition penalty must be between 0.1 and 5."); return; }
     if (seed.trim() !== "" && (!Number.isSafeInteger(seedValue) || seedValue! < 0 || seedValue! > Number.MAX_SAFE_INTEGER)) {
       setError("Seed must be a whole number from 0 through 9007199254740991, or blank for a non-fixed seed.");
+      return;
+    }
+    if (stopSequences.length > 16) { setError("At most 16 stop sequences may be configured."); return; }
+    if (stopSequences.some((value) => !value.trim() || value.length > 256)) {
+      setError("Each stop sequence must contain non-whitespace text and be no longer than 256 characters.");
       return;
     }
     const controller = new AbortController();
@@ -130,6 +137,7 @@ export default function LocalAxiomEnginePanel() {
         top_k: k,
         repetition_penalty: repeatPenalty,
         seed: seedValue,
+        stop_sequences: stopSequences,
       }, (event: AxiomEngineStreamEvent) => {
         if (event.type === "token") {
           streamTokenCountRef.current = event.completion_tokens;
@@ -231,6 +239,11 @@ export default function LocalAxiomEnginePanel() {
         <label className="field"><span className="field-label-row"><span>Repetition penalty</span></span><input aria-label="Repetition penalty" type="number" min={0.1} max={5} step={0.05} value={repetitionPenalty} onChange={(event) => setRepetitionPenalty(event.target.value)} required /><small>1.0 disables repetition adjustment; other values penalize or boost previously seen token scores.</small></label>
         <label className="field"><span className="field-label-row"><span>Sampling seed (optional)</span></span><input aria-label="Sampling seed" type="number" min={0} max={Number.MAX_SAFE_INTEGER} step={1} value={seed} onChange={(event) => setSeed(event.target.value)} placeholder="Leave blank to vary sampling" /><small>A seed makes token sampling reproducible on the same model, device and runtime. This does not guarantee cross-device bitwise reproducibility.</small></label>
       </div>
+      <label className="field">
+        <span className="field-label-row"><span>Stop sequences (optional)</span><span>{stopSequencesText.split("\n").filter((value) => value.length > 0).length} / 16</span></span>
+        <textarea aria-label="Stop sequences" value={stopSequencesText} onChange={(event) => setStopSequencesText(event.target.value)} rows={3} maxLength={4112} placeholder={"One exact stop string per line, e.g.\n<END>\n###"} />
+        <small>AXIOM stops at the first full match, holds back partial matches across tokens, and excludes the stop text from the answer. Maximum 16 strings, 256 characters each.</small>
+      </label>
       <div className="integration-form-actions">
         <button type="submit" className="button primary-button" disabled={!status?.ready || loading || running || !modelPath.trim() || !prompt.trim() || Boolean(adapterCompatibility && !adapterCompatibility.structurally_compatible)}><Play size={15} /> {running ? "Generating locally…" : "Run with AXIOM Engine"}</button>
         {running && <button type="button" className="button secondary-button" onClick={() => activeStreamRef.current?.abort()}><Unplug size={14} /> Stop generation</button>}
@@ -243,7 +256,7 @@ export default function LocalAxiomEnginePanel() {
       <div className="surface-head"><div>
         <p className="surface-eyebrow">{result ? `GENERATED ON THIS MACHINE · ${result.architecture}` : running ? "STREAMING TOKEN OUTPUT · LOCAL ONLY" : "PARTIAL LOCAL OUTPUT"}</p>
         <h3>{result ? `${result.model}${result.adapter ? ` + ${result.adapter}` : ""}` : (assets?.models.find((model) => model.path === modelPath)?.name || "AXIOM Native Engine")}</h3>
-        {result && <p className="quiet-note">Attention: {result.attention_backend} · Sampling: temperature {result.sampling.temperature} · top-p {result.sampling.top_p} · top-k {result.sampling.top_k || "off"} · repetition penalty {result.sampling.repetition_penalty} · seed {result.sampling.seed ?? "random"}</p>}
+        {result && <p className="quiet-note">Finish: {result.stop_reason.replaceAll("_", " ")} · Stop sequences: {result.stop_sequences.length ? result.stop_sequences.length : "off"} · Attention: {result.attention_backend} · Sampling: temperature {result.sampling.temperature} · top-p {result.sampling.top_p} · top-k {result.sampling.top_k || "off"} · repetition penalty {result.sampling.repetition_penalty} · seed {result.sampling.seed ?? "random"}</p>}
       </div><span className={`status-pill ${result ? "success" : running ? "warning" : "neutral"}`}><i />{result ? "COMPLETED" : running ? "GENERATING" : "CANCELLED"}</span></div>
       <pre data-testid={result ? "axiom-engine-output" : "axiom-engine-live-output"} className="local-inference-output">{(result ? result.response : streamResponse) || "(The model has not emitted printable text yet.)"}</pre>
       {!result && <p className="quiet-note">Cumulative text snapshots update as the native decoder emits tokens. {streamTokenCount} token(s) received.</p>}
