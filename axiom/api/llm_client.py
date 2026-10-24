@@ -37,6 +37,11 @@ class ChatRequest(ProviderRequest):
     messages: list[ChatMessage] = Field(min_length=1, max_length=64)
     max_tokens: int = Field(default=256, ge=1, le=2_048)
     temperature: float = Field(default=0.7, ge=0, le=2)
+    top_p: float = Field(default=0.9, gt=0, le=1)
+    top_k: int = Field(default=0, ge=0, le=100_000, strict=True)
+    repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
+    seed: int | None = Field(default=None, ge=0, le=9_223_372_036_854_775_807, strict=True)
+    stop_sequences: list[str] = Field(default_factory=list, max_length=16)
     consent: bool = False
     device: Literal["auto", "cpu", "cuda", "rocm", "mps", "xpu"] = "auto"
     memory_mode: Literal["auto", "full", "layer_streaming", "disk_streaming"] = "auto"
@@ -92,6 +97,11 @@ def run_chat(request: ChatRequest) -> dict[str, Any]:
         base_url=request.base_url,
         max_tokens=request.max_tokens,
         temperature=request.temperature,
+        top_p=request.top_p,
+        top_k=request.top_k,
+        repetition_penalty=request.repetition_penalty,
+        seed=request.seed,
+        stop_sequences=request.stop_sequences,
         consent=request.consent,
         device=request.device,
         memory_mode=request.memory_mode,
