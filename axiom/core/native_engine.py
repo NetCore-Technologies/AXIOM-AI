@@ -32,6 +32,9 @@ class NativeDependencyError(RuntimeError):
 
 def _sanitize_sampling_scores(scores: Any, torch_module: Any) -> Any:
     """Make decoder logits safe for argmax/softmax without inventing a fallback token."""
+    if bool(torch_module.isfinite(scores).all().item()):
+        return scores
+
     positive_infinity = torch_module.isposinf(scores)
     if bool(positive_infinity.any().item()):
         # An overflowed +inf logit dominates all ordinary finite logits. Keep
@@ -968,12 +971,11 @@ class NativeLlamaRuntime:
                             remove[..., 0] = False
                             sorted_scores = sorted_scores.masked_fill(remove, float("-inf"))
                             scores = torch.full_like(scores, float("-inf")).scatter(dim=-1, index=sorted_ids, src=sorted_scores)
-                        scores = _sanitize_sampling_scores(scores, torch)
-                        probabilities = torch.softmax(scores, dim=-1)
-                        if not bool(torch.isfinite(probabilities).all().item()):
+                        if not bool(torch.isfinite(scores).any().item()):
                             raise NativeEngineError(
-                                "Native sampler could not form a finite token probability distribution."
+                                "Native sampling filters removed every usable token."
                             )
+                        probabilities = torch.softmax(scores, dim=-1)
                         next_token = torch.multinomial(
                             probabilities, num_samples=1, generator=sampling_generator
                         ).squeeze(-1)
