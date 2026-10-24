@@ -10,6 +10,12 @@ export default function LocalInferencePanel() {
   const [prompt, setPrompt] = useState("");
   const [numPredict, setNumPredict] = useState("256");
   const [temperature, setTemperature] = useState("0.7");
+  const [topP, setTopP] = useState("0.9");
+  const [topK, setTopK] = useState("40");
+  const [repetitionPenalty, setRepetitionPenalty] = useState("1.1");
+  const [seedValue, setSeedValue] = useState("");
+  const [contextWindow, setContextWindow] = useState("");
+  const [stopSequences, setStopSequences] = useState("");
   const [result, setResult] = useState<LocalInferenceResult | null>(null);
   const [benchmark, setBenchmark] = useState<LocalInferenceBenchmark | null>(null);
   const [warmupRuns, setWarmupRuns] = useState("1");
@@ -129,13 +135,27 @@ export default function LocalInferencePanel() {
     const temperatureValue = Number(temperature);
     if (!Number.isInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 2048) { setError("Maximum generated tokens must be between 1 and 2048."); return; }
     if (!Number.isFinite(temperatureValue) || temperatureValue < 0 || temperatureValue > 2) { setError("Temperature must be between 0 and 2."); return; }
+    const topPValue = Number(topP);
+    const topKValue = Number(topK);
+    const repetitionPenaltyValue = Number(repetitionPenalty);
+    const seedText = seedValue.trim();
+    const contextText = contextWindow.trim();
+    const seedNumber = seedText ? Number(seedText) : null;
+    const contextNumber = contextText ? Number(contextText) : null;
+    const stops = stopSequences.split(/\\r?\\n/).map((value) => value.trim()).filter(Boolean);
+    if (!Number.isFinite(topPValue) || topPValue <= 0 || topPValue > 1) { setError("Top-p must be greater than 0 and at most 1."); return; }
+    if (!Number.isInteger(topKValue) || topKValue < 0 || topKValue > 100000) { setError("Top-k must be between 0 and 100000."); return; }
+    if (!Number.isFinite(repetitionPenaltyValue) || repetitionPenaltyValue < 0.1 || repetitionPenaltyValue > 5) { setError("Repetition penalty must be between 0.1 and 5."); return; }
+    if (seedText && (!Number.isSafeInteger(seedNumber) || seedNumber! < 0)) { setError("Seed must be a non-negative safe integer."); return; }
+    if (contextText && (!Number.isInteger(contextNumber) || contextNumber! < 512 || contextNumber! > 131072)) { setError("Context window must be between 512 and 131072 tokens."); return; }
+    if (stops.length > 16 || stops.some((value) => value.length > 256)) { setError("Use at most 16 stop sequences, each no longer than 256 characters."); return; }
     setRunning(true);
     const controller = new AbortController();
     setStreamController(controller);
     setResult({ model: model.trim(), response: "", done: false, prompt_eval_count: null, eval_count: null, total_duration_ms: null, generated_at: new Date().toISOString() });
     try {
       const finalResult = await axiomApi.streamLocalInference(
-        { model: model.trim(), prompt, num_predict: tokenLimit, temperature: temperatureValue },
+        { model: model.trim(), prompt, num_predict: tokenLimit, temperature: temperatureValue, top_p: topPValue, top_k: topKValue, repetition_penalty: repetitionPenaltyValue, ...(seedNumber !== null ? { seed: seedNumber } : {}), ...(contextNumber !== null ? { num_ctx: contextNumber } : {}), ...(stops.length ? { stop_sequences: stops } : {}) },
         (event: LocalInferenceStreamEvent) => {
           if (event.type === "token") {
             setResult((current) => current ? { ...current, response: current.response + event.token, done: false } : current);
@@ -296,6 +316,18 @@ export default function LocalInferencePanel() {
         <label className="field"><span className="field-label-row"><span>Maximum generated tokens</span></span><input type="number" min={1} max={2048} step={1} value={numPredict} onChange={(event) => setNumPredict(event.target.value)} required /></label>
         <label className="field"><span className="field-label-row"><span>Temperature</span></span><input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(event) => setTemperature(event.target.value)} required /></label>
       </div>
+      <details className="surface" style={{ marginTop: 14, padding: 14, border: "1px solid var(--line-strong)", borderRadius: 2, background: "var(--surface)" }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Advanced sampling options</summary>
+        <p className="quiet-note" style={{ marginTop: 10 }}>These controls are sent to Ollama as local runtime options. Leave seed and context size blank to use the model/runtime defaults.</p>
+        <div className="two-column-grid">
+          <label className="field"><span className="field-label-row"><span>Top-p</span></span><input type="number" min={0.001} max={1} step={0.05} value={topP} onChange={(event) => setTopP(event.target.value)} /></label>
+          <label className="field"><span className="field-label-row"><span>Top-k</span></span><input type="number" min={0} max={100000} step={1} value={topK} onChange={(event) => setTopK(event.target.value)} /></label>
+          <label className="field"><span className="field-label-row"><span>Repetition penalty</span></span><input type="number" min={0.1} max={5} step={0.1} value={repetitionPenalty} onChange={(event) => setRepetitionPenalty(event.target.value)} /></label>
+          <label className="field"><span className="field-label-row"><span>Random seed (optional)</span></span><input type="number" min={0} step={1} value={seedValue} onChange={(event) => setSeedValue(event.target.value)} placeholder="Use runtime default" /></label>
+          <label className="field"><span className="field-label-row"><span>Context window (optional)</span></span><input type="number" min={512} max={131072} step={256} value={contextWindow} onChange={(event) => setContextWindow(event.target.value)} placeholder="Use model default" /></label>
+        </div>
+        <label className="field"><span className="field-label-row"><span>Stop sequences (one per line, optional)</span><span>{stopSequences.split(/\\r?\\n/).filter((value) => value.trim()).length} / 16</span></span><textarea value={stopSequences} onChange={(event) => setStopSequences(event.target.value)} rows={3} placeholder="Example: END_OF_RESPONSE\n<|end|>" /></label>
+      </details>
       <div className="integration-form-actions">
         <button type="submit" className="button primary-button" disabled={!online || loading || running || !model.trim() || !prompt.trim()}><Play size={15} /> {running ? "Generating locally…" : "Run locally"}</button>
         {running && <button type="button" className="button secondary-button" onClick={() => streamController?.abort()} disabled={!streamController}><Square size={13} /> Stop generation</button>}
