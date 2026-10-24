@@ -5,10 +5,11 @@ AXIOM exposes one text-chat interface for its native local engine and selected c
 ## Supported providers
 
 - **AXIOM Native Engine (`axiom-local`)** — local Llama, Mistral, Qwen2, and Qwen3 floating-point safetensors checkpoints found under the trusted native-model roots.
+- **Ollama (`ollama-local`)** — models already installed in Ollama, including Ollama-supported GGUF models, through the fixed loopback-only Ollama chat API.
 - **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **Moonshot AI/Kimi**, and **OpenRouter** — provider-specific HTTPS API adapters.
 - **Custom OpenAI-compatible provider** — an explicitly supplied public HTTPS endpoint ending in `/v1`.
 
-This client currently handles text conversations. It does not add multimodal/image payloads, function/tool calling, model downloads, persistent chat history, or provider-side fallback. The native provider does not make GGUF, Ollama, or unsupported checkpoints work through the AXIOM Native Engine.
+This client currently handles text conversations. It does not add multimodal/image payloads, function/tool calling, model downloads, persistent chat history, or provider-side fallback. The native provider does not make GGUF, Ollama, or unsupported checkpoints work through the AXIOM Native Engine; choose `ollama-local` for models already installed in Ollama.
 
 ## Control Center
 
@@ -22,6 +23,7 @@ Cloud requests are blocked until the user confirms that the selected provider re
 axiom llm providers
 axiom llm providers --json
 axiom llm models --provider axiom-local
+axiom llm models --provider ollama-local
 axiom llm models --provider deepseek
 axiom llm chat deepseek-chat "Explain KV caching in two sentences." --provider deepseek --send-to-provider
 axiom llm chat MODEL_ID "Summarize this local note." --provider axiom-local --device auto --memory-mode auto
