@@ -21,7 +21,7 @@ def _fail(message: str) -> None:
 
 
 def _credential(provider: str, env_name: str) -> str | None:
-    if provider == "axiom-local":
+    if provider in {"axiom-local", "ollama-local"}:
         return None
     if not env_name or len(env_name) > 128:
         _fail("API-key environment variable name must be between 1 and 128 characters.")
@@ -55,7 +55,7 @@ def providers(json_output: bool = typer.Option(False, "--json", help="Print mach
 
 @llm_app.command("models")
 def models(
-    provider: str = typer.Option("axiom-local", "--provider", help="axiom-local, openai, anthropic, gemini, deepseek, moonshot, openrouter, or openai-compatible."),
+    provider: str = typer.Option("axiom-local", "--provider", help="axiom-local, ollama-local, openai, anthropic, gemini, deepseek, moonshot, openrouter, or openai-compatible."),
     base_url: str = typer.Option("", "--base-url", help="Required only for openai-compatible."),
     api_key_env: str = typer.Option("AXIOM_LLM_API_KEY", "--api-key-env", help="Environment variable to read the API key from."),
     json_output: bool = typer.Option(False, "--json", help="Print model IDs as JSON."),
@@ -96,7 +96,7 @@ def chat(
     """Generate a response locally or through an explicitly selected cloud provider."""
     if not prompt.strip() or len(prompt) > 12_000:
         _fail("Prompt must contain 1–12,000 characters.")
-    remote = provider != "axiom-local"
+    remote = provider not in {"axiom-local", "ollama-local"}
     if remote and not send_to_provider:
         _fail("Cloud use requires --send-to-provider because your prompt will be sent to the selected provider.")
     key = _credential(provider, api_key_env)
