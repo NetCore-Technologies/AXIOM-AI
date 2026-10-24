@@ -100,12 +100,12 @@ def test_native_min_p_filters_by_probability_relative_to_best_logit() -> None:
     assert torch.isfinite(filtered[0, :2]).all().item()
     assert torch.isneginf(filtered[0, 2:]).all().item()
 
-    strict = _apply_min_p_filter(logits, 1.0, torch)
+    strict = _apply_min_p_filter(logits, 1.0)
     assert torch.isfinite(strict).sum().item() == 1
     assert strict[0, 0].item() == 0.0
     assert torch.isneginf(strict[0, 1:]).all().item()
 
-    assert torch.equal(_apply_min_p_filter(logits, 0.0, torch), logits)
+    assert torch.equal(_apply_min_p_filter(logits, 0.0), logits)
 
 
 def test_stop_sequences_are_bounded_and_deduplicated() -> None:
