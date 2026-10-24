@@ -18,6 +18,7 @@ from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, generate_local_stream
+from axiom.core.inference import InferenceRuntimeError, run_local_chat, runtime_status as ollama_runtime_status
 from axiom.core.model_studio import ModelStudioError, validate_remote_base_url
 
 _MAX_KEY_CHARS = 512
@@ -40,6 +41,7 @@ _PROVIDER_CONFIG: dict[str, dict[str, Any]] = {
     "openai-compatible": {"label": "Custom OpenAI-compatible", "base_url": None, "kind": "openai"},
 }
 _LOCAL_PROVIDER = "axiom-local"
+_OLLAMA_PROVIDER = "ollama-local"
 
 
 class LLMClientError(RuntimeError):
@@ -62,6 +64,15 @@ def provider_catalog() -> dict[str, Any]:
         "privacy": "local-only",
         "note": "Runs supported local Llama, Mistral, Qwen2, and Qwen3 safetensors checkpoints.",
     }]
+    providers.append({
+        "id": _OLLAMA_PROVIDER,
+        "label": "Ollama (local)",
+        "kind": "local",
+        "requires_api_key": False,
+        "supports_model_listing": True,
+        "privacy": "local-only",
+        "note": "Uses the fixed 127.0.0.1:11434 Ollama API; supports locally installed Ollama formats such as GGUF.",
+    })
     for provider_id, config in _PROVIDER_CONFIG.items():
         providers.append({
             "id": provider_id,
@@ -300,6 +311,21 @@ def list_models(provider: str, api_key: str | None = None, base_url: str | None 
             "credential_storage": "not_applicable",
             "execution": "local",
         }
+    if provider == _OLLAMA_PROVIDER:
+        if api_key or base_url:
+            raise ValueError("The local Ollama provider does not accept API keys or remote base URLs.")
+        status = ollama_runtime_status()
+        models = status.get("models", []) if isinstance(status, dict) else []
+        safe_models = [name for name in models if isinstance(name, str) and name]
+        return {
+            "provider": provider,
+            "models": safe_models,
+            "count": len(safe_models),
+            "credential_storage": "not_applicable",
+            "execution": "local",
+            "runtime_status": status.get("status", "offline"),
+            "note": status.get("error") or "Models are discovered from the fixed local Ollama loopback API.",
+        }
     if provider not in _PROVIDER_CONFIG:
         raise ValueError(f"Unsupported LLM provider: {provider!r}.")
     key = _validate_key(api_key)
@@ -451,6 +477,24 @@ def chat(
             "device": final.get("device"),
             "context_management": final.get("context_management"),
             "generated_at": datetime.now(UTC).isoformat(),
+        }
+    if provider == _OLLAMA_PROVIDER:
+        if api_key or base_url:
+            raise ValueError("The local Ollama provider does not accept API keys or remote base URLs.")
+        try:
+            final = run_local_chat(model_id, normalized, num_predict=token_limit, temperature=temp)
+        except (InferenceRuntimeError, ValueError) as exc:
+            raise LLMClientError(str(exc)) from None
+        return {
+            "provider": _OLLAMA_PROVIDER,
+            "model": model_id,
+            "response": str(final.get("response", ""))[:100_000],
+            "prompt_tokens": _int_or_none(final.get("prompt_eval_count")),
+            "completion_tokens": _int_or_none(final.get("eval_count")),
+            "credential_storage": "not_applicable",
+            "execution": "local",
+            "device": "ollama",
+            "generated_at": final.get("generated_at") or datetime.now(UTC).isoformat(),
         }
     if provider not in _PROVIDER_CONFIG:
         raise ValueError(f"Unsupported LLM provider: {provider!r}.")
