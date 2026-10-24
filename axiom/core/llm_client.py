@@ -479,6 +479,8 @@ def chat(
             "credential_storage": "not_applicable",
             "execution": "local",
             "device": final.get("device"),
+            "precision": final.get("precision"),
+            "precision_selection": final.get("precision_selection"),
             "context_management": final.get("context_management"),
             "generated_at": datetime.now(UTC).isoformat(),
         }
