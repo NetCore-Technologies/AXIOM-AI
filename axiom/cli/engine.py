@@ -415,6 +415,7 @@ def engine_route_chat(
 
     top_p: float = typer.Option(0.9, "--top-p", min=0.000001, max=1),
     top_k: int = typer.Option(0, "--top-k", min=0, max=100_000),
+    min_p: float = typer.Option(0.0, "--min-p", min=0, max=1, help="Relative-probability cutoff; supported by AXIOM Native Engine and Ollama."),
     repetition_penalty: float = typer.Option(1.0, "--repeat-penalty", min=0.1, max=5),
     seed: int | None = typer.Option(None, "--seed", min=0, max=9_223_372_036_854_775_807),
     stop_sequences: list[str] = typer.Option([], "--stop-sequence", help="Stop on exact text; repeat the option for multiple stops."),
@@ -425,7 +426,7 @@ def engine_route_chat(
         result = run_engine_backend_chat(
             backend, model, [{"role": "user", "content": prompt}],
             max_new_tokens=max_new_tokens, temperature=temperature,
-            top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty,
+            top_p=top_p, top_k=top_k, min_p=min_p, repetition_penalty=repetition_penalty,
             seed=seed, stop_sequences=stop_sequences,
         )
     except (ValueError, EngineFabricError) as exc:
@@ -447,6 +448,7 @@ def engine_auto_chat(
 
     top_p: float = typer.Option(0.9, "--top-p", min=0.000001, max=1),
     top_k: int = typer.Option(0, "--top-k", min=0, max=100_000),
+    min_p: float = typer.Option(0.0, "--min-p", min=0, max=1, help="Relative-probability cutoff; supported by AXIOM Native Engine and Ollama."),
     repetition_penalty: float = typer.Option(1.0, "--repeat-penalty", min=0.1, max=5),
     seed: int | None = typer.Option(None, "--seed", min=0, max=9_223_372_036_854_775_807),
     stop_sequences: list[str] = typer.Option([], "--stop-sequence", help="Stop on exact text; repeat the option for multiple stops."),
@@ -461,7 +463,7 @@ def engine_auto_chat(
         result = run_engine_fabric_chat(
             profile, model.strip(), [{"role": "user", "content": prompt}],
             max_new_tokens=max_new_tokens, temperature=temperature,
-            top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty,
+            top_p=top_p, top_k=top_k, min_p=min_p, repetition_penalty=repetition_penalty,
             seed=seed, stop_sequences=stop_sequences,
         )
     except (ValueError, EngineFabricError) as exc:
@@ -498,6 +500,7 @@ def engine_route_benchmark(
 
     top_p: float = typer.Option(0.9, "--top-p", min=0.000001, max=1),
     top_k: int = typer.Option(0, "--top-k", min=0, max=100_000),
+    min_p: float = typer.Option(0.0, "--min-p", min=0, max=1, help="Relative-probability cutoff; supported by AXIOM Native Engine and Ollama."),
     repetition_penalty: float = typer.Option(1.0, "--repeat-penalty", min=0.1, max=5),
     seed: int | None = typer.Option(None, "--seed", min=0, max=9_223_372_036_854_775_807),
     stop_sequences: list[str] = typer.Option([], "--stop-sequence", help="Stop on exact text; repeat the option for multiple stops."),
@@ -508,7 +511,7 @@ def engine_route_benchmark(
         result = run_engine_backend_benchmark(
             backend, model, prompt, max_new_tokens=max_new_tokens,
             warmup_runs=warmup_runs, iterations=iterations, temperature=temperature,
-            top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty,
+            top_p=top_p, top_k=top_k, min_p=min_p, repetition_penalty=repetition_penalty,
             seed=seed, stop_sequences=stop_sequences,
         )
     except (ValueError, EngineFabricError) as exc:
