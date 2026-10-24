@@ -23,6 +23,7 @@ def test_engine_request_accepts_absolute_paths_only_inside_explicit_roots(tmp_pa
     monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(root))
 
     request = engine_api.GenerateRequest(model_path=str(model), prompt="hello")
+    assert request.memory_mode == "auto"
 
     assert request.model_path == str(model.resolve())
 
