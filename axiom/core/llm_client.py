@@ -324,7 +324,11 @@ def list_models(provider: str, api_key: str | None = None, base_url: str | None 
             "credential_storage": "not_applicable",
             "execution": "local",
             "runtime_status": status.get("status", "offline"),
-            "note": status.get("error") or "Models are discovered from the fixed local Ollama loopback API.",
+            "note": status.get("error") or (
+                "Ollama is online but no models are installed yet; pull a model locally first."
+                if not safe_models else
+                "Models are discovered from the fixed local Ollama loopback API."
+            ),
         }
     if provider not in _PROVIDER_CONFIG:
         raise ValueError(f"Unsupported LLM provider: {provider!r}.")
