@@ -443,7 +443,7 @@ def inspect(root: Path) -> dict[str, Any]:
     for token in ("test_streaming_api_passes_advanced_sampling_options", "test_generate_api_rejects_oversized_context_and_stop_sequence_lists", "test_streaming_inference_emits_ndjson_token_deltas", "test_streaming_inference_sanitizes_runtime_failures"):
         if token not in ollama_api_tests:
             failures.append("Ollama streaming API coverage is missing: " + token)
-    for token in ('"/api/inference/generate/stream"', "top_p: 0.83", 'stop_sequences: ["DONE", "END"]', "Stop generation", "Hello from the mocked local model"):
+    for token in ('"/api/inference/generate/stream"', "top_p: 0.83", "min_p: 0.2", 'stop_sequences: ["DONE", "END"]', "Stop generation", "Hello from the mocked local model"):
         if token not in inference_stream_e2e:
             failures.append("Streaming generation browser acceptance coverage is missing: " + token)
     for token in ("start Ollama, pull a model with progress", "Show loaded models", "Inspect model", "Unload from memory", '"/api/inference/models/running"', '"/api/inference/models/inspect"', '"/api/inference/models/unload"'):
