@@ -275,6 +275,37 @@ def test_sampling_validation_happens_before_any_backend_request(monkeypatch):
             raise AssertionError(f"Expected invalid sampling settings to be rejected: {options!r}")
 
 
+def test_min_p_auto_route_filters_compatibility_before_candidate_limit(monkeypatch):
+    monkeypatch.setattr(engine_fabric, "discover_engine_backends", lambda profile: {
+        "profile": profile,
+        "backends": [
+            {"id": "vllm", "name": "vLLM", "status": "ready", "supports_chat": True, "models": ["tiny"]},
+            {"id": "llama-cpp", "name": "llama.cpp", "status": "ready", "supports_chat": True, "models": ["tiny"]},
+            {"id": "lm-studio", "name": "LM Studio", "status": "ready", "supports_chat": True, "models": ["tiny"]},
+            {"id": "ollama", "name": "Ollama", "status": "ready", "supports_chat": True, "models": ["tiny"]},
+        ],
+    })
+    observed = []
+
+    def fake_chat(backend_id, model, messages, **kwargs):
+        observed.append((backend_id, kwargs))
+        return {
+            "schema_version": 1, "backend_id": backend_id, "backend_name": "Ollama",
+            "model": model, "response": "filtered correctly", "done": True,
+            "prompt_eval_count": 2, "eval_count": 3, "total_duration_ms": 10.0,
+            "generated_at": "2026-10-24T00:00:00+00:00", "execution": "local_loopback",
+            "privacy": {"prompt_returned": False, "response_persisted": False, "cloud_provider_used": False},
+        }
+
+    monkeypatch.setattr(engine_fabric, "run_engine_backend_chat", fake_chat)
+    result = engine_fabric.run_engine_fabric_chat(
+        "throughput", "tiny", [{"role": "user", "content": "hello"}], min_p=0.2,
+    )
+    assert [backend_id for backend_id, _kwargs in observed] == ["ollama"]
+    assert observed[0][1]["min_p"] == 0.2
+    assert result["backend_id"] == "ollama"
+
+
 def test_min_p_is_rejected_for_backends_that_do_not_support_it(monkeypatch):
     monkeypatch.setattr(
         engine_fabric, "_request_json",
