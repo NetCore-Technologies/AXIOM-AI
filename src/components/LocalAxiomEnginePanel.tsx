@@ -24,7 +24,7 @@ export default function LocalAxiomEnginePanel() {
   const [checkingAdapter, setCheckingAdapter] = useState(false);
   const [modelPath, setModelPath] = useState("");
   const [devicePreference, setDevicePreference] = useState<"auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu">("auto");
-  const [memoryMode, setMemoryMode] = useState<"full" | "layer_streaming" | "disk_streaming">("full");
+  const [memoryMode, setMemoryMode] = useState<"auto" | "full" | "layer_streaming" | "disk_streaming">("auto");
   const [selectedModelPath, setSelectedModelPath] = useState("");
   const [adapterPath, setAdapterPath] = useState("");
   const [selectedAdapterPath, setSelectedAdapterPath] = useState("");
@@ -251,6 +251,7 @@ export default function LocalAxiomEnginePanel() {
     stop_reason: result.stop_reason,
   } : liveTelemetry?.metrics;
   const deviceMemory = result?.device_memory ?? liveTelemetry?.device_memory;
+  const memorySelection = result?.memory_selection ?? liveTelemetry?.memory_selection;
   const memoryStats = result?.memory_stats ?? liveTelemetry?.memory_stats;
   const telemetryMemoryMode = result?.memory_mode ?? liveTelemetry?.memory_mode ?? memoryMode;
   return <section className="surface axiom-engine-panel" aria-label="AXIOM local engine">
@@ -338,11 +339,12 @@ export default function LocalAxiomEnginePanel() {
       <label className="field">
         <span className="field-label-row"><span>Memory strategy</span></span>
         <select aria-label="Memory strategy" value={memoryMode} onChange={(event) => setMemoryMode(event.target.value as typeof memoryMode)}>
+          <option value="auto">Auto-fit from model size, context and available memory · recommended</option>
           <option value="full">Full weights on execution device · faster, higher VRAM</option>
           <option value="layer_streaming">Layer streaming + CPU KV cache · lower VRAM, slower</option>
           <option value="disk_streaming">Disk-resident layer streaming + CPU KV cache · lowest RAM/VRAM, slowest</option>
         </select>
-        <small>Layer streaming keeps transformer block weights in system RAM and stages one block at a time. Disk-resident streaming reads each layer's safetensors tensors from local checkpoint shards on demand and releases that layer after its forward pass. Both modes keep the KV cache in system RAM and trade throughput for lower RAM/VRAM requirements. Embeddings, output projection, LoRA adapter tensors, activations, and the active layer still need memory.</small>
+        <small>Auto-fit estimates checkpoint weight bytes, KV-cache and workspace demand for the configured context, and observed free VRAM/system RAM to select full weights, in-RAM layer streaming, or disk-resident layer streaming. Estimates are advisory, not a guarantee against device OOM. Layer streaming keeps all transformer weights in system RAM and stages one layer at a time; disk streaming reads layers from the local safetensors shards on demand. Both streaming modes keep the KV cache in system RAM and trade throughput for lower RAM/VRAM weight residency. Embeddings, output projection, LoRA adapter tensors, activations, and the active layer still need memory.</small>
       </label>
       <label className="field">
         <span className="field-label-row"><span>AXIOM Native Engine prompt</span><span>{prompt.length.toLocaleString()} / 12,000 characters</span></span>
@@ -446,6 +448,7 @@ export default function LocalAxiomEnginePanel() {
           <article className="surface"><p className="surface-eyebrow">Prefill · TTFT</p><h3>{telemetryMetrics.prefill_ms.toFixed(1)} ms</h3><p className="quiet-note">Time to first token: {telemetryMetrics.time_to_first_token_ms.toFixed(1)} ms</p></article>
           <article className="surface"><p className="surface-eyebrow">Decode · wall time</p><h3>{telemetryMetrics.decode_ms.toFixed(1)} ms</h3><p className="quiet-note">Elapsed: {telemetryMetrics.elapsed_ms.toFixed(1)} ms</p></article>
         </div>
+        {memorySelection && <p className="quiet-note">Memory planner: {memorySelection.reason} {memorySelection.estimates_are_advisory ? "(estimate, not a fit guarantee)" : ""}</p>}
         <p className="quiet-note">Memory mode: {telemetryMemoryMode.replaceAll("_", " ")} · Process RSS: {formatMemoryBytes(deviceMemory?.process_rss_bytes)}{typeof deviceMemory?.process_rss_delta_bytes === "number" ? " (" + (deviceMemory.process_rss_delta_bytes >= 0 ? "+" : "") + formatMemoryBytes(Math.abs(deviceMemory.process_rss_delta_bytes)) + " since model load)" : ""} · Device: {deviceMemory?.backend ?? result?.device_selection?.selected ?? "unknown"}</p>
         <p className="quiet-note">Device allocator current: {formatMemoryBytes(deviceMemory?.current_allocated_bytes)} · reserved: {formatMemoryBytes(deviceMemory?.current_reserved_bytes)} · peak allocated: {formatMemoryBytes(deviceMemory?.peak_allocated_bytes)} · peak reserved: {formatMemoryBytes(deviceMemory?.peak_reserved_bytes)}{typeof deviceMemory?.peak_increment_bytes === "number" ? " · peak increase: " + formatMemoryBytes(deviceMemory.peak_increment_bytes) : ""}</p>
         {memoryStats && <p className="quiet-note">Layer staging: {formatMemoryBytes(memoryStats.layer_weight_bytes_staged)} · Returned to CPU: {formatMemoryBytes(memoryStats.layer_weight_bytes_returned_to_cpu)} · Disk reads: {memoryStats.disk_layer_weight_loads} tensor(s) / {formatMemoryBytes(memoryStats.disk_layer_weight_bytes_read)} · KV cache copied to CPU: {formatMemoryBytes(memoryStats.kv_cache_bytes_offloaded)}</p>}
