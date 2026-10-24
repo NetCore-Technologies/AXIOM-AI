@@ -80,6 +80,7 @@ def test_llm_chat_endpoint_returns_normalized_result(monkeypatch) -> None:
         "temperature": 0,
         "top_p": 0.82,
         "top_k": 32,
+        "min_p": 0.23,
         "repetition_penalty": 1.15,
         "seed": 13,
         "stop_sequences": ["END"],
@@ -90,6 +91,7 @@ def test_llm_chat_endpoint_returns_normalized_result(monkeypatch) -> None:
     assert captured["device"] == "auto"
     assert captured["top_p"] == 0.82
     assert captured["top_k"] == 32
+    assert captured["min_p"] == 0.23
     assert captured["repetition_penalty"] == 1.15
     assert captured["seed"] == 13
     assert captured["stop_sequences"] == ["END"]
@@ -151,6 +153,9 @@ def test_llm_chat_api_rejects_invalid_sampling_limits() -> None:
     for body in (
         {"top_p": 0},
         {"top_k": -1},
+        {"min_p": -0.01},
+        {"min_p": 1.01},
+        {"min_p": float("nan")},
         {"repetition_penalty": 0},
         {"seed": -1},
         {"stop_sequences": ["x" * 257]},
