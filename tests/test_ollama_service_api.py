@@ -89,3 +89,29 @@ def test_runtime_management_rejects_nonlocal_clients_by_default(monkeypatch):
     response = _client(client=("192.168.1.42", 50000)).post("/api/inference/service/start", json={})
 
     assert response.status_code == 403
+
+
+def test_model_inspection_endpoint_returns_only_metadata(monkeypatch):
+    expected = {
+        "schema_version": 1, "model": "qwen2.5:0.5b", "installed": True,
+        "size_bytes": 123, "modified_at": None, "format": "gguf", "family": "qwen2",
+        "families": ["qwen2"], "parameter_size": "0.5B", "parameter_count": 500000000,
+        "quantization_level": "Q4_K_M", "context_length": 32768, "capabilities": ["completion"],
+        "template_configured": True, "license_present": True, "system_prompt_configured": False,
+        "scope_note": "metadata only",
+    }
+    monkeypatch.setattr(inference, "inspect_local_model", lambda _model: expected)
+    response = _client().post("/api/inference/models/inspect", json={"model": "qwen2.5:0.5b"})
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
+def test_model_unload_endpoint_reports_downloads_are_preserved(monkeypatch):
+    expected = {
+        "schema_version": 1, "model": "qwen2.5:0.5b", "unloaded": True,
+        "model_files_deleted": False, "scope_note": "memory only",
+    }
+    monkeypatch.setattr(inference, "unload_local_model", lambda _model: expected)
+    response = _client().post("/api/inference/models/unload", json={"model": "qwen2.5:0.5b"})
+    assert response.status_code == 200
+    assert response.json()["model_files_deleted"] is False
