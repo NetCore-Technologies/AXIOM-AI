@@ -409,6 +409,7 @@ def inspect(root: Path) -> dict[str, Any]:
     ollama_cli = (root / "axiom/cli/inference.py").read_text(encoding="utf-8")
     ollama_e2e = (root / "e2e/ollama-service.spec.ts").read_text(encoding="utf-8")
     ollama_tests = (root / "tests/test_ollama_service.py").read_text(encoding="utf-8")
+    inference_core_tests = (root / "tests/test_inference_core.py").read_text(encoding="utf-8")
     ollama_model_tests = (root / "tests/test_ollama_model_operations.py").read_text(encoding="utf-8")
     ollama_api_tests = (root / "tests/test_ollama_service_api.py").read_text(encoding="utf-8")
     for token in ("OLLAMA_HOST = \"127.0.0.1:11434\"", "def start_service(", "def stop_service(", "def service_status(", "def start_model_pull(", "def cancel_model_pull(", "_MAX_CONCURRENT_PULLS = 2", "_MODEL_PULL_TIMEOUT_SECONDS = 1800.0", "def _matches_state("):
@@ -432,14 +433,17 @@ def inspect(root: Path) -> dict[str, Any]:
     for token in ("test_service_status_exposes_control_capabilities", "test_stop_refuses_to_signal_a_process_not_owned_by_axiom", "test_start_terminates_process_if_ownership_state_cannot_be_saved", "test_start_reaps_process_if_process_identity_cannot_be_verified", "test_progress_output_removes_terminal_controls"):
         if token not in ollama_tests:
             failures.append("Ollama process-safety tests are missing: " + token)
-    for token in ("test_advanced_sampling_options_are_forwarded", "test_invalid_sampling_options_are_rejected", "test_stream_local_inference_yields_token_events", "test_running_model_inventory_reports_loaded_memory_without_raw_content", "test_model_inspection_returns_metadata_without_model_templates", "test_unload_releases_memory_without_deleting_downloaded_model"):
+    for token in ("test_stream_local_inference_yields_token_events", "test_running_model_inventory_reports_loaded_memory_without_raw_content", "test_model_inspection_returns_metadata_without_model_templates", "test_unload_releases_memory_without_deleting_downloaded_model"):
         if token not in ollama_model_tests:
             failures.append("Ollama metadata/unload tests are missing: " + token)
+    for token in ("test_advanced_sampling_options_are_forwarded", "test_invalid_sampling_options_are_rejected"):
+        if token not in inference_core_tests:
+            failures.append("Ollama advanced sampling core tests are missing: " + token)
     inference_stream_e2e = (root / "e2e/inference.spec.ts").read_text(encoding="utf-8")
     for token in ("test_streaming_api_passes_advanced_sampling_options", "test_generate_api_rejects_oversized_context_and_stop_sequence_lists", "test_streaming_inference_emits_ndjson_token_deltas", "test_streaming_inference_sanitizes_runtime_failures"):
         if token not in ollama_api_tests:
             failures.append("Ollama streaming API coverage is missing: " + token)
-    for token in ('"/api/inference/generate/stream"', "top_p: 0.83", '"stop_sequences: ["DONE", "END"]"', "Stop generation", "Hello from the mocked local model"):
+    for token in ('"/api/inference/generate/stream"', "top_p: 0.83", 'stop_sequences: ["DONE", "END"]', "Stop generation", "Hello from the mocked local model"):
         if token not in inference_stream_e2e:
             failures.append("Streaming generation browser acceptance coverage is missing: " + token)
     for token in ("start Ollama, pull a model with progress", "Show loaded models", "Inspect model", "Unload from memory", '"/api/inference/models/running"', '"/api/inference/models/inspect"', '"/api/inference/models/unload"'):
