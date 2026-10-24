@@ -94,7 +94,7 @@ def test_native_min_p_filters_by_probability_relative_to_best_logit() -> None:
     from axiom.core.native_engine import _apply_min_p_filter
 
     logits = torch.tensor([[0.0, -0.5, -0.8, -2.0]])
-    filtered = _apply_min_p_filter(logits, 0.5, torch)
+    filtered = _apply_min_p_filter(logits, 0.5)
     # Softmax denominators cancel in the relative-probability comparison:
     # exp(score - max_score) >= min_p.
     assert torch.isfinite(filtered[0, :2]).all().item()
