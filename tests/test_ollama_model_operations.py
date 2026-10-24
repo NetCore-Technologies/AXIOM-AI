@@ -87,3 +87,38 @@ def test_model_operations_reject_nonlocal_model_references(monkeypatch, model):
         inference.inspect_local_model(model)
     with pytest.raises(ValueError):
         inference.unload_local_model(model)
+
+
+def test_running_model_inventory_reports_loaded_memory_without_raw_content(monkeypatch):
+    observed = {}
+    payload = {
+        "models": [{
+            "name": "qwen2.5:0.5b", "size": 800000000, "size_vram": 300000000,
+            "expires_at": "2026-10-24T10:00:00Z", "digest": "abcdef1234567890",
+            "details": {"format": "gguf", "family": "qwen2", "parameter_size": "0.5B", "quantization_level": "Q4_K_M"},
+            "template": "PRIVATE TEMPLATE MUST NOT BE RETURNED",
+        }],
+    }
+    def fake_open(request, timeout):
+        observed["url"] = request.full_url
+        return FakeResponse(payload)
+    monkeypatch.setattr(inference, "_open_loopback", fake_open)
+
+    report = inference.list_running_local_models()
+
+    assert observed["url"] == "http://127.0.0.1:11434/api/ps"
+    assert report["count"] == 1
+    model = report["models"][0]
+    assert model["name"] == "qwen2.5:0.5b"
+    assert model["size_bytes"] == 800000000
+    assert model["size_vram_bytes"] == 300000000
+    assert model["size_ram_bytes"] == 500000000
+    assert model["memory_placement"] == "mixed"
+    assert model["quantization_level"] == "Q4_K_M"
+    assert "PRIVATE TEMPLATE MUST NOT BE RETURNED" not in str(report)
+
+
+def test_running_model_inventory_rejects_invalid_runtime_shape(monkeypatch):
+    monkeypatch.setattr(inference, "_open_loopback", lambda *_args, **_kwargs: FakeResponse({"models": {}}))
+    with pytest.raises(inference.InferenceRuntimeError, match="invalid loaded-model inventory"):
+        inference.list_running_local_models()
