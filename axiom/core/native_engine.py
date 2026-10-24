@@ -1036,6 +1036,7 @@ def load_native_runtime(
             "qwen2": "Qwen2ForCausalLM",
         }[model.config.model_type],
         "model_directory_name": model_dir.name,
+        "model_directory_path": str(model_dir.resolve()),
         "adapter_directory_name": adapter_dir.name if adapter_dir else None,
         "add_bos_token": add_bos,
         "checkpoint_format": "safetensors",
