@@ -102,7 +102,7 @@ def engine_pull(
     repo_id: str = typer.Argument(..., help="Public Hugging Face repository ID, e.g. Qwen/Qwen2.5-0.5B-Instruct."),
     json_output: bool = typer.Option(False, "--json", help="Print the install result as machine-readable JSON."),
 ) -> None:
-    """Pull compatible public Llama/Mistral/Qwen2 safetensors directly for AXIOM Native Engine."""
+    """Pull compatible public Llama/Mistral/Qwen2/Qwen3 safetensors directly for AXIOM Native Engine."""
     try:
         result = model_studio.pull_native_model(
             repo_id,
