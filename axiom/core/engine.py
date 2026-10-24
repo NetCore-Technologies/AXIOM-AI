@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 _MAX_PROMPT_CHARS = 12_000
+_MAX_CHAT_CHARS = 24_000
 _MAX_NEW_TOKENS = 2_048
 _MAX_INPUT_TOKENS = 8_192
 _MAX_CONFIG_BYTES = 1_048_576
@@ -1301,8 +1302,8 @@ def generate_local_stream(
             if not text_value.strip() or len(text_value) > _MAX_PROMPT_CHARS:
                 raise ValueError("Each chat message must contain non-blank text within the prompt limit.")
             total_message_chars += len(text_value)
-            if total_message_chars > _MAX_PROMPT_CHARS:
-                raise ValueError(f"Combined chat messages exceed the {_MAX_PROMPT_CHARS:,}-character limit.")
+            if total_message_chars > _MAX_CHAT_CHARS:
+                raise ValueError(f"Combined chat messages exceed the {_MAX_CHAT_CHARS:,}-character limit.")
             normalized_messages.append({"role": role, "content": text_value})
         if not any(message["role"] == "user" for message in normalized_messages):
             raise ValueError("Native chat requests must contain at least one user message.")
@@ -1318,24 +1319,70 @@ def generate_local_stream(
         context_cap = max(2, min(model.config.max_position_embeddings, _MAX_INPUT_TOKENS + max_new_tokens))
         effective_max_new_tokens = min(max_new_tokens, context_cap - 1)
         input_limit = max(1, min(_MAX_INPUT_TOKENS, context_cap - effective_max_new_tokens))
-        formatted_prompt, prompt_format = _format_prompt_for_native_model(
-            prompt, Path(details.get("model_directory_path", ".")), details["model_type"], tokenizer,
-            chat_messages=chat_messages,
-        )
-        try:
-            encoded = tokenizer.encode(formatted_prompt, add_special_tokens=False)
-            prompt_ids = list(encoded.ids)
-        except Exception:
-            raise ValueError("Prompt could not be tokenized by the local tokenizer.json.") from None
-        if not prompt_ids:
-            raise ValueError("Prompt tokenization returned no tokens.")
+        original_message_count = len(chat_messages or [])
+        original_message_chars = sum(len(message["content"]) for message in (chat_messages or []))
+        dropped_history_messages = 0
         bos_id = model.config.bos_token_id
-        if details.get("add_bos_token") and bos_id is not None and prompt_ids[0] != bos_id:
-            prompt_ids.insert(0, bos_id)
-        if len(prompt_ids) > input_limit:
+
+        def encode_current_context() -> tuple[list[int], str]:
+            formatted, source = _format_prompt_for_native_model(
+                prompt,
+                Path(details.get("model_directory_path", ".")),
+                details["model_type"],
+                tokenizer,
+                chat_messages=chat_messages,
+            )
+            try:
+                encoded = tokenizer.encode(formatted, add_special_tokens=False)
+                ids = list(encoded.ids)
+            except Exception:
+                raise ValueError("Prompt could not be tokenized by the local tokenizer.json.") from None
+            if details.get("add_bos_token") and bos_id is not None and (not ids or ids[0] != bos_id):
+                ids.insert(0, bos_id)
+            return ids, source
+
+        prompt_ids, prompt_format = encode_current_context()
+        # Preserve system instructions and the newest user request when the context
+        # budget is exceeded. Drop the oldest non-system turn first, re-rendering the
+        # model's real chat template so message boundaries remain valid.
+        while chat_messages and len(prompt_ids) > input_limit:
+            latest_user_index = max(
+                (index for index, message in enumerate(chat_messages) if message["role"] == "user"),
+                default=-1,
+            )
+            drop_index = next(
+                (index for index, message in enumerate(chat_messages)
+                 if message["role"] != "system" and index != latest_user_index),
+                None,
+            )
+            if drop_index is None:
+                break
+            del chat_messages[drop_index]
+            dropped_history_messages += 1
+            prompt_ids, prompt_format = encode_current_context()
+
+        prompt_tokens_before_truncation = len(prompt_ids)
+        token_truncation_applied = prompt_tokens_before_truncation > input_limit
+        if token_truncation_applied:
             prompt_ids = prompt_ids[-input_limit:]
+            # Reserve the leading token for BOS, rather than duplicating it.
             if details.get("add_bos_token") and bos_id is not None and prompt_ids:
                 prompt_ids[0] = bos_id
+        if not prompt_ids:
+            raise ValueError("Prompt tokenization returned no tokens.")
+        context_management = {
+            "chat_history_supplied": bool(original_message_count),
+            "original_message_count": original_message_count,
+            "original_message_characters": original_message_chars,
+            "messages_dropped_to_fit_context": dropped_history_messages,
+            "prompt_tokens_before_token_truncation": prompt_tokens_before_truncation,
+            "prompt_tokens_used": len(prompt_ids),
+            "token_truncation_applied": token_truncation_applied,
+            "system_prompt_may_be_truncated": bool(
+                token_truncation_applied
+                and any(message["role"] == "system" for message in (chat_messages or []))
+            ),
+        }
         effective_max_new_tokens = min(effective_max_new_tokens, max(1, context_cap - len(prompt_ids)))
         started = time.perf_counter()
         generated_ids: list[int] = []
@@ -1440,6 +1487,7 @@ def generate_local_stream(
                 "architecture": details["architecture"],
                 "model_type": details["model_type"],
                 "prompt_format": prompt_format,
+                "context_management": context_management,
                 "adapter": details["adapter_directory_name"],
                 "device": str(device),
                 "device_selection": details.get("device_selection"),
