@@ -110,3 +110,32 @@ def test_pull_job_history_is_bounded_and_job_ids_are_validated():
     finally:
         service._PULL_JOBS.clear()
         service._PULL_JOBS.update(original)
+
+
+def test_start_terminates_process_if_ownership_state_cannot_be_saved(monkeypatch):
+    class FakeProcess:
+        pid = 12345
+        terminated = False
+        waited = False
+        def poll(self):
+            return None
+        def terminate(self):
+            self.terminated = True
+        def wait(self, timeout=None):
+            self.waited = True
+            return 0
+
+    process = FakeProcess()
+    monkeypatch.setattr(service, "service_status", lambda: {**_offline_report(), "service_managed_by_axiom": False, "service_can_start": True})
+    monkeypatch.setattr(service.shutil, "which", lambda _name: "/usr/bin/ollama")
+    monkeypatch.setattr(service.subprocess, "Popen", lambda *_args, **_kwargs: process)
+    monkeypatch.setattr(service, "_process_info", lambda _pid: {
+        "executable": "/usr/bin/ollama", "command": "/usr/bin/ollama\\0serve", "identity": "linux:1",
+    })
+    monkeypatch.setattr(service, "_write_state", lambda _record: (_ for _ in ()).throw(OSError("disk unavailable")))
+
+    with pytest.raises(service.OllamaServiceError, match="could not safely record ownership"):
+        service.start_service()
+
+    assert process.terminated is True
+    assert process.waited is True
