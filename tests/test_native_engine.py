@@ -78,6 +78,25 @@ def test_native_top_k_keeps_exact_candidate_count_when_logits_tie() -> None:
     assert torch.equal(_apply_top_k_filter(logits, logits.shape[-1], torch), logits)
 
 
+def test_native_min_p_filters_by_probability_relative_to_best_logit() -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import _apply_min_p_filter
+
+    logits = torch.tensor([[0.0, -0.5, -0.8, -2.0]])
+    filtered = _apply_min_p_filter(logits, 0.5, torch)
+    # Softmax denominators cancel in the relative-probability comparison:
+    # exp(score - max_score) >= min_p.
+    assert torch.isfinite(filtered[0, :2]).all().item()
+    assert torch.isneginf(filtered[0, 2:]).all().item()
+
+    strict = _apply_min_p_filter(logits, 1.0, torch)
+    assert torch.isfinite(strict).sum().item() == 1
+    assert strict[0, 0].item() == 0.0
+    assert torch.isneginf(strict[0, 1:]).all().item()
+
+    assert torch.equal(_apply_min_p_filter(logits, 0.0, torch), logits)
+
+
 def test_stop_sequences_are_bounded_and_deduplicated() -> None:
     from axiom.core.engine import validate_stop_sequences
 
