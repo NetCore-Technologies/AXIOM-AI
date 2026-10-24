@@ -254,3 +254,59 @@ def test_engine_route_benchmark_cli_outputs_measurements_without_response_text(m
     assert result.exit_code == 0, result.output
     assert '"median": 15.0' in result.output
     assert "Representative benchmark input." not in result.output
+
+def test_engine_estimate_cli_compares_formats_against_budgets(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "trusted-models"
+    model = root / "tiny-llama"
+    model.mkdir(parents=True)
+    (model / "config.json").write_text(json.dumps({
+        "model_type": "llama",
+        "architectures": ["LlamaForCausalLM"],
+        "hidden_size": 8,
+        "intermediate_size": 12,
+        "num_hidden_layers": 1,
+        "num_attention_heads": 2,
+        "num_key_value_heads": 1,
+        "vocab_size": 8,
+        "max_position_embeddings": 32,
+        "rms_norm_eps": 1e-6,
+        "rope_theta": 10000.0,
+        "bos_token_id": 1,
+        "tie_word_embeddings": False,
+    }), encoding="utf-8")
+    monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(root))
+
+    result = runner.invoke(engine_app, [
+        "estimate",
+        "--model-path", str(model),
+        "--context-length", "16",
+        "--batch-size", "1",
+        "--ram-budget-gib", "8",
+        "--vram-budget-gib", "4",
+        "--json",
+    ])
+
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.output)
+    assert report["model"]["name"] == "tiny-llama"
+    assert report["request"]["context_length"] == 16
+    candidates = {item["format"]: item for item in report["candidates"]}
+    assert set(candidates) == {"int4", "int8", "bf16", "fp16", "fp32"}
+    assert candidates["int4"]["estimated_total_gib"] > 0
+    assert candidates["int4"]["estimated_total_gib"] < candidates["int8"]["estimated_total_gib"]
+    assert candidates["int8"]["estimated_total_gib"] < candidates["fp16"]["estimated_total_gib"]
+    assert candidates["fp16"]["estimated_total_gib"] < candidates["fp32"]["estimated_total_gib"]
+    assert candidates["int4"]["native_checkpoint_supported"] is False
+    assert candidates["int8"]["native_checkpoint_supported"] is False
+    assert candidates["fp16"]["native_checkpoint_supported"] is True
+    assert report["recommendation"]["status"] == "fits_budget"
+    assert report["recommendation"]["format"] == "bf16"
+    assert "not predict model quality/speed" in report["scope_note"]
+
+
+def test_engine_estimate_cli_requires_at_least_one_memory_budget(tmp_path: Path) -> None:
+    model = tmp_path / "local-model"
+    model.mkdir()
+    result = runner.invoke(engine_app, ["estimate", "--model-path", str(model)])
+    assert result.exit_code == 1
+    assert "--ram-budget-gib and/or --vram-budget-gib" in result.output
