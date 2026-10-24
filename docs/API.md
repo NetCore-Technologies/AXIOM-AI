@@ -43,7 +43,7 @@ it beyond the machine.
 - `POST /api/llm/chat` runs one bounded text completion. Cloud requests require `consent: true`; otherwise the API rejects the request before the provider call.
 - `GET /v1/models` and `POST /v1/chat/completions` expose AXIOM Native Engine models using the OpenAI-compatible schema.
 
-The shared LLM API uses request-scoped credentials. It does not persist provider keys, prompts, or generated answers to the AXIOM workspace. Cloud requests are sent over HTTPS to fixed provider hosts; custom OpenAI-compatible base URLs must pass the public-HTTPS validator. Request sizes and output tokens are bounded.
+The shared LLM API uses request-scoped credentials. It does not persist provider keys, prompts, or generated answers to the AXIOM workspace. Cloud requests are sent over HTTPS to fixed provider hosts including OpenAI, Anthropic, Gemini, DeepSeek, Moonshot/Kimi, and OpenRouter; custom OpenAI-compatible base URLs must pass the public-HTTPS validator. Request sizes and output tokens are bounded.
 
 Run `axiom mobile-bridge` to start a separate app that mounts only the two `/v1` endpoints. It generates a random bearer token for the process. Use `--listen-lan` only on a trusted private network: the bridge uses plain HTTP rather than TLS, and its token does not protect against a network observer able to read traffic. Never port-forward it to the public internet; use a VPN or encrypted tunnel when crossing an untrusted network. The general `axiom gui` Control Center remains bound to loopback.
 
