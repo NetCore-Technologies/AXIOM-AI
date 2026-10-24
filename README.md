@@ -216,7 +216,7 @@ See the [fine-tuning guide](docs/Local-Fine-Tuning.md) for supported data, limit
 <details>
 <summary><b>AXIOM Engine (direct local inference)</b></summary>
 
-AXIOM owns this inference path. It runs Llama, Mistral, and Qwen2 text-decoder forward passes and an autoregressive KV-cache decoder on PyTorch tensor kernels: RMSNorm, RoPE, grouped-query attention, SwiGLU, and supported LoRA deltas. It does not call Ollama or Transformers `model.generate`. Select full-weight loading, in-RAM layer streaming with a CPU KV cache, or disk-resident layer streaming that reads a safetensors layer on demand and releases it after use. Both streaming modes trade throughput for lower memory use.
+AXIOM owns this inference path. It runs Llama, Mistral, Qwen2, and Qwen3 text-decoder forward passes and an autoregressive KV-cache decoder on PyTorch tensor kernels: RMSNorm, RoPE, grouped-query attention, Qwen3 query/key RMS normalization, SwiGLU, and supported LoRA deltas. It does not call Ollama or Transformers `model.generate`. Select full-weight loading, in-RAM layer streaming with a CPU KV cache, or disk-resident layer streaming that reads a safetensors layer on demand and releases it after use. Both streaming modes trade throughput for lower memory use.
 
 ```bash
 axiom --no-banner engine status
