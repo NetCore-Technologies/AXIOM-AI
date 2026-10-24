@@ -1,4 +1,4 @@
-"""AXIOM-native Llama/Mistral/Qwen2 inference.
+"""AXIOM-native Llama/Mistral/Qwen2/Qwen3 inference.
 
 AXIOM implements transformer forward operations, RMSNorm, RoPE, grouped-query
 attention, KV caching, LoRA projection deltas, autoregressive decoding, and
@@ -18,7 +18,7 @@ _MAX_CONFIG_BYTES = 1_048_576
 _MAX_TOKENIZER_BYTES = 64 * 1024 * 1024
 _MAX_INDEX_BYTES = 64 * 1024 * 1024
 _MAX_WEIGHT_SHARDS = 512
-_SUPPORTED_MODEL_TYPES = {"llama", "mistral", "qwen2"}
+_SUPPORTED_MODEL_TYPES = {"llama", "mistral", "qwen2", "qwen3"}
 
 class NativeEngineError(ValueError):
     """An unsupported, unsafe, or invalid native-engine checkpoint."""
@@ -45,15 +45,16 @@ class NativeLlamaConfig:
     eos_token_ids: tuple[int, ...]
     tie_word_embeddings: bool
     sliding_window: int | None
+    qk_norm: bool
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "NativeLlamaConfig":
         model_type = value.get("model_type")
         if model_type not in _SUPPORTED_MODEL_TYPES:
-            raise NativeEngineError("AXIOM Native Engine supports llama, mistral, and qwen2 model_type only; there is no Transformers/Ollama fallback.")
+            raise NativeEngineError("AXIOM Native Engine supports llama, mistral, qwen2, and qwen3 model_type only; there is no Transformers/Ollama fallback.")
         architectures = value.get("architectures", [])
-        if architectures and not any(isinstance(x, str) and x in {"LlamaForCausalLM", "MistralForCausalLM", "Qwen2ForCausalLM"} for x in architectures):
-            raise NativeEngineError("Checkpoint architecture is not a supported Llama/Mistral/Qwen2 causal-LM class.")
+        if architectures and not any(isinstance(x, str) and x in {"LlamaForCausalLM", "MistralForCausalLM", "Qwen2ForCausalLM", "Qwen3ForCausalLM"} for x in architectures):
+            raise NativeEngineError("Checkpoint architecture is not a supported Llama/Mistral/Qwen2/Qwen3 causal-LM class.")
         rope = value.get("rope_scaling")
         if rope:
             if not isinstance(rope, dict) or rope.get("rope_type", rope.get("type", "default")) != "default" or rope.get("factor", 1.0) != 1.0:
@@ -93,7 +94,7 @@ class NativeLlamaConfig:
         eos = (eos0,) if isinstance(eos0, int) and not isinstance(eos0, bool) else tuple(eos0) if isinstance(eos0, list) and all(isinstance(x, int) and not isinstance(x, bool) for x in eos0) else ()
         if any(x < 0 or x >= vocab for x in (*eos, *((bos,) if bos is not None else ()))):
             raise NativeEngineError("Configured BOS/EOS token ID is outside vocab_size.")
-        return cls(model_type, hidden, intermediate, layers, heads, kv_heads, vocab, max_positions, rms_eps, theta, bos, eos, value.get("tie_word_embeddings") is True, sliding)
+        return cls(model_type, hidden, intermediate, layers, heads, kv_heads, vocab, max_positions, rms_eps, theta, bos, eos, value.get("tie_word_embeddings") is True, sliding, model_type == "qwen3")
 
 def _within_trusted_roots(path: Path, trusted_roots: tuple[Path, ...]) -> bool:
     for root in trusted_roots:
@@ -212,7 +213,7 @@ def inspect_native_adapter_compatibility(
         mapping = _read_json_object(model_dir / "config.json", _MAX_CONFIG_BYTES, "Model config.json", roots)
         config = NativeLlamaConfig.from_mapping(mapping)
         model_type = config.model_type
-        architecture = {"llama": "LlamaForCausalLM", "mistral": "MistralForCausalLM", "qwen2": "Qwen2ForCausalLM"}[model_type]
+        architecture = {"llama": "LlamaForCausalLM", "mistral": "MistralForCausalLM", "qwen2": "Qwen2ForCausalLM", "qwen3": "Qwen3ForCausalLM"}[model_type]
         layer_count = config.num_hidden_layers
         tokenizer_path = _resolve_trusted_file(model_dir / "tokenizer.json", roots, "Tokenizer file")
         if tokenizer_path.stat().st_size > _MAX_TOKENIZER_BYTES:
@@ -399,7 +400,7 @@ def inspect_native_adapter_compatibility(
 
 
 class NativeLlamaRuntime:
-    """AXIOM-owned implementation of Llama/Mistral forward and decode steps."""
+    """AXIOM-owned implementation of Llama/Mistral/Qwen2/Qwen3 forward and decode steps."""
 
     def __init__(
         self,
@@ -422,7 +423,7 @@ class NativeLlamaRuntime:
         self.layer_weight_sources = layer_weight_sources or {}
         self.weight_shapes = weight_shapes or {name: tuple(value.shape) for name, value in weights.items()}
         self.dtype = weights["model.embed_tokens.weight"].dtype
-        self.name = "axiom-native-pytorch-llama"
+        self.name = "axiom-native-pytorch-causal-lm"
         self.last_generation: dict[str, Any] = {}
         self.live_generation: dict[str, Any] = {}
         self.last_attention_backend = "pytorch-scaled-dot-product-attention"
@@ -506,6 +507,8 @@ class NativeLlamaRuntime:
                 "self_attn.q_proj.weight", "self_attn.k_proj.weight", "self_attn.v_proj.weight", "self_attn.o_proj.weight",
                 "mlp.gate_proj.weight", "mlp.up_proj.weight", "mlp.down_proj.weight", "input_layernorm.weight", "post_attention_layernorm.weight",
             ))
+            if c.qk_norm:
+                names.extend(p + x for x in ("self_attn.q_norm.weight", "self_attn.k_norm.weight"))
         names.append("model.norm.weight")
         if not c.tie_word_embeddings:
             names.append("lm_head.weight")
@@ -596,6 +599,9 @@ class NativeLlamaRuntime:
                 p + "input_layernorm.weight": (config.hidden_size,),
                 p + "post_attention_layernorm.weight": (config.hidden_size,),
             })
+            if config.qk_norm:
+                expected[p + "self_attn.q_norm.weight"] = (hdim,)
+                expected[p + "self_attn.k_norm.weight"] = (hdim,)
         if "lm_head.weight" in weight_map:
             expected["lm_head.weight"] = (config.vocab_size, config.hidden_size)
         for name, shape in expected.items():
@@ -752,8 +758,13 @@ class NativeLlamaRuntime:
                 residual = hidden
                 normed = self._rms_norm(hidden, self.weights[p + "input_layernorm.weight"])
                 q, k, v = (self._linear(normed, p + "self_attn." + name) for name in ("q_proj", "k_proj", "v_proj"))
-                q = self._apply_rope(q.view(1, seq_len, c.num_attention_heads, head_dim).transpose(1, 2), positions)
-                k = self._apply_rope(k.view(1, seq_len, c.num_key_value_heads, head_dim).transpose(1, 2), positions)
+                q = q.view(1, seq_len, c.num_attention_heads, head_dim)
+                k = k.view(1, seq_len, c.num_key_value_heads, head_dim)
+                if c.qk_norm:
+                    q = self._rms_norm(q, self.weights[p + "self_attn.q_norm.weight"])
+                    k = self._rms_norm(k, self.weights[p + "self_attn.k_norm.weight"])
+                q = self._apply_rope(q.transpose(1, 2), positions)
+                k = self._apply_rope(k.transpose(1, 2), positions)
                 v = v.view(1, seq_len, c.num_key_value_heads, head_dim).transpose(1, 2)
                 if past_key_values is not None:
                     old_k, old_v = past_key_values[i]
@@ -1035,6 +1046,7 @@ def load_native_runtime(
             "llama": "LlamaForCausalLM",
             "mistral": "MistralForCausalLM",
             "qwen2": "Qwen2ForCausalLM",
+            "qwen3": "Qwen3ForCausalLM",
         }[model.config.model_type],
         "model_directory_name": model_dir.name,
         "model_directory_path": str(model_dir.resolve()),
