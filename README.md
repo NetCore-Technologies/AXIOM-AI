@@ -119,6 +119,8 @@ Package downloads and checksums are on [GitHub Releases](https://github.com/mani
 | **Hardware** | Detect CPU, RAM, GPU, and VRAM, and estimate which model sizes fit | `axiom system info` |
 | **Training** | Hardware-aware plans, saved experiment history, optional local LoRA fine-tuning | `axiom train plan 7 --method qlora` |
 | **AXIOM Engine** | Direct local inference on PyTorch. No Ollama and no `model.generate` | `axiom engine status` |
+| **Unified LLM client** | One local/cloud client for AXIOM Native Engine, OpenAI, Anthropic, Gemini, DeepSeek, Moonshot/Kimi, and public OpenAI-compatible HTTPS endpoints | `axiom llm providers` |
+| **Mobile-agent bridge** | Token-protected OpenAI-compatible native-model endpoint for compatible mobile clients | `axiom mobile-bridge` |
 | **Inference** | Local text generation through Ollama, plus request history | `axiom infer status` |
 | **Model Studio** | Search GGUF models, install them, convert local models to GGUF | `axiom model studio wizard` |
 | **Agent Optimizer** | Eight workload profiles that pick quantization and build a runtime bundle | `axiom optimize profiles` |
@@ -397,6 +399,23 @@ axiom headroom doctor
 
 </details>
 
+## Unified LLM client and mobile agents
+
+AXIOM now provides a shared text-chat API for its native local engine and selected cloud providers. Open **Runtime → Unified LLM client** in the Control Center, or use the CLI:
+
+```bash
+axiom llm providers
+axiom llm models --provider axiom-local
+axiom llm models --provider deepseek
+axiom llm chat deepseek-chat "Explain KV caching briefly." --provider deepseek --send-to-provider
+```
+
+Cloud chat requires explicit `--send-to-provider` confirmation in the CLI or consent in the GUI. Cloud keys are request-only from AXIOM's perspective and are not saved to workspace files/settings. The local adapter supports compatible Llama, Mistral, Qwen2, and Qwen3 safetensors checkpoints; it does not turn GGUF or Ollama models into native-engine models.
+
+For compatible mobile apps, `axiom mobile-bridge --listen-lan --port 40509` serves only `/v1/models` and `/v1/chat/completions`, guarded by a random bearer token printed at startup. Configure the client with `http://<AXIOM-PC-LAN-IP>:40509/v1`, the printed token, and a model ID from `axiom engine discover --json`. This bridge uses HTTP, so run it only on a trusted private LAN; do not port-forward it. Prefer a VPN or encrypted tunnel across untrusted networks.
+
+[Unified LLM client guide](docs/Unified-LLM-Client.md) · [API contract](docs/API.md) · [CLI guide](docs/CLI-GUIDE.md). PrivateLM's [cross-platform-llm-client](https://github.com/orailnoor/cross-platform-llm-client) and [PrivateAgent](https://github.com/orailnoor/private-agent) are external interoperability references; their Flutter code is not vendored into AXIOM.
+
 ## MCP server for AI agents
 
 AXIOM can run as an [MCP](https://modelcontextprotocol.io/) server, so tools like coding agents can inspect your models, datasets, and hardware through a safe, controlled door. **Every tool is denied by default.** You choose what each profile may call.
@@ -552,7 +571,7 @@ Tab completion also works for `zsh`, `fish`, and `powershell`.
 
 **Features**
 - [Model Registry](docs/Model-Registry.md) · [Model Studio](docs/Model-Studio.md)
-- [Local fine-tuning](docs/Local-Fine-Tuning.md) · [AXIOM Engine](docs/Local-Engine.md)
+- [Local fine-tuning](docs/Local-Fine-Tuning.md) · [AXIOM Engine](docs/Local-Engine.md) · [Unified LLM client](docs/Unified-LLM-Client.md)
 - [Local inference](docs/Local-Inference.md) · [Inference Benchmarking](docs/Inference-Benchmarking.md) · [Runtime Discovery](docs/Runtime-Discovery.md)
 - [Evaluation](docs/Evaluation.md) · [Agent Profiles](docs/Agent-Profiles.md)
 - [Integrations](docs/integrations.md) · [Developer tools contract](docs/developer-tools-contract.md)
