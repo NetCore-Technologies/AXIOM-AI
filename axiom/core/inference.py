@@ -276,6 +276,8 @@ def stream_local_inference(
     """
     model = validate_model_name(model)
     prompt, num_predict, temperature = validate_generation(prompt, num_predict, temperature)
+    if cancel_event is not None and cancel_event.is_set():
+        return
     payload = {
         "model": model,
         "prompt": prompt,
