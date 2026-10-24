@@ -118,7 +118,7 @@ feature exists or a delivery-date promise.
 
 - [R085 · Implemented; tests passing] Add passive runtime connector discovery and capability reporting without assuming a connection or credentials.
 - [R086 · Planned] Add explicit connect/disconnect controls with secret-safe storage.
-- [R087 · Implemented; tests passing] Report native-engine dependency readiness, supported Llama/Mistral checkpoint formats, explicit CPU/CUDA/ROCm/Metal/XPU execution-device selection and availability diagnostics, loaded backend/architecture, and local-only execution scope.
+- [R087 · In progress; validation pending] Report native-engine dependency readiness, supported Llama/Mistral/Qwen2 floating-point safetensors checkpoints, public native-model acquisition with staged installs/progress, explicit CPU/CUDA/ROCm/Metal/XPU selection, loaded backend/architecture, and local-only execution scope. GGUF/EXL2/GPTQ/AWQ loading, broader architectures, and low-VRAM layer streaming are not yet native capabilities.
 - [R088 · In progress; validation pending] Report actual local inference wall time, prefill latency, cached-decode latency, time to first token, and generated tokens/second from AXIOM's native token loop; wall time includes stream processing while throughput is based on prefill+decode compute time.
 - [R089 · Implemented; tests passing] Add prompt/token-limit inputs, excluded warm-up runs, bounded measured iterations, and explicit concurrency controls to the existing Runtime page.
 - [R090 · Planned] Add quantization estimates with formulas and overhead assumptions.
