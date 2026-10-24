@@ -233,7 +233,7 @@ export default function LocalInferencePanel() {
         </div>
         <p className="quiet-note" style={{ marginTop: 12 }}>Capabilities: {modelDetails.capabilities.length ? modelDetails.capabilities.join(", ") : "Not reported"}. {modelDetails.template_configured ? "A model template is configured." : "No template was reported."} {modelDetails.license_present ? "License metadata is present." : "License metadata was not reported."}</p>
         <p className="quiet-note">{modelDetails.scope_note}</p>
-      </section>
+      </section>}
       <label className="field">
         <span className="field-label-row"><span>Prompt</span><span>{prompt.length.toLocaleString()} / 12,000 characters</span></span>
         <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={12000} rows={6} required placeholder="Ask your local model to do something…" />
