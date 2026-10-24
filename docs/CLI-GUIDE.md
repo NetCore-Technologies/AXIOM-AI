@@ -80,7 +80,7 @@ axiom mobile-bridge
 axiom mobile-bridge --listen-lan --port 40509
 ```
 
-Configure an OpenAI-compatible mobile client with the printed base URL, the printed token as its API key, and a discovered native model ID. LAN mode uses HTTP, so never port-forward it; use it only on a trusted private network or through a VPN/encrypted tunnel.
+Configure an OpenAI-compatible mobile client with the printed base URL and token as its API key. Choose a native model ID from `axiom engine discover --json`, or an installed Ollama model ID with the `ollama/` prefix (for example `ollama/qwen2.5:0.5b`) from `/v1/models`. LAN mode uses HTTP, so never port-forward it; use it only on a trusted private network or through a VPN/encrypted tunnel.
 
 ## Local Control Center
 
