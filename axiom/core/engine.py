@@ -1055,6 +1055,8 @@ def _load_local_model(
             "selected": "cpu",
             "reason": "The preferred accelerator ran out of memory during model loading; AXIOM retried on CPU.",
         }
+        if requested_memory_mode == "auto":
+            memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection)
         try:
             model, tokenizer, native_details = load_native_runtime(
                 base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots(), memory_mode=memory_mode
@@ -1075,6 +1077,8 @@ def _load_local_model(
             gc.collect()
             device = torch.device("cpu")
             device_selection = {"requested": "auto", "selected": "cpu", "reason": "The preferred accelerator ran out of memory during model loading; AXIOM retried on CPU."}
+            if requested_memory_mode == "auto":
+                memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection)
             try:
                 model, tokenizer, native_details = load_native_runtime(
                     base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots(), memory_mode=memory_mode
