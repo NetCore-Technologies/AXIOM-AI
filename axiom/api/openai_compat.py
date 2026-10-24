@@ -99,6 +99,7 @@ class OpenAIChatCompletionRequest(BaseModel):
     adapter_path: str | None = Field(default=None, max_length=4096)
     device: Literal["auto", "cpu", "cuda", "rocm", "mps", "xpu"] = "auto"
     memory_mode: Literal["auto", "full", "layer_streaming", "disk_streaming"] = "auto"
+    precision: Literal["auto", "fp32", "fp16", "bf16"] = "auto"
 
     @model_validator(mode="after")
     def validate_messages_and_stop(self) -> "OpenAIChatCompletionRequest":
@@ -133,6 +134,7 @@ def _generation_args(request: OpenAIChatCompletionRequest, model: dict[str, Any]
         "stop_sequences": _stop_sequences(request),
         "device_preference": request.device,
         "memory_mode": request.memory_mode,
+        "precision": request.precision,
         "chat_messages": [message.model_dump() for message in request.messages],
     }
 
