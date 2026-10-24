@@ -884,3 +884,21 @@ def test_engine_fabric_native_backend_chat_endpoint_dispatches_in_process(monkey
     assert observed["min_p"] == 0.07
     assert observed["repetition_penalty"] == 1.1 and observed["seed"] == 9
     assert observed["stop_sequences"] == ("END",)
+
+def test_engine_fabric_auto_chat_does_not_expose_internal_exception_details(monkeypatch) -> None:
+    secret_detail = "internal failure at /private/runner/credential-store"
+    def fail_route(*_args, **_kwargs):
+        raise ValueError(secret_detail)
+
+    monkeypatch.setattr(engine_api, "run_engine_fabric_chat", fail_route)
+    response = _client().post("/api/engine/backends/auto-chat", json={
+        "profile": "balanced",
+        "model": "tiny-local",
+        "messages": [{"role": "user", "content": "Hello"}],
+    })
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "The routing request is invalid or unsupported."
+    assert secret_detail not in response.text
+    assert "/private/runner" not in response.text
+
