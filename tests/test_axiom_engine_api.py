@@ -57,6 +57,30 @@ def test_engine_request_rejects_symlink_escape(tmp_path, monkeypatch) -> None:
         engine_api.GenerateRequest(model_path=str(escape), prompt="hello")
 
 
+def test_engine_telemetry_endpoint_returns_privacy_bounded_snapshot(monkeypatch) -> None:
+    expected = {
+        "schema_version": 1,
+        "sampled_at": "2026-10-24T04:00:00+00:00",
+        "sample_type": "point_in_time",
+        "cpu": {"logical_cores": 8, "system_percent": 12.5, "process_percent": 1.0},
+        "memory": {"total_bytes": 1000, "available_bytes": 400, "used_bytes": 600, "percent": 60.0},
+        "process": {"pid": 1, "rss_bytes": 200, "threads": 4},
+        "devices": [],
+        "loaded_runtime": {"loaded": False},
+        "disks": [],
+        "privacy_scope": {
+            "prompt_content_included": False, "generated_content_included": False,
+            "model_paths_included": False, "environment_values_included": False,
+            "credentials_included": False, "network_access_performed": False,
+        },
+        "scope_note": "Point-in-time telemetry only.",
+    }
+    monkeypatch.setattr(engine_api, "runtime_telemetry", lambda: expected)
+    response = _client().get("/api/engine/telemetry")
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
 def test_engine_unload_endpoint_calls_lifecycle_handler(monkeypatch) -> None:
     expected = {
         "schema_version": 1,
