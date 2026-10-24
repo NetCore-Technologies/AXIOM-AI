@@ -64,7 +64,7 @@ def test_process_identity_mismatch_prevents_stopping_pid_reuse(monkeypatch):
     record = {"pid": 123, "executable": "/usr/bin/ollama", "identity": "linux:10"}
     monkeypatch.setattr(service, "_process_info", lambda _pid: {
         "executable": "/usr/bin/ollama",
-        "command": "/usr/bin/ollama\\0serve",
+        "command": "/usr/bin/ollama\0serve",
         "identity": "linux:11",
     })
 
@@ -87,10 +87,10 @@ def test_start_model_pull_requires_an_online_local_service(monkeypatch):
 
 
 def test_progress_output_removes_terminal_controls_and_caps_log_lines():
-    line = service._sanitize_line("\\x1b[31mPulling layer 100%\\x1b[0m\\x07" + ("x" * 500))
+    line = service._sanitize_line("\x1b[31mPulling layer 100%\x1b[0m\x07" + ("x" * 500))
 
-    assert "\\x1b" not in line
-    assert "\\x07" not in line
+    assert "\x1b" not in line
+    assert "\x07" not in line
     assert "Pulling layer 100%" in line
     assert len(line) <= 320
 
