@@ -262,7 +262,7 @@ export default function LocalAxiomEnginePanel() {
         {status?.loaded && <button type="button" className="button secondary-button" onClick={() => void unload()} disabled={loading || running || unloading}><Unplug size={14} /> {unloading ? "Unloading…" : "Unload model"}</button>}
       </div>
     </div>
-    <p>AXIOM Native Engine implements its own PyTorch Llama/Mistral/Qwen2 forward pass, KV-cache decode, attention path, sampling and LoRA application, with full-weight and low-VRAM layer-streaming modes. PyTorch supplies device tensor kernels; AXIOM does not delegate generation to Transformers or Ollama. This native path accepts local floating-point safetensors and tokenizer.json for Llama, Mistral, and Qwen2-family checkpoints. GGUF/EXL2 loading, native model acquisition, and low-VRAM layer streaming are separate pending capabilities.</p>
+    <p>AXIOM Native Engine implements its own PyTorch Llama/Mistral/Qwen2 forward pass, KV-cache decode, attention path, sampling and LoRA application. It supports model-aware memory selection, in-RAM layer streaming, and disk-resident safetensors layer loading with a CPU KV cache. Model Studio can pull compatible public Hugging Face safetensors checkpoints directly into AXIOM. GGUF/EXL2/GPTQ/AWQ loading, Qwen3/multimodal architectures, and vLLM-style continuous-batching serving are not yet native capabilities.</p>
     <div className="status-strip" aria-label="AXIOM Engine status">
       <div className="status-strip-item">
         <span className={`status-pill ${status?.ready ? "success" : "warning"}`}><i />{loading ? "CHECKING" : status?.ready ? "ENGINE READY" : "SETUP REQUIRED"}</span>
