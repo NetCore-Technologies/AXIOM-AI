@@ -1280,7 +1280,7 @@ def generate_local_stream(
         effective_max_new_tokens = min(max_new_tokens, context_cap - 1)
         input_limit = max(1, min(_MAX_INPUT_TOKENS, context_cap - effective_max_new_tokens))
         formatted_prompt, prompt_format = _format_prompt_for_native_model(
-            prompt, _resolve_model_directory(model_path, "Base model"), model.config.model_type, tokenizer
+            prompt, Path(model_path), model.config.model_type, tokenizer
         )
         try:
             encoded = tokenizer.encode(formatted_prompt, add_special_tokens=False)
