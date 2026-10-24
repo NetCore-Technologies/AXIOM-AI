@@ -159,7 +159,7 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
   await engine.getByRole("button", { name: "Run with AXIOM Engine" }).click();
 
   await expect(engine.getByTestId("axiom-engine-output")).toContainText("AXIOM local engine test response.");
-  await expect(engine).toContainText("Finish: stop sequence · Stop sequences: 2 · Attention: pytorch-scaled-dot-product-attention · Sampling: temperature 0.7 · top-p 0.8 · top-k 4 · repetition penalty 1.1 · seed 42");
+  await expect(engine).toContainText("Finish: stop sequence · Stop sequences: 2 · Attention: pytorch-scaled-dot-product-attention · Sampling: temperature 0.7 · top-p 0.8 · top-k 4 · min-p off · repetition penalty 1.1 · seed 42");
   await expect(engine).toContainText("LlamaForCausalLM");
   await expect(engine.getByRole("button", { name: "Unload model" })).toBeVisible();
 
