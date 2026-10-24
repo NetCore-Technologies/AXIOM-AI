@@ -34,6 +34,7 @@ _PROVIDER_CONFIG: dict[str, dict[str, Any]] = {
     "openai": {"label": "OpenAI", "base_url": "https://api.openai.com/v1", "kind": "openai"},
     "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com/v1", "kind": "openai"},
     "moonshot": {"label": "Moonshot AI (Kimi)", "base_url": "https://api.moonshot.ai/v1", "kind": "openai"},
+    "openrouter": {"label": "OpenRouter", "base_url": "https://openrouter.ai/api/v1", "kind": "openai"},
     "anthropic": {"label": "Anthropic", "base_url": "https://api.anthropic.com/v1", "kind": "anthropic"},
     "gemini": {"label": "Google Gemini", "base_url": "https://generativelanguage.googleapis.com/v1beta", "kind": "gemini"},
     "openai-compatible": {"label": "Custom OpenAI-compatible", "base_url": None, "kind": "openai"},
