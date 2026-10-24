@@ -13,6 +13,11 @@ export default function LocalEngineFabricPanel() {
   const [prompt, setPrompt] = useState("");
   const [maxTokens, setMaxTokens] = useState("256");
   const [temperature, setTemperature] = useState("0.7");
+  const [topP, setTopP] = useState("0.9");
+  const [topK, setTopK] = useState("0");
+  const [repetitionPenalty, setRepetitionPenalty] = useState("1.0");
+  const [seed, setSeed] = useState("");
+  const [stopSequencesText, setStopSequencesText] = useState("");
   const [result, setResult] = useState<EngineFabricChatResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -77,6 +82,11 @@ export default function LocalEngineFabricPanel() {
     }
     const tokenLimit = Number(maxTokens);
     const temperatureValue = Number(temperature);
+    const topPValue = Number(topP);
+    const topKValue = Number(topK);
+    const repetitionPenaltyValue = Number(repetitionPenalty);
+    const seedValue = seed.trim() === "" ? null : Number(seed);
+    const stopSequences = stopSequencesText.split(/\r?\n/).filter((value) => value.trim().length > 0);
     if (!Number.isInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 2048) {
       setError("Maximum output tokens must be between 1 and 2,048.");
       return;
@@ -85,6 +95,33 @@ export default function LocalEngineFabricPanel() {
       setError("Temperature must be between 0 and 2.");
       return;
     }
+    if (!Number.isFinite(topPValue) || topPValue <= 0 || topPValue > 1) {
+      setError("Top-p must be greater than 0 and at most 1.");
+      return;
+    }
+    if (!Number.isInteger(topKValue) || topKValue < 0 || topKValue > 100000) {
+      setError("Top-k must be an integer from 0 to 100,000; 0 disables the limit.");
+      return;
+    }
+    if (!Number.isFinite(repetitionPenaltyValue) || repetitionPenaltyValue < 0.1 || repetitionPenaltyValue > 5) {
+      setError("Repetition penalty must be between 0.1 and 5.");
+      return;
+    }
+    if (seedValue !== null && (!Number.isSafeInteger(seedValue) || seedValue < 0)) {
+      setError("Seed must be a non-negative safe integer, or leave it blank for the runtime default.");
+      return;
+    }
+    if (stopSequences.length > 16 || stopSequences.some((stop) => stop.length > 256)) {
+      setError("Use at most 16 stop sequences, each up to 256 characters. Enter one per line.");
+      return;
+    }
+    const sampling = {
+      top_p: topPValue,
+      top_k: topKValue,
+      repetition_penalty: repetitionPenaltyValue,
+      seed: seedValue,
+      stop_sequences: stopSequences,
+    };
     setRunning(true);
     try {
       const input = {
@@ -92,6 +129,7 @@ export default function LocalEngineFabricPanel() {
         messages: [{ role: "user" as const, content: prompt }],
         max_new_tokens: tokenLimit,
         temperature: temperatureValue,
+        ...sampling,
       };
       const response = routingMode === "auto"
         ? await axiomApi.engineBackendAutoChat({ ...input, profile })
@@ -135,6 +173,11 @@ export default function LocalEngineFabricPanel() {
         warmup_runs: warmups,
         iterations,
         temperature: 0.2,
+        top_p: Number(topP),
+        top_k: Number(topK),
+        repetition_penalty: Number(repetitionPenalty),
+        seed: seed.trim() === "" ? null : Number(seed),
+        stop_sequences: stopSequencesText.split(/\r?\n/).filter((value) => value.trim().length > 0),
       });
       setBenchmarkResults((current) => [
         measured,
@@ -219,6 +262,14 @@ export default function LocalEngineFabricPanel() {
           <label className="field"><span className="field-label-row"><span>Maximum generated tokens</span></span><input type="number" value={maxTokens} onChange={(event) => setMaxTokens(event.target.value)} min={1} max={2048} step={1} required /></label>
           <label className="field"><span className="field-label-row"><span>Temperature</span></span><input type="number" value={temperature} onChange={(event) => setTemperature(event.target.value)} min={0} max={2} step={0.1} required /></label>
         </div>
+        <p className="surface-eyebrow">ADVANCED SAMPLING</p>
+        <div className="two-column-grid">
+          <label className="field"><span className="field-label-row"><span>Top-p</span></span><input type="number" value={topP} onChange={(event) => setTopP(event.target.value)} min={0.000001} max={1} step={0.05} required /><small>Cumulative probability threshold.</small></label>
+          <label className="field"><span className="field-label-row"><span>Top-k</span></span><input type="number" value={topK} onChange={(event) => setTopK(event.target.value)} min={0} max={100000} step={1} required /><small>0 disables the top-k cutoff.</small></label>
+          <label className="field"><span className="field-label-row"><span>Repetition penalty</span></span><input type="number" value={repetitionPenalty} onChange={(event) => setRepetitionPenalty(event.target.value)} min={0.1} max={5} step={0.05} required /><small>1.0 leaves repetition unpenalized.</small></label>
+          <label className="field"><span className="field-label-row"><span>Seed (optional)</span></span><input type="number" value={seed} onChange={(event) => setSeed(event.target.value)} min={0} step={1} placeholder="Random / runtime default" /><small>Fixed seeds improve repeatability but cannot guarantee identical output across different runtimes.</small></label>
+        </div>
+        <label className="field"><span className="field-label-row"><span>Stop sequences (optional)</span><span>One exact string per line</span></span><textarea value={stopSequencesText} onChange={(event) => setStopSequencesText(event.target.value)} rows={2} placeholder={"\n---\nEND"} /><small>Up to 16 sequences, each at most 256 characters. Stop strings are passed to the selected local runtime.</small></label>
         <div className="integration-form-actions">
           <button type="submit" className="button primary-button" disabled={loading || running || (routingMode === "selected" && (!selected || selected.status !== "ready")) || !model.trim() || !prompt.trim()}><PlayIcon />{running ? "Generating locally…" : routingMode === "auto" ? "Auto-route local request" : "Run on selected engine"}</button>
           {result && <span className="quiet-note">{result.eval_count ?? "—"} completion tokens · {result.total_duration_ms} ms · {result.backend_name}</span>}
