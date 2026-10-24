@@ -30,10 +30,11 @@ test("Runtime page displays passive connector discovery without claiming connect
   }));
 
   await page.goto("/?page=runtime");
-  await expect(page.getByRole("heading", { name: "Runtime connectors" })).toBeVisible();
-  await expect(page.getByText("Ollama", { exact: true })).toBeVisible();
-  await expect(page.getByText("DISCOVERED", { exact: true })).toBeVisible();
-  await expect(page.getByText("vLLM CLI", { exact: true })).toBeVisible();
+  const connectorsPanel = page.locator(".runtime-connectors");
+  await expect(connectorsPanel.getByRole("heading", { name: "Runtime connectors" })).toBeVisible();
+  await expect(connectorsPanel.getByText("Ollama", { exact: true })).toBeVisible();
+  await expect(connectorsPanel.getByText("DISCOVERED", { exact: true })).toBeVisible();
+  await expect(connectorsPanel.getByText("vLLM CLI", { exact: true })).toBeVisible();
   await expect(page.locator("body")).toContainText("does not start processes");
   await expect(page.locator("body")).not.toContainText("CONNECTED");
 });

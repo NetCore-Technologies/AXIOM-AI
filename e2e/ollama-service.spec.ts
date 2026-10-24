@@ -79,27 +79,28 @@ test("Runtime can start Ollama, pull a model with progress, and stop only the ma
   });
 
   await page.goto("/?page=runtime");
-  await expect(page.getByRole("heading", { name: "Local model inference" })).toBeVisible();
-  await expect(page.getByText("OLLAMA OFFLINE", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Start Ollama" }).click();
-  await expect(page.getByText("OLLAMA ONLINE", { exact: true })).toBeVisible();
+  const inferencePanel = page.locator(".local-inference-panel");
+  await expect(inferencePanel.getByRole("heading", { name: "Local model inference" })).toBeVisible();
+  await expect(inferencePanel.getByText("OLLAMA OFFLINE", { exact: true })).toBeVisible();
+  await inferencePanel.getByRole("button", { name: "Start Ollama" }).click();
+  await expect(inferencePanel.getByText("OLLAMA ONLINE", { exact: true })).toBeVisible();
 
-  await page.getByLabel("Ollama model tag").fill("qwen2.5:0.5b");
-  await page.getByRole("button", { name: "Pull model" }).click();
-  await expect(page.getByText("COMPLETED", { exact: true })).toBeVisible({ timeout: 5000 });
-  await expect(page.getByText("Model downloaded and registered locally")).toBeVisible();
+  await inferencePanel.getByLabel("Ollama model tag").fill("qwen2.5:0.5b");
+  await inferencePanel.getByRole("button", { name: "Pull model" }).click();
+  await expect(inferencePanel.getByText("COMPLETED", { exact: true })).toBeVisible({ timeout: 5000 });
+  await expect(inferencePanel.getByText("Model downloaded and registered locally")).toBeVisible();
 
-  await page.getByRole("button", { name: "Show loaded models" }).click();
-  await expect(page.getByRole("heading", { name: "Loaded models · 1" })).toBeVisible();
-  await expect(page.getByText("CPU + GPU", { exact: true })).toBeVisible();
-  await expect(page.getByText("0.28 GiB", { exact: true })).toBeVisible();
+  await inferencePanel.getByRole("button", { name: "Show loaded models" }).click();
+  await expect(inferencePanel.getByRole("heading", { name: "Loaded models · 1" })).toBeVisible();
+  await expect(inferencePanel.getByText("CPU + GPU", { exact: true })).toBeVisible();
+  await expect(inferencePanel.getByText("0.28 GiB", { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "Inspect model" }).click();
-  await expect(page.getByText("Q4_K_M", { exact: true })).toBeVisible();
-  await expect(page.getByText("32,768", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Unload qwen2.5:0.5b from memory" }).click();
-  await expect(page.getByText("Downloaded model files remain installed.", { exact: false })).toBeVisible();
+  await inferencePanel.getByRole("button", { name: "Inspect model" }).click();
+  await expect(inferencePanel.getByText("Q4_K_M", { exact: true })).toBeVisible();
+  await expect(inferencePanel.getByText("32,768", { exact: true })).toBeVisible();
+  await inferencePanel.getByRole("button", { name: "Unload qwen2.5:0.5b from memory" }).click();
+  await expect(inferencePanel.getByText("Downloaded model files remain installed.", { exact: false })).toBeVisible();
 
-  await page.getByRole("button", { name: "Stop AXIOM service" }).click();
-  await expect(page.getByText("OLLAMA OFFLINE", { exact: true })).toBeVisible();
+  await inferencePanel.getByRole("button", { name: "Stop AXIOM service" }).click();
+  await expect(inferencePanel.getByText("OLLAMA OFFLINE", { exact: true })).toBeVisible();
 });

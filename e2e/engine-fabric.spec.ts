@@ -10,6 +10,23 @@ const backend = (id: string, name: string, status: "ready" | "setup_required", s
   best_for: ["balanced"], status, installed: status === "ready", reachable: status === "ready",
   models, model_count: models.length, error: status === "ready" ? null : "Install or configure a compatible local model.",
   scope: id === "axiom-native" ? "in_process_native_engine" : "fixed_loopback_only",
+  generation: {
+    transport: id === "axiom-native" ? "in_process" : id === "ollama" ? "ollama_options" : "openai_compatible",
+    parameter_mapping: {
+      max_new_tokens: id === "axiom-native" ? "max_new_tokens" : id === "ollama" ? "options.num_predict" : "max_tokens",
+      temperature: id === "ollama" ? "options.temperature" : "temperature",
+      top_p: id === "ollama" ? "options.top_p" : "top_p",
+      top_k: id === "ollama" ? "options.top_k" : "top_k (extension)",
+      repetition_penalty: id === "axiom-native" ? "repetition_penalty" : id === "ollama" ? "options.repeat_penalty" : id === "vllm" ? "repetition_penalty" : "repeat_penalty",
+      seed: id === "ollama" ? "options.seed" : "seed",
+      stop_sequences: id === "ollama" ? "options.stop" : "stop",
+    },
+    native_sampling_controls: id === "axiom-native" || id === "ollama"
+      ? ["temperature", "top_p", "top_k", "repetition_penalty", "seed", "stop_sequences"]
+      : ["temperature", "top_p", "seed", "stop_sequences"],
+    extension_sampling_controls: id === "axiom-native" || id === "ollama" ? [] : ["top_k", "repetition_penalty"],
+    note: "Test fixture; parameter acceptance depends on the selected runtime.",
+  },
 });
 
 test("Engine Fabric compares local engines and routes chat to the chosen service", async ({ page }) => {
@@ -63,7 +80,7 @@ test("Engine Fabric compares local engines and routes chat to the chosen service
   await expect(page.getByRole("heading", { name: "Choose the right local engine" })).toBeVisible();
   await expect(page.getByText("AXIOM Native Engine", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Recommended for this profile").first()).toBeVisible();
-  await page.getByLabel("External local backend").selectOption("llama-cpp");
+  await page.getByLabel("Local engine").selectOption("llama-cpp");
   await page.getByLabel("Model ID").fill("tiny-local");
   await page.getByPlaceholder("Ask the selected local model to do something…").fill("Say hello locally.");
   await page.getByRole("button", { name: "Run on selected engine" }).click();

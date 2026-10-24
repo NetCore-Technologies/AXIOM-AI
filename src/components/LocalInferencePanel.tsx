@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Activity, BarChart3, Download, Info, Play, Power, RefreshCcw, Square } from "lucide-react";
 import { axiomApi, type LocalInferenceBenchmark, type LocalInferenceResult, type LocalInferenceStatus, type OllamaPullJob, type OllamaModelDetails, type OllamaRunningModels, type LocalInferenceStreamEvent } from "../api/client";
-import LocalAxiomEnginePanel from "./LocalAxiomEnginePanel";
-import LocalEngineFabricPanel from "./LocalEngineFabricPanel";
 
 export default function LocalInferencePanel() {
   const [status, setStatus] = useState<LocalInferenceStatus | null>(null);
@@ -248,7 +246,7 @@ export default function LocalInferencePanel() {
   };
 
   const online = status?.status === "online";
-  return <><LocalAxiomEnginePanel /><LocalEngineFabricPanel /><section className="surface local-inference-panel">
+  return <section className="surface local-inference-panel">
     <div className="surface-head">
       <div>
         <p className="surface-eyebrow">REAL GENERATION · LOOPBACK ONLY</p>
@@ -399,5 +397,5 @@ export default function LocalInferencePanel() {
         <p className="quiet-note" style={{ marginTop: 12 }}>{benchmark.scope_note}</p>
       </div>}
     </section>
-  </section></>;
+  </section>;
 }

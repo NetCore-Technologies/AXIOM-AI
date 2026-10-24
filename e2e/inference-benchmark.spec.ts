@@ -89,22 +89,23 @@ test.describe("Measured local inference benchmark", () => {
 
     await ensureAuthenticated(page);
     await page.goto("/?page=runtime");
+    const inferencePanel = page.locator(".local-inference-panel");
     await expect(page.getByRole("heading", { level: 1, name: "Runtime", exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Inference benchmark" })).toBeVisible();
-    await expect(page.getByText("OLLAMA ONLINE", { exact: true })).toBeVisible();
+    await expect(inferencePanel.getByRole("heading", { name: "Inference benchmark" })).toBeVisible();
+    await expect(inferencePanel.getByText("OLLAMA ONLINE", { exact: true })).toBeVisible();
 
-    await page.getByPlaceholder("Ask your local model to do something…").fill("Describe local inference.");
-    await page.getByRole("spinbutton").first().fill("64");
-    await page.getByRole("spinbutton").nth(1).fill("0.2");
-    await page.getByRole("combobox", { name: "Benchmark warm-up generations" }).selectOption("1");
-    await page.getByRole("combobox", { name: "Benchmark iterations" }).selectOption("2");
-    await page.getByRole("combobox", { name: "Benchmark concurrency" }).selectOption("1");
-    await page.getByRole("button", { name: "Benchmark this prompt" }).click();
+    await inferencePanel.getByPlaceholder("Ask your local model to do something…").fill("Describe local inference.");
+    await inferencePanel.getByRole("spinbutton").first().fill("64");
+    await inferencePanel.getByRole("spinbutton").nth(1).fill("0.2");
+    await inferencePanel.getByRole("combobox", { name: "Benchmark warm-up generations" }).selectOption("1");
+    await inferencePanel.getByRole("combobox", { name: "Benchmark iterations" }).selectOption("2");
+    await inferencePanel.getByRole("combobox", { name: "Benchmark concurrency" }).selectOption("1");
+    await inferencePanel.getByRole("button", { name: "Benchmark this prompt" }).click();
 
-    await expect(page.getByRole("region", { name: "Inference benchmark result" })).toBeVisible();
-    await expect(page.getByText("42.857 tokens/s", { exact: true })).toBeVisible();
-    await expect(page.getByText("200 ms", { exact: true })).toBeVisible();
-    await expect(page.getByText("P95 240 ms", { exact: true })).toBeVisible();
+    await expect(inferencePanel.getByRole("region", { name: "Inference benchmark result" })).toBeVisible();
+    await expect(inferencePanel.getByText("42.857 tokens/s", { exact: true })).toBeVisible();
+    await expect(inferencePanel.getByText("200 ms", { exact: true })).toBeVisible();
+    await expect(inferencePanel.getByText("P95 240 ms", { exact: true })).toBeVisible();
     const requestTable = page.getByRole("table", { name: "Per-request benchmark timings" });
     await expect(requestTable.getByRole("row")).toHaveCount(3);
     await expect(requestTable).toContainText("8");
@@ -118,7 +119,7 @@ test.describe("Measured local inference benchmark", () => {
       iterations: 2,
       concurrency: 1,
     });
-    const visibleResult = await page.getByRole("region", { name: "Inference benchmark result" }).innerText();
+    const visibleResult = await inferencePanel.getByRole("region", { name: "Inference benchmark result" }).innerText();
     expect(visibleResult).not.toContain("response text");
     expect(visibleResult).not.toContain("Describe local inference.");
   });
@@ -154,10 +155,11 @@ test.describe("Measured local inference benchmark", () => {
 
     await ensureAuthenticated(page);
     await page.goto("/?page=runtime");
-    await page.getByPlaceholder("Ask your local model to do something…").fill("Test bounded work.");
-    await page.getByRole("combobox", { name: "Benchmark iterations" }).selectOption("10");
-    await page.getByRole("combobox", { name: "Benchmark concurrency" }).selectOption("2");
-    await page.getByRole("button", { name: "Benchmark this prompt" }).click();
+    const inferencePanel = page.locator(".local-inference-panel");
+    await inferencePanel.getByPlaceholder("Ask your local model to do something…").fill("Test bounded work.");
+    await inferencePanel.getByRole("combobox", { name: "Benchmark iterations" }).selectOption("10");
+    await inferencePanel.getByRole("combobox", { name: "Benchmark concurrency" }).selectOption("2");
+    await inferencePanel.getByRole("button", { name: "Benchmark this prompt" }).click();
     await expect(page.getByText(/iterations × concurrency must not exceed 10/i)).toBeVisible();
     expect(benchmarkRequests).toBe(0);
   });
