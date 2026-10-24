@@ -65,6 +65,7 @@ def test_local_chat_uses_axiom_native_stream_without_network(monkeypatch: pytest
         temperature=0,
         top_p=0.82,
         top_k=40,
+        min_p=0.2,
         repetition_penalty=1.15,
         seed=123,
         stop_sequences=["END", "END"],
@@ -82,6 +83,7 @@ def test_local_chat_uses_axiom_native_stream_without_network(monkeypatch: pytest
     assert captured["max_new_tokens"] == 7
     assert captured["top_p"] == 0.82
     assert captured["top_k"] == 40
+    assert captured["min_p"] == 0.2
     assert captured["repetition_penalty"] == 1.15
     assert captured["seed"] == 123
     assert captured["stop_sequences"] == ("END",)
@@ -282,11 +284,11 @@ def test_ollama_local_provider_sends_structured_turns_to_loopback_adapter(monkey
 
     def fake_chat(
         model: str, messages: list[dict[str, str]], *, num_predict: int, temperature: float,
-        top_p: float, top_k: int, repetition_penalty: float, seed: int | None, stop_sequences,
+        top_p: float, top_k: int, min_p: float, repetition_penalty: float, seed: int | None, stop_sequences,
     ):
         captured.update({
             "model": model, "messages": messages, "num_predict": num_predict, "temperature": temperature,
-            "top_p": top_p, "top_k": top_k, "repetition_penalty": repetition_penalty,
+            "top_p": top_p, "top_k": top_k, "min_p": min_p, "repetition_penalty": repetition_penalty,
             "seed": seed, "stop_sequences": stop_sequences,
         })
         return {
@@ -298,7 +300,7 @@ def test_ollama_local_provider_sends_structured_turns_to_loopback_adapter(monkey
     result = llm_client.chat(
         "ollama-local", "qwen2.5:0.5b", expected_messages,
         max_tokens=18, temperature=0.2, top_p=0.85, top_k=32,
-        repetition_penalty=1.2, seed=7, stop_sequences=["DONE"], consent=False,
+        min_p=0.2, repetition_penalty=1.2, seed=7, stop_sequences=["DONE"], consent=False,
     )
 
     assert result["provider"] == "ollama-local"
@@ -313,6 +315,7 @@ def test_ollama_local_provider_sends_structured_turns_to_loopback_adapter(monkey
         "temperature": 0.2,
         "top_p": 0.85,
         "top_k": 32,
+        "min_p": 0.2,
         "repetition_penalty": 1.2,
         "seed": 7,
         "stop_sequences": ("DONE",),
@@ -324,6 +327,10 @@ def test_ollama_local_provider_sends_structured_turns_to_loopback_adapter(monkey
     {"top_p": float("nan")},
     {"top_k": -1},
     {"top_k": True},
+    {"min_p": -0.01},
+    {"min_p": 1.01},
+    {"min_p": float("nan")},
+    {"min_p": True},
     {"repetition_penalty": 0},
     {"seed": -1},
     {"seed": True},
@@ -342,7 +349,7 @@ def test_cloud_provider_rejects_unsupported_local_only_sampling(monkeypatch: pyt
     with pytest.raises(ValueError, match="local AXIOM Native Engine and Ollama"):
         llm_client.chat(
             "deepseek", "deepseek-chat", [{"role": "user", "content": "private"}],
-            api_key="sentinel-secret", consent=True, top_k=25,
+            api_key="sentinel-secret", consent=True, top_k=25, min_p=0.2,
         )
 
 
