@@ -51,7 +51,7 @@ def test_infer_run_help_exposes_advanced_sampling_options():
     result = CliRunner().invoke(
         app,
         ["--no-banner", "infer", "run", "--help"],
-        env={"TERMINAL_WIDTH": "140"},
+        env={"COLUMNS": "140", "TERMINAL_WIDTH": "140"},
     )
     assert result.exit_code == 0, result.output
     for option in ("--top-p", "--top-k", "--repeat-penalty", "--seed", "--num-ctx", "--stop"):
