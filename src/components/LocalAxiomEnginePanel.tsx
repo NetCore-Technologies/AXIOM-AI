@@ -169,7 +169,7 @@ export default function LocalAxiomEnginePanel() {
     const repeatPenalty = Number(repetitionPenalty);
     const seedValue = seed.trim() === "" ? null : Number(seed);
     const stopSequences = stopSequencesText.split("\n").map((value) => value.replace(/\r$/, "")).filter((value) => value.length > 0);
-    if (!modelPath.trim()) { setError("Choose a discovered native model or enter a trusted local Llama/Mistral model path."); return; }
+    if (!modelPath.trim()) { setError("Choose a discovered native model or enter a trusted local Llama/Mistral/Qwen2 model path."); return; }
     if (!prompt.trim()) { setError("Enter a prompt first."); return; }
     if (!Number.isInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 2048) { setError("Maximum generated tokens must be between 1 and 2048."); return; }
     if (!Number.isFinite(temp) || temp < 0 || temp > 2) { setError("Temperature must be between 0 and 2."); return; }
@@ -234,7 +234,7 @@ export default function LocalAxiomEnginePanel() {
         {status?.loaded && <button type="button" className="button secondary-button" onClick={() => void unload()} disabled={loading || running || unloading}><Unplug size={14} /> {unloading ? "Unloading…" : "Unload model"}</button>}
       </div>
     </div>
-    <p>AXIOM Native Engine implements its own PyTorch Llama/Mistral forward pass, KV-cache decode, attention path, sampling and LoRA application. PyTorch supplies device tensor kernels; AXIOM does not delegate generation to Transformers or Ollama. This build accepts local floating-point safetensors and tokenizer.json; GGUF/EXL2 quantized loading and model acquisition are not yet implemented by this native path.</p>
+    <p>AXIOM Native Engine implements its own PyTorch Llama/Mistral/Qwen2 forward pass, KV-cache decode, attention path, sampling and LoRA application. PyTorch supplies device tensor kernels; AXIOM does not delegate generation to Transformers or Ollama. This native path accepts local floating-point safetensors and tokenizer.json for Llama, Mistral, and Qwen2-family checkpoints. GGUF/EXL2 loading, native model acquisition, and low-VRAM layer streaming are separate pending capabilities.</p>
     <div className="status-strip" aria-label="AXIOM Engine status">
       <div className="status-strip-item">
         <span className={`status-pill ${status?.ready ? "success" : "warning"}`}><i />{loading ? "CHECKING" : status?.ready ? "ENGINE READY" : "SETUP REQUIRED"}</span>
