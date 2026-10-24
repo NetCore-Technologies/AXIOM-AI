@@ -662,3 +662,72 @@ def test_disk_streaming_reads_layer_weights_on_demand_and_matches_full_forward(t
     assert streamed.memory_stats["layer_weight_bytes_released"] > 0
     assert all(key.device.type == "cpu" and value.device.type == "cpu" for key, value in cache)
     assert streamed.memory_stats["kv_cache_layer_offloads"] == config["num_hidden_layers"]
+
+
+def _planner_fixture(tmp_path: Path, monkeypatch, *, system_memory: int | None):
+    from types import SimpleNamespace
+    import shutil
+
+    from axiom.core import engine as engine_module
+
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    shard = model_dir / "model.safetensors"
+    shard.write_bytes(b"x" * 8192)
+    monkeypatch.setattr(
+        "axiom.core.native_engine._resolve_safetensor_files",
+        lambda *_args, **_kwargs: ([shard], {"model.embed_tokens.weight": "model.safetensors"}),
+    )
+    monkeypatch.setattr(engine_module, "_available_system_memory_bytes", lambda: system_memory)
+    monkeypatch.setattr(
+        engine_module,
+        "_device_capability_rows",
+        lambda _torch: [{"id": "cpu", "memory_free_gib": None, "memory_total_gib": None}],
+    )
+    monkeypatch.setattr(shutil, "disk_usage", lambda _path: SimpleNamespace(free=10 * 1024**3))
+    return engine_module, model_dir, {"config": _config()}
+
+
+def test_auto_memory_planner_selects_full_mode_when_cpu_ram_is_sufficient(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from axiom.core import engine as engine_module
+
+    memory = 8 * 1024**3
+    module, model_dir, inspected = _planner_fixture(tmp_path, monkeypatch, system_memory=memory)
+    mode, selection = module._choose_memory_mode(
+        model_dir, inspected, object(), SimpleNamespace(type="cpu"), {"selected": "cpu"}
+    )
+    assert mode == "full"
+    assert selection["selected"] == "full"
+    assert selection["available_system_ram_bytes"] == memory
+    assert selection["estimates_are_advisory"] is True
+
+
+def test_auto_memory_planner_fails_closed_when_cpu_ram_is_unknown(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from axiom.core import engine as engine_module
+
+    module, model_dir, inspected = _planner_fixture(tmp_path, monkeypatch, system_memory=None)
+    with pytest.raises(engine_module.AxiomEngineError, match="available system RAM could not be measured"):
+        module._choose_memory_mode(
+            model_dir, inspected, object(), SimpleNamespace(type="cpu"), {"selected": "cpu"}
+        )
+
+
+def test_auto_memory_planner_does_not_choose_streaming_without_memory_measurements(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from axiom.core import engine as engine_module
+
+    module, model_dir, inspected = _planner_fixture(tmp_path, monkeypatch, system_memory=None)
+    monkeypatch.setattr(
+        module,
+        "_device_capability_rows",
+        lambda _torch: [{"id": "cuda", "memory_free_gib": None, "memory_total_gib": None}],
+    )
+    with pytest.raises(engine_module.AxiomEngineError, match="neither free accelerator memory nor available system RAM"):
+        module._choose_memory_mode(
+            model_dir, inspected, object(), SimpleNamespace(type="cuda"), {"selected": "cuda"}
+        )
