@@ -947,16 +947,34 @@ def _choose_memory_mode(
         elif system_available is not None and system_available >= disk_cpu_required:
             mode, reason = "disk_streaming", "Full checkpoint residency is too large for available RAM; disk-resident layer loading has a lower estimated RAM footprint."
         else:
+            if system_available is None:
+                raise AxiomEngineError(
+                    "Automatic memory planning cannot safely select CPU execution because available system RAM could not be measured. "
+                    "Install psutil or choose an explicit memory mode after checking your machine's memory."
+                )
             raise AxiomEngineError(
-                "Automatic memory planning cannot find a safe CPU strategy for this model. "
-                f"Estimated full RAM need: {full_required / gib:.2f} GiB; disk-streaming RAM need: {disk_cpu_required / gib:.2f} GiB; "
-                f"available RAM: {system_available / gib:.2f} GiB." if system_available is not None else "available RAM could not be measured."
+                "Automatic memory planning found no estimated CPU strategy that fits available RAM. "
+                f"Estimated full RAM need: {full_required / gib:.2f} GiB; "
+                f"disk-streaming RAM need: {disk_cpu_required / gib:.2f} GiB; "
+                f"available RAM: {system_available / gib:.2f} GiB. "
+                "Free memory or select a smaller model/context."
             )
     elif device_free is None:
-        if system_available is not None and system_available >= cpu_layer_required:
-            mode, reason = "layer_streaming", "PyTorch did not expose free VRAM; chose CPU-resident layer streaming to reduce accelerator weight residency."
+        if system_available is None:
+            raise AxiomEngineError(
+                "Automatic memory planning cannot safely choose a streaming mode because neither free accelerator memory "
+                "nor available system RAM was measurable. Install psutil or choose an explicit memory mode after checking resources."
+            )
+        if system_available >= cpu_layer_required:
+            mode, reason = "layer_streaming", "PyTorch did not expose free VRAM; available system RAM is estimated to hold the model's layer weights and KV/workspace."
+        elif system_available >= disk_cpu_required:
+            mode, reason = "disk_streaming", "PyTorch did not expose free VRAM; available system RAM is estimated to be insufficient for all layer weights, so on-demand disk loading is selected."
         else:
-            mode, reason = "disk_streaming", "PyTorch did not expose free VRAM; selected disk-resident streaming to minimize model-weight residency and reduce OOM risk."
+            raise AxiomEngineError(
+                "Automatic memory planning found no estimated streaming strategy that fits available system RAM. "
+                f"Estimated in-RAM streaming need: {cpu_layer_required / gib:.2f} GiB; "
+                f"disk-streaming need: {disk_cpu_required / gib:.2f} GiB; available RAM: {system_available / gib:.2f} GiB."
+            )
     elif device_free >= full_required:
         mode, reason = "full", "The checkpoint plus estimated KV/workspace fits observed free accelerator memory with a safety margin."
     elif device_free >= streamed_device_required and system_available is not None and system_available >= cpu_layer_required:
@@ -964,12 +982,17 @@ def _choose_memory_mode(
     elif device_free >= streamed_device_required and system_available is not None and system_available >= disk_cpu_required:
         mode, reason = "disk_streaming", "The full checkpoint exceeds accelerator memory and RAM cannot comfortably hold every layer; selected on-demand disk layer reads."
     else:
+        ram_text = (
+            f"{system_available / gib:.2f} GiB"
+            if system_available is not None
+            else "not measurable"
+        )
         raise AxiomEngineError(
-            "Automatic memory planning could not find a safe execution strategy for the current device. "
-            f"Estimated full accelerator need: {full_required / gib:.2f} GiB; streamed-device need: {streamed_device_required / gib:.2f} GiB; "
-            f"observed free accelerator memory: {device_free / gib:.2f} GiB; available RAM: {system_available / gib:.2f} GiB."
-            if system_available is not None else
-            f"Estimated full accelerator need: {full_required / gib:.2f} GiB; streamed-device need: {streamed_device_required / gib:.2f} GiB; observed free accelerator memory: {device_free / gib:.2f} GiB; available RAM could not be measured."
+            "Automatic memory planning could not find an estimated strategy that fits this device. "
+            f"Estimated full accelerator need: {full_required / gib:.2f} GiB; "
+            f"streamed-device need: {streamed_device_required / gib:.2f} GiB; "
+            f"observed free accelerator memory: {device_free / gib:.2f} GiB; "
+            f"available system RAM: {ram_text}. Try a smaller model/context, free memory, or use CPU."
         )
     base["selected"] = mode
     base["reason"] = reason
