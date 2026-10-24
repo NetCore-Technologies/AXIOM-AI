@@ -42,6 +42,21 @@ test("Runtime can start Ollama, pull a model with progress, and stop only the ma
       progress: "Queued", percent: null, logs: [], error: null, cancel_requested: false,
     } });
   });
+  await page.route("**/api/inference/models/inspect", async (route) => {
+    await route.fulfill({ json: {
+      schema_version: 1, model: "qwen2.5:0.5b", installed: true, size_bytes: 401000000,
+      modified_at: "2026-10-24T00:00:00Z", format: "gguf", family: "qwen2", families: ["qwen2"],
+      parameter_size: "0.5B", parameter_count: 494032768, quantization_level: "Q4_K_M", context_length: 32768,
+      capabilities: ["completion", "tools"], template_configured: true, license_present: true,
+      system_prompt_configured: false, scope_note: "Metadata remains local-only.",
+    } });
+  });
+  await page.route("**/api/inference/models/unload", async (route) => {
+    await route.fulfill({ json: {
+      schema_version: 1, model: "qwen2.5:0.5b", unloaded: true, model_files_deleted: false,
+      scope_note: "Ollama was asked to release this model from memory. Downloaded model files remain installed.",
+    } });
+  });
   await page.route("**/api/inference/models/pull/*", async (route) => {
     pullStatusChecks += 1;
     await route.fulfill({ json: {
@@ -62,6 +77,12 @@ test("Runtime can start Ollama, pull a model with progress, and stop only the ma
   await page.getByRole("button", { name: "Pull model" }).click();
   await expect(page.getByText("COMPLETED", { exact: true })).toBeVisible({ timeout: 5000 });
   await expect(page.getByText("Model downloaded and registered locally")).toBeVisible();
+
+  await page.getByRole("button", { name: "Inspect model" }).click();
+  await expect(page.getByText("Q4_K_M", { exact: true })).toBeVisible();
+  await expect(page.getByText("32768", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Unload from memory" }).click();
+  await expect(page.getByText("Downloaded model files remain installed.", { exact: false })).toBeVisible();
 
   await page.getByRole("button", { name: "Stop AXIOM service" }).click();
   await expect(page.getByText("OLLAMA OFFLINE", { exact: true })).toBeVisible();
