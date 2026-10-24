@@ -52,7 +52,7 @@ class GenerateRequest(BaseModel):
     seed: int | None = Field(default=None, ge=0, le=9223372036854775807)
     stop_sequences: list[str] = Field(default_factory=list, max_length=16)
     device: str = Field(default="auto", pattern="^(auto|cpu|cuda|rocm|mps|xpu)$")
-    memory_mode: str = Field(default="full", pattern="^(auto|full|layer_streaming|disk_streaming)$")
+    memory_mode: str = Field(default="auto", pattern="^(auto|full|layer_streaming|disk_streaming)$")
 
     @field_validator("model_path", mode="before")
     @classmethod
