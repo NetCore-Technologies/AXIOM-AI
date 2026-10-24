@@ -139,3 +139,30 @@ def test_start_terminates_process_if_ownership_state_cannot_be_saved(monkeypatch
 
     assert process.terminated is True
     assert process.waited is True
+
+
+def test_start_reaps_process_if_process_identity_cannot_be_verified(monkeypatch):
+    class FakeProcess:
+        pid = 12346
+        terminated = False
+        waited = False
+        def poll(self):
+            return None
+        def terminate(self):
+            self.terminated = True
+        def wait(self, timeout=None):
+            self.waited = True
+            return 0
+
+    process = FakeProcess()
+    monkeypatch.setattr(service, "service_status", lambda: {**_offline_report(), "service_managed_by_axiom": False, "service_can_start": True})
+    monkeypatch.setattr(service.shutil, "which", lambda _name: "/usr/bin/ollama")
+    monkeypatch.setattr(service.subprocess, "Popen", lambda *_args, **_kwargs: process)
+    monkeypatch.setattr(service, "_process_info", lambda _pid: None)
+    monkeypatch.setattr(service, "_SERVICE_START_TIMEOUT_SECONDS", 0)
+
+    with pytest.raises(service.OllamaServiceError, match="could not verify ownership"):
+        service.start_service()
+
+    assert process.terminated is True
+    assert process.waited is True
