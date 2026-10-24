@@ -207,16 +207,16 @@ def runtime_status() -> dict[str, Any]:
         "transformers_generation_used": False,
         "ollama_used": False,
         "remote_code": False,
-        "supported_model_types": ["llama", "mistral"],
+        "supported_model_types": ["llama", "mistral", "qwen2"],
         "supported_weights": ["safetensors"],
         "setup_note": (
-            "AXIOM Native Engine is ready for supported local Llama/Mistral safetensors checkpoints."
+            "AXIOM Native Engine is ready for supported local Llama/Mistral/Qwen2 safetensors checkpoints."
             if ready else
             "AXIOM Native Engine setup required: " + "; ".join(problems)
             + ". Install with: python -m pip install -e '.[native-inference]'"
         ),
         "scope_note": (
-            "AXIOM implements its own Llama/Mistral forward pass, RMSNorm, RoPE, grouped-query attention, KV cache, "
+            "AXIOM implements its own Llama/Mistral/Qwen2 forward pass, RMSNorm, RoPE, grouped-query attention, KV cache, "
             "LoRA application and token-by-token decoder using PyTorch tensor operations. It does not call "
             "Transformers model.generate or an Ollama server. Checkpoint acquisition and model training are separate."
         ),
