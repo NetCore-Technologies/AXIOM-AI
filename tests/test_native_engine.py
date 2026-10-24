@@ -863,3 +863,74 @@ def test_native_prompt_rejects_invalid_chat_template_json(tmp_path: Path) -> Non
 
     with pytest.raises(AxiomEngineError, match="chat template"):
         _format_prompt_for_native_model("Hello", tmp_path, "llama", TinyTokenizer())
+
+
+
+def test_native_context_trims_old_history_before_token_truncation(monkeypatch, tmp_path: Path) -> None:
+    from types import SimpleNamespace
+    from axiom.core import engine
+
+    class TokenizerFixture:
+        def encode(self, text, add_special_tokens=False):
+            return SimpleNamespace(ids=[1] * len(text))
+
+        def decode(self, token_ids, skip_special_tokens=True):
+            return "answer" if token_ids else ""
+
+    class RuntimeFixture:
+        config = SimpleNamespace(max_position_embeddings=64, bos_token_id=None, eos_token_ids=())
+        last_attention_backend = "axiom-manual-matmul-attention"
+        memory_mode = "full"
+        memory_stats = {}
+
+        def __init__(self):
+            self.last_generation = {}
+            self.prompt_ids = []
+
+        def iter_generate(self, prompt_token_ids, **_kwargs):
+            self.prompt_ids = list(prompt_token_ids)
+            try:
+                yield 101
+            finally:
+                self.last_generation.update({
+                    "prompt_tokens": len(prompt_token_ids),
+                    "completion_tokens": 1,
+                    "decoder": "axiom-autoregressive-kv-cache",
+                    "prefill_ms": 1.0,
+                    "decode_ms": 1.0,
+                    "time_to_first_token_ms": 1.0,
+                    "generation_tokens_per_second": 500.0,
+                    "stop_reason": "max_new_tokens",
+                })
+
+    runtime = RuntimeFixture()
+    tokenizer = TokenizerFixture()
+    monkeypatch.setattr(engine, "_load_local_model", lambda *_args, **_kwargs: (
+        runtime, tokenizer, None, "cpu", {
+            "model_directory_name": "fixture",
+            "model_directory_path": str(tmp_path),
+            "adapter_directory_name": None,
+            "architecture": "LlamaForCausalLM",
+            "model_type": "llama",
+            "add_bos_token": False,
+            "device_selection": {"requested": "cpu", "selected": "cpu", "reason": "test"},
+        }
+    ))
+
+    events = list(engine.generate_local_stream(
+        str(tmp_path), "new ask", max_new_tokens=2, temperature=0,
+        chat_messages=[
+            {"role": "system", "content": "Be terse."},
+            {"role": "user", "content": "old user history " * 5},
+            {"role": "assistant", "content": "old assistant history " * 5},
+            {"role": "user", "content": "new ask"},
+        ],
+        include_token_events=False,
+    ))
+    result = events[-1]["result"]
+    context = result["context_management"]
+    assert context["messages_dropped_to_fit_context"] == 2
+    assert context["token_truncation_applied"] is False
+    assert context["prompt_tokens_used"] <= 62
+    assert context["original_message_count"] == 4
+    assert result["prompt_tokens"] == context["prompt_tokens_used"]
