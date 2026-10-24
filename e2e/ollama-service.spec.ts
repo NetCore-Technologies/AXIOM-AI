@@ -1,0 +1,68 @@
+import { expect, test } from "@playwright/test";
+import { ensureAuthenticated } from "./helpers/auth";
+
+test("Runtime can start Ollama, pull a model with progress, and stop only the managed service", async ({ page }) => {
+  await ensureAuthenticated(page);
+  let online = false;
+  let managed = false;
+  let pullStatusChecks = 0;
+
+  const report = () => ({
+    backend: "ollama",
+    endpoint: "http://127.0.0.1:11434",
+    runtime_installed: true,
+    status: online ? "online" : "offline",
+    models: online && pullStatusChecks > 0 ? ["qwen2.5:0.5b"] : [],
+    error: online ? null : "Ollama is offline in this test.",
+    checked_at: "2026-10-24T00:00:00Z",
+    service_managed_by_axiom: managed,
+    service_can_start: !online && !managed,
+    service_can_stop: managed,
+    service_control_scope: "loopback_only",
+    service_message: managed ? "AXIOM started this Ollama service." : "Ollama service status.",
+  });
+
+  await page.route("**/api/workspace/runtime", (route) => route.fulfill({ json: {
+    status: "offline",
+    hardware: { os_name: "Linux", architecture: "x86_64", cpu_cores: 8, ram_gb: 16, gpu_name: null, vram_gb: null, cuda_available: false },
+  } }));
+  await page.route("**/api/inference/status", (route) => route.fulfill({ json: report() }));
+  await page.route("**/api/inference/service/start", async (route) => {
+    online = true; managed = true;
+    await route.fulfill({ json: { started: true, already_running: false, service: report() } });
+  });
+  await page.route("**/api/inference/service/stop", async (route) => {
+    online = false; managed = false;
+    await route.fulfill({ json: { stopped: true, service: report() } });
+  });
+  await page.route("**/api/inference/models/pull", async (route) => {
+    await route.fulfill({ json: {
+      id: "a".repeat(32), model: "qwen2.5:0.5b", status: "queued",
+      created_at: "2026-10-24T00:00:00Z", updated_at: "2026-10-24T00:00:00Z",
+      progress: "Queued", percent: null, logs: [], error: null, cancel_requested: false,
+    } });
+  });
+  await page.route("**/api/inference/models/pull/*", async (route) => {
+    pullStatusChecks += 1;
+    await route.fulfill({ json: {
+      id: "a".repeat(32), model: "qwen2.5:0.5b", status: "completed",
+      created_at: "2026-10-24T00:00:00Z", updated_at: "2026-10-24T00:00:01Z",
+      progress: "Model downloaded and registered locally", percent: 100,
+      logs: ["pulling manifest", "Model download complete"], error: null, cancel_requested: false,
+    } });
+  });
+
+  await page.goto("/?page=runtime");
+  await expect(page.getByRole("heading", { name: "Local model inference" })).toBeVisible();
+  await expect(page.getByText("OLLAMA OFFLINE", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Start Ollama" }).click();
+  await expect(page.getByText("OLLAMA ONLINE", { exact: true })).toBeVisible();
+
+  await page.getByLabel("Ollama model tag").fill("qwen2.5:0.5b");
+  await page.getByRole("button", { name: "Pull model" }).click();
+  await expect(page.getByText("COMPLETED", { exact: true })).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("Model downloaded and registered locally")).toBeVisible();
+
+  await page.getByRole("button", { name: "Stop AXIOM service" }).click();
+  await expect(page.getByText("OLLAMA OFFLINE", { exact: true })).toBeVisible();
+});
