@@ -530,7 +530,16 @@ def test_auto_device_retries_cpu_after_accelerator_oom(monkeypatch, tmp_path: Pa
     monkeypatch.setattr(engine, "_LOADED_RUNTIME", None)
     monkeypatch.setattr(engine, "_LOADED_ARCHITECTURE", None)
     monkeypatch.setattr(engine, "_resolve_model_directory", lambda *_args: model_dir)
-    monkeypatch.setattr(engine, "_inspect_model_config", lambda _path: {"model_type": "llama", "architecture": "LlamaForCausalLM"})
+    config = _config()
+    shard = model_dir / "model.safetensors"
+    shard.write_bytes(b"x" * 8192)
+    monkeypatch.setattr(engine, "_inspect_model_config", lambda _path: {
+        "config": config, "model_type": "llama", "architecture": "LlamaForCausalLM",
+    })
+    monkeypatch.setattr("axiom.core.native_engine._resolve_safetensor_files", lambda *_args, **_kwargs: (
+        [shard], {"model.embed_tokens.weight": "model.safetensors"}
+    ))
+    monkeypatch.setattr(engine, "_available_system_memory_bytes", lambda: 8 * 1024**3)
     monkeypatch.setattr(engine, "_allowed_model_roots", lambda: (tmp_path.resolve(),))
     monkeypatch.setattr(engine, "_device_capability_rows", lambda _torch=None: [
         {"id": "cuda", "name": "NVIDIA CUDA", "available": True, "reason": "available", "memory_free_gib": 0.1, "memory_total_gib": 8.0},
@@ -578,7 +587,16 @@ def test_explicit_accelerator_does_not_silently_fall_back_after_oom(monkeypatch,
     monkeypatch.setattr(engine, "_LOADED_RUNTIME", None)
     monkeypatch.setattr(engine, "_LOADED_ARCHITECTURE", None)
     monkeypatch.setattr(engine, "_resolve_model_directory", lambda *_args: model_dir)
-    monkeypatch.setattr(engine, "_inspect_model_config", lambda _path: {"model_type": "llama", "architecture": "LlamaForCausalLM"})
+    config = _config()
+    shard = model_dir / "model.safetensors"
+    shard.write_bytes(b"x" * 8192)
+    monkeypatch.setattr(engine, "_inspect_model_config", lambda _path: {
+        "config": config, "model_type": "llama", "architecture": "LlamaForCausalLM",
+    })
+    monkeypatch.setattr("axiom.core.native_engine._resolve_safetensor_files", lambda *_args, **_kwargs: (
+        [shard], {"model.embed_tokens.weight": "model.safetensors"}
+    ))
+    monkeypatch.setattr(engine, "_available_system_memory_bytes", lambda: 8 * 1024**3)
     monkeypatch.setattr(engine, "_allowed_model_roots", lambda: (tmp_path.resolve(),))
     monkeypatch.setattr(engine, "_device_capability_rows", lambda _torch=None: [
         {"id": "cuda", "name": "NVIDIA CUDA", "available": True, "reason": "available", "memory_free_gib": 0.1, "memory_total_gib": 8.0},
