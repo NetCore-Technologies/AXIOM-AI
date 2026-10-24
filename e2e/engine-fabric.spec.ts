@@ -83,7 +83,7 @@ test("Engine Fabric compares local engines and routes chat to the chosen service
   await expect(engineFabricPanel.getByText("Recommended for this profile").first()).toBeVisible();
   await engineFabricPanel.getByLabel("Execution strategy", { exact: true }).selectOption("selected");
   await engineFabricPanel.getByLabel("Local engine", { exact: true }).selectOption("llama-cpp");
-  await engineFabricPanel.getByLabel("Model ID", { exact: true }).fill("tiny-local");
+  await engineFabricPanel.getByLabel("Model ID").fill("tiny-local");
   await engineFabricPanel.getByPlaceholder("Ask the selected local model to do something…").fill("Say hello locally.");
   await engineFabricPanel.getByRole("button", { name: "Run on selected engine" }).click();
   await expect(engineFabricPanel.getByRole("region", { name: "Engine Fabric response" })).toContainText("A reply from the selected local backend.");

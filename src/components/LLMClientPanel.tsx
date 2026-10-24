@@ -216,7 +216,7 @@ export default function LLMClientPanel() {
       {local && <div className="panel-surface" style={{ padding: 14 }}>
         <p className="surface-eyebrow">ADVANCED LOCAL SAMPLING</p>
         <div className="two-column-grid">
-          <label className="field"><span className="field-label-row"><span>Top-p</span></span><input type="number" value={topP} onChange={(event) => setTopP(event.target.value)} min={0.000001} max={1} step={0.05} required /><small>Cumulative probability cutoff.</small></label>
+          <label className="field"><span className="field-label-row"><span>Top-p</span></span><input type="number" value={topP} onChange={(event) => setTopP(event.target.value)} min={0.000001} max={1} step="any" required /><small>Cumulative probability cutoff.</small></label>
           <label className="field"><span className="field-label-row"><span>Top-k</span></span><input type="number" value={topK} onChange={(event) => setTopK(event.target.value)} min={0} max={100000} step={1} required /><small>0 disables the top-k cutoff.</small></label>
           <label className="field"><span className="field-label-row"><span>Repetition penalty</span></span><input type="number" value={repetitionPenalty} onChange={(event) => setRepetitionPenalty(event.target.value)} min={0.1} max={5} step={0.05} required /><small>1.0 disables the penalty.</small></label>
           <label className="field"><span className="field-label-row"><span>Seed (optional)</span></span><input type="number" value={seed} onChange={(event) => setSeed(event.target.value)} min={0} step={1} placeholder="Runtime default" /><small>Repeatability may differ between devices and runtimes.</small></label>

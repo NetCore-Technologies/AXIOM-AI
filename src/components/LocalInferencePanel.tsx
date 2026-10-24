@@ -342,7 +342,7 @@ export default function LocalInferencePanel() {
         <summary style={{ cursor: "pointer", fontWeight: 600 }}>Advanced sampling options</summary>
         <p className="quiet-note" style={{ marginTop: 10 }}>These controls are sent to Ollama as local runtime options. Leave seed and context size blank to use the model/runtime defaults.</p>
         <div className="two-column-grid">
-          <label className="field"><span className="field-label-row"><span>Top-p</span></span><input type="number" min={0.001} max={1} step={0.05} value={topP} onChange={(event) => setTopP(event.target.value)} /></label>
+          <label className="field"><span className="field-label-row"><span>Top-p</span></span><input type="number" min={0.001} max={1} step="any" value={topP} onChange={(event) => setTopP(event.target.value)} /></label>
           <label className="field"><span className="field-label-row"><span>Top-k</span></span><input type="number" min={0} max={100000} step={1} value={topK} onChange={(event) => setTopK(event.target.value)} /></label>
           <label className="field"><span className="field-label-row"><span>Repetition penalty</span></span><input type="number" min={0.1} max={5} step={0.1} value={repetitionPenalty} onChange={(event) => setRepetitionPenalty(event.target.value)} /></label>
           <label className="field"><span className="field-label-row"><span>Random seed (optional)</span></span><input type="number" min={0} step={1} value={seedValue} onChange={(event) => setSeedValue(event.target.value)} placeholder="Use runtime default" /></label>

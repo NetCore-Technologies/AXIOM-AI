@@ -241,14 +241,14 @@ export default function LocalEngineFabricPanel() {
       <form onSubmit={(event) => void run(event)}>
         <div className="two-column-grid">
           <label className="field"><span className="field-label-row"><span>Execution strategy</span></span>
-            <select value={routingMode} onChange={(event) => { setRoutingMode(event.target.value as "auto" | "selected"); setResult(null); }} disabled={loading || running}>
+            <select aria-label="Execution strategy" value={routingMode} onChange={(event) => { setRoutingMode(event.target.value as "auto" | "selected"); setResult(null); }} disabled={loading || running}>
               <option value="auto">Automatic profile routing + safe failover</option>
               <option value="selected">Choose a specific local runtime</option>
             </select>
             <small>Automatic routing stays local and only fails over to ready services advertising the exact same model ID.</small>
           </label>
           {routingMode === "selected" && <label className="field"><span className="field-label-row"><span>Local engine</span></span>
-            <select value={selectedBackend} onChange={(event) => { const id = event.target.value; setSelectedBackend(id); setResult(null); const target = report?.backends.find((item) => item.id === id); setModel(target?.models[0] ?? ""); }} disabled={loading || running}>
+            <select aria-label="Local engine" value={selectedBackend} onChange={(event) => { const id = event.target.value; setSelectedBackend(id); setResult(null); const target = report?.backends.find((item) => item.id === id); setModel(target?.models[0] ?? ""); }} disabled={loading || running}>
               {choices.map((item) => <option key={item.id} value={item.id}>{item.name} — {formatStatus(item.status)}</option>)}
             </select>
           </label>}
@@ -267,7 +267,7 @@ export default function LocalEngineFabricPanel() {
         </div>
         <p className="surface-eyebrow">ADVANCED SAMPLING</p>
         <div className="two-column-grid">
-          <label className="field"><span className="field-label-row"><span>Top-p</span></span><input type="number" value={topP} onChange={(event) => setTopP(event.target.value)} min={0.000001} max={1} step={0.05} required /><small>Cumulative probability threshold.</small></label>
+          <label className="field"><span className="field-label-row"><span>Top-p</span></span><input type="number" value={topP} onChange={(event) => setTopP(event.target.value)} min={0.000001} max={1} step="any" required /><small>Cumulative probability threshold.</small></label>
           <label className="field"><span className="field-label-row"><span>Top-k</span></span><input type="number" value={topK} onChange={(event) => setTopK(event.target.value)} min={0} max={100000} step={1} required /><small>0 disables the top-k cutoff.</small></label>
           <label className="field"><span className="field-label-row"><span>Repetition penalty</span></span><input type="number" value={repetitionPenalty} onChange={(event) => setRepetitionPenalty(event.target.value)} min={0.1} max={5} step={0.05} required /><small>1.0 leaves repetition unpenalized.</small></label>
           <label className="field"><span className="field-label-row"><span>Seed (optional)</span></span><input type="number" value={seed} onChange={(event) => setSeed(event.target.value)} min={0} step={1} placeholder="Random / runtime default" /><small>Fixed seeds improve repeatability but cannot guarantee identical output across different runtimes.</small></label>
