@@ -249,7 +249,6 @@ export type LLMChatRequest = LLMModelRequest & {
   device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu";
   memory_mode?: "auto" | "full" | "layer_streaming" | "disk_streaming";
   precision?: "auto" | "fp32" | "fp16" | "bf16";
-  precision?: "auto" | "fp32" | "fp16" | "bf16";
 };
 export type LLMChatResult = {
   provider: LLMProvider; model: string; response: string; prompt_tokens: number | null;
@@ -1372,7 +1371,7 @@ export const axiomApi = {
     requestJson<AxiomEngineAdapterCompatibility>("/api/engine/adapters/compatibility", {
       method: "POST", body: JSON.stringify(input),
     }),
-  runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode?: "auto" | "full" | "layer_streaming" | "disk_streaming" }) =>
+  runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode?: "auto" | "full" | "layer_streaming" | "disk_streaming"; precision?: "auto" | "fp32" | "fp16" | "bf16" }) =>
     requestJson<AxiomEngineResult>("/api/engine/generate", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
