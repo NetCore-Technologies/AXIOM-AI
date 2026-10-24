@@ -161,7 +161,7 @@ export type AxiomEngineStatus = {
   engine: string; ready: boolean; packages: Record<string, boolean>; versions: Record<string, string | null>;
   minimum_versions?: Record<string, string>; problems?: string[];
   devices?: Array<{ id: "cpu" | "cuda" | "rocm" | "mps" | "xpu"; name: string; available: boolean; reason: string; memory_free_gib: number | null; memory_total_gib: number | null }>;
-  recommended_device?: "cpu" | "cuda" | "rocm" | "mps" | "xpu" | null; loaded_device?: string | null; loaded_memory_mode?: "full" | "layer_streaming" | null;
+  recommended_device?: "cpu" | "cuda" | "rocm" | "mps" | "xpu" | null; loaded_device?: string | null; loaded_memory_mode?: "full" | "layer_streaming" | "disk_streaming" | null;
   loaded: boolean; architecture: string | null; model_loading: "local_files_only" | "local_safetensors_only";
   execution_backend?: string; transformers_generation_used?: false; ollama_used?: false;
   supported_model_types?: string[]; supported_weights?: string[]; remote_code: false;
@@ -175,7 +175,7 @@ export type AxiomEngineResult = {
   engine: "axiom-native-engine"; execution_backend: "pytorch-native-axiom";
   transformers_generation_used: false; ollama_used: false;
   model: string; architecture: string; model_type: "llama" | "mistral" | "qwen2";
-  adapter: string | null; device: string; device_selection?: { requested: string; selected: string; reason: string }; memory_mode?: "full" | "layer_streaming"; memory_stats?: { layer_weight_tensors_staged: number; layer_weight_bytes_staged: number; layer_weight_bytes_returned_to_cpu: number; kv_cache_layer_offloads: number; kv_cache_bytes_offloaded: number }; checkpoint_format: "safetensors";
+  adapter: string | null; device: string; device_selection?: { requested: string; selected: string; reason: string }; memory_mode?: "full" | "layer_streaming" | "disk_streaming"; memory_stats?: { layer_weight_tensors_staged: number; layer_weight_bytes_staged: number; layer_weight_bytes_returned_to_cpu: number; layer_weight_bytes_released: number; disk_layer_weight_loads: number; disk_layer_weight_bytes_read: number; kv_cache_layer_offloads: number; kv_cache_bytes_offloaded: number }; checkpoint_format: "safetensors";
   decoder: "axiom-autoregressive-kv-cache"; attention_backend: string;
   prefill_ms: number; decode_ms: number; time_to_first_token_ms: number; generation_tokens_per_second: number;
   sampling: AxiomEngineSampling; stop_sequences: string[];
@@ -853,7 +853,7 @@ async function requestJson<T>(path: string, init: RequestInit = {}, timeoutMs = 
 }
 
 async function streamAxiomEngineRequest(
-  input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "full" | "layer_streaming" },
+  input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "full" | "layer_streaming" | "disk_streaming" },
   onEvent: (event: AxiomEngineStreamEvent) => void,
   signal: AbortSignal,
 ): Promise<AxiomEngineResult> {
@@ -1308,12 +1308,12 @@ export const axiomApi = {
     requestJson<AxiomEngineAdapterCompatibility>("/api/engine/adapters/compatibility", {
       method: "POST", body: JSON.stringify(input),
     }),
-  runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu" }) =>
+  runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode?: "full" | "layer_streaming" | "disk_streaming" }) =>
     requestJson<AxiomEngineResult>("/api/engine/generate", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
   streamAxiomEngine: (
-    input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "full" | "layer_streaming" },
+    input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "full" | "layer_streaming" | "disk_streaming" },
     onEvent: (event: AxiomEngineStreamEvent) => void,
     signal: AbortSignal,
   ) => streamAxiomEngineRequest(input, onEvent, signal),
