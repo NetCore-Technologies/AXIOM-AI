@@ -347,7 +347,7 @@ export type LLMModelResult = {
 export type LLMChatMessage = { role: "system" | "user" | "assistant"; content: string };
 export type LLMChatRequest = LLMModelRequest & {
   model: string; messages: LLMChatMessage[]; max_tokens: number; temperature: number; consent: boolean;
-  top_p?: number; top_k?: number; repetition_penalty?: number; seed?: number | null; stop_sequences?: string[];
+  top_p?: number; top_k?: number; min_p?: number; repetition_penalty?: number; seed?: number | null; stop_sequences?: string[];
   device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu";
   memory_mode?: "auto" | "full" | "layer_streaming" | "disk_streaming";
   precision?: "auto" | "fp32" | "fp16" | "bf16";
