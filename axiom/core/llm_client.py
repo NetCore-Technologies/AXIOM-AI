@@ -55,7 +55,7 @@ def provider_catalog() -> dict[str, Any]:
         "requires_api_key": False,
         "supports_model_listing": True,
         "privacy": "local-only",
-        "note": "Runs supported local Llama, Mistral, and Qwen2 safetensors checkpoints.",
+        "note": "Runs supported local Llama, Mistral, Qwen2, and Qwen3 safetensors checkpoints.",
     }]
     for provider_id, config in _PROVIDER_CONFIG.items():
         providers.append({
@@ -88,7 +88,7 @@ def _native_models() -> list[dict[str, Any]]:
         if isinstance(item, dict)
         and isinstance(item.get("name"), str)
         and isinstance(item.get("path"), str)
-        and item.get("model_type") in {"llama", "mistral", "qwen2"}
+        and item.get("model_type") in {"llama", "mistral", "qwen2", "qwen3"}
     ]
 
 
