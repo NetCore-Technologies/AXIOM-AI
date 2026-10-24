@@ -12,6 +12,7 @@ from rich.table import Table
 from rich.text import Text
 
 from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, generate_local, generate_local_stream, runtime_status
+from axiom.core import model_studio
 
 engine_app = typer.Typer(help="Run causal language models directly through AXIOM's local engine.", no_args_is_help=True)
 console = Console()
@@ -87,7 +88,7 @@ def engine_status(json_output: bool = typer.Option(False, "--json", help="Print 
             if device.get("memory_total_gib") is not None:
                 value += f" ({device.get('memory_free_gib') or 0} GiB free / {device['memory_total_gib']} GiB total)"
             table.add_row(f"Device: {device.get('name', device.get('id', 'unknown'))}", value)
-        table.add_row("Model downloads", "disabled")
+        table.add_row("Native model pull", "public Hugging Face safetensors via `axiom engine pull`")
         table.add_row("Remote model code", "disabled")
         console.print(table)
         if not report["ready"]:
@@ -95,6 +96,30 @@ def engine_status(json_output: bool = typer.Option(False, "--json", help="Print 
     if not report["ready"]:
         raise typer.Exit(code=1)
 
+
+@engine_app.command("pull")
+def engine_pull(
+    repo_id: str = typer.Argument(..., help="Public Hugging Face repository ID, e.g. Qwen/Qwen2.5-0.5B-Instruct."),
+    json_output: bool = typer.Option(False, "--json", help="Print the install result as machine-readable JSON."),
+) -> None:
+    """Pull compatible public Llama/Mistral/Qwen2 safetensors directly for AXIOM Native Engine."""
+    try:
+        result = model_studio.pull_native_model(
+            repo_id,
+            on_log=lambda message: console.print(message),
+            on_progress=lambda current, total: console.print(
+                "\rDownloaded " + f"{current:,}" + (f" / {total:,} bytes" if total else " bytes"),
+                end="",
+            ),
+        )
+    except (ValueError, model_studio.ModelStudioError) as exc:
+        _fail(str(exc))
+    if json_output:
+        console.print()
+        typer.echo(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+    console.print("\n[green]Installed for AXIOM Native Engine:[/green] " + result["path"])
+    console.print("[dim]Run it with:[/dim] axiom engine run --model-path " + repr(result["path"]) + " --prompt \"Hello.\"")
 
 @engine_app.command("run")
 def engine_run(
