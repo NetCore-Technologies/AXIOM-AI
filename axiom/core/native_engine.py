@@ -40,7 +40,7 @@ def _apply_top_k_filter(scores: Any, top_k: int, torch_module: Any) -> Any:
     return scores.masked_fill(~selected, float("-inf"))
 
 
-def _apply_min_p_filter(scores: Any, min_p: float, torch_module: Any) -> Any:
+def _apply_min_p_filter(scores: Any, min_p: float) -> Any:
     """Discard tokens whose score is too far below the highest logit."""
     if min_p <= 0:
         return scores
@@ -990,7 +990,7 @@ class NativeLlamaRuntime:
                             remove[..., 0] = False
                             sorted_scores = sorted_scores.masked_fill(remove, float("-inf"))
                             scores = torch.full_like(scores, float("-inf")).scatter(dim=-1, index=sorted_ids, src=sorted_scores)
-                        scores = _apply_min_p_filter(scores, float(min_p), torch)
+                        scores = _apply_min_p_filter(scores, float(min_p))
                         if not bool(torch.isfinite(scores).any().item()):
                             raise NativeEngineError(
                                 "Native sampling filters removed every usable token."
