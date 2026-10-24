@@ -60,6 +60,7 @@ class GenerateRequest(BaseModel):
     temperature: float = Field(default=0.7, ge=0, le=2)
     top_p: float = Field(default=0.9, gt=0, le=1)
     top_k: int = Field(default=0, ge=0, le=100000)
+    min_p: float = Field(default=0.0, ge=0, le=1)
     repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
     seed: int | None = Field(default=None, ge=0, le=9223372036854775807)
     stop_sequences: list[str] = Field(default_factory=list, max_length=16)
@@ -205,6 +206,7 @@ def engine_generate(request: GenerateRequest) -> dict[str, Any]:
             temperature=request.temperature,
             top_p=request.top_p,
             top_k=request.top_k,
+            min_p=request.min_p,
             repetition_penalty=request.repetition_penalty,
             seed=request.seed,
             stop_sequences=request.stop_sequences,
@@ -298,6 +300,7 @@ async def engine_generate_stream(
         temperature=request.temperature,
         top_p=request.top_p,
         top_k=request.top_k,
+        min_p=request.min_p,
         repetition_penalty=request.repetition_penalty,
         seed=request.seed,
         stop_sequences=request.stop_sequences,
