@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import hmac
+import os
 import time
 import uuid
 from queue import Empty, Full, Queue
@@ -22,6 +24,23 @@ from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, ge
 router = APIRouter()
 _STREAM_END = object()
 _STREAM_QUEUE_SIZE = 2
+
+
+def _authorization_error(request: Request) -> JSONResponse | None:
+    """Enforce an optional bearer token for clients exposed beyond loopback."""
+    expected = os.environ.get("AXIOM_OPENAI_API_TOKEN", "").strip()
+    if not expected:
+        return None
+    authorization = request.headers.get("Authorization", "")
+    scheme, separator, supplied = authorization.partition(" ")
+    matched = bool(separator and scheme.lower() == "bearer" and hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")))
+    if matched:
+        return None
+    return JSONResponse(
+        status_code=401,
+        headers={"WWW-Authenticate": "Bearer"},
+        content={"error": {"message": "A valid AXIOM bearer token is required.", "type": "authentication_error", "param": None, "code": "invalid_api_key"}},
+    )
 
 
 def _openai_error(message: str, status_code: int, *, code: str | None = None,
@@ -165,8 +184,11 @@ def _produce_stream(iterator: Iterator[dict[str, Any]], output: Queue, cancelled
 
 
 @router.get("/v1/models")
-def openai_list_models() -> dict[str, Any]:
+def openai_list_models(request: Request) -> Any:
     """List native models as OpenAI-compatible model objects."""
+    auth_error = _authorization_error(request)
+    if auth_error is not None:
+        return auth_error
     created = int(time.time())
     models = _native_models()
     return {
@@ -279,6 +301,9 @@ def _streaming_response(
 @router.post("/v1/chat/completions")
 async def openai_chat_completions(request: OpenAIChatCompletionRequest, http_request: Request) -> Any:
     """Create OpenAI-compatible native chat completions, either JSON or SSE."""
+    auth_error = _authorization_error(http_request)
+    if auth_error is not None:
+        return auth_error
     model = _resolve_model(request.model)
     if model is None:
         return _openai_error(f"Native model {request.model!r} was not found or its ID is ambiguous.", 404, code="model_not_found")
