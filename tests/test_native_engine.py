@@ -679,6 +679,39 @@ def test_qwen3_native_loader_applies_query_key_rms_norm(tmp_path: Path) -> None:
     assert runtime.config.qk_norm is True
 
 
+def test_native_loader_explicit_fp16_precision_casts_model_weights(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    safetensors_torch = pytest.importorskip("safetensors.torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    root = tmp_path / "trusted"
+    model_dir = root / "tiny-fp32"
+    model_dir.mkdir(parents=True)
+    config = _config()
+    (model_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    (model_dir / "tokenizer.json").write_text("{}", encoding="utf-8")
+    safetensors_torch.save_file(
+        {name: tensor.float().detach().cpu().contiguous() for name, tensor in _tiny_weights(torch).items()},
+        str(model_dir / "model.safetensors"),
+    )
+    runtime = NativeLlamaRuntime.from_directory(
+        model_dir, torch, torch.device("cpu"), trusted_roots=(root.resolve(),),
+        memory_mode="full", precision="fp16",
+    )
+    assert runtime.dtype == torch.float16
+    assert all(tensor.dtype == torch.float16 for tensor in runtime.weights.values())
+
+
+def test_native_loader_rejects_unsupported_precision(tmp_path: Path) -> None:
+    from axiom.core.native_engine import NativeEngineError
+
+    with pytest.raises(NativeEngineError, match="Precision must be auto, fp32, fp16, or bf16"):
+        from axiom.core.native_engine import NativeLlamaRuntime
+        NativeLlamaRuntime.from_directory(
+            tmp_path, object(), object(), trusted_roots=(tmp_path.resolve(),), precision="int4",
+        )
+
+
 def test_disk_streaming_reads_layer_weights_on_demand_and_matches_full_forward(tmp_path: Path) -> None:
     torch = pytest.importorskip("torch")
     safetensors_torch = pytest.importorskip("safetensors.torch")
