@@ -64,6 +64,7 @@ class GenerateRequest(BaseModel):
     stop_sequences: list[str] = Field(default_factory=list, max_length=16)
     device: str = Field(default="auto", pattern="^(auto|cpu|cuda|rocm|mps|xpu)$")
     memory_mode: str = Field(default="auto", pattern="^(auto|full|layer_streaming|disk_streaming)$")
+    precision: str = Field(default="auto", pattern="^(auto|fp32|fp16|bf16)$")
 
     @field_validator("model_path", mode="before")
     @classmethod
@@ -208,6 +209,7 @@ def engine_generate(request: GenerateRequest) -> dict[str, Any]:
             stop_sequences=request.stop_sequences,
             device_preference=request.device,
             memory_mode=request.memory_mode,
+            precision=request.precision,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
@@ -301,6 +303,7 @@ async def engine_generate_stream(
         cancel_event=cancel_event,
         device_preference=request.device,
         memory_mode=request.memory_mode,
+        precision=request.precision,
     )
     producer = Thread(
         target=_produce_native_stream,
