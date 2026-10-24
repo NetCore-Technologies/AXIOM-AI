@@ -243,3 +243,45 @@ def test_custom_provider_uses_pinned_public_ip_and_never_follows_redirects(monke
     assert captured["headers"]["Authorization"] == "Bearer secret-sentinel"
     assert captured["closed"] is True
     assert "secret-sentinel" not in str(response)
+
+
+def test_ollama_local_provider_lists_only_local_inventory(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(llm_client, "ollama_runtime_status", lambda: {
+        "backend": "ollama", "status": "online", "models": ["qwen2.5:0.5b"], "error": None,
+    })
+    result = llm_client.list_models("ollama-local")
+
+    assert result["models"] == ["qwen2.5:0.5b"]
+    assert result["execution"] == "local"
+    assert result["credential_storage"] == "not_applicable"
+
+
+def test_ollama_local_provider_sends_structured_turns_to_loopback_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    expected_messages = [
+        {"role": "user", "content": "First question"},
+        {"role": "assistant", "content": "Previous local answer"},
+        {"role": "user", "content": "Follow up"},
+    ]
+
+    def fake_chat(model: str, messages: list[dict[str, str]], *, num_predict: int, temperature: float):
+        captured.update({"model": model, "messages": messages, "num_predict": num_predict, "temperature": temperature})
+        return {
+            "model": model, "response": "Ollama answer", "prompt_eval_count": 7,
+            "eval_count": 3, "generated_at": "2026-01-01T00:00:00+00:00",
+        }
+
+    monkeypatch.setattr(llm_client, "run_local_chat", fake_chat)
+    result = llm_client.chat("ollama-local", "qwen2.5:0.5b", expected_messages, max_tokens=18, temperature=0.2, consent=False)
+
+    assert result["provider"] == "ollama-local"
+    assert result["response"] == "Ollama answer"
+    assert result["execution"] == "local"
+    assert result["credential_storage"] == "not_applicable"
+    assert result["prompt_tokens"] == 7
+    assert captured == {
+        "model": "qwen2.5:0.5b",
+        "messages": expected_messages,
+        "num_predict": 18,
+        "temperature": 0.2,
+    }
