@@ -119,17 +119,27 @@ def test_native_stream_stops_on_a_sequence_spanning_token_boundaries(monkeypatch
     assert runtime.requested == 2
 
 
-def test_native_config_accepts_standard_llama_and_mistral() -> None:
+def test_native_config_accepts_llama_mistral_and_qwen2() -> None:
     assert NativeLlamaConfig.from_mapping(_config()).model_type == "llama"
     assert NativeLlamaConfig.from_mapping(
         _config(model_type="mistral", architectures=["MistralForCausalLM"], sliding_window=16)
     ).sliding_window == 16
+    qwen = NativeLlamaConfig.from_mapping(_config(
+        model_type="qwen2",
+        architectures=["Qwen2ForCausalLM"],
+        rope_theta=1_000_000.0,
+        max_position_embeddings=32768,
+        tie_word_embeddings=True,
+    ))
+    assert qwen.model_type == "qwen2"
+    assert qwen.rope_theta == 1_000_000.0
+    assert qwen.max_position_embeddings == 32768
 
 
 @pytest.mark.parametrize(
     "overrides,detail",
     [
-        ({"model_type": "qwen2"}, "supports llama and mistral"),
+        ({"model_type": "gemma3"}, "supports llama, mistral, and qwen2"),
         ({"hidden_size": 7}, "even-sized attention heads"),
         ({"rope_scaling": {"rope_type": "yarn", "factor": 2.0}}, "RoPE scaling"),
         ({"num_attention_heads": 3, "hidden_size": 12, "num_key_value_heads": 2}, "num_key_value_heads"),
