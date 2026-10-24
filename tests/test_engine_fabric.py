@@ -105,12 +105,13 @@ def test_native_backend_advertises_supported_model_aliases(monkeypatch):
     monkeypatch.setattr(llm_client, "_native_models", lambda: [
         {"name": "qwen-tiny", "path": "/trusted/qwen-tiny", "model_type": "qwen2"},
         {"name": "qwen-tiny", "path": "/trusted/qwen-tiny-copy", "model_type": "qwen2"},
+        {"name": "llama-small", "path": "/trusted/llama-small", "model_type": "llama"},
     ])
     backend = engine_fabric._native_backend()
-    assert backend["status"] == "setup_required"
-    assert backend["supports_chat"] is False
-    assert backend["models"] == []
-    assert backend["model_count"] == 0
+    assert backend["status"] == "ready"
+    assert backend["supports_chat"] is True
+    assert backend["models"] == ["llama-small"]
+    assert backend["model_count"] == 1
 
 
 def test_chat_validates_before_any_local_request(monkeypatch):

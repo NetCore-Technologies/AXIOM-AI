@@ -200,7 +200,7 @@ export default function LocalEngineFabricPanel() {
         <RefreshCcw size={14} /> {loading ? "Checking" : "Refresh engines"}
       </button>
     </div>
-    <p>AXIOM Native Engine is independent of external runtimes. Fabric compares it with Ollama, llama.cpp, LM Studio, vLLM and llama-cpp-python, then routes a local chat request to a compatible service when you choose one.</p>
+    <p>AXIOM Native Engine is a first-class in-process backend; Fabric compares it with Ollama, llama.cpp, LM Studio, vLLM and llama-cpp-python, then routes local chat requests using your workload profile and exact model ID.</p>
     <div className="two-column-grid">
       <label className="field">
         <span className="field-label-row"><span>Optimization profile</span></span>
@@ -234,7 +234,7 @@ export default function LocalEngineFabricPanel() {
     </div>
     <section className="surface" aria-labelledby="fabric-chat-title" style={{ marginTop: 18, padding: 18, border: "1px solid var(--line-strong)", borderRadius: 2, background: "var(--surface)" }}>
       <div className="surface-head"><div><p className="surface-eyebrow">LOCAL EXECUTION · NO CLOUD ROUTING</p><h3 id="fabric-chat-title">Run a local chat</h3></div><span className="quiet-note"><Activity size={14} style={{ verticalAlign: "middle", marginRight: 5 }} />Bounded request</span></div>
-      <p className="quiet-note">Only loopback APIs are contacted; AXIOM sends no API keys and does not start services or download models. The Native Engine uses its own trusted model-path form above this adapter section.</p>
+      <p className="quiet-note">External runtimes use fixed loopback APIs; AXIOM Native Engine runs in-process from trusted local model roots. No API keys, remote hosts, service launches or model downloads are used during dispatch.</p>
       <form onSubmit={(event) => void run(event)}>
         <div className="two-column-grid">
           <label className="field"><span className="field-label-row"><span>Execution strategy</span></span>
@@ -244,7 +244,7 @@ export default function LocalEngineFabricPanel() {
             </select>
             <small>Automatic routing stays local and only fails over to ready services advertising the exact same model ID.</small>
           </label>
-          {routingMode === "selected" && <label className="field"><span className="field-label-row"><span>External local backend</span></span>
+          {routingMode === "selected" && <label className="field"><span className="field-label-row"><span>Local engine</span></span>
             <select value={selectedBackend} onChange={(event) => { const id = event.target.value; setSelectedBackend(id); setResult(null); const target = report?.backends.find((item) => item.id === id); setModel(target?.models[0] ?? ""); }} disabled={loading || running}>
               {choices.map((item) => <option key={item.id} value={item.id}>{item.name} — {formatStatus(item.status)}</option>)}
             </select>
@@ -285,7 +285,7 @@ export default function LocalEngineFabricPanel() {
           <Activity size={15} /> {benchmarking ? "Measuring…" : "Benchmark selected engine"}
         </button>
       </div>
-      <p className="quiet-note">Runs repeated requests against one selected local service. Switch Execution strategy to “Choose a specific local runtime” before benchmarking; automatic failover is deliberately excluded so every sample measures the same backend. Generated text is discarded by the API, and samples stay in this screen session only.</p>
+      <p className="quiet-note">Runs repeated requests against one selected local runtime, including AXIOM Native Engine when ready. Switch Execution strategy to “Choose a specific local runtime” before benchmarking; automatic failover is deliberately excluded so every sample measures the same backend. Generated text is discarded by the API, and samples stay in this screen session only.</p>
       <div className="two-column-grid">
         <label className="field"><span className="field-label-row"><span>Warm-up requests</span></span><select value={benchmarkWarmups} onChange={(event) => setBenchmarkWarmups(event.target.value)} disabled={benchmarking}><option value="0">0</option><option value="1">1</option></select></label>
         <label className="field"><span className="field-label-row"><span>Measured requests</span></span><select value={benchmarkIterations} onChange={(event) => setBenchmarkIterations(event.target.value)} disabled={benchmarking}>{[1,2,3,4,5].map((count) => <option key={count} value={String(count)}>{count}</option>)}</select></label>

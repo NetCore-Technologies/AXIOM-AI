@@ -841,3 +841,34 @@ def test_engine_fabric_auto_chat_endpoint_rejects_unknown_profiles() -> None:
         "messages": [{"role": "user", "content": "Hello"}],
     })
     assert response.status_code == 422
+
+
+def test_engine_fabric_native_backend_chat_endpoint_dispatches_in_process(monkeypatch):
+    from axiom.core import llm_client
+
+    observed = {}
+
+    def fake_native(provider, model, messages, **kwargs):
+        observed.update(provider=provider, model=model, messages=messages, **kwargs)
+        return {
+            "response": "native answer", "prompt_tokens": 3, "completion_tokens": 2,
+            "device": "cpu", "precision": "fp32", "generated_at": "2026-10-24T00:00:00+00:00",
+        }
+
+    monkeypatch.setattr(llm_client, "chat", fake_native)
+    response = _client().post("/api/engine/backends/chat", json={
+        "backend_id": "axiom-native",
+        "model": "qwen-tiny",
+        "messages": [{"role": "user", "content": "Say hello."}],
+        "top_p": 0.8, "top_k": 32, "repetition_penalty": 1.1,
+        "seed": 9, "stop_sequences": ["END"],
+    })
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["backend_id"] == "axiom-native"
+    assert result["execution"] == "in_process_native"
+    assert result["response"] == "native answer"
+    assert observed["provider"] == "axiom-local"
+    assert observed["top_p"] == 0.8 and observed["top_k"] == 32
+    assert observed["repetition_penalty"] == 1.1 and observed["seed"] == 9
+    assert observed["stop_sequences"] == ("END",)

@@ -33,10 +33,10 @@ export type EngineFabricReport = {
   scope_note: string;
 };
 export type EngineFabricChatResult = {
-  schema_version: number; backend_id: "ollama" | "llama-cpp" | "lm-studio" | "vllm" | "llama-cpp-python";
+  schema_version: number; backend_id: "axiom-native" | "ollama" | "llama-cpp" | "lm-studio" | "vllm" | "llama-cpp-python";
   backend_name: string; model: string; response: string; done: boolean;
   prompt_eval_count: number | null; eval_count: number | null; total_duration_ms: number;
-  generated_at: string; execution: "local_loopback";
+  generated_at: string; execution: "local_loopback" | "in_process_native"; device?: string | null; precision?: string | null;
   privacy: { prompt_returned: false; response_persisted: false; cloud_provider_used: false };
   routing?: {
     strategy: string; profile: EngineFabricProfile; requested_model: string; fallback_used: boolean;
@@ -48,7 +48,7 @@ export type EngineFabricChatResult = {
 
 export type EngineFabricBenchmarkResult = {
   schema_version: number; backend_id: EngineFabricChatResult["backend_id"]; backend_name: string; model: string;
-  configuration: { prompt_characters: number; max_new_tokens: number; temperature: number; warmup_runs: number; iterations: number; measured_requests: number };
+  configuration: { prompt_characters: number; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequence_count: number; warmup_runs: number; iterations: number; measured_requests: number };
   measurements: {
     wall_time_ms: number; requests_per_second: number; completion_tokens_known: number; total_completion_tokens: number | null;
     completion_tokens_per_second: number | null; latency_ms: { min: number; median: number; p95: number; max: number };

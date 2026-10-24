@@ -364,7 +364,7 @@ class EngineFabricMessage(BaseModel):
 
 
 class EngineFabricChatRequest(BaseModel):
-    backend_id: str = Field(pattern="^(ollama|llama-cpp|lm-studio|vllm|llama-cpp-python)$")
+    backend_id: str = Field(pattern="^(axiom-native|ollama|llama-cpp|lm-studio|vllm|llama-cpp-python)$")
     model: str = Field(min_length=1, max_length=120)
     messages: list[EngineFabricMessage] = Field(min_length=1, max_length=64)
     max_new_tokens: int = Field(default=256, ge=1, le=2048)
@@ -457,7 +457,7 @@ def engine_backend_auto_chat(request: EngineFabricAutoChatRequest) -> dict[str, 
 
 
 class EngineFabricBenchmarkRequest(BaseModel):
-    backend_id: str = Field(pattern="^(ollama|llama-cpp|lm-studio|vllm|llama-cpp-python)$")
+    backend_id: str = Field(pattern="^(axiom-native|ollama|llama-cpp|lm-studio|vllm|llama-cpp-python)$")
     model: str = Field(min_length=1, max_length=120)
     prompt: str = Field(min_length=1, max_length=12_000)
     max_new_tokens: int = Field(default=64, ge=1, le=256)
