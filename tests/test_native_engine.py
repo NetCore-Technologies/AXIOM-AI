@@ -782,10 +782,40 @@ def test_native_prompt_renders_checkpoint_chat_template_in_sandbox(tmp_path: Pat
             return 1 if token in {"<|bos|>", "<|eos|>"} else None
 
     formatted, source = _format_prompt_for_native_model(
-        "Hello", tmp_path, "llama", TinyTokenizer()
+        "Hello", tmp_path, "llama", TinyTokenizer(),
+        chat_messages=[
+            {"role": "system", "content": "Be concise."},
+            {"role": "user", "content": "Hello"},
+        ],
     )
-    assert formatted == "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n"
+    assert formatted == "<|im_start|>system\nBe concise.<|im_end|>\n<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n"
     assert source == "tokenizer-config-template"
+
+
+def test_qwen2_chat_fallback_preserves_all_turns(tmp_path: Path) -> None:
+    from axiom.core.engine import _format_prompt_for_native_model
+
+    class TinyTokenizer:
+        def token_to_id(self, token: str):
+            return None
+
+    formatted, source = _format_prompt_for_native_model(
+        "last question", tmp_path, "qwen2", TinyTokenizer(),
+        chat_messages=[
+            {"role": "system", "content": "You are concise."},
+            {"role": "user", "content": "First question"},
+            {"role": "assistant", "content": "First answer"},
+            {"role": "user", "content": "last question"},
+        ],
+    )
+    assert formatted == (
+        "<|im_start|>system\\nYou are concise.<|im_end|>\\n"
+        "<|im_start|>user\\nFirst question<|im_end|>\\n"
+        "<|im_start|>assistant\\nFirst answer<|im_end|>\\n"
+        "<|im_start|>user\\nlast question<|im_end|>\\n"
+        "<|im_start|>assistant\\n"
+    )
+    assert source == "qwen2-chatml-fallback"
 
 
 def test_native_prompt_rejects_invalid_chat_template_json(tmp_path: Path) -> None:
