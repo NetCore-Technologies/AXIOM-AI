@@ -1,10 +1,11 @@
-"""AXIOM-native Llama/Mistral inference.
+"""AXIOM-native Llama/Mistral/Qwen2 inference.
 
-AXIOM implements the transformer forward pass, RMSNorm, RoPE, grouped-query
-attention, KV cache, LoRA application and autoregressive decoding. PyTorch is
-used for tensor primitives; Transformers' loader/generate and Ollama are not
-used by this module. Only local tokenizer.json and floating-point safetensors
-checkpoints are accepted; unsupported formats are rejected, not delegated.
+AXIOM implements transformer forward operations, RMSNorm, RoPE, grouped-query
+attention, KV caching, LoRA projection deltas, autoregressive decoding, and
+full/in-RAM/disk-resident weight loading strategies. PyTorch supplies tensor
+kernels; Transformers model.generate and Ollama are not used here. The native
+loader accepts supported architectures with tokenizer.json and floating-point
+safetensors. Unsupported formats/configurations are explicitly rejected.
 """
 from __future__ import annotations
 from contextlib import ExitStack, contextmanager
