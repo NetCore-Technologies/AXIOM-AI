@@ -85,6 +85,39 @@ def test_llm_chat_endpoint_returns_normalized_result(monkeypatch) -> None:
     assert captured["device"] == "auto"
 
 
+def test_ollama_local_chat_does_not_require_cloud_consent(monkeypatch) -> None:
+    captured = {}
+
+    def fake_chat(provider, model, messages, **kwargs):
+        captured.update({"provider": provider, "model": model, "messages": messages, **kwargs})
+        return {
+            "provider": "ollama-local",
+            "model": model,
+            "response": "local Ollama response",
+            "prompt_tokens": 4,
+            "completion_tokens": 2,
+            "credential_storage": "not_applicable",
+            "execution": "local",
+            "device": "ollama",
+            "generated_at": "2026-01-01T00:00:00+00:00",
+        }
+
+    monkeypatch.setattr(llm_client, "chat", fake_chat)
+    response = _client(llm_api.router).post("/api/llm/chat", json={
+        "provider": "ollama-local",
+        "model": "qwen2.5:0.5b",
+        "messages": [{"role": "user", "content": "hello local model"}],
+        "consent": False,
+        "max_tokens": 16,
+        "temperature": 0,
+    })
+
+    assert response.status_code == 200
+    assert response.json()["execution"] == "local"
+    assert captured["provider"] == "ollama-local"
+    assert captured["consent"] is False
+
+
 def test_openai_compatible_bridge_requires_bearer_token_when_configured(monkeypatch) -> None:
     monkeypatch.setenv("AXIOM_OPENAI_API_TOKEN", "bridge-token-sentinel")
     monkeypatch.setattr(openai_compat, "_native_models", lambda: [{
