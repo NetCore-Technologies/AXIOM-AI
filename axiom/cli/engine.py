@@ -397,6 +397,12 @@ def engine_route_chat(
     prompt: str = typer.Option(..., "--prompt", help="Prompt text, at most 12,000 characters."),
     max_new_tokens: int = typer.Option(256, "--max-new-tokens", min=1, max=2048),
     temperature: float = typer.Option(0.7, min=0, max=2),
+
+    top_p: float = typer.Option(0.9, "--top-p", min=0.000001, max=1),
+    top_k: int = typer.Option(0, "--top-k", min=0, max=100_000),
+    repetition_penalty: float = typer.Option(1.0, "--repeat-penalty", min=0.1, max=5),
+    seed: int | None = typer.Option(None, "--seed", min=0, max=9_223_372_036_854_775_807),
+    stop_sequences: list[str] = typer.Option([], "--stop-sequence", help="Stop on exact text; repeat the option for multiple stops."),
     json_output: bool = typer.Option(False, "--json", help="Print the response and runtime metadata as JSON."),
 ) -> None:
     """Run one bounded prompt through a selected local compatible backend."""
@@ -404,6 +410,8 @@ def engine_route_chat(
         result = run_engine_backend_chat(
             backend, model, [{"role": "user", "content": prompt}],
             max_new_tokens=max_new_tokens, temperature=temperature,
+            top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty,
+            seed=seed, stop_sequences=stop_sequences,
         )
     except (ValueError, EngineFabricError) as exc:
         _fail(str(exc))
@@ -421,6 +429,12 @@ def engine_auto_chat(
     profile: str = typer.Option("balanced", "--profile", help="balanced, low-memory, throughput, easy-setup, portable, minimal-daemons"),
     max_new_tokens: int = typer.Option(256, "--max-new-tokens", min=1, max=2048),
     temperature: float = typer.Option(0.7, min=0, max=2),
+
+    top_p: float = typer.Option(0.9, "--top-p", min=0.000001, max=1),
+    top_k: int = typer.Option(0, "--top-k", min=0, max=100_000),
+    repetition_penalty: float = typer.Option(1.0, "--repeat-penalty", min=0.1, max=5),
+    seed: int | None = typer.Option(None, "--seed", min=0, max=9_223_372_036_854_775_807),
+    stop_sequences: list[str] = typer.Option([], "--stop-sequence", help="Stop on exact text; repeat the option for multiple stops."),
     json_output: bool = typer.Option(False, "--json", help="Print response, selected backend and routing attempts as JSON."),
 ) -> None:
     """Auto-route to an exact-ID match across ready local inference engines."""
@@ -432,6 +446,8 @@ def engine_auto_chat(
         result = run_engine_fabric_chat(
             profile, model.strip(), [{"role": "user", "content": prompt}],
             max_new_tokens=max_new_tokens, temperature=temperature,
+            top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty,
+            seed=seed, stop_sequences=stop_sequences,
         )
     except (ValueError, EngineFabricError) as exc:
         _fail(str(exc))
@@ -464,6 +480,12 @@ def engine_route_benchmark(
     warmup_runs: int = typer.Option(1, "--warmup-runs", min=0, max=1),
     iterations: int = typer.Option(3, "--iterations", min=1, max=5),
     temperature: float = typer.Option(0.2, min=0, max=2),
+
+    top_p: float = typer.Option(0.9, "--top-p", min=0.000001, max=1),
+    top_k: int = typer.Option(0, "--top-k", min=0, max=100_000),
+    repetition_penalty: float = typer.Option(1.0, "--repeat-penalty", min=0.1, max=5),
+    seed: int | None = typer.Option(None, "--seed", min=0, max=9_223_372_036_854_775_807),
+    stop_sequences: list[str] = typer.Option([], "--stop-sequence", help="Stop on exact text; repeat the option for multiple stops."),
     json_output: bool = typer.Option(False, "--json", help="Print measurements without generated text."),
 ) -> None:
     """Measure a few real local requests without retaining prompt or response text."""
@@ -471,6 +493,8 @@ def engine_route_benchmark(
         result = run_engine_backend_benchmark(
             backend, model, prompt, max_new_tokens=max_new_tokens,
             warmup_runs=warmup_runs, iterations=iterations, temperature=temperature,
+            top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty,
+            seed=seed, stop_sequences=stop_sequences,
         )
     except (ValueError, EngineFabricError) as exc:
         _fail(str(exc))

@@ -370,6 +370,12 @@ class EngineFabricChatRequest(BaseModel):
     max_new_tokens: int = Field(default=256, ge=1, le=2048)
     temperature: float = Field(default=0.7, ge=0, le=2)
 
+    top_p: float = Field(default=0.9, gt=0, le=1)
+    top_k: int = Field(default=0, ge=0, le=100_000, strict=True)
+    repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
+    seed: int | None = Field(default=None, ge=0, le=9_223_372_036_854_775_807, strict=True)
+    stop_sequences: list[str] = Field(default_factory=list, max_length=16)
+
     @field_validator("model")
     @classmethod
     def model_must_be_a_name_not_a_url(cls, value: str) -> str:
@@ -383,6 +389,12 @@ class EngineFabricAutoChatRequest(BaseModel):
     messages: list[EngineFabricMessage] = Field(min_length=1, max_length=64)
     max_new_tokens: int = Field(default=256, ge=1, le=2048)
     temperature: float = Field(default=0.7, ge=0, le=2)
+
+    top_p: float = Field(default=0.9, gt=0, le=1)
+    top_k: int = Field(default=0, ge=0, le=100_000, strict=True)
+    repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
+    seed: int | None = Field(default=None, ge=0, le=9_223_372_036_854_775_807, strict=True)
+    stop_sequences: list[str] = Field(default_factory=list, max_length=16)
 
     @field_validator("model")
     @classmethod
@@ -410,6 +422,11 @@ def engine_backend_chat(request: EngineFabricChatRequest) -> dict[str, Any]:
             [message.model_dump() for message in request.messages],
             max_new_tokens=request.max_new_tokens,
             temperature=request.temperature,
+            top_p=request.top_p,
+            top_k=request.top_k,
+            repetition_penalty=request.repetition_penalty,
+            seed=request.seed,
+            stop_sequences=request.stop_sequences,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
@@ -427,6 +444,11 @@ def engine_backend_auto_chat(request: EngineFabricAutoChatRequest) -> dict[str, 
             [message.model_dump() for message in request.messages],
             max_new_tokens=request.max_new_tokens,
             temperature=request.temperature,
+            top_p=request.top_p,
+            top_k=request.top_k,
+            repetition_penalty=request.repetition_penalty,
+            seed=request.seed,
+            stop_sequences=request.stop_sequences,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
@@ -442,6 +464,12 @@ class EngineFabricBenchmarkRequest(BaseModel):
     warmup_runs: int = Field(default=1, ge=0, le=1)
     iterations: int = Field(default=3, ge=1, le=5)
     temperature: float = Field(default=0.2, ge=0, le=2)
+
+    top_p: float = Field(default=0.9, gt=0, le=1)
+    top_k: int = Field(default=0, ge=0, le=100_000, strict=True)
+    repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
+    seed: int | None = Field(default=None, ge=0, le=9_223_372_036_854_775_807, strict=True)
+    stop_sequences: list[str] = Field(default_factory=list, max_length=16)
 
     @field_validator("model")
     @classmethod
@@ -469,6 +497,11 @@ def engine_backend_benchmark(request: EngineFabricBenchmarkRequest) -> dict[str,
             warmup_runs=request.warmup_runs,
             iterations=request.iterations,
             temperature=request.temperature,
+            top_p=request.top_p,
+            top_k=request.top_k,
+            repetition_penalty=request.repetition_penalty,
+            seed=request.seed,
+            stop_sequences=request.stop_sequences,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
