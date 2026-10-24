@@ -131,7 +131,7 @@ def cli_callback(
 
     if (
         ctx.resilient_parsing
-        or ctx.invoked_subcommand == "mcp"
+        or ctx.invoked_subcommand in {"mcp", "completion"}
         or suppress_for_arguments(sys.argv[1:])
     ):
         return
