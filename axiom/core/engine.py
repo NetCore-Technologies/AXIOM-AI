@@ -16,6 +16,7 @@ import logging
 import math
 import os
 import re
+import shutil
 import threading
 import time
 from datetime import UTC, datetime
@@ -842,6 +843,138 @@ def _pending_stop_prefix_length(text: str, stop_sequences: tuple[str, ...]) -> i
     return longest
 
 
+def _available_system_memory_bytes() -> int | None:
+    """Get observable available system RAM without assuming psutil is installed."""
+    try:
+        import psutil
+        return max(0, int(psutil.virtual_memory().available))
+    except (ImportError, OSError, RuntimeError, AttributeError):
+        pass
+    if os.name == "posix":
+        try:
+            pages = int(os.sysconf("SC_AVPHYS_PAGES"))
+            page_size = int(os.sysconf("SC_PAGE_SIZE"))
+            if pages > 0 and page_size > 0:
+                return pages * page_size
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+    return None
+
+
+def _choose_memory_mode(
+    model_dir: Path,
+    inspected: dict[str, Any],
+    torch_module: Any,
+    device: Any,
+    device_selection: dict[str, str],
+) -> tuple[str, dict[str, Any]]:
+    """Choose a native loading strategy from observed RAM/VRAM and model dimensions.
+
+    Estimates intentionally use a safety margin and return their assumptions.
+    A choice is advisory, not a guarantee that the selected kernel/model will fit.
+    """
+    from axiom.core.native_engine import NativeLlamaConfig, _resolve_safetensor_files
+
+    try:
+        config = NativeLlamaConfig.from_mapping(inspected["config"])
+        weight_files, _weight_map = _resolve_safetensor_files(model_dir, _allowed_model_roots())
+        weight_bytes = sum(int(path.stat().st_size) for path in weight_files)
+        if weight_bytes <= 0:
+            raise ValueError("the checkpoint weight file size is unavailable")
+        dtype_bytes = 4  # conservative fallback when the checkpoint tensor dtype is unknown
+        try:
+            from safetensors import safe_open
+            for shard in weight_files:
+                with safe_open(str(shard), framework="pt", device="cpu") as handle:
+                    if "model.embed_tokens.weight" not in handle.keys():
+                        continue
+                    dtype_name = handle.get_slice("model.embed_tokens.weight").get_dtype()
+                    dtype_bytes = {"F16": 2, "BF16": 2, "F32": 4}.get(str(dtype_name).upper(), 4)
+                    break
+        except (ImportError, OSError, RuntimeError, ValueError):
+            pass
+    except Exception as exc:
+        raise AxiomEngineError(f"AXIOM could not safely estimate this checkpoint for automatic memory selection: {exc}") from None
+
+    gib = 1024 ** 3
+    context = min(config.max_position_embeddings, _MAX_INPUT_TOKENS + _MAX_NEW_TOKENS)
+    head_dim = config.hidden_size // config.num_attention_heads
+    embedding_bytes = config.vocab_size * config.hidden_size * dtype_bytes
+    head_bytes = 0 if config.tie_word_embeddings else embedding_bytes
+    norm_bytes = config.hidden_size * dtype_bytes
+    resident_non_layer = embedding_bytes + head_bytes + norm_bytes
+    kv_total = 2 * config.num_hidden_layers * config.num_key_value_heads * head_dim * context * dtype_bytes
+    kv_per_layer = 2 * config.num_key_value_heads * head_dim * context * dtype_bytes
+    workspace = max(context * config.intermediate_size * dtype_bytes * 2, config.hidden_size * context * dtype_bytes * 4)
+    non_layer_weight_bytes = resident_non_layer
+    layer_bytes = max(0, weight_bytes - non_layer_weight_bytes) / max(1, config.num_hidden_layers)
+    active_layer_bytes = int(layer_bytes * 1.25)
+    full_required = int((weight_bytes + kv_total + workspace) * 1.25)
+    cpu_layer_required = int((weight_bytes + kv_total + workspace) * 1.15)
+    disk_cpu_required = int((resident_non_layer + active_layer_bytes + kv_total + workspace) * 1.30)
+    streamed_device_required = int((resident_non_layer + active_layer_bytes + kv_per_layer + workspace) * 1.25)
+    system_available = _available_system_memory_bytes()
+    try:
+        disk_free = int(shutil.disk_usage(model_dir).free)
+    except OSError:
+        disk_free = None
+    rows = _device_capability_rows(torch_module)
+    selected_id = device_selection.get("selected", str(getattr(device, "type", device)))
+    device_row = next((row for row in rows if row.get("id") == selected_id), None)
+    device_free = None
+    if device_row and isinstance(device_row.get("memory_free_gib"), (int, float)):
+        device_free = int(float(device_row["memory_free_gib"]) * gib)
+    device_type = str(getattr(device, "type", device)).split(":", 1)[0]
+    base = {
+        "requested": "auto",
+        "selected": "full",
+        "reason": "",
+        "estimated_checkpoint_weight_bytes": weight_bytes,
+        "estimated_kv_cache_bytes": kv_total,
+        "estimated_context_tokens": context,
+        "estimated_dtype_bytes": dtype_bytes,
+        "estimated_full_execution_bytes": full_required,
+        "estimated_streaming_device_bytes": streamed_device_required,
+        "estimated_disk_streaming_system_ram_bytes": disk_cpu_required,
+        "available_system_ram_bytes": system_available,
+        "available_device_memory_bytes": device_free,
+        "available_checkpoint_disk_bytes": disk_free,
+        "estimates_are_advisory": True,
+    }
+    if device_type == "cpu":
+        if system_available is not None and system_available >= full_required:
+            mode, reason = "full", "The model plus estimated KV/workspace fits available system RAM with a safety margin."
+        elif system_available is not None and system_available >= disk_cpu_required:
+            mode, reason = "disk_streaming", "Full checkpoint residency is too large for available RAM; disk-resident layer loading has a lower estimated RAM footprint."
+        else:
+            raise AxiomEngineError(
+                "Automatic memory planning cannot find a safe CPU strategy for this model. "
+                f"Estimated full RAM need: {full_required / gib:.2f} GiB; disk-streaming RAM need: {disk_cpu_required / gib:.2f} GiB; "
+                f"available RAM: {system_available / gib:.2f} GiB." if system_available is not None else "available RAM could not be measured."
+            )
+    elif device_free is None:
+        if system_available is not None and system_available >= cpu_layer_required:
+            mode, reason = "layer_streaming", "PyTorch did not expose free VRAM; chose CPU-resident layer streaming to reduce accelerator weight residency."
+        else:
+            mode, reason = "disk_streaming", "PyTorch did not expose free VRAM; selected disk-resident streaming to minimize model-weight residency and reduce OOM risk."
+    elif device_free >= full_required:
+        mode, reason = "full", "The checkpoint plus estimated KV/workspace fits observed free accelerator memory with a safety margin."
+    elif device_free >= streamed_device_required and system_available is not None and system_available >= cpu_layer_required:
+        mode, reason = "layer_streaming", "The full checkpoint exceeds observed accelerator memory, while CPU RAM can hold layer weights and the estimated KV/workspace."
+    elif device_free >= streamed_device_required and system_available is not None and system_available >= disk_cpu_required:
+        mode, reason = "disk_streaming", "The full checkpoint exceeds accelerator memory and RAM cannot comfortably hold every layer; selected on-demand disk layer reads."
+    else:
+        raise AxiomEngineError(
+            "Automatic memory planning could not find a safe execution strategy for the current device. "
+            f"Estimated full accelerator need: {full_required / gib:.2f} GiB; streamed-device need: {streamed_device_required / gib:.2f} GiB; "
+            f"observed free accelerator memory: {device_free / gib:.2f} GiB; available RAM: {system_available / gib:.2f} GiB."
+            if system_available is not None else
+            f"Estimated full accelerator need: {full_required / gib:.2f} GiB; streamed-device need: {streamed_device_required / gib:.2f} GiB; observed free accelerator memory: {device_free / gib:.2f} GiB; available RAM could not be measured."
+        )
+    base["selected"] = mode
+    base["reason"] = reason
+    return mode, base
+
 def _load_local_model(
     model_path: str,
     adapter_path: str | None,
@@ -856,8 +989,9 @@ def _load_local_model(
             "AXIOM Native Engine requires PyTorch. Install with: python -m pip install -e '.[native-inference]'"
         ) from None
 
-    if memory_mode not in {"full", "layer_streaming", "disk_streaming"}:
-        raise ValueError("Memory mode must be full, layer_streaming, or disk_streaming.")
+    if memory_mode not in {"auto", "full", "layer_streaming", "disk_streaming"}:
+        raise ValueError("Memory mode must be auto, full, layer_streaming, or disk_streaming.")
+    requested_memory_mode = memory_mode
     base_dir = _resolve_model_directory(model_path, "Base model")
     inspected = _inspect_model_config(base_dir)
     resolved_adapter: Path | None = None
@@ -871,7 +1005,15 @@ def _load_local_model(
         resolved_adapter = adapter_dir
 
     device, device_selection = _resolve_execution_device(torch, device_preference)
-    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None, str(device), device_preference, memory_mode)
+    memory_selection: dict[str, Any] = {
+        "requested": requested_memory_mode,
+        "selected": memory_mode,
+        "reason": "Memory strategy was explicitly selected by the caller." if requested_memory_mode != "auto" else "",
+        "estimates_are_advisory": True,
+    }
+    if requested_memory_mode == "auto":
+        memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection)
+    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None, str(device), device_preference, memory_mode, requested_memory_mode)
     if _LOADED_RUNTIME is not None and _LOADED_RUNTIME["key"] == key:
         return (
             _LOADED_RUNTIME["model"],
@@ -948,11 +1090,12 @@ def _load_local_model(
             ) from None
 
     # The selected backend may change after a transparent auto-mode CPU retry.
-    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None, str(device), device_preference, memory_mode)
+    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None, str(device), device_preference, memory_mode, requested_memory_mode)
     details = {
         **inspected,
         **native_details,
         "device_selection": device_selection,
+        "memory_selection": memory_selection,
         "config": {"max_position_embeddings": model.config.max_position_embeddings},
     }
     _LOADED_RUNTIME = {
