@@ -592,3 +592,31 @@ def test_explicit_accelerator_does_not_silently_fall_back_after_oom(monkeypatch,
     with pytest.raises(ValueError, match="out of memory"):
         engine._load_local_model(str(model_dir), None, "cuda")
     assert calls == ["cuda"]
+
+
+def test_layer_streaming_mode_matches_full_cpu_forward_and_offloads_kv_cache() -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    config = NativeLlamaConfig.from_mapping(_config())
+    base_weights = _tiny_weights(torch)
+    full = NativeLlamaRuntime(
+        config, {name: tensor.clone() for name, tensor in base_weights.items()},
+        torch, torch.device("cpu"), memory_mode="full",
+    )
+    streamed = NativeLlamaRuntime(
+        config, {name: tensor.clone() for name, tensor in base_weights.items()},
+        torch, torch.device("cpu"), memory_mode="layer_streaming",
+    )
+    tokens = torch.tensor([[1, 2, 3]], dtype=torch.long)
+
+    full_logits, _full_cache = full.forward(tokens)
+    streamed_logits, streamed_cache = streamed.forward(tokens)
+
+    assert torch.allclose(streamed_logits, full_logits, atol=1e-6, rtol=1e-5)
+    assert streamed.memory_mode == "layer_streaming"
+    assert len(streamed_cache) == config.num_hidden_layers
+    assert all(key.device.type == "cpu" and value.device.type == "cpu" for key, value in streamed_cache)
+    assert streamed.memory_stats["kv_cache_layer_offloads"] == config.num_hidden_layers
+    assert streamed.memory_stats["kv_cache_bytes_offloaded"] > 0
+    assert streamed.memory_stats["layer_weight_bytes_staged"] == 0
