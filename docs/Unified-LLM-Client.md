@@ -5,7 +5,7 @@ AXIOM exposes one text-chat interface for its native local engine and selected c
 ## Supported providers
 
 - **AXIOM Native Engine (`axiom-local`)** — local Llama, Mistral, Qwen2, and Qwen3 floating-point safetensors checkpoints found under the trusted native-model roots.
-- **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, and **Moonshot AI/Kimi** — provider-specific HTTPS API adapters.
+- **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **Moonshot AI/Kimi**, and **OpenRouter** — provider-specific HTTPS API adapters.
 - **Custom OpenAI-compatible provider** — an explicitly supplied public HTTPS endpoint ending in `/v1`.
 
 This client currently handles text conversations. It does not add multimodal/image payloads, function/tool calling, model downloads, persistent chat history, or provider-side fallback. The native provider does not make GGUF, Ollama, or unsupported checkpoints work through the AXIOM Native Engine.
