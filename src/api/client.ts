@@ -163,7 +163,7 @@ export type AxiomEngineSystemTelemetry = {
   memory: { total_bytes: number | null; available_bytes: number | null; used_bytes: number | null; percent: number | null };
   process: { pid: number; rss_bytes: number | null; threads: number | null };
   devices: Array<{ id: string | null; name: string | null; available: boolean; memory_free_gib: number | null; memory_total_gib: number | null }>;
-  loaded_runtime: { loaded: boolean; model: string | null; architecture: string | null; device: string | null; memory_mode: "full" | "layer_streaming" | "disk_streaming" | null; last_generation: Record<string, string | number> | null; device_allocator: AxiomEngineDeviceMemory | null };
+  loaded_runtime: { loaded: boolean; model: string | null; architecture: string | null; device: string | null; memory_mode: "full" | "layer_streaming" | "disk_streaming" | null; precision: string | null; last_generation: Record<string, string | number> | null; device_allocator: AxiomEngineDeviceMemory | null };
   disks: Array<{ label: string; total_bytes: number; free_bytes: number; used_bytes: number }>;
   privacy_scope: { prompt_content_included: false; generated_content_included: false; model_paths_included: false; environment_values_included: false; credentials_included: false; network_access_performed: false };
   scope_note: string;
@@ -172,7 +172,7 @@ export type AxiomEngineStatus = {
   engine: string; ready: boolean; packages: Record<string, boolean>; versions: Record<string, string | null>;
   minimum_versions?: Record<string, string>; problems?: string[];
   devices?: Array<{ id: "cpu" | "cuda" | "rocm" | "mps" | "xpu"; name: string; available: boolean; reason: string; memory_free_gib: number | null; memory_total_gib: number | null }>;
-  recommended_device?: "cpu" | "cuda" | "rocm" | "mps" | "xpu" | null; loaded_device?: string | null; loaded_memory_mode?: "full" | "layer_streaming" | "disk_streaming" | null;
+  recommended_device?: "cpu" | "cuda" | "rocm" | "mps" | "xpu" | null; loaded_device?: string | null; loaded_memory_mode?: "full" | "layer_streaming" | "disk_streaming" | null; loaded_precision?: string | null;
   loaded: boolean; architecture: string | null; model_loading: "local_files_only" | "local_safetensors_only";
   execution_backend?: string; transformers_generation_used?: false; ollama_used?: false;
   supported_model_types?: string[]; supported_weights?: string[]; remote_code: false;
