@@ -30,6 +30,7 @@ export default function LocalInferencePanel() {
   const [inspectBusy, setInspectBusy] = useState(false);
   const [inspectError, setInspectError] = useState("");
   const [unloadBusy, setUnloadBusy] = useState(false);
+  const [unloadingModel, setUnloadingModel] = useState<string | null>(null);
   const [unloadMessage, setUnloadMessage] = useState("");
   const [runningModels, setRunningModels] = useState<OllamaRunningModels | null>(null);
   const [runningBusy, setRunningBusy] = useState(false);
@@ -99,16 +100,22 @@ export default function LocalInferencePanel() {
     finally { setInspectBusy(false); }
   };
 
-  const unloadModel = async () => {
+  const unloadModelByName = async (modelName: string) => {
     setUnloadMessage("");
-    if (!online || !model.trim()) { setUnloadMessage("Choose an installed local model while Ollama is online."); return; }
+    if (!online || !modelName.trim()) { setUnloadMessage("Choose an installed local model while Ollama is online."); return; }
     setUnloadBusy(true);
+    setUnloadingModel(modelName);
     try {
-      const result = await axiomApi.unloadOllamaModel(model.trim());
+      const result = await axiomApi.unloadOllamaModel(modelName.trim());
       setUnloadMessage(result.scope_note);
       if (runningModels) await refreshRunningModels();
     } catch (cause) { setUnloadMessage(cause instanceof Error ? cause.message : "Could not unload this model."); }
-    finally { setUnloadBusy(false); }
+    finally { setUnloadBusy(false); setUnloadingModel(null); }
+  };
+
+  const unloadModel = async () => {
+    if (!model.trim()) { setUnloadMessage("Choose an installed local model while Ollama is online."); return; }
+    await unloadModelByName(model.trim());
   };
 
   const run = async (event: FormEvent<HTMLFormElement>) => {
@@ -243,6 +250,7 @@ export default function LocalInferencePanel() {
             {item.size_ram_bytes !== null && <p className="quiet-note">Approx. non-VRAM size: {(item.size_ram_bytes / 1_073_741_824).toFixed(2)} GiB</p>}
             <p className="quiet-note">{[item.family, item.parameter_size, item.quantization_level].filter(Boolean).join(" · ") || "Model details not reported"}</p>
             {item.expires_at && <p className="quiet-note">Runtime expiry: {item.expires_at}</p>}
+            <button type="button" className="button secondary-button" aria-label={`Unload ${item.name} from memory`} onClick={() => void unloadModelByName(item.name)} disabled={!online || unloadBusy} style={{ marginTop: 10 }}><Square size={12} />{unloadingModel === item.name ? "Unloading…" : "Unload from memory"}</button>
           </div>)}
         </div>}
         <p className="quiet-note">{runningModels.scope_note}</p>
