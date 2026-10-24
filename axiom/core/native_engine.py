@@ -424,7 +424,7 @@ class NativeLlamaRuntime:
         self.layer_weight_names_by_index: dict[int, list[str]] = {}
         self.layer_weight_sources_by_index: dict[int, dict[str, Path]] = {}
         for tensor_name in set(weights) | set(self.layer_weight_sources):
-            match = re.match(r"^model\\.layers\\.(\\d+)\\.", tensor_name)
+            match = re.match(r"^model\.layers\.(\d+)\.", tensor_name)
             if match:
                 self.layer_weight_names_by_index.setdefault(int(match.group(1)), []).append(tensor_name)
                 source = self.layer_weight_sources.get(tensor_name)
@@ -455,7 +455,6 @@ class NativeLlamaRuntime:
         if self.memory_mode not in {"layer_streaming", "disk_streaming"}:
             yield
             return
-        prefix = f"model.layers.{layer_index}."
         if self.memory_mode == "disk_streaming":
             loaded: list[str] = []
             try:
@@ -488,7 +487,6 @@ class NativeLlamaRuntime:
                             active_weight.numel() * active_weight.element_size()
                         )
             return
-        prefix = f"model.layers.{layer_index}."
         staged: dict[str, Any] = {}
         try:
             for name in self.layer_weight_names_by_index.get(layer_index, []):
