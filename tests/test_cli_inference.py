@@ -25,10 +25,10 @@ def test_infer_service_commands_are_registered():
     assert "start" in result.output and "stop" in result.output and "status" in result.output
 
 
-def test_infer_pull_command_is_registered():
+def test_infer_pull_command_is_registered(plain):
     result = CliRunner().invoke(app, ["--no-banner", "infer", "pull", "--help"])
-    assert result.exit_code == 0, result.output
-    assert "Ollama model tag" in result.output
+    assert result.exit_code == 0, plain(result.output)
+    assert "Ollama model tag" in plain(result.output)
 
 
 def test_infer_model_operation_commands_are_registered():
@@ -47,12 +47,12 @@ def test_infer_loaded_model_inventory_command_is_registered():
     assert "loaded" in result.output.lower() and "memory" in result.output.lower()
 
 
-def test_infer_run_help_exposes_advanced_sampling_options():
+def test_infer_run_help_exposes_advanced_sampling_options(plain):
     result = CliRunner().invoke(
         app,
         ["--no-banner", "infer", "run", "--help"],
         env={"COLUMNS": "140", "TERMINAL_WIDTH": "140"},
     )
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 0, plain(result.output)
     for option in ("--top-p", "--top-k", "--repeat-penalty", "--seed", "--num-ctx", "--stop"):
-        assert option in result.output
+        assert option in plain(result.output)

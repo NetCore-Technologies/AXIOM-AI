@@ -57,7 +57,7 @@ def test_shell_completion_can_be_viewed_for_supported_shells_without_installing(
         "zsh": ("#compdef axiom",),
         # Click versions generate Fish shell functions and completion variables
         # with different names; either stable marker confirms a real script.
-        "fish": ("function _axiom_completion", "_AXIOM_COMPLETE=fish_complete", "__fish_complete_path"),
+        "fish": ("function _axiom_completion", "_AXIOM_COMPLETE=fish_complete", "_AXIOM_COMPLETE=complete_fish", "__fish_complete_path"),
         "powershell": ("Register-ArgumentCompleter",),
     }
     for shell, accepted_markers in markers.items():
