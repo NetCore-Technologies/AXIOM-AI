@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator
 
 from axiom.core.inference import (
@@ -17,6 +17,15 @@ from axiom.core.inference import (
     validate_model_name,
 )
 from axiom.core.runtime_traces import record_runtime_trace
+from axiom.core.ollama_service import (
+    OllamaServiceError,
+    cancel_model_pull,
+    get_model_pull,
+    service_status as managed_service_status,
+    start_model_pull,
+    start_service,
+    stop_service,
+)
 
 router = APIRouter(prefix="/api/inference", tags=["local-inference"])
 
@@ -40,6 +49,15 @@ class GenerateRequest(BaseModel):
         return value
 
 
+class PullModelRequest(BaseModel):
+    model: str = Field(min_length=1, max_length=120)
+
+    @field_validator("model")
+    @classmethod
+    def model_must_be_a_tag_not_a_url(cls, value: str) -> str:
+        return validate_model_name(value)
+
+
 class BenchmarkRequest(BaseModel):
     model: str = Field(min_length=1, max_length=120)
     prompt: str = Field(min_length=1, max_length=12_000)
@@ -61,9 +79,80 @@ class BenchmarkRequest(BaseModel):
             raise ValueError("Prompt must contain at least one non-whitespace character.")
         return value
 
+def _require_local_runtime_management(request: Request) -> None:
+    """Keep process and download controls local unless an operator opts in."""
+    import os
+    from urllib.parse import urlparse
+
+    peer = request.client.host if request.client else ""
+    allowed_peer = peer in {"127.0.0.1", "::1", "localhost", "testclient"}
+    allowed_remote = os.environ.get("AXIOM_ALLOW_REMOTE_RUNTIME_MANAGEMENT") == "1"
+    if not allowed_peer and not allowed_remote:
+        raise HTTPException(
+            status_code=403,
+            detail="Ollama service management is limited to local clients. Set AXIOM_ALLOW_REMOTE_RUNTIME_MANAGEMENT=1 only on a trusted network.",
+        )
+    origin = request.headers.get("origin")
+    if origin:
+        hostname = (urlparse(origin).hostname or "").lower()
+        if hostname not in {"127.0.0.1", "::1", "localhost", "testserver"} and not allowed_remote:
+            raise HTTPException(status_code=403, detail="Ollama service management requires a local browser origin.")
+
+
 @router.get("/status")
 def inference_status() -> dict[str, Any]:
-    return runtime_status()
+    return managed_service_status()
+
+
+@router.post("/service/start")
+def inference_service_start(request: Request) -> dict[str, Any]:
+    _require_local_runtime_management(request)
+    try:
+        return start_service()
+    except OllamaServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+
+
+@router.post("/service/stop")
+def inference_service_stop(request: Request) -> dict[str, Any]:
+    _require_local_runtime_management(request)
+    try:
+        return stop_service()
+    except OllamaServiceError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@router.post("/models/pull")
+def inference_model_pull(request: Request, payload: PullModelRequest) -> dict[str, Any]:
+    _require_local_runtime_management(request)
+    try:
+        return start_model_pull(payload.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except OllamaServiceError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@router.get("/models/pull/{job_id}")
+def inference_model_pull_status(request: Request, job_id: str) -> dict[str, Any]:
+    _require_local_runtime_management(request)
+    try:
+        return get_model_pull(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0])) from None
+
+
+@router.post("/models/pull/{job_id}/cancel")
+def inference_model_pull_cancel(request: Request, job_id: str) -> dict[str, Any]:
+    _require_local_runtime_management(request)
+    try:
+        return cancel_model_pull(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0])) from None
 
 
 @router.post("/benchmark")

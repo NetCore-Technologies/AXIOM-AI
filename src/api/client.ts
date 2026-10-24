@@ -24,6 +24,23 @@ export type LocalInferenceStatus = {
   models: string[];
   error: string | null;
   checked_at: string;
+  service_managed_by_axiom?: boolean;
+  service_can_start?: boolean;
+  service_can_stop?: boolean;
+  service_control_scope?: "loopback_only" | string;
+  service_message?: string;
+};
+export type OllamaPullJob = {
+  id: string;
+  model: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  created_at: string;
+  updated_at: string;
+  progress: string;
+  percent: number | null;
+  logs: string[];
+  error: string | null;
+  cancel_requested: boolean;
 };
 export type LocalInferenceResult = {
   request_id?: string;
@@ -1348,6 +1365,11 @@ export const axiomApi = {
   },
 
   inferenceStatus: () => requestJson<LocalInferenceStatus>("/api/inference/status"),
+  startLocalOllama: () => requestJson<{ started: boolean; already_running: boolean; service: LocalInferenceStatus }>("/api/inference/service/start", { method: "POST", body: JSON.stringify({}) }),
+  stopLocalOllama: () => requestJson<{ stopped: boolean; service: LocalInferenceStatus }>("/api/inference/service/stop", { method: "POST", body: JSON.stringify({}) }),
+  startOllamaModelPull: (model: string) => requestJson<OllamaPullJob>("/api/inference/models/pull", { method: "POST", body: JSON.stringify({ model }) }),
+  ollamaModelPullStatus: (jobId: string) => requestJson<OllamaPullJob>(`/api/inference/models/pull/${encodeURIComponent(jobId)}`),
+  cancelOllamaModelPull: (jobId: string) => requestJson<OllamaPullJob>(`/api/inference/models/pull/${encodeURIComponent(jobId)}/cancel`, { method: "POST", body: JSON.stringify({}) }),
   runLocalInference: (input: { model: string; prompt: string; num_predict: number; temperature: number }) =>
     requestJson<LocalInferenceResult>("/api/inference/generate", {
       method: "POST", body: JSON.stringify(input),
