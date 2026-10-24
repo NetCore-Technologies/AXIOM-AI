@@ -1,5 +1,10 @@
 name: AXIOM quality gates
 
+# Keep only the newest push per branch in the expensive test/build/browser gate.
+concurrency:
+  group: axiom-quality-gates-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main, "latest/development", "latest/nightly"]
