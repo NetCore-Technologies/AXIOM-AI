@@ -868,6 +868,7 @@ def _choose_memory_mode(
     torch_module: Any,
     device: Any,
     device_selection: dict[str, str],
+    adapter_dir: Path | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Choose a native loading strategy from observed RAM/VRAM and model dimensions.
 
@@ -882,6 +883,14 @@ def _choose_memory_mode(
         weight_bytes = sum(int(path.stat().st_size) for path in weight_files)
         if weight_bytes <= 0:
             raise ValueError("the checkpoint weight file size is unavailable")
+        adapter_weight_bytes = 0
+        if adapter_dir is not None:
+            adapter_file = (adapter_dir / "adapter_model.safetensors").resolve(strict=True)
+            if not adapter_file.is_file() or not any(adapter_file == root / adapter_file.relative_to(root) for root in _allowed_model_roots() if adapter_file.is_relative_to(root)):
+                raise ValueError("the LoRA adapter weight path is not a regular file inside a trusted root")
+            adapter_weight_bytes = int(adapter_file.stat().st_size)
+            if adapter_weight_bytes <= 0:
+                raise ValueError("the LoRA adapter weight file is empty")
         dtype_bytes = 4  # conservative fallback when the checkpoint tensor dtype is unknown
         try:
             from safetensors import safe_open
@@ -906,16 +915,18 @@ def _choose_memory_mode(
     head_bytes = 0 if config.tie_word_embeddings else embedding_bytes
     norm_bytes = config.hidden_size * dtype_bytes
     resident_non_layer = embedding_bytes + head_bytes + norm_bytes
+    resident_with_adapter = resident_non_layer + adapter_weight_bytes
+    total_weight_bytes = weight_bytes + adapter_weight_bytes
     kv_total = 2 * config.num_hidden_layers * config.num_key_value_heads * head_dim * context * dtype_bytes
     kv_per_layer = 2 * config.num_key_value_heads * head_dim * context * dtype_bytes
     workspace = max(context * config.intermediate_size * dtype_bytes * 2, config.hidden_size * context * dtype_bytes * 4)
-    non_layer_weight_bytes = resident_non_layer
-    layer_bytes = max(0, weight_bytes - non_layer_weight_bytes) / max(1, config.num_hidden_layers)
+    non_layer_weight_bytes = resident_with_adapter
+    layer_bytes = max(0, weight_bytes - resident_non_layer) / max(1, config.num_hidden_layers)
     active_layer_bytes = int(layer_bytes * 1.25)
-    full_required = int((weight_bytes + kv_total + workspace) * 1.25)
-    cpu_layer_required = int((weight_bytes + kv_total + workspace) * 1.15)
-    disk_cpu_required = int((resident_non_layer + active_layer_bytes + kv_total + workspace) * 1.30)
-    streamed_device_required = int((resident_non_layer + active_layer_bytes + kv_per_layer + workspace) * 1.25)
+    full_required = int((total_weight_bytes + kv_total + workspace) * 1.25)
+    cpu_layer_required = int((total_weight_bytes + kv_total + workspace) * 1.15)
+    disk_cpu_required = int((resident_with_adapter + active_layer_bytes + kv_total + workspace) * 1.30)
+    streamed_device_required = int((resident_with_adapter + active_layer_bytes + kv_per_layer + workspace) * 1.25)
     system_available = _available_system_memory_bytes()
     try:
         disk_free = int(shutil.disk_usage(model_dir).free)
@@ -933,6 +944,9 @@ def _choose_memory_mode(
         "selected": "full",
         "reason": "",
         "estimated_checkpoint_weight_bytes": weight_bytes,
+        "estimated_adapter_weight_bytes": adapter_weight_bytes,
+        "estimated_total_weight_bytes": total_weight_bytes,
+        "estimated_non_layer_weight_bytes": non_layer_weight_bytes,
         "estimated_kv_cache_bytes": kv_total,
         "estimated_context_tokens": context,
         "estimated_dtype_bytes": dtype_bytes,
@@ -1038,7 +1052,7 @@ def _load_local_model(
         "estimates_are_advisory": True,
     }
     if requested_memory_mode == "auto":
-        memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection)
+        memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection, resolved_adapter)
     key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None, str(device), device_preference, memory_mode, requested_memory_mode)
     if _LOADED_RUNTIME is not None and _LOADED_RUNTIME["key"] == key:
         return (
@@ -1082,7 +1096,7 @@ def _load_local_model(
             "reason": "The preferred accelerator ran out of memory during model loading; AXIOM retried on CPU.",
         }
         if requested_memory_mode == "auto":
-            memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection)
+            memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection, resolved_adapter)
         try:
             model, tokenizer, native_details = load_native_runtime(
                 base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots(), memory_mode=memory_mode
@@ -1104,7 +1118,7 @@ def _load_local_model(
             device = torch.device("cpu")
             device_selection = {"requested": "auto", "selected": "cpu", "reason": "The preferred accelerator ran out of memory during model loading; AXIOM retried on CPU."}
             if requested_memory_mode == "auto":
-                memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection)
+                memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection, resolved_adapter)
             try:
                 model, tokenizer, native_details = load_native_runtime(
                     base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots(), memory_mode=memory_mode
