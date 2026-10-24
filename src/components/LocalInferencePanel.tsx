@@ -11,6 +11,7 @@ export default function LocalInferencePanel() {
   const [temperature, setTemperature] = useState("0.7");
   const [topP, setTopP] = useState("0.9");
   const [topK, setTopK] = useState("40");
+  const [minP, setMinP] = useState("0");
   const [repetitionPenalty, setRepetitionPenalty] = useState("1.1");
   const [seedValue, setSeedValue] = useState("");
   const [contextWindow, setContextWindow] = useState("");
@@ -157,6 +158,7 @@ export default function LocalInferencePanel() {
     if (!Number.isFinite(temperatureValue) || temperatureValue < 0 || temperatureValue > 2) { setError("Temperature must be between 0 and 2."); return; }
     const topPValue = Number(topP);
     const topKValue = Number(topK);
+    const minPValue = Number(minP);
     const repetitionPenaltyValue = Number(repetitionPenalty);
     const seedText = seedValue.trim();
     const contextText = contextWindow.trim();
@@ -165,6 +167,7 @@ export default function LocalInferencePanel() {
     const stops = stopSequences.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
     if (!Number.isFinite(topPValue) || topPValue <= 0 || topPValue > 1) { setError("Top-p must be greater than 0 and at most 1."); return; }
     if (!Number.isInteger(topKValue) || topKValue < 0 || topKValue > 100000) { setError("Top-k must be between 0 and 100000."); return; }
+    if (!Number.isFinite(minPValue) || minPValue < 0 || minPValue > 1) { setError("Min-p must be between 0 and 1; 0 disables min-p."); return; }
     if (!Number.isFinite(repetitionPenaltyValue) || repetitionPenaltyValue < 0.1 || repetitionPenaltyValue > 5) { setError("Repetition penalty must be between 0.1 and 5."); return; }
     if (seedText && (!Number.isSafeInteger(seedNumber) || seedNumber! < 0)) { setError("Seed must be a non-negative safe integer."); return; }
     if (contextText && (!Number.isInteger(contextNumber) || contextNumber! < 512 || contextNumber! > 131072)) { setError("Context window must be between 512 and 131072 tokens."); return; }
@@ -175,7 +178,7 @@ export default function LocalInferencePanel() {
     setResult({ model: model.trim(), response: "", done: false, prompt_eval_count: null, eval_count: null, total_duration_ms: null, generated_at: new Date().toISOString() });
     try {
       const finalResult = await axiomApi.streamLocalInference(
-        { model: model.trim(), prompt, num_predict: tokenLimit, temperature: temperatureValue, top_p: topPValue, top_k: topKValue, repetition_penalty: repetitionPenaltyValue, ...(seedNumber !== null ? { seed: seedNumber } : {}), ...(contextNumber !== null ? { num_ctx: contextNumber } : {}), ...(stops.length ? { stop_sequences: stops } : {}) },
+        { model: model.trim(), prompt, num_predict: tokenLimit, temperature: temperatureValue, top_p: topPValue, top_k: topKValue, min_p: minPValue, repetition_penalty: repetitionPenaltyValue, ...(seedNumber !== null ? { seed: seedNumber } : {}), ...(contextNumber !== null ? { num_ctx: contextNumber } : {}), ...(stops.length ? { stop_sequences: stops } : {}) },
         (event: LocalInferenceStreamEvent) => {
           if (event.type === "token") {
             setResult((current) => current ? { ...current, response: current.response + event.token, done: false } : current);
@@ -344,6 +347,7 @@ export default function LocalInferencePanel() {
         <div className="two-column-grid">
           <label className="field"><span className="field-label-row"><span>Top-p</span></span><input type="number" min={0.001} max={1} step="any" value={topP} onChange={(event) => setTopP(event.target.value)} /></label>
           <label className="field"><span className="field-label-row"><span>Top-k</span></span><input type="number" min={0} max={100000} step={1} value={topK} onChange={(event) => setTopK(event.target.value)} /></label>
+          <label className="field"><span className="field-label-row"><span>Min-p relative probability</span></span><input aria-label="Min-p" type="number" min={0} max={1} step={0.01} value={minP} onChange={(event) => setMinP(event.target.value)} /><small>0 disables min-p; otherwise keep tokens close enough to the highest-probability token.</small></label>
           <label className="field"><span className="field-label-row"><span>Repetition penalty</span></span><input type="number" min={0.1} max={5} step={0.1} value={repetitionPenalty} onChange={(event) => setRepetitionPenalty(event.target.value)} /></label>
           <label className="field"><span className="field-label-row"><span>Random seed (optional)</span></span><input type="number" min={0} step={1} value={seedValue} onChange={(event) => setSeedValue(event.target.value)} placeholder="Use runtime default" /></label>
           <label className="field"><span className="field-label-row"><span>Context window (optional)</span></span><input type="number" min={512} max={131072} step={256} value={contextWindow} onChange={(event) => setContextWindow(event.target.value)} placeholder="Use model default" /></label>
