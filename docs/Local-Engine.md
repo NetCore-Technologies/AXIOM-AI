@@ -43,6 +43,8 @@ axiom engine discover
 axiom engine discover --json
 axiom engine status
 axiom engine status --json
+axiom engine estimate --model-path "$HOME/models/my-llama-model" --context-length 4096 --batch-size 1 --ram-budget-gib 16 --vram-budget-gib 8
+axiom engine estimate --model-path "$HOME/models/my-llama-model" --context-length 4096 --ram-budget-gib 16 --json
 axiom engine pull Qwen/Qwen2.5-0.5B-Instruct
 axiom engine run --model-path "$HOME/.local/share/axiom/models/qwen-qwen2.5-0.5b-instruct" --prompt "What is 2+2?" --max-new-tokens 64 --temperature 0 --device auto --memory-mode auto
 axiom engine run --model-path "$HOME/models/my-llama-model" --prompt "Hello" --device cuda --memory-mode auto --precision fp16
@@ -51,6 +53,9 @@ axiom engine run --model-path /absolute/path/to/model --prompt "Hello" --max-new
 # Memory modes: auto, full, layer_streaming, disk_streaming
 # Other explicit choices, when detected by the installed PyTorch build: cuda, rocm, mps, xpu
 ```
+
+The `axiom engine estimate` command compares estimated weight, KV-cache, and workspace memory against one or both supplied budgets. Its formulas include explicit overhead, a safety margin, and an uncertainty range; use the JSON output to automate planning. INT4/INT8 rows are sizing references only and are marked as unsupported by the native loader. The recommendation selects among the currently native-supported floating-point candidates, but a budget fit is not a guarantee that a model will load successfully. The estimator reads model configuration metadata; it neither loads tensors nor predicts quality or speed.
+
 
 Use `axiom engine pull OWNER/REPOSITORY` to start a public Hugging Face pull specifically for AXIOM Native Engine. It accepts compatible Llama/Mistral/Qwen2/Qwen3 floating-point safetensors checkpoints, validates the architecture before downloading weights, writes into `~/.local/share/axiom/models`, and prints the path and the matching run command. A plain `axiom model studio pull` is different: it pulls a tag into Ollama, not into AXIOM's native runtime. Discovery still inspects metadata and file presence only; it does not run inference. A listed model is a candidate for an actual local load, not a guarantee that its checkpoint tensors are compatible. The optional `--stream` mode displays cumulative decoded output as tokens arrive; `--json` remains a single final machine-readable response and cannot be combined with `--stream`.
 
