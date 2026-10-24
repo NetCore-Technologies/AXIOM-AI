@@ -118,7 +118,7 @@ feature exists or a delivery-date promise.
 
 - [R085 · Implemented; tests passing] Add passive runtime connector discovery and capability reporting without assuming a connection or credentials.
 - [R086 · Planned] Add explicit connect/disconnect controls with secret-safe storage.
-- [R087 · Implemented; tests passing] Report native-engine dependency readiness, supported Llama/Mistral checkpoint formats, execution backend, loaded architecture, and local-only execution scope.
+- [R087 · Implemented; tests passing] Report native-engine dependency readiness, supported Llama/Mistral checkpoint formats, explicit CPU/CUDA/ROCm/Metal/XPU execution-device selection and availability diagnostics, loaded backend/architecture, and local-only execution scope.
 - [R088 · In progress; validation pending] Report actual local inference wall time, prefill latency, cached-decode latency, time to first token, and generated tokens/second from AXIOM's native token loop; wall time includes stream processing while throughput is based on prefill+decode compute time.
 - [R089 · Implemented; tests passing] Add prompt/token-limit inputs, excluded warm-up runs, bounded measured iterations, and explicit concurrency controls to the existing Runtime page.
 - [R090 · Planned] Add quantization estimates with formulas and overhead assumptions.
@@ -126,8 +126,8 @@ feature exists or a delivery-date promise.
 - [R092 · Planned] Keep estimated fit separate from measured quality and speed.
 - [R093 · Implemented; tests passing] Add bounded in-memory runtime request traces with request IDs, metadata-only records, export, and explicit clear controls.
 - [R094 · Implemented; tests passing] Add explicit model unload and cache cleanup, plus one-model-at-a-time cache replacement; framework allocator release remains best-effort.
-- [R095 · In progress; validation pending] Add adapter compatibility checks for CPU, CUDA, Metal, and ROCm; metadata/tensor-shape preflight and per-device availability reporting are now wired but require the release test gate to pass.
-- [R096 · Planned] Add runtime failure recovery and actionable connector diagnostics.
+- [R095 · In progress; validation pending] Add adapter compatibility checks for CPU, CUDA, ROCm, Metal/MPS, and Intel XPU; metadata/tensor-shape preflight and per-device availability reporting are wired, but real execution on each device and the release test gate remain to be validated.
+- [R096 · In progress; validation pending] Retry CPU after recognized accelerator out-of-memory failures in auto mode and report the selected backend/reason; broader device-driver recovery remains to be validated.
 
 ### 09 · Agent profiles, MCP, and security
 

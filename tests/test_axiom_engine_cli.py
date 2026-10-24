@@ -112,3 +112,31 @@ def test_engine_run_rejects_stream_with_json_mode(tmp_path: Path) -> None:
     ])
     assert result.exit_code == 1
     assert "cannot be combined with --json" in result.output
+
+
+
+def test_engine_run_passes_explicit_device_to_native_stream(tmp_path: Path, monkeypatch) -> None:
+    model_path = tmp_path / "model"
+    model_path.mkdir()
+    observed: dict[str, object] = {}
+
+    def fake_stream(*_args, **kwargs):
+        observed.update(kwargs)
+        yield {"type": "complete", "result": {
+            "model": "fixture-model",
+            "architecture": "LlamaForCausalLM",
+            "response": "CPU-selected response",
+            "completion_tokens": 3,
+            "elapsed_ms": 12.5,
+            "stop_reason": "max_new_tokens",
+        }}
+
+    monkeypatch.setattr(engine_cli, "generate_local_stream", fake_stream)
+    result = runner.invoke(engine_app, [
+        "run", "--model-path", str(model_path), "--prompt", "Say hello.",
+        "--stream", "--device", "cpu",
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert observed["device_preference"] == "cpu"
+    assert "CPU-selected response" in result.output

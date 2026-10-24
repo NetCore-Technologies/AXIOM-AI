@@ -20,7 +20,7 @@ A supported base model directory must contain:
 - model.safetensors, or model.safetensors.index.json plus the indexed safetensors shards.
 - Standard floating-point model tensors in float16, bfloat16, or float32 with expected Llama/Mistral tensor names and shapes.
 
-The current native engine explicitly rejects GGUF, GPTQ/AWQ and other quantized weights, pickle-based pytorch_model.bin weights, custom remote model code, unsupported architectures, and non-default RoPE scaling. It never silently falls back to another execution runtime.
+The current native engine explicitly rejects GGUF, GPTQ/AWQ and other quantized weights, pickle-based pytorch_model.bin weights, custom remote model code, unsupported architectures, and non-default RoPE scaling. It does not silently route generation through another engine. PyTorch remains the tensor-kernel dependency, while the supported model forward pass and decode loop are AXIOM-owned.
 
 ## Trusted model roots
 
@@ -41,26 +41,28 @@ Inventory the same trusted local model roots used by the Control Center:
 ```bash
 axiom engine discover
 axiom engine discover --json
+axiom engine status
 axiom engine status --json
-axiom engine run --model-path /absolute/path/to/model --prompt "Hello" --max-new-tokens 64 --temperature 0
-axiom engine run --model-path /absolute/path/to/model --prompt "Hello" --max-new-tokens 64 --temperature 0 --stream
+axiom engine run --model-path /absolute/path/to/model --prompt "Hello" --max-new-tokens 64 --temperature 0 --device auto
+axiom engine run --model-path /absolute/path/to/model --prompt "Hello" --max-new-tokens 64 --temperature 0 --device cpu --stream
+# Other explicit choices, when detected by the installed PyTorch build: cuda, rocm, mps, xpu
 ```
 
 Discovery inspects metadata and file presence only. It does not load tensors, download weights, or run inference. A listed model is a candidate for an actual local load, not a guarantee that its checkpoint tensors are compatible. The optional `--stream` mode displays cumulative decoded output as tokens arrive; `--json` remains a single final machine-readable response and cannot be combined with `--stream`.
 
 ## Control Center
 
-Open **Runtime → AXIOM Local Engine**. Select a discovered model/adapter from the native inventory or enter its local path, then provide a prompt, output-token limit, temperature, top-p, top-k, repetition penalty and optional sampling seed. Optional stop strings are entered one per line (maximum 16, 256 characters each). AXIOM withholds incomplete possible matches between tokens, stops on the first complete match, and excludes that string and later generated text from the final answer. The completion includes a finish reason: `eos_token`, `max_new_tokens`, `stop_sequence`, or `cancelled`. After generation, AXIOM reports wall time plus measured prompt-prefill latency, summed cached-decode latency, time to first token (the initial prefill forward pass), and completion tokens per second. These measurements exclude model loading and prompt tokenization; throughput is computed from completion token count divided by prefill plus decode compute time. Discovery lists metadata only; weights are validated and loaded only when generation starts. **Stop generation** aborts the client stream and signals cooperative cancellation through the API into AXIOM's native prompt-prefill/token loop; cancellation is checked between transformer layers and decoding steps. A disconnect during one individual tensor kernel is acted on when that kernel yields control. **Unload model** releases AXIOM's model/tokenizer references and asks CUDA to empty its cache when applicable. Framework and OS allocators may keep some reserved memory.
+Open **Runtime → AXIOM Local Engine**. The device-capability report distinguishes CPU, NVIDIA CUDA, AMD ROCm, Apple Metal/MPS, and Intel XPU availability, and reports free/total accelerator memory when the installed PyTorch driver exposes it. Choose **Auto-select available backend** or explicitly select a detected backend; an unavailable explicit choice is rejected rather than silently ignored. Auto prefers an available CUDA/ROCm accelerator, then MPS, XPU and CPU. If a recognized out-of-memory error occurs while loading model weights on an accelerator in auto mode, AXIOM retries on CPU and records the fallback reason; an explicit device choice never silently switches. Device availability does not guarantee a model will fit memory or every operator is supported by a particular driver. Select a discovered model/adapter from the native inventory or enter its local path, then provide a prompt, output-token limit, temperature, top-p, top-k, repetition penalty and optional sampling seed. Optional stop strings are entered one per line (maximum 16, 256 characters each). AXIOM withholds incomplete possible matches between tokens, stops on the first complete match, and excludes that string and later generated text from the final answer. The completion includes a finish reason: `eos_token`, `max_new_tokens`, `stop_sequence`, or `cancelled`. After generation, AXIOM reports wall time plus measured prompt-prefill latency, summed cached-decode latency, time to first token (the initial prefill forward pass), and completion tokens per second. These measurements exclude model loading and prompt tokenization; throughput is computed from completion token count divided by prefill plus decode compute time. Discovery lists metadata only; weights are validated and loaded only when generation starts. **Stop generation** aborts the client stream and signals cooperative cancellation through the API into AXIOM's native prompt-prefill/token loop; cancellation is checked between transformer layers and decoding steps. A disconnect during one individual tensor kernel is acted on when that kernel yields control. **Unload model** releases AXIOM's model/tokenizer references and best-effort empties the active CUDA, Metal/MPS, or XPU allocator cache when the runtime exposes that API. Framework and OS allocators may keep some reserved memory.
 
 A standard bias-free CAUSAL_LM LoRA adapter may be selected. AXIOM applies its A/B projection deltas in its own linear-projection path. DoRA, QALoRA, per-module rank/alpha patterns, saved replacement modules, bias-enabled adapters, unsupported target modules, and pickle adapter weights are rejected.
 
-Before generation, use **Check adapter compatibility** to run a metadata/tensor-shape preflight against the chosen base model. The report separates CPU, NVIDIA CUDA, AMD ROCm, and Apple Metal/MPS availability and lists structural blockers by target module, rank, or shape. It does not allocate the full base model or guarantee device memory/driver/kernel success; actual generation remains the final execution test.
+Before generation, use **Check adapter compatibility** to run a metadata/tensor-shape preflight against the chosen base model. The report separates CPU, NVIDIA CUDA, AMD ROCm, Apple Metal/MPS, and Intel XPU availability and lists structural blockers by target module, rank, or shape. It does not allocate the full base model or guarantee device memory/driver/kernel success; actual generation remains the final execution test.
 
 ## Execution path
 
 1. Validate paths against trusted roots and read bounded JSON configuration.
 2. Check architecture/dimensions, safetensors index, tensor names/shapes, and tokenizer vocabulary.
-3. Load safe tensors directly into PyTorch on CUDA, Metal/MPS when available, or CPU.
+3. Select the requested or best available PyTorch backend (CUDA, ROCm, Metal/MPS, Intel XPU, or CPU) and load safe tensors onto it.
 4. Tokenize locally and run AXIOM's embedding, RMSNorm, RoPE, grouped-query attention, KV cache, SwiGLU MLP and output-logit operations.
 5. Select tokens through greedy decoding (temperature 0) or temperature/top-p sampling, passing only each new token through the cached model until the output limit or EOS token.
 
@@ -68,8 +70,8 @@ A checkpoint outside this contract is rejected with a compatibility error; the e
 
 ## API and CLI
 
-- GET /api/engine/status reports native dependency readiness, supported formats, execution backend, and loaded model state.
-- POST /api/engine/generate runs AXIOM-native inference with a local model path, optional LoRA adapter, prompt, output-token limit and temperature.
+- GET /api/engine/status reports native dependency readiness, supported formats, observed execution-device availability, a recommended device, loaded backend and model state.
+- POST /api/engine/generate and POST /api/engine/generate/stream run AXIOM-native inference with a local model path, optional LoRA adapter, prompt, generation parameters and optional `device` choice (`auto`, `cpu`, `cuda`, `rocm`, `mps`, `xpu`).
 - POST /api/engine/unload releases the model cached by the current API process.
 - axiom engine status and axiom engine run use the same local engine.
 

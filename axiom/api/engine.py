@@ -51,6 +51,7 @@ class GenerateRequest(BaseModel):
     repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
     seed: int | None = Field(default=None, ge=0, le=9223372036854775807)
     stop_sequences: list[str] = Field(default_factory=list, max_length=16)
+    device: str = Field(default="auto", pattern="^(auto|cpu|cuda|rocm|mps|xpu)$")
 
     @field_validator("model_path", mode="before")
     @classmethod
@@ -176,6 +177,7 @@ def engine_generate(request: GenerateRequest) -> dict[str, Any]:
             repetition_penalty=request.repetition_penalty,
             seed=request.seed,
             stop_sequences=request.stop_sequences,
+            device_preference=request.device,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
@@ -267,6 +269,7 @@ async def engine_generate_stream(
         seed=request.seed,
         stop_sequences=request.stop_sequences,
         cancel_event=cancel_event,
+        device_preference=request.device,
     )
     producer = Thread(
         target=_produce_native_stream,
