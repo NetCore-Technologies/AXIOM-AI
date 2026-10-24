@@ -234,7 +234,7 @@ export default function LocalAxiomEnginePanel() {
         {status?.loaded && <button type="button" className="button secondary-button" onClick={() => void unload()} disabled={loading || running || unloading}><Unplug size={14} /> {unloading ? "Unloading…" : "Unload model"}</button>}
       </div>
     </div>
-    <p>AXIOM Native Engine owns its Llama/Mistral forward pass, KV-cache decode, attention path, sampling and LoRA application. PyTorch supplies device tensor kernels; AXIOM does not delegate generation to Transformers or Ollama. This build accepts local floating-point safetensors and tokenizer.json; GGUF/EXL2 quantized loading and model acquisition are not yet implemented by this native path.</p>
+    <p>AXIOM Native Engine implements its own PyTorch Llama/Mistral forward pass, KV-cache decode, attention path, sampling and LoRA application. PyTorch supplies device tensor kernels; AXIOM does not delegate generation to Transformers or Ollama. This build accepts local floating-point safetensors and tokenizer.json; GGUF/EXL2 quantized loading and model acquisition are not yet implemented by this native path.</p>
     <div className="status-strip" aria-label="AXIOM Engine status">
       <div className="status-strip-item">
         <span className={`status-pill ${status?.ready ? "success" : "warning"}`}><i />{loading ? "CHECKING" : status?.ready ? "ENGINE READY" : "SETUP REQUIRED"}</span>
