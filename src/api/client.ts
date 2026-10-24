@@ -75,6 +75,11 @@ export type LocalInferenceResult = {
   total_duration_ms: number | null;
   generated_at: string;
 };
+export type LocalInferenceInput = {
+  model: string; prompt: string; num_predict: number; temperature: number;
+  top_p?: number; top_k?: number; repetition_penalty?: number; seed?: number;
+  num_ctx?: number; stop_sequences?: string[];
+};
 export type LocalInferenceStreamEvent =
   | { type: "token"; token: string; request_id?: string }
   | { type: "complete"; result: LocalInferenceResult }
@@ -960,7 +965,7 @@ async function requestJson<T>(path: string, init: RequestInit = {}, timeoutMs = 
 }
 
 async function streamLocalInferenceRequest(
-  input: { model: string; prompt: string; num_predict: number; temperature: number },
+  input: LocalInferenceInput,
   onEvent: (event: LocalInferenceStreamEvent) => void,
   signal: AbortSignal,
 ): Promise<LocalInferenceResult> {
@@ -1466,7 +1471,7 @@ export const axiomApi = {
   },
 
   inferenceStatus: () => requestJson<LocalInferenceStatus>("/api/inference/status"),
-  streamLocalInference: (input: { model: string; prompt: string; num_predict: number; temperature: number }, onEvent: (event: LocalInferenceStreamEvent) => void, signal: AbortSignal) => streamLocalInferenceRequest(input, onEvent, signal),
+  streamLocalInference: (input: LocalInferenceInput, onEvent: (event: LocalInferenceStreamEvent) => void, signal: AbortSignal) => streamLocalInferenceRequest(input, onEvent, signal),
   startLocalOllama: () => requestJson<{ started: boolean; already_running: boolean; service: LocalInferenceStatus }>("/api/inference/service/start", { method: "POST", body: JSON.stringify({}) }),
   stopLocalOllama: () => requestJson<{ stopped: boolean; service: LocalInferenceStatus }>("/api/inference/service/stop", { method: "POST", body: JSON.stringify({}) }),
   runningOllamaModels: () => requestJson<OllamaRunningModels>("/api/inference/models/running"),
@@ -1475,7 +1480,7 @@ export const axiomApi = {
   startOllamaModelPull: (model: string) => requestJson<OllamaPullJob>("/api/inference/models/pull", { method: "POST", body: JSON.stringify({ model }) }),
   ollamaModelPullStatus: (jobId: string) => requestJson<OllamaPullJob>(`/api/inference/models/pull/${encodeURIComponent(jobId)}`),
   cancelOllamaModelPull: (jobId: string) => requestJson<OllamaPullJob>(`/api/inference/models/pull/${encodeURIComponent(jobId)}/cancel`, { method: "POST", body: JSON.stringify({}) }),
-  runLocalInference: (input: { model: string; prompt: string; num_predict: number; temperature: number }) =>
+  runLocalInference: (input: LocalInferenceInput) =>
     requestJson<LocalInferenceResult>("/api/inference/generate", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
