@@ -844,6 +844,8 @@ def _load_local_model(
                 "Confirm supported safetensors weights and available memory."
             ) from None
 
+    # The selected backend may change after a transparent auto-mode CPU retry.
+    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None, str(device), device_preference, memory_mode)
     details = {
         **inspected,
         **native_details,
@@ -1012,8 +1014,8 @@ def generate_local_stream(
                 "adapter": details["adapter_directory_name"],
                 "device": str(device),
                 "device_selection": details.get("device_selection"),
-                "memory_mode": model.memory_mode,
-                "memory_stats": dict(model.memory_stats),
+                "memory_mode": getattr(model, "memory_mode", memory_mode),
+                "memory_stats": dict(getattr(model, "memory_stats", {})),
                 "checkpoint_format": "safetensors",
                 "decoder": model.last_generation.get("decoder", "axiom-autoregressive-kv-cache"),
                 "attention_backend": model.last_attention_backend,
