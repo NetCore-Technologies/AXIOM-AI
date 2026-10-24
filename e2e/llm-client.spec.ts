@@ -85,10 +85,20 @@ test("unified LLM client runs local chats and requires consent for cloud chats",
   await panel.getByLabel("Model ID").fill("tiny-llama");
   await panel.getByLabel("Prompt").fill("Hello local model");
   await panel.getByRole("button", { name: "Generate locally" }).click();
-  await expect(panel.getByText("local-only answer", { exact: true })).toBeVisible();
+  await expect(panel.locator(".llm-message.assistant-message").last()).toContainText("local-only answer");
   expect(chatRequests).toHaveLength(1);
   expect(chatRequests[0]["provider"]).toBe("axiom-local");
   expect(chatRequests[0]["consent"]).toBe(true);
+
+  await panel.getByLabel("Prompt").fill("Continue our previous answer");
+  await panel.getByRole("button", { name: "Generate locally" }).click();
+  await expect(panel.locator(".llm-message.assistant-message")).toHaveCount(2);
+  expect(chatRequests).toHaveLength(2);
+  expect(chatRequests[1]["provider"]).toBe("axiom-local");
+  const continuedMessages = chatRequests[1]["messages"] as Array<{ role: string; content: string }>;
+  expect(continuedMessages.some((message) => message.role === "user" && message.content === "Hello local model")).toBe(true);
+  expect(continuedMessages.some((message) => message.role === "assistant" && message.content === "local-only answer")).toBe(true);
+  expect(continuedMessages.some((message) => message.role === "user" && message.content === "Continue our previous answer")).toBe(true);
 
   await panel.locator("select").selectOption("deepseek");
   await panel.getByLabel("Provider API key").fill("never-return-this");
@@ -103,11 +113,11 @@ test("unified LLM client runs local chats and requires consent for cloud chats",
   await panel.getByRole("button", { name: "Send and generate" }).click();
   await expect(panel.getByText("cloud answer", { exact: true })).toBeVisible();
 
-  expect(chatRequests).toHaveLength(2);
-  expect(chatRequests[1]["provider"]).toBe("deepseek");
-  expect(chatRequests[1]["consent"]).toBe(true);
-  expect(chatRequests[1]["api_key"]).toBe("never-return-this");
-  const messages = chatRequests[1]["messages"] as Array<{ role: string; content: string }>;
+  expect(chatRequests).toHaveLength(3);
+  expect(chatRequests[2]["provider"]).toBe("deepseek");
+  expect(chatRequests[2]["consent"]).toBe(true);
+  expect(chatRequests[2]["api_key"]).toBe("never-return-this");
+  const messages = chatRequests[2]["messages"] as Array<{ role: string; content: string }>;
   expect(messages.some((message) => message.role === "user" && message.content === "Hello cloud model")).toBe(true);
   await expect(panel).not.toContainText("never-return-this");
 });
