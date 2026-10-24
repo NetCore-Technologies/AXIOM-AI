@@ -228,7 +228,10 @@ def infer_models(json_output: bool = typer.Option(False, "--json", help="Print m
         console.print(name)
 
 
-@infer_app.command("run")
+@infer_app.command(
+    "run",
+    epilog="Advanced sampling options: --top-p, --top-k, --repeat-penalty, --seed, --num-ctx, and repeatable --stop.",
+)
 def infer_run(
     model: str = typer.Argument(..., help="Name of an already-downloaded local Ollama model."),
     prompt: str | None = typer.Option(None, "--prompt", help="Prompt text (up to 12,000 characters)."),
