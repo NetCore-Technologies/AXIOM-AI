@@ -147,7 +147,7 @@ export default function LLMClientPanel() {
       <div className="two-column-grid">
         <label className="field">
           <span className="field-label-row"><span>Provider</span></span>
-          <select value={provider} onChange={(event) => changeProvider(event.target.value)}>
+          <select aria-label="LLM provider" value={provider} onChange={(event) => changeProvider(event.target.value)}>
             {providers.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
           </select>
           <small>{selected?.note || "Choose the inference backend for this conversation."}</small>
