@@ -229,7 +229,7 @@ axiom --no-banner engine run --model-path "$HOME/models/my-llama-model" --prompt
 - Choose `--memory-mode disk_streaming` when the entire model's layer weights also do not fit in CPU RAM. Expect extra disk I/O on every prompt/decode forward pass.
 - Model Studio can pull compatible public Hugging Face safetensors checkpoints directly into AXIOM's trusted native-model directory; the runtime also accepts compatible local checkpoints.
 
-Details: [AXIOM Engine](docs/Local-Engine.md).
+Details: [AXIOM Engine](docs/Local-Engine.md). A local OpenAI-compatible chat endpoint is available at `/v1/chat/completions`; it only exposes native-compatible models discovered inside AXIOM's trusted model roots and currently supports text chat, not tool calling or continuous batching.
 
 </details>
 

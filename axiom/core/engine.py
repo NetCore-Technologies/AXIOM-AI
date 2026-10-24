@@ -1168,6 +1168,7 @@ def _format_prompt_for_native_model(
     model_dir: Path,
     model_type: str,
     tokenizer: Any,
+    chat_messages: list[dict[str, str]] | None = None,
 ) -> tuple[str, str]:
     """Apply a checkpoint's safe chat template when present; keep raw completion for base models.
 
@@ -1218,9 +1219,9 @@ def _format_prompt_for_native_model(
             "strftime_now": lambda fmt: datetime.now(UTC).strftime(fmt),
         })
         environment.filters["tojson"] = lambda value: json.dumps(value, ensure_ascii=False)
-        messages = [{"role": "user", "content": prompt}]
+        template_messages = chat_messages or [{"role": "user", "content": prompt}]
         context = {
-            "messages": messages,
+            "messages": template_messages,
             "add_generation_prompt": True,
             "bos_token": special_token("bos_token"),
             "eos_token": special_token("eos_token"),
@@ -1238,6 +1239,17 @@ def _format_prompt_for_native_model(
             raise AxiomEngineError("The checkpoint's chat template produced an empty prompt.")
         return rendered, "tokenizer-config-template"
 
+    if chat_messages:
+        if model_type == "qwen2":
+            rendered = "".join(
+                f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>\n"
+                for message in chat_messages
+            ) + "<|im_start|>assistant\n"
+            return rendered, "qwen2-chatml-fallback"
+        rendered = "\n\n".join(
+            f"{message['role'].upper()}:\n{message['content']}" for message in chat_messages
+        ) + "\n\nASSISTANT:\n"
+        return rendered, "role-labelled-chat-fallback"
     if model_type == "qwen2":
         # Standard Qwen2 text-instruct checkpoints use ChatML markers even when
         # older/custom releases omit an exported chat_template.
@@ -1261,6 +1273,7 @@ def generate_local_stream(
     cancel_event: threading.Event | None = None,
     device_preference: str = "auto",
     memory_mode: str = "auto",
+    chat_messages: list[dict[str, str]] | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Yield cumulative decoded text updates and one final metrics event.
 
@@ -1269,6 +1282,27 @@ def generate_local_stream(
     the iterator closes the native token iterator and releases that lock.
     """
     prompt, max_new_tokens, temperature = validate_generation(prompt, max_new_tokens, temperature)
+    if chat_messages is not None:
+        if not isinstance(chat_messages, list) or not 1 <= len(chat_messages) <= 128:
+            raise ValueError("Chat messages must contain between 1 and 128 entries.")
+        normalized_messages: list[dict[str, str]] = []
+        total_message_chars = 0
+        valid_roles = {"system", "user", "assistant"}
+        for item in chat_messages:
+            if not isinstance(item, dict) or item.get("role") not in valid_roles or not isinstance(item.get("content"), str):
+                raise ValueError("Native chat messages support only system, user, and assistant roles with string content.")
+            role = item["role"]
+            text_value = item["content"]
+            if not text_value.strip() or len(text_value) > _MAX_PROMPT_CHARS:
+                raise ValueError("Each chat message must contain non-blank text within the prompt limit.")
+            total_message_chars += len(text_value)
+            if total_message_chars > _MAX_PROMPT_CHARS:
+                raise ValueError(f"Combined chat messages exceed the {_MAX_PROMPT_CHARS:,}-character limit.")
+            normalized_messages.append({"role": role, "content": text_value})
+        if not any(message["role"] == "user" for message in normalized_messages):
+            raise ValueError("Native chat requests must contain at least one user message.")
+        chat_messages = normalized_messages
+        prompt = next(message["content"] for message in reversed(chat_messages) if message["role"] == "user")
     top_p, top_k, repetition_penalty, seed = validate_sampling_parameters(top_p, top_k, repetition_penalty, seed)
     stop_sequences = validate_stop_sequences(stop_sequences)
     with _ENGINE_LOCK:
@@ -1280,7 +1314,8 @@ def generate_local_stream(
         effective_max_new_tokens = min(max_new_tokens, context_cap - 1)
         input_limit = max(1, min(_MAX_INPUT_TOKENS, context_cap - effective_max_new_tokens))
         formatted_prompt, prompt_format = _format_prompt_for_native_model(
-            prompt, Path(details.get("model_directory_path", ".")), model.config.model_type, tokenizer
+            prompt, Path(details.get("model_directory_path", ".")), model.config.model_type, tokenizer,
+            chat_messages=chat_messages,
         )
         try:
             encoded = tokenizer.encode(formatted_prompt, add_special_tokens=False)

@@ -75,6 +75,7 @@ A checkpoint outside this contract is rejected with a compatibility error; the e
 - GET /api/engine/status reports native dependency readiness, supported formats, observed execution-device availability, a recommended device, loaded backend and model state.
 - POST /api/engine/generate and POST /api/engine/generate/stream run AXIOM-native inference with a local model path, optional LoRA adapter, prompt, generation parameters, optional `device` choice (`auto`, `cpu`, `cuda`, `rocm`, `mps`, `xpu`), and `memory_mode` (`auto`, `full`, `layer_streaming`, `disk_streaming`). Stream events contain text updates and live inference/memory telemetry.
 - POST /api/engine/unload releases the model cached by the current API process.
-- axiom engine status and axiom engine run use the same local engine.
+- `axiom engine status`, `axiom engine run`, and `axiom engine pull` use the same native engine.
+- The OpenAI-compatible `GET /v1/models` and `POST /v1/chat/completions` endpoints expose only discovered trusted local Llama/Mistral/Qwen2 models. `POST /v1/chat/completions/stream` emits SSE chunks. Chat messages are limited to system/user/assistant text; tools, multimodal content, multi-choice sampling, and continuous batching are not supported by this compatibility surface.
 
 Weights may be placed locally or acquired through Model Studio's explicit public-Hub native pull; always review model licenses. AXIOM does not claim supplied third-party base weights were pretrained by AXIOM. Native speed and memory depend on model size, precision and device. Quantization and further architecture families need separate implementations and acceptance tests.
