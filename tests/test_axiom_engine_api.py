@@ -26,6 +26,10 @@ def test_engine_request_accepts_absolute_paths_only_inside_explicit_roots(tmp_pa
 
     request = engine_api.GenerateRequest(model_path=str(model), prompt="hello")
     assert request.memory_mode == "auto"
+    assert request.precision == "auto"
+    assert engine_api.GenerateRequest(model_path=str(model), prompt="hello", precision="fp16").precision == "fp16"
+    with pytest.raises(ValidationError, match="precision"):
+        engine_api.GenerateRequest(model_path=str(model), prompt="hello", precision="int4")
 
     assert request.model_path == str(model.resolve())
 
@@ -105,7 +109,7 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
     def fake_stream(
         model_path, prompt, *, adapter_path=None, max_new_tokens=256, temperature=0.7,
         top_p=0.9, top_k=0, repetition_penalty=1.0, seed=None, stop_sequences=(), include_token_events=True,
-        cancel_event=None, device_preference="auto", memory_mode="full",
+        cancel_event=None, device_preference="auto", memory_mode="full", precision="auto",
     ):
         observed.update({
             "model_path": model_path, "prompt": prompt, "max_new_tokens": max_new_tokens,
@@ -115,6 +119,7 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
             "include_token_events": include_token_events,
             "device_preference": device_preference,
             "memory_mode": memory_mode,
+            "precision": precision,
         })
         yield {"type": "token", "response": "hi", "completion_tokens": 1}
         yield {
@@ -143,6 +148,7 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
             "stop_sequences": ["<END>", "###"],
             "device": "cpu",
             "memory_mode": "layer_streaming",
+            "precision": "bf16",
         },
     )
 
@@ -165,6 +171,7 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
         "include_token_events": True,
         "device_preference": "cpu",
         "memory_mode": "layer_streaming",
+        "precision": "bf16",
     }
 
 
