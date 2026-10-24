@@ -207,6 +207,12 @@ def infer_run(
     prompt_file: Path | None = typer.Option(None, "--prompt-file", exists=True, dir_okay=False, readable=True, help="Read the prompt from a local UTF-8 text file."),
     num_predict: int = typer.Option(256, "--num-predict", min=1, max=2_048, help="Maximum generated tokens (1–2048)."),
     temperature: float = typer.Option(0.7, min=0, max=2, help="Sampling temperature (0–2)."),
+    top_p: float | None = typer.Option(None, "--top-p", min=0.001, max=1, help="Nucleus sampling threshold (0–1)."),
+    top_k: int | None = typer.Option(None, "--top-k", min=0, max=100_000, help="Candidate token limit (0 uses runtime default)."),
+    repetition_penalty: float | None = typer.Option(None, "--repeat-penalty", min=0.1, max=5, help="Repetition penalty (0.1–5)."),
+    seed: int | None = typer.Option(None, "--seed", min=0, help="Optional deterministic seed."),
+    num_ctx: int | None = typer.Option(None, "--num-ctx", min=512, max=131_072, help="Optional context window (512–131072 tokens)."),
+    stop_sequences: list[str] | None = typer.Option(None, "--stop", help="Optional stop sequence; repeat the flag for multiple values."),
     json_output: bool = typer.Option(False, "--json", help="Print the complete result as JSON."),
 ) -> None:
     """Run real text generation on the local Ollama runtime; no cloud API is used."""
@@ -221,7 +227,14 @@ def infer_run(
             _fail(f"Could not read prompt file ({type(exc).__name__}).")
     assert prompt is not None
     try:
-        result = run_local_inference(model, prompt, num_predict=num_predict, temperature=temperature)
+        sampling: dict[str, object] = {}
+        if top_p is not None: sampling["top_p"] = top_p
+        if top_k is not None: sampling["top_k"] = top_k
+        if repetition_penalty is not None: sampling["repetition_penalty"] = repetition_penalty
+        if seed is not None: sampling["seed"] = seed
+        if num_ctx is not None: sampling["num_ctx"] = num_ctx
+        if stop_sequences: sampling["stop_sequences"] = stop_sequences
+        result = run_local_inference(model, prompt, num_predict=num_predict, temperature=temperature, **sampling)
     except (ValueError, InferenceRuntimeError) as exc:
         _fail(str(exc))
     if json_output:
