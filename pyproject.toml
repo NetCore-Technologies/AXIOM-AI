@@ -35,6 +35,7 @@ native-inference = [
     "torch>=2.2",
     "tokenizers>=0.19",
     "safetensors>=0.4",
+    "jinja2>=3.1",
 ]
 training = [
     "torch>=2.2",
