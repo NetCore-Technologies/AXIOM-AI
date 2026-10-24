@@ -375,6 +375,7 @@ class EngineFabricChatRequest(BaseModel):
 
     top_p: float = Field(default=0.9, gt=0, le=1)
     top_k: int = Field(default=0, ge=0, le=100_000, strict=True)
+    min_p: float = Field(default=0.0, ge=0, le=1)
     repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
     seed: int | None = Field(default=None, ge=0, le=9_223_372_036_854_775_807, strict=True)
     stop_sequences: list[str] = Field(default_factory=list, max_length=16)
@@ -395,6 +396,7 @@ class EngineFabricAutoChatRequest(BaseModel):
 
     top_p: float = Field(default=0.9, gt=0, le=1)
     top_k: int = Field(default=0, ge=0, le=100_000, strict=True)
+    min_p: float = Field(default=0.0, ge=0, le=1)
     repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
     seed: int | None = Field(default=None, ge=0, le=9_223_372_036_854_775_807, strict=True)
     stop_sequences: list[str] = Field(default_factory=list, max_length=16)
@@ -427,6 +429,7 @@ def engine_backend_chat(request: EngineFabricChatRequest) -> dict[str, Any]:
             temperature=request.temperature,
             top_p=request.top_p,
             top_k=request.top_k,
+            min_p=request.min_p,
             repetition_penalty=request.repetition_penalty,
             seed=request.seed,
             stop_sequences=request.stop_sequences,
@@ -449,6 +452,7 @@ def engine_backend_auto_chat(request: EngineFabricAutoChatRequest) -> dict[str, 
             temperature=request.temperature,
             top_p=request.top_p,
             top_k=request.top_k,
+            min_p=request.min_p,
             repetition_penalty=request.repetition_penalty,
             seed=request.seed,
             stop_sequences=request.stop_sequences,
@@ -470,6 +474,7 @@ class EngineFabricBenchmarkRequest(BaseModel):
 
     top_p: float = Field(default=0.9, gt=0, le=1)
     top_k: int = Field(default=0, ge=0, le=100_000, strict=True)
+    min_p: float = Field(default=0.0, ge=0, le=1)
     repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
     seed: int | None = Field(default=None, ge=0, le=9_223_372_036_854_775_807, strict=True)
     stop_sequences: list[str] = Field(default_factory=list, max_length=16)
@@ -502,6 +507,7 @@ def engine_backend_benchmark(request: EngineFabricBenchmarkRequest) -> dict[str,
             temperature=request.temperature,
             top_p=request.top_p,
             top_k=request.top_k,
+            min_p=request.min_p,
             repetition_penalty=request.repetition_penalty,
             seed=request.seed,
             stop_sequences=request.stop_sequences,
