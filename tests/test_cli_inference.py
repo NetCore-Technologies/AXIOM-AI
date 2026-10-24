@@ -45,3 +45,10 @@ def test_infer_loaded_model_inventory_command_is_registered():
     result = CliRunner().invoke(app, ["--no-banner", "infer", "ps", "--help"])
     assert result.exit_code == 0, result.output
     assert "loaded" in result.output.lower() and "memory" in result.output.lower()
+
+
+def test_infer_run_help_exposes_advanced_sampling_options():
+    result = CliRunner().invoke(app, ["--no-banner", "infer", "run", "--help"])
+    assert result.exit_code == 0, result.output
+    for option in ("--top-p", "--top-k", "--repeat-penalty", "--seed", "--num-ctx", "--stop"):
+        assert option in result.output
