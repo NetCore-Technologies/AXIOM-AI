@@ -421,6 +421,17 @@ class NativeLlamaRuntime:
         self.adapter, self.adapter_scaling = adapter or {}, adapter_scaling or {}
         self.memory_mode = memory_mode
         self.layer_weight_sources = layer_weight_sources or {}
+        self.layer_weight_names_by_index: dict[int, list[str]] = {}
+        self.layer_weight_sources_by_index: dict[int, dict[str, Path]] = {}
+        for tensor_name in set(weights) | set(self.layer_weight_sources):
+            match = re.match(r"^model\\.layers\\.(\\d+)\\.", tensor_name)
+            if match:
+                self.layer_weight_names_by_index.setdefault(int(match.group(1)), []).append(tensor_name)
+                source = self.layer_weight_sources.get(tensor_name)
+                if source is not None:
+                    self.layer_weight_sources_by_index.setdefault(int(match.group(1)), {})[tensor_name] = source
+        for tensor_names in self.layer_weight_names_by_index.values():
+            tensor_names.sort()
         self.weight_shapes = weight_shapes or {name: tuple(value.shape) for name, value in weights.items()}
         self.dtype = weights["model.embed_tokens.weight"].dtype
         self.name = "axiom-native-pytorch-causal-lm"
@@ -451,9 +462,7 @@ class NativeLlamaRuntime:
                 from safetensors import safe_open
                 with ExitStack() as stack:
                     handles: dict[str, Any] = {}
-                    for name, source in self.layer_weight_sources.items():
-                        if not name.startswith(prefix):
-                            continue
+                    for name, source in self.layer_weight_sources_by_index.get(layer_index, {}).items():
                         source_text = str(source)
                         if source_text not in handles:
                             handles[source_text] = stack.enter_context(
@@ -482,8 +491,9 @@ class NativeLlamaRuntime:
         prefix = f"model.layers.{layer_index}."
         staged: dict[str, Any] = {}
         try:
-            for name, weight in list(self.weights.items()):
-                if not name.startswith(prefix) or getattr(weight, "device", None) == self.device:
+            for name in self.layer_weight_names_by_index.get(layer_index, []):
+                weight = self.weights.get(name)
+                if weight is None or getattr(weight, "device", None) == self.device:
                     continue
                 staged[name] = weight
                 self.weights[name] = weight.to(device=self.device)
