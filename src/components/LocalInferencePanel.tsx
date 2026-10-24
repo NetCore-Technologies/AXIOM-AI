@@ -106,6 +106,7 @@ export default function LocalInferencePanel() {
     try {
       const result = await axiomApi.unloadOllamaModel(model.trim());
       setUnloadMessage(result.scope_note);
+      if (runningModels) await refreshRunningModels();
     } catch (cause) { setUnloadMessage(cause instanceof Error ? cause.message : "Could not unload this model."); }
     finally { setUnloadBusy(false); }
   };
