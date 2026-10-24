@@ -1038,6 +1038,7 @@ def _choose_memory_mode(
     device: Any,
     device_selection: dict[str, str],
     adapter_dir: Path | None = None,
+    precision: str = "auto",
 ) -> tuple[str, dict[str, Any]]:
     """Choose a native loading strategy from observed RAM/VRAM and model dimensions.
 
@@ -1062,7 +1063,7 @@ def _choose_memory_mode(
             adapter_weight_bytes = int(adapter_file.stat().st_size)
             if adapter_weight_bytes <= 0:
                 raise ValueError("the LoRA adapter weight file is empty")
-        dtype_bytes = 4  # conservative fallback when the checkpoint tensor dtype is unknown
+        dtype_bytes = {"fp32": 4, "fp16": 2, "bf16": 2}.get(precision, 4)
         try:
             from safetensors import safe_open
             for shard in weight_files:
@@ -1070,7 +1071,8 @@ def _choose_memory_mode(
                     if "model.embed_tokens.weight" not in handle.keys():
                         continue
                     dtype_name = handle.get_slice("model.embed_tokens.weight").get_dtype()
-                    dtype_bytes = {"F16": 2, "BF16": 2, "F32": 4}.get(str(dtype_name).upper(), 4)
+                    if precision == "auto":
+                        dtype_bytes = {"F16": 2, "BF16": 2, "F32": 4}.get(str(dtype_name).upper(), 4)
                     break
         except Exception:
             # Header inspection is an optional precision improvement. Keep the
@@ -1191,6 +1193,7 @@ def _load_local_model(
     adapter_path: str | None,
     device_preference: str = "auto",
     memory_mode: str = "auto",
+    precision: str = "auto",
 ):
     global _LOADED_RUNTIME, _LOADED_ARCHITECTURE
     try:
@@ -1202,6 +1205,8 @@ def _load_local_model(
 
     if memory_mode not in {"auto", "full", "layer_streaming", "disk_streaming"}:
         raise ValueError("Memory mode must be auto, full, layer_streaming, or disk_streaming.")
+    if precision not in {"auto", "fp32", "fp16", "bf16"}:
+        raise ValueError("Precision must be auto, fp32, fp16, or bf16.")
     requested_memory_mode = memory_mode
     base_dir = _resolve_model_directory(model_path, "Base model")
     inspected = _inspect_model_config(base_dir)
@@ -1223,8 +1228,8 @@ def _load_local_model(
         "estimates_are_advisory": True,
     }
     if requested_memory_mode == "auto":
-        memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection, resolved_adapter)
-    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None, str(device), device_preference, memory_mode, requested_memory_mode)
+        memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection, resolved_adapter, precision)
+    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None, str(device), device_preference, memory_mode, requested_memory_mode, precision)
     if _LOADED_RUNTIME is not None and _LOADED_RUNTIME["key"] == key:
         return (
             _LOADED_RUNTIME["model"],
@@ -1247,7 +1252,7 @@ def _load_local_model(
     from axiom.core.native_engine import NativeDependencyError, NativeEngineError, load_native_runtime
     try:
         model, tokenizer, native_details = load_native_runtime(
-            base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots(), memory_mode=memory_mode
+            base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots(), memory_mode=memory_mode, precision=precision
         )
     except NativeDependencyError as exc:
         raise AxiomEngineError(str(exc)) from None
@@ -1267,10 +1272,10 @@ def _load_local_model(
             "reason": "The preferred accelerator ran out of memory during model loading; AXIOM retried on CPU.",
         }
         if requested_memory_mode == "auto":
-            memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection, resolved_adapter)
+            memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection, resolved_adapter, precision)
         try:
             model, tokenizer, native_details = load_native_runtime(
-                base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots(), memory_mode=memory_mode
+                base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots(), memory_mode=memory_mode, precision=precision
             )
         except NativeDependencyError as retry_exc:
             raise AxiomEngineError(str(retry_exc)) from None
@@ -1289,10 +1294,10 @@ def _load_local_model(
             device = torch.device("cpu")
             device_selection = {"requested": "auto", "selected": "cpu", "reason": "The preferred accelerator ran out of memory during model loading; AXIOM retried on CPU."}
             if requested_memory_mode == "auto":
-                memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection, resolved_adapter)
+                memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection, resolved_adapter, precision)
             try:
                 model, tokenizer, native_details = load_native_runtime(
-                    base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots(), memory_mode=memory_mode
+                    base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots(), memory_mode=memory_mode, precision=precision
                 )
             except (NativeDependencyError, NativeEngineError, OSError, RuntimeError) as retry_exc:
                 _LOG.debug("CPU retry after accelerator OOM failed.", exc_info=True)
@@ -1305,12 +1310,13 @@ def _load_local_model(
             ) from None
 
     # The selected backend may change after a transparent auto-mode CPU retry.
-    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None, str(device), device_preference, memory_mode, requested_memory_mode)
+    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None, str(device), device_preference, memory_mode, requested_memory_mode, precision)
     details = {
         **inspected,
         **native_details,
         "device_selection": device_selection,
         "memory_selection": memory_selection,
+        "precision_selection": {"requested": precision, "selected": native_details.get("precision", precision)},
         "config": {"max_position_embeddings": model.config.max_position_embeddings},
     }
     _LOADED_RUNTIME = {
@@ -1465,6 +1471,7 @@ def generate_local_stream(
     device_preference: str = "auto",
     memory_mode: str = "auto",
     chat_messages: list[dict[str, str]] | None = None,
+    precision: str = "auto",
 ) -> Iterator[dict[str, Any]]:
     """Yield cumulative decoded text updates and one final metrics event.
 
@@ -1497,7 +1504,7 @@ def generate_local_stream(
     top_p, top_k, repetition_penalty, seed = validate_sampling_parameters(top_p, top_k, repetition_penalty, seed)
     stop_sequences = validate_stop_sequences(stop_sequences)
     with _engine_request_lock(cancel_event):
-        model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path, device_preference, memory_mode)
+        model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path, device_preference, memory_mode, precision)
         selected_backend = details.get("device_selection", {}).get("selected")
         device_memory_before = _device_memory_snapshot(torch, device, selected_backend=selected_backend)
         device_memory_before["peak_reset_supported"] = _reset_device_peak_memory(torch, device)
@@ -1676,6 +1683,8 @@ def generate_local_stream(
                 "adapter": details["adapter_directory_name"],
                 "device": str(device),
                 "device_selection": details.get("device_selection"),
+                "precision_selection": details.get("precision_selection"),
+                "precision": details.get("precision"),
                 "memory_mode": getattr(model, "memory_mode", memory_mode),
                 "memory_selection": details.get("memory_selection"),
                 "memory_stats": dict(getattr(model, "memory_stats", {})),
@@ -1734,6 +1743,7 @@ def generate_local(
     stop_sequences: list[str] | tuple[str, ...] = (),
     device_preference: str = "auto",
     memory_mode: str = "auto",
+    precision: str = "auto",
 ) -> dict[str, Any]:
     """Generate a complete local response through the streaming decoder."""
     completed: dict[str, Any] | None = None
@@ -1751,6 +1761,7 @@ def generate_local(
         include_token_events=False,
         device_preference=device_preference,
         memory_mode=memory_mode,
+        precision=precision,
     ):
         if event.get("type") == "complete" and isinstance(event.get("result"), dict):
             completed = event["result"]
