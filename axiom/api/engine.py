@@ -22,6 +22,7 @@ from axiom.core.engine import (
     generate_local_stream,
     resolve_local_model_directory,
     runtime_status,
+    runtime_telemetry,
     unload_local_model,
 )
 
@@ -166,6 +167,12 @@ def engine_models() -> dict[str, Any]:
 @router.get("/status")
 def engine_status() -> dict[str, Any]:
     return runtime_status()
+
+
+@router.get("/telemetry")
+def engine_telemetry() -> dict[str, Any]:
+    """Return local CPU, RAM, device allocator and trusted-model-storage telemetry."""
+    return runtime_telemetry()
 
 
 @router.post("/unload")
