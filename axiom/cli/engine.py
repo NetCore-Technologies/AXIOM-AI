@@ -340,6 +340,7 @@ def engine_run(
                 temperature=temperature,
                 top_p=top_p,
                 top_k=top_k,
+                min_p=min_p,
                 repetition_penalty=repetition_penalty,
                 seed=seed,
                 stop_sequences=stop_sequences,
