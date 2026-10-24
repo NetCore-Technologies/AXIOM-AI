@@ -216,7 +216,7 @@ See the [fine-tuning guide](docs/Local-Fine-Tuning.md) for supported data, limit
 <details>
 <summary><b>AXIOM Engine (direct local inference)</b></summary>
 
-AXIOM owns this inference path. It runs Llama, Mistral, and Qwen2 text-decoder forward passes and an autoregressive KV-cache decoder on PyTorch tensor kernels: RMSNorm, RoPE, grouped-query attention, SwiGLU, and supported LoRA deltas. It does not call Ollama or Transformers `model.generate`. Select full-weight loading or low-VRAM layer streaming with CPU-resident layer weights and KV cache; streaming reduces accelerator weight residency but trades throughput for transfer overhead.
+AXIOM owns this inference path. It runs Llama, Mistral, and Qwen2 text-decoder forward passes and an autoregressive KV-cache decoder on PyTorch tensor kernels: RMSNorm, RoPE, grouped-query attention, SwiGLU, and supported LoRA deltas. It does not call Ollama or Transformers `model.generate`. Select full-weight loading, in-RAM layer streaming with a CPU KV cache, or disk-resident layer streaming that reads a safetensors layer on demand and releases it after use. Both streaming modes trade throughput for lower memory use.
 
 ```bash
 axiom --no-banner engine status
@@ -226,6 +226,7 @@ axiom --no-banner engine run --model-path "$HOME/models/my-llama-model" --prompt
 - Needs a local `tokenizer.json` and floating-point safetensors weights. GGUF, quantized weights, pickle `.bin` files, and unsupported architectures are rejected with a clear message.
 - Pick a device with `--device`. AXIOM reports detected CPU, CUDA, ROCm, Metal, and XPU options.
 - Choose `--memory-mode layer_streaming` when accelerator memory is constrained. This is not quantization; native GGUF/EXL2/GPTQ/AWQ support remains pending.
+- Choose `--memory-mode disk_streaming` when the entire model's layer weights also do not fit in CPU RAM. Expect extra disk I/O on every prompt/decode forward pass.
 - Model Studio can pull compatible public Hugging Face safetensors checkpoints directly into AXIOM's trusted native-model directory; the runtime also accepts compatible local checkpoints.
 
 Details: [AXIOM Engine](docs/Local-Engine.md).
