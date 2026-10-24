@@ -413,28 +413,31 @@ def inspect(root: Path) -> dict[str, Any]:
     for token in ("OLLAMA_HOST = \"127.0.0.1:11434\"", "def start_service(", "def stop_service(", "def service_status(", "def start_model_pull(", "def cancel_model_pull(", "_MAX_CONCURRENT_PULLS = 2", "_MODEL_PULL_TIMEOUT_SECONDS = 1800.0", "def _matches_state("):
         if token not in ollama_service:
             failures.append("Managed Ollama service is missing a safety/lifecycle contract: " + token)
-    for token in ('@router.post("/service/start")', '@router.post("/service/stop")', '@router.post("/models/pull")', '@router.post("/models/inspect")', '@router.post("/models/unload")', "AXIOM_ALLOW_REMOTE_RUNTIME_MANAGEMENT", "cancel_model_pull("):
+    for token in ('@router.get("/models/running")', '@router.post("/service/start")', '@router.post("/service/stop")', '@router.post("/models/pull")', '@router.post("/models/inspect")', '@router.post("/models/unload")', "AXIOM_ALLOW_REMOTE_RUNTIME_MANAGEMENT", "cancel_model_pull("):
         if token not in inference_api:
             failures.append("Ollama API is missing local lifecycle/model operations: " + token)
+    for token in ("def list_running_local_models(", "def inspect_local_model(", "def unload_local_model(", '"keep_alive": 0', '"template_configured": bool'):
+        if token not in inference_core:
+            failures.append("Ollama model operations are missing: " + token)
     for token in ("def inspect_local_model(", "def unload_local_model(", '"keep_alive": 0', '"template_configured": bool'):
         if token not in inference_core:
             failures.append("Ollama model operations are missing: " + token)
-    for token in ("startLocalOllama:", "stopLocalOllama:", "startOllamaModelPull:", "cancelOllamaModelPull:", "inspectOllamaModel:", "unloadOllamaModel:", "export type OllamaModelDetails"):
+    for token in ("runningOllamaModels:", "startLocalOllama:", "stopLocalOllama:", "startOllamaModelPull:", "cancelOllamaModelPull:", "inspectOllamaModel:", "unloadOllamaModel:", "export type OllamaModelDetails"):
         if token not in client:
             failures.append("Typed Ollama client is missing a local model operation: " + token)
-    for token in ("Start Ollama", "Stop AXIOM service", "Pull model", "Cancel download", "Inspect model", "Unload from memory", "Local model metadata"):
+    for token in ("Start Ollama", "Stop AXIOM service", "Pull model", "Show loaded models", "Cancel download", "Inspect model", "Unload from memory", "Local model metadata"):
         if token not in inference_panel:
             failures.append("Runtime GUI is missing Ollama service/model controls: " + token)
-    for token in ('@service_app.command("start")', '@service_app.command("stop")', '@infer_app.command("pull")', '@infer_app.command("inspect")', '@infer_app.command("unload")'):
+    for token in ('@infer_app.command("ps")', '@service_app.command("start")', '@service_app.command("stop")', '@infer_app.command("pull")', '@infer_app.command("inspect")', '@infer_app.command("unload")'):
         if token not in ollama_cli:
             failures.append("Ollama CLI is missing a lifecycle/model command: " + token)
     for token in ("test_service_status_exposes_control_capabilities", "test_stop_refuses_to_signal_a_process_not_owned_by_axiom", "test_progress_output_removes_terminal_controls"):
         if token not in ollama_tests:
             failures.append("Ollama process-safety tests are missing: " + token)
-    for token in ("test_model_inspection_returns_metadata_without_model_templates", "test_unload_releases_memory_without_deleting_downloaded_model"):
+    for token in ("test_running_model_inventory_reports_loaded_memory_without_raw_content", "test_model_inspection_returns_metadata_without_model_templates", "test_unload_releases_memory_without_deleting_downloaded_model"):
         if token not in ollama_model_tests:
             failures.append("Ollama metadata/unload tests are missing: " + token)
-    for token in ("start Ollama, pull a model with progress", "Inspect model", "Unload from memory", '"/api/inference/models/inspect"', '"/api/inference/models/unload"'):
+    for token in ("start Ollama, pull a model with progress", "Show loaded models", "Inspect model", "Unload from memory", '"/api/inference/models/running"', '"/api/inference/models/inspect"', '"/api/inference/models/unload"'):
         if token not in ollama_e2e:
             failures.append("Ollama browser acceptance coverage is missing: " + token)
     trace_core = (root / "axiom/core/runtime_traces.py").read_text(encoding="utf-8")
