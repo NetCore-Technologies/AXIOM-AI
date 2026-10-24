@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Activity, Cpu, Play, RefreshCcw, Unplug } from "lucide-react";
+const formatMemoryBytes = (bytes: number | null | undefined): string => {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) return "not exposed";
+  if (bytes >= 1024 ** 3) return (bytes / 1024 ** 3).toFixed(2) + " GiB";
+  if (bytes >= 1024 ** 2) return (bytes / 1024 ** 2).toFixed(1) + " MiB";
+  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + " KiB";
+  return Math.round(bytes) + " B";
+};
 const formatEstimatedMemory = (gib: number): string => {
   if (!Number.isFinite(gib) || gib < 0) return "n/a";
   if (gib >= 0.01) return `${gib.toFixed(2)} GiB`;
@@ -8,7 +15,7 @@ const formatEstimatedMemory = (gib: number): string => {
   return `${(gib * 1024 ** 3).toFixed(0)} bytes`;
 };
 
-import { axiomApi, type AxiomEngineAdapterCompatibility, type AxiomEngineAssets, type AxiomEngineResult, type AxiomEngineStatus, type AxiomEngineStreamEvent, type AxiomQuantizationEstimate } from "../api/client";
+import { axiomApi, type AxiomEngineAdapterCompatibility, type AxiomEngineAssets, type AxiomEngineLiveTelemetry, type AxiomEngineResult, type AxiomEngineStatus, type AxiomEngineStreamEvent, type AxiomQuantizationEstimate } from "../api/client";
 
 export default function LocalAxiomEnginePanel() {
   const [status, setStatus] = useState<AxiomEngineStatus | null>(null);
@@ -30,6 +37,7 @@ export default function LocalAxiomEnginePanel() {
   const [seed, setSeed] = useState("");
   const [stopSequencesText, setStopSequencesText] = useState("");
   const [result, setResult] = useState<AxiomEngineResult | null>(null);
+  const [liveTelemetry, setLiveTelemetry] = useState<AxiomEngineLiveTelemetry | null>(null);
   const [streamResponse, setStreamResponse] = useState("");
   const [streamTokenCount, setStreamTokenCount] = useState(0);
   const activeStreamRef = useRef<AbortController | null>(null);
@@ -188,6 +196,7 @@ export default function LocalAxiomEnginePanel() {
     }
     const controller = new AbortController();
     activeStreamRef.current = controller;
+    setLiveTelemetry(null);
     setRunning(true);
     try {
       const completed = await axiomApi.streamAxiomEngine({
@@ -208,6 +217,8 @@ export default function LocalAxiomEnginePanel() {
           streamTokenCountRef.current = event.completion_tokens;
           setStreamTokenCount(event.completion_tokens);
           setStreamResponse(event.response);
+        } else if (event.type === "telemetry") {
+          setLiveTelemetry(event);
         } else if (event.type === "complete") {
           streamTokenCountRef.current = event.result.completion_tokens;
           setStreamTokenCount(event.result.completion_tokens);
@@ -228,6 +239,20 @@ export default function LocalAxiomEnginePanel() {
     }
   };
 
+  const telemetryMetrics = result ? {
+    stage: "complete",
+    prompt_tokens: result.prompt_tokens,
+    completion_tokens: result.completion_tokens,
+    prefill_ms: result.prefill_ms,
+    decode_ms: result.decode_ms,
+    time_to_first_token_ms: result.time_to_first_token_ms,
+    generation_tokens_per_second: result.generation_tokens_per_second,
+    elapsed_ms: result.elapsed_ms,
+    stop_reason: result.stop_reason,
+  } : liveTelemetry?.metrics;
+  const deviceMemory = result?.device_memory ?? liveTelemetry?.device_memory;
+  const memoryStats = result?.memory_stats ?? liveTelemetry?.memory_stats;
+  const telemetryMemoryMode = result?.memory_mode ?? liveTelemetry?.memory_mode ?? memoryMode;
   return <section className="surface axiom-engine-panel" aria-label="AXIOM local engine">
     <div className="surface-head">
       <div><p className="surface-eyebrow">AXIOM ENGINE · DIRECT LOCAL INFERENCE</p><h2>AXIOM Local Engine</h2></div>
@@ -412,6 +437,20 @@ export default function LocalAxiomEnginePanel() {
       </div><span className={`status-pill ${result ? "success" : running ? "warning" : "neutral"}`}><i />{result ? "COMPLETED" : running ? "GENERATING" : "CANCELLED"}</span></div>
       <pre data-testid={result ? "axiom-engine-output" : "axiom-engine-live-output"} className="local-inference-output">{(result ? result.response : streamResponse) || "(The model has not emitted printable text yet.)"}</pre>
       {!result && <p className="quiet-note">Cumulative text snapshots update as the native decoder emits tokens. {streamTokenCount} token(s) received.</p>}
+      {telemetryMetrics && <section className="surface" aria-label={result ? "Inference telemetry" : "Live inference telemetry"}>
+        <div className="surface-head"><div><p className="surface-eyebrow"><Activity size={14} /> {result ? "INFERENCE TELEMETRY" : "LIVE INFERENCE TELEMETRY"}</p><h4>{result ? "Run metrics" : "Generation · " + telemetryMetrics.stage}</h4></div>
+          <span className="status-pill"><i />{telemetryMetrics.stage}</span></div>
+        <div className="two-column-grid">
+          <article className="surface"><p className="surface-eyebrow">Tokens</p><h3>{telemetryMetrics.completion_tokens.toLocaleString()}</h3><p className="quiet-note">{telemetryMetrics.prompt_tokens.toLocaleString()} prompt tokens</p></article>
+          <article className="surface"><p className="surface-eyebrow">Throughput</p><h3>{telemetryMetrics.generation_tokens_per_second.toFixed(2)} tok/s</h3><p className="quiet-note">Native decoder estimate based on prefill + decode compute time</p></article>
+          <article className="surface"><p className="surface-eyebrow">Prefill · TTFT</p><h3>{telemetryMetrics.prefill_ms.toFixed(1)} ms</h3><p className="quiet-note">Time to first token: {telemetryMetrics.time_to_first_token_ms.toFixed(1)} ms</p></article>
+          <article className="surface"><p className="surface-eyebrow">Decode · wall time</p><h3>{telemetryMetrics.decode_ms.toFixed(1)} ms</h3><p className="quiet-note">Elapsed: {telemetryMetrics.elapsed_ms.toFixed(1)} ms</p></article>
+        </div>
+        <p className="quiet-note">Memory mode: {telemetryMemoryMode.replaceAll("_", " ")} · Process RSS: {formatMemoryBytes(deviceMemory?.process_rss_bytes)}{typeof deviceMemory?.process_rss_delta_bytes === "number" ? " (" + (deviceMemory.process_rss_delta_bytes >= 0 ? "+" : "") + formatMemoryBytes(Math.abs(deviceMemory.process_rss_delta_bytes)) + " since model load)" : ""} · Device: {deviceMemory?.backend ?? result?.device_selection?.selected ?? "unknown"}</p>
+        <p className="quiet-note">Device allocator current: {formatMemoryBytes(deviceMemory?.current_allocated_bytes)} · reserved: {formatMemoryBytes(deviceMemory?.current_reserved_bytes)} · peak allocated: {formatMemoryBytes(deviceMemory?.peak_allocated_bytes)} · peak reserved: {formatMemoryBytes(deviceMemory?.peak_reserved_bytes)}{typeof deviceMemory?.peak_increment_bytes === "number" ? " · peak increase: " + formatMemoryBytes(deviceMemory.peak_increment_bytes) : ""}</p>
+        {memoryStats && <p className="quiet-note">Layer staging: {formatMemoryBytes(memoryStats.layer_weight_bytes_staged)} · Returned to CPU: {formatMemoryBytes(memoryStats.layer_weight_bytes_returned_to_cpu)} · Disk reads: {memoryStats.disk_layer_weight_loads} tensor(s) / {formatMemoryBytes(memoryStats.disk_layer_weight_bytes_read)} · KV cache copied to CPU: {formatMemoryBytes(memoryStats.kv_cache_bytes_offloaded)}</p>}
+        {!deviceMemory?.device_allocator_metrics_supported && <p className="quiet-note">This backend does not expose allocator peak metrics through the installed PyTorch runtime. Null metrics are intentionally shown as "not exposed" rather than estimated.</p>}
+      </section>}
     </section>}
     <p className="quiet-note"><Cpu size={14} /> AXIOM owns this runtime and the LoRA training loop; the underlying pretrained base weights retain their original model licence.</p>
   </section>;
