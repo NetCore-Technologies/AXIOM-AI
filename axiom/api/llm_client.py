@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 from axiom.core import llm_client
 
 router = APIRouter(prefix="/api/llm", tags=["llm-client"])
-ProviderName = Literal["axiom-local", "openai", "anthropic", "gemini", "deepseek", "moonshot", "openrouter", "openai-compatible"]
+ProviderName = Literal["axiom-local", "ollama-local", "openai", "anthropic", "gemini", "deepseek", "moonshot", "openrouter", "openai-compatible"]
 
 
 class ProviderRequest(BaseModel):
@@ -77,7 +77,7 @@ def get_models(request: ProviderRequest) -> dict[str, Any]:
 
 @router.post("/chat")
 def run_chat(request: ChatRequest) -> dict[str, Any]:
-    if request.provider != "axiom-local" and not request.consent:
+    if request.provider not in {"axiom-local", "ollama-local"} and not request.consent:
         raise HTTPException(
             status_code=400,
             detail="Confirm that the selected cloud provider will receive this conversation before sending it.",
