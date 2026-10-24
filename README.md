@@ -3,7 +3,7 @@
 ![AXIOM. Know what fits before you train.](docs/assets/banner.svg)
 
 [![Status](https://img.shields.io/badge/status-beta-f59e0b?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI)
-[![Version](https://img.shields.io/badge/version-v0.3.0--beta.4-f59e0b?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
+[![Version](https://img.shields.io/badge/version-v0.3.0--beta.5-f59e0b?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
 [![License](https://img.shields.io/badge/license-MIT-7c3aed?style=flat-square&labelColor=0f172a)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&labelColor=0f172a&logo=python&logoColor=white)](https://www.python.org/)
 
@@ -158,6 +158,8 @@ The local API and Control Center use loopback addresses by default. The optional
 ## Documentation
 
 - [Install and troubleshooting](https://github.com/NetCore-Technologies/AXIOM-AI/wiki)
+- [My First AI starter project](examples/my-first-ai/README.md)
+- [Installer options and troubleshooting](installers/README.md)
 - [Changelog](docs/CHANGELOG.md)
 - [Local fine-tuning](docs/Local-Fine-Tuning.md)
 - [Model Studio](docs/Model-Studio.md)
@@ -195,3 +197,5 @@ AXIOM is available under the [MIT License](LICENSE).
 ## Machine-readable CLI output
 
 The following inventory and inspection commands expose versioned JSON payloads with `--json`: `axiom model list`, `axiom model info`, `axiom model inspect`, `axiom model search`, `axiom dataset inspect`, `axiom dataset validate`, `axiom dataset stats`, `axiom dataset clean --output out.jsonl --json`, `axiom integration list`, and `axiom engine discover`, `axiom model export`, `axiom model import`, `axiom model remove`, and `axiom model favorite`, and `axiom model update`. Dataset inspect/validate/stats share the same field names and include bounded line-level errors. JSON mode keeps useful output on stdout so it can be piped into scripts; validation failures preserve a non-zero exit code. `axiom model analyze --json` adds metadata/config-derived estimates and warnings; `axiom system info --json` includes detected hardware and clearly scoped fit heuristics.
+
+Built By @taxcollector23 and @manit6752025

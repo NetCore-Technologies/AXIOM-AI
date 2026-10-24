@@ -1,4 +1,19 @@
 # Changelog
+
+## 0.3.0-beta.5 — Beta candidate
+
+### Added and improved
+- Added workspace diagnostics and privacy-minimized support bundles through the CLI, API, and Control Center.
+- Added a roadmap audit command and GUI integrity reporting to make delivery status easier to verify.
+- Improved saved workflow design with templates, revision history, duplication, validation, and dry-run resource estimates.
+- Improved API Playground safety with a fixed read-only GET allowlist, bounded reads, request timeouts, and capped previews.
+- Continued hardening native inference controls, cancellation, runtime metrics, and CLI/API/GUI diagnostics.
+
+### Release status
+- Source metadata is aligned to 0.3.0-beta.5. This entry describes the intended candidate scope, not proof that every feature or platform has passed validation.
+- Publish only after the release workflow, platform installer smoke tests, interactive GUI checks, full test suite, and package/tag version checks succeed.
+- The npm package is @netcore-technologies/axiom-cli; its version is tracked separately from the private axiom-ui development package.
+
 ## Unreleased — safer configuration guidance
 
 - Add stable configuration validation error codes, bounded YAML shape checks, and non-mutating repair suggestions.

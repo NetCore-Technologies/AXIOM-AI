@@ -1,5 +1,9 @@
 # AXIOM release builds
 
+## v0.3.0-beta.5 — Beta candidate
+
+The source metadata and installer examples target `v0.3.0-beta.5`. This is a candidate release note, not confirmation that assets have been built, tested, or published. Check the [GitHub Releases page](https://github.com/NetCore-Technologies/AXIOM-AI/releases) and [release workflow](https://github.com/NetCore-Technologies/AXIOM-AI/actions/workflows/release-assets.yml) for actual status.
+
 AXIOM releases package the terminal CLI and its local daemon. The supported
 product surface is the static landing page, the Python command line, and the
 dependency-free loopback daemon; there is no hosted workspace or browser
