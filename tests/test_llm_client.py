@@ -179,3 +179,63 @@ def test_custom_provider_requires_public_https_v1_base(monkeypatch: pytest.Monke
     assert result == "https://public.example/api/v1"
     with pytest.raises(ValueError, match="custom base URL"):
         llm_client._base_url("deepseek", "https://other.example/v1")
+
+
+def test_public_address_pinning_rejects_private_dns_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    import socket
+
+    monkeypatch.setattr(
+        llm_client.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443)),
+        ],
+    )
+    with pytest.raises(llm_client.LLMClientError, match="non-public address"):
+        llm_client._resolve_public_addresses("https://provider.example/v1")
+
+
+def test_custom_provider_uses_pinned_public_ip_and_never_follows_redirects(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeResponse:
+        status = 200
+
+        def read(self, limit: int) -> bytes:
+            captured["response_limit"] = limit
+            return b'{"data":[{"id":"remote-test-model"}]}'
+
+    class FakeConnection:
+        def __init__(self, host: str, **kwargs: Any) -> None:
+            captured["host"] = host
+            captured["connection_options"] = kwargs
+
+        def request(self, method: str, path: str, *, body: bytes | None, headers: dict[str, str]) -> None:
+            captured.update({"method": method, "path": path, "body": body, "headers": headers})
+
+        def getresponse(self) -> FakeResponse:
+            return FakeResponse()
+
+        def close(self) -> None:
+            captured["closed"] = True
+
+    monkeypatch.setattr(llm_client, "validate_remote_base_url", lambda value: value.rstrip("/"))
+    monkeypatch.setattr(llm_client, "_resolve_public_addresses", lambda _base: ("93.184.216.34",))
+    monkeypatch.setattr(llm_client, "_PinnedHTTPSConnection", FakeConnection)
+
+    response = llm_client._provider_request(
+        "openai-compatible",
+        "secret-sentinel",
+        "/models",
+        base_url="https://provider.example/api/v1",
+    )
+
+    assert response == {"data": [{"id": "remote-test-model"}]}
+    assert captured["host"] == "provider.example"
+    assert captured["connection_options"]["addresses"] == ("93.184.216.34",)
+    assert captured["path"] == "/api/v1/models"
+    assert captured["method"] == "GET"
+    assert captured["headers"]["Authorization"] == "Bearer secret-sentinel"
+    assert captured["closed"] is True
+    assert "secret-sentinel" not in str(response)
