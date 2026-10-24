@@ -187,6 +187,11 @@ def test_generate_request_rejects_invalid_stop_sequence_lists(monkeypatch) -> No
     assert engine_api.GenerateRequest(**base, memory_mode="disk_streaming").memory_mode == "disk_streaming"
     with pytest.raises(ValidationError, match="memory_mode"):
         engine_api.GenerateRequest(**base, memory_mode="automatic")
+    assert engine_api.GenerateRequest(**base).min_p == 0.0
+    with pytest.raises(ValidationError, match="min_p"):
+        engine_api.GenerateRequest(**base, min_p=1.1)
+    with pytest.raises(ValidationError, match="min_p"):
+        engine_api.GenerateRequest(**base, min_p=-0.01)
     with pytest.raises(ValidationError, match="stop sequences|Stop sequences"):
         GenerateRequest(**base, stop_sequences=[" "])
     with pytest.raises(ValidationError, match="stop sequence|Stop sequence"):
@@ -467,6 +472,7 @@ def test_engine_stream_endpoint_yields_token_snapshots_and_final_metrics(tmp_pat
             "temperature": 0.7,
             "top_p": 0.9,
             "top_k": 0,
+            "min_p": 0.0,
             "repetition_penalty": 1.0,
             "seed": None,
         },
@@ -499,6 +505,7 @@ def test_engine_stream_endpoint_yields_token_snapshots_and_final_metrics(tmp_pat
         "temperature": 0.7,
         "top_p": 0.9,
         "top_k": 0,
+        "min_p": 0.0,
         "repetition_penalty": 1.0,
         "seed": None,
     }
