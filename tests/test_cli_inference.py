@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typer.main import get_command
 from typer.testing import CliRunner
 
 from axiom.cli.main import app
@@ -29,9 +28,7 @@ def test_infer_service_commands_are_registered():
 def test_infer_pull_command_is_registered(plain):
     result = CliRunner().invoke(app, ["--no-banner", "infer", "pull", "--help"])
     assert result.exit_code == 0, plain(result.output)
-    pull_command = get_command(app).commands["infer"].commands["pull"]
-    argument_help = " ".join(str(getattr(parameter, "help", "") or "") for parameter in pull_command.params)
-    assert "Ollama model tag" in argument_help
+    assert "Ollama model tag" in plain(result.output)
 
 
 def test_infer_model_operation_commands_are_registered():
