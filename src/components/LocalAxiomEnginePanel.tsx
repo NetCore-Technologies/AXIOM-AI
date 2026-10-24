@@ -15,10 +15,11 @@ const formatEstimatedMemory = (gib: number): string => {
   return `${(gib * 1024 ** 3).toFixed(0)} bytes`;
 };
 
-import { axiomApi, type AxiomEngineAdapterCompatibility, type AxiomEngineAssets, type AxiomEngineLiveTelemetry, type AxiomEngineResult, type AxiomEngineStatus, type AxiomEngineStreamEvent, type AxiomQuantizationEstimate } from "../api/client";
+import { axiomApi, type AxiomEngineAdapterCompatibility, type AxiomEngineAssets, type AxiomEngineLiveTelemetry, type AxiomEngineResult, type AxiomEngineStatus, type AxiomEngineStreamEvent, type AxiomEngineSystemTelemetry, type AxiomQuantizationEstimate } from "../api/client";
 
 export default function LocalAxiomEnginePanel() {
   const [status, setStatus] = useState<AxiomEngineStatus | null>(null);
+  const [systemTelemetry, setSystemTelemetry] = useState<AxiomEngineSystemTelemetry | null>(null);
   const [assets, setAssets] = useState<AxiomEngineAssets | null>(null);
   const [adapterCompatibility, setAdapterCompatibility] = useState<AxiomEngineAdapterCompatibility | null>(null);
   const [checkingAdapter, setCheckingAdapter] = useState(false);
@@ -60,6 +61,11 @@ export default function LocalAxiomEnginePanel() {
     setError("");
     try {
       setStatus(await axiomApi.axiomEngineStatus());
+      try {
+        setSystemTelemetry(await axiomApi.axiomEngineTelemetry());
+      } catch {
+        setSystemTelemetry(null);
+      }
     } catch (cause) {
       setStatus(null);
       setError(cause instanceof Error ? cause.message : "AXIOM Native Engine status is unavailable.");
@@ -279,6 +285,17 @@ export default function LocalAxiomEnginePanel() {
         {device.memory_total_gib !== null && <p className="quiet-note">Memory: {device.memory_free_gib ?? "n/a"} GiB free / {device.memory_total_gib} GiB total</p>}
         <p className="quiet-note">{device.reason}</p>
       </article>)}
+    </section>}
+    {systemTelemetry && <section className="panel-surface" aria-label="System resource telemetry" style={{ padding: 12, marginBottom: 14 }}>
+      <div className="surface-head"><div><p className="surface-eyebrow"><Activity size={14} /> SYSTEM TELEMETRY</p><h3>Point-in-time resource snapshot</h3></div><small className="quiet-note">Sampled {new Date(systemTelemetry.sampled_at).toLocaleTimeString()}</small></div>
+      <div className="two-column-grid">
+        <article className="surface"><p className="surface-eyebrow">System CPU</p><h3>{systemTelemetry.cpu.system_percent === null ? "not exposed" : systemTelemetry.cpu.system_percent.toFixed(1) + "%"}</h3><p className="quiet-note">{systemTelemetry.cpu.logical_cores ?? "?"} logical cores</p></article>
+        <article className="surface"><p className="surface-eyebrow">System RAM</p><h3>{formatMemoryBytes(systemTelemetry.memory.available_bytes)} free</h3><p className="quiet-note">{formatMemoryBytes(systemTelemetry.memory.used_bytes)} used / {formatMemoryBytes(systemTelemetry.memory.total_bytes)} total{systemTelemetry.memory.percent === null ? "" : " · " + systemTelemetry.memory.percent.toFixed(1) + "% used"}</p></article>
+        <article className="surface"><p className="surface-eyebrow">AXIOM process</p><h3>{formatMemoryBytes(systemTelemetry.process.rss_bytes)} RSS</h3><p className="quiet-note">{systemTelemetry.cpu.process_percent === null ? "CPU usage not exposed" : systemTelemetry.cpu.process_percent.toFixed(1) + "% CPU"} · {systemTelemetry.process.threads ?? "?"} threads</p></article>
+        <article className="surface"><p className="surface-eyebrow">Trusted model storage</p><h3>{systemTelemetry.disks.length} root(s)</h3><p className="quiet-note">{systemTelemetry.disks.length ? systemTelemetry.disks.map(disk => disk.label + ": " + formatMemoryBytes(disk.free_bytes) + " free").join(" · ") : "No trusted model roots are currently available."}</p></article>
+      </div>
+      {systemTelemetry.loaded_runtime.device_allocator && <p className="quiet-note">Loaded-device allocator: {formatMemoryBytes(systemTelemetry.loaded_runtime.device_allocator.current_allocated_bytes)} allocated · {formatMemoryBytes(systemTelemetry.loaded_runtime.device_allocator.current_reserved_bytes)} reserved · {formatMemoryBytes(systemTelemetry.loaded_runtime.device_allocator.peak_allocated_bytes)} peak allocated</p>}
+      <p className="quiet-note">{systemTelemetry.scope_note} Raw paths, prompts, generated text, environment values and credentials are omitted.</p>
     </section>}
     {lifecycleNotice && <div className="inline-alert success" role="status">{lifecycleNotice}</div>}
     <form onSubmit={(event) => void run(event)}>
