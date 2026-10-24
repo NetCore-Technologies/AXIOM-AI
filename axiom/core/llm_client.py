@@ -340,6 +340,7 @@ def chat(
             "credential_storage": "not_applicable",
             "execution": "local",
             "device": final.get("device"),
+            "context_management": final.get("context_management"),
             "generated_at": datetime.now(UTC).isoformat(),
         }
     if provider not in _PROVIDER_CONFIG:
