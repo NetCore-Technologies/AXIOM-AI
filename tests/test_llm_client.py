@@ -20,11 +20,11 @@ def test_provider_catalog_lists_local_and_cloud_adapters_without_credentials() -
 def test_local_model_inventory_uses_only_native_compatible_models(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         llm_client,
-        "_native_models",
-        lambda: [
+        "discover_local_engine_assets",
+        lambda: {"models": [
             {"name": "local-llama", "path": "/trusted/local-llama", "model_type": "llama", "architecture": "LlamaForCausalLM"},
             {"name": "local-gguf", "path": "/trusted/local-gguf", "model_type": "gguf", "architecture": None},
-        ],
+        ]},
     )
 
     result = llm_client.list_models("axiom-local")
