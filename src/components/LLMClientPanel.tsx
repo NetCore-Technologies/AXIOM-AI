@@ -46,7 +46,7 @@ export default function LLMClientPanel() {
       });
       setModels(next.models);
       setModel((current) => current && next.models.includes(current) ? current : next.models[0] || current);
-      if (next.models.length === 0) setError("No models were returned. Check provider access or enter a model ID manually.");
+      if (next.models.length === 0) setError(next.note || "No models were returned. Check provider access or enter a model ID manually.");
     } catch (cause) {
       setModels([]);
       setError(cause instanceof Error ? cause.message : "The model catalogue could not be loaded.");
