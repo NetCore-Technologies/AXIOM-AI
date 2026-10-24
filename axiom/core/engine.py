@@ -1084,6 +1084,17 @@ def generate_local_stream(
                             "response": response,
                             "completion_tokens": len(generated_ids),
                         }
+                        live_metrics = getattr(model, "live_generation", None)
+                        if isinstance(live_metrics, dict):
+                            yield {
+                                "type": "telemetry",
+                                "metrics": dict(live_metrics),
+                                "memory_mode": getattr(model, "memory_mode", memory_mode),
+                                "memory_stats": dict(getattr(model, "memory_stats", {})),
+                                "device_memory": _device_memory_snapshot(
+                                    torch, device, selected_backend=selected_backend, baseline=device_memory_before
+                                ),
+                            }
                     # Closing now finalizes the native generator's metrics and
                     # releases the KV cache before the completion event is built.
                     close_iterator = getattr(iterator, "close", None)
@@ -1099,6 +1110,17 @@ def generate_local_stream(
                         "response": response,
                         "completion_tokens": len(generated_ids),
                     }
+                    live_metrics = getattr(model, "live_generation", None)
+                    if isinstance(live_metrics, dict):
+                        yield {
+                            "type": "telemetry",
+                            "metrics": dict(live_metrics),
+                            "memory_mode": getattr(model, "memory_mode", memory_mode),
+                            "memory_stats": dict(getattr(model, "memory_stats", {})),
+                            "device_memory": _device_memory_snapshot(
+                                torch, device, selected_backend=selected_backend, baseline=device_memory_before
+                            ),
+                        }
 
             if stop_reason != "stop_sequence":
                 # Flush any partial stop-prefix back into the final text if no
