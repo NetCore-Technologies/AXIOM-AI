@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, generate_local, generate_local_stream, runtime_status, runtime_telemetry
+from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, estimate_native_quantization, generate_local, generate_local_stream, runtime_status, runtime_telemetry
 from axiom.core import model_studio
 from axiom.core.engine_fabric import EngineFabricError, discover_engine_backends, run_engine_backend_benchmark, run_engine_backend_chat
 
@@ -96,6 +96,101 @@ def engine_status(json_output: bool = typer.Option(False, "--json", help="Print 
             console.print(f"[yellow]{report['setup_note']}[/yellow]")
     if not report["ready"]:
         raise typer.Exit(code=1)
+
+
+@engine_app.command("estimate")
+def engine_estimate(
+    model_path: Path = typer.Option(
+        ...,
+        "--model-path",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        help="Existing local checkpoint directory under an AXIOM trusted model root.",
+    ),
+    context_length: int = typer.Option(
+        4096,
+        "--context-length",
+        min=1,
+        max=131072,
+        help="Context tokens used for the estimate (1–131072).",
+    ),
+    batch_size: int = typer.Option(
+        1,
+        "--batch-size",
+        min=1,
+        max=16,
+        help="Concurrent sequences included in the estimate (1–16).",
+    ),
+    ram_budget_gib: float | None = typer.Option(
+        None,
+        "--ram-budget-gib",
+        min=0.1,
+        max=2048,
+        help="Available system-memory budget in GiB.",
+    ),
+    vram_budget_gib: float | None = typer.Option(
+        None,
+        "--vram-budget-gib",
+        min=0.1,
+        max=2048,
+        help="Available accelerator-memory budget in GiB.",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print the complete estimate as JSON."),
+) -> None:
+    """Compare bounded model-memory estimates with RAM/VRAM budgets; no weights are loaded."""
+    if ram_budget_gib is None and vram_budget_gib is None:
+        _fail("Supply at least one memory budget: --ram-budget-gib and/or --vram-budget-gib.")
+    try:
+        report = estimate_native_quantization(
+            str(model_path),
+            context_length=context_length,
+            batch_size=batch_size,
+            ram_budget_gib=ram_budget_gib,
+            vram_budget_gib=vram_budget_gib,
+        )
+    except (ValueError, AxiomEngineError) as exc:
+        _fail(str(exc))
+    if json_output:
+        typer.echo(json.dumps(report, indent=2, ensure_ascii=False))
+        return
+
+    table = Table(title=f"Estimated model memory · {report['model']['name']}")
+    table.add_column("Format", style="cyan")
+    table.add_column("Weights")
+    table.add_column("KV cache")
+    table.add_column("Workspace")
+    table.add_column("Total")
+    table.add_column("Estimated range")
+    table.add_column("RAM budget")
+    table.add_column("VRAM budget")
+    table.add_column("Native format")
+    for candidate in report["candidates"]:
+        low, high = candidate["estimated_range_gib"]
+
+        def budget_result(value: bool | None) -> str:
+            return "not set" if value is None else "fits" if value else "over budget"
+
+        table.add_row(
+            candidate["format"],
+            f"{candidate['estimated_weight_gib']:.6f} GiB",
+            f"{candidate['estimated_kv_cache_gib']:.6f} GiB",
+            f"{candidate['estimated_workspace_gib']:.6f} GiB",
+            f"{candidate['estimated_total_gib']:.6f} GiB",
+            f"{low:.6f}–{high:.6f} GiB",
+            budget_result(candidate["fits_ram_budget"]),
+            budget_result(candidate["fits_vram_budget"]),
+            "yes" if candidate["native_checkpoint_supported"] else "no",
+        )
+    console.print(table)
+    recommendation = report["recommendation"]
+    console.print(Panel(
+        f"Recommended: {recommendation['format'] or 'none'} · {recommendation['status']}\n"
+        f"{recommendation['note']}",
+        title="AXIOM planning recommendation",
+    ))
+    console.print(report["scope_note"])
 
 
 @engine_app.command("telemetry")
