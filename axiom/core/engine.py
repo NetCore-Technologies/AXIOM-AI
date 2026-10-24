@@ -310,16 +310,16 @@ def runtime_status() -> dict[str, Any]:
         "transformers_generation_used": False,
         "ollama_used": False,
         "remote_code": False,
-        "supported_model_types": ["llama", "mistral", "qwen2"],
+        "supported_model_types": ["llama", "mistral", "qwen2", "qwen3"],
         "supported_weights": ["safetensors"],
         "setup_note": (
-            "AXIOM Native Engine is ready for supported local Llama/Mistral/Qwen2 safetensors checkpoints."
+            "AXIOM Native Engine is ready for supported local Llama/Mistral/Qwen2/Qwen3 safetensors checkpoints."
             if ready else
             "AXIOM Native Engine setup required: " + "; ".join(problems)
             + ". Install with: python -m pip install -e '.[native-inference]'"
         ),
         "scope_note": (
-            "AXIOM implements its own Llama/Mistral/Qwen2 forward pass, RMSNorm, RoPE, grouped-query attention, KV cache, "
+            "AXIOM implements its own Llama/Mistral/Qwen2/Qwen3 forward pass, RMSNorm, RoPE, grouped-query attention, KV cache, "
             "LoRA application and token-by-token decoder using PyTorch tensor operations. It supports full-weight, "
             "CPU-staged layer streaming, and disk-resident safetensors layer streaming with CPU KV-cache offload. It does not call "
             "Transformers model.generate or an Ollama server. Model Studio can pull compatible public checkpoints; quantized "
@@ -1200,13 +1200,13 @@ def _format_prompt_for_native_model(
         try:
             from jinja2.sandbox import SandboxedEnvironment
         except ImportError:
-            if model_type == "qwen2":
+            if model_type in {"qwen2", "qwen3"}:
                 fallback_messages = chat_messages or [{"role": "user", "content": prompt}]
                 rendered = "".join(
                     f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>\n"
                     for message in fallback_messages
                 ) + "<|im_start|>assistant\n"
-                return rendered, "qwen2-chatml-fallback"
+                return rendered, f"{model_type}-chatml-fallback"
             raise AxiomEngineError(
                 "This checkpoint supplies a chat template, but Jinja2 is unavailable. Install the template runtime dependency or use a raw/completion checkpoint."
             ) from None
@@ -1245,20 +1245,20 @@ def _format_prompt_for_native_model(
         return rendered, "tokenizer-config-template"
 
     if chat_messages:
-        if model_type == "qwen2":
+        if model_type in {"qwen2", "qwen3"}:
             rendered = "".join(
                 f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>\n"
                 for message in chat_messages
             ) + "<|im_start|>assistant\n"
-            return rendered, "qwen2-chatml-fallback"
+            return rendered, f"{model_type}-chatml-fallback"
         rendered = "\n\n".join(
             f"{message['role'].upper()}:\n{message['content']}" for message in chat_messages
         ) + "\n\nASSISTANT:\n"
         return rendered, "role-labelled-chat-fallback"
-    if model_type == "qwen2":
-        # Standard Qwen2 text-instruct checkpoints use ChatML markers even when
+    if model_type in {"qwen2", "qwen3"}:
+        # Standard Qwen2/Qwen3 text-instruct checkpoints use ChatML markers even when
         # older/custom releases omit an exported chat_template.
-        return f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n", "qwen2-chatml-fallback"
+        return f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n", f"{model_type}-chatml-fallback"
     return prompt, "raw-completion"
 
 
