@@ -16,13 +16,19 @@ test("Runtime GUI submits bounded prompts to the local inference API and display
     scope_note: "Presence is not a connection.", connectors: [],
   } }));
   let received: Record<string, unknown> | null = null;
-  await page.route("**/api/inference/generate", async (route) => {
+  await page.route("**/api/inference/generate/stream", async (route) => {
     received = route.request().postDataJSON() as Record<string, unknown>;
-    await route.fulfill({ json: {
-      model: "qwen2.5:0.5b", response: "Hello from the mocked local model.", done: true,
-      prompt_eval_count: 4, eval_count: 6, total_duration_ms: 21.4, generated_at: "2026-10-21T00:00:00Z",
-    } });
+    const events = [
+      { type: "token", token: "Hello from the mocked local model." },
+      { type: "complete", result: {
+        request_id: "stream-test-request", model: "qwen2.5:0.5b", response: "", done: true,
+        done_reason: "stop", prompt_eval_count: 4, eval_count: 6,
+        total_duration_ms: 21.4, generated_at: "2026-10-21T00:00:00Z", execution: "local",
+      } },
+    ];
+    await route.fulfill({ status: 200, contentType: "application/x-ndjson", body: events.map((event) => JSON.stringify(event)).join("\\n") + "\\n" });
   });
+
 
   await page.goto("/?page=runtime");
   await expect(page.getByRole("heading", { name: "Local model inference" })).toBeVisible();
