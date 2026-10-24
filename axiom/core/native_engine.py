@@ -40,6 +40,14 @@ def _apply_top_k_filter(scores: Any, top_k: int, torch_module: Any) -> Any:
     return scores.masked_fill(~selected, float("-inf"))
 
 
+def _apply_min_p_filter(scores: Any, min_p: float, torch_module: Any) -> Any:
+    """Discard tokens whose score is too far below the highest logit."""
+    if min_p <= 0:
+        return scores
+    threshold = scores.max(dim=-1, keepdim=True).values + math.log(min_p)
+    return scores.masked_fill(scores < threshold, float("-inf"))
+
+
 def _sanitize_sampling_scores(scores: Any, torch_module: Any) -> Any:
     """Make decoder logits safe for argmax/softmax without inventing a fallback token."""
     if bool(torch_module.isfinite(scores).all().item()):
@@ -873,6 +881,7 @@ class NativeLlamaRuntime:
         temperature: float,
         top_p: float = 0.9,
         top_k: int = 0,
+        min_p: float = 0.0,
         repetition_penalty: float = 1.0,
         seed: int | None = None,
         eos_token_ids: tuple[int, ...] | None = None,
@@ -889,6 +898,8 @@ class NativeLlamaRuntime:
             raise NativeEngineError("Native generation top_p must be greater than 0 and at most 1.")
         if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
             raise NativeEngineError("Native generation top_k must be an integer from 0 through 100000 (0 disables top-k).")
+        if isinstance(min_p, bool) or not isinstance(min_p, (int, float)) or not math.isfinite(float(min_p)) or not 0 <= float(min_p) <= 1:
+            raise NativeEngineError("Native generation min_p must be between 0 and 1 (0 disables min-p).")
         if not math.isfinite(float(repetition_penalty)) or not 0.1 <= float(repetition_penalty) <= 5:
             raise NativeEngineError("Native repetition_penalty must be between 0.1 and 5.")
         if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= (2**63 - 1)):
@@ -979,6 +990,7 @@ class NativeLlamaRuntime:
                             remove[..., 0] = False
                             sorted_scores = sorted_scores.masked_fill(remove, float("-inf"))
                             scores = torch.full_like(scores, float("-inf")).scatter(dim=-1, index=sorted_ids, src=sorted_scores)
+                        scores = _apply_min_p_filter(scores, float(min_p), torch)
                         if not bool(torch.isfinite(scores).any().item()):
                             raise NativeEngineError(
                                 "Native sampling filters removed every usable token."
@@ -1038,6 +1050,7 @@ class NativeLlamaRuntime:
                 "decoder": "axiom-autoregressive-kv-cache",
                 "top_p": float(top_p),
                 "top_k": top_k,
+                "min_p": float(min_p),
                 "repetition_penalty": float(repetition_penalty),
                 "seed": seed,
                 "stop_reason": stop_reason,
