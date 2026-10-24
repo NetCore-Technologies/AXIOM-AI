@@ -134,6 +134,12 @@ def test_gui_port_rejects_invalid_environment_configuration(monkeypatch):
         raise AssertionError("Out-of-range AXIOM_GUI_PORT must be rejected")
 
 
+def test_unified_llm_cli_exposes_min_p_for_local_generation():
+    result = runner.invoke(app, ["llm", "chat", "--help"])
+    assert result.exit_code == 0, result.stdout
+    assert "--min-p" in result.stdout
+
+
 def test_engine_fabric_cli_advertises_native_backend_and_sampler_contract():
     from typer.main import get_command
 
