@@ -393,15 +393,18 @@ def _validate_generation(model: str, max_tokens: int, temperature: float) -> tup
 def _validate_sampling_options(
     top_p: float,
     top_k: int,
+    min_p: float,
     repetition_penalty: float,
     seed: int | None,
     stop_sequences: list[str] | tuple[str, ...],
-) -> tuple[float, int, float, int | None, tuple[str, ...]]:
+) -> tuple[float, int, float, float, int | None, tuple[str, ...]]:
     """Validate shared controls for local inference engines."""
     if isinstance(top_p, bool) or not isinstance(top_p, (int, float)) or not math.isfinite(float(top_p)) or not 0 < float(top_p) <= 1:
         raise ValueError("Top-p must be a finite number greater than 0 and at most 1.")
     if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
         raise ValueError("Top-k must be an integer between 0 and 100,000; 0 disables the limit.")
+    if isinstance(min_p, bool) or not isinstance(min_p, (int, float)) or not math.isfinite(float(min_p)) or not 0 <= float(min_p) <= 1:
+        raise ValueError("Min-p must be a finite number between 0 and 1.")
     if isinstance(repetition_penalty, bool) or not isinstance(repetition_penalty, (int, float)) or not math.isfinite(float(repetition_penalty)) or not 0.1 <= float(repetition_penalty) <= 5:
         raise ValueError("Repetition penalty must be a finite number between 0.1 and 5.")
     if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 9_223_372_036_854_775_807):
@@ -416,7 +419,7 @@ def _validate_sampling_options(
             raise ValueError("Each stop sequence is limited to 256 characters.")
         if value not in stops:
             stops.append(value)
-    return float(top_p), top_k, float(repetition_penalty), seed, tuple(stops)
+    return float(top_p), top_k, float(min_p), float(repetition_penalty), seed, tuple(stops)
 
 
 def _extract_openai(data: dict[str, Any]) -> tuple[str, int | None, int | None]:
@@ -467,6 +470,7 @@ def chat(
     temperature: float = 0.7,
     top_p: float = 0.9,
     top_k: int = 0,
+    min_p: float = 0.0,
     repetition_penalty: float = 1.0,
     seed: int | None = None,
     stop_sequences: list[str] | tuple[str, ...] = (),
@@ -478,8 +482,8 @@ def chat(
     """Run one local or explicitly consented remote chat completion."""
     normalized = _validate_messages(messages)
     model_id, token_limit, temp = _validate_generation(model, max_tokens, temperature)
-    top_p, top_k, repetition_penalty, seed, stops = _validate_sampling_options(
-        top_p, top_k, repetition_penalty, seed, stop_sequences
+    top_p, top_k, min_p, repetition_penalty, seed, stops = _validate_sampling_options(
+        top_p, top_k, min_p, repetition_penalty, seed, stop_sequences
     )
     if provider == _LOCAL_PROVIDER:
         if base_url or api_key:
@@ -504,6 +508,7 @@ def chat(
                 temperature=temp,
                 top_p=top_p,
                 top_k=top_k,
+                min_p=min_p,
                 repetition_penalty=repetition_penalty,
                 seed=seed,
                 stop_sequences=stops,
@@ -544,6 +549,7 @@ def chat(
                 temperature=temp,
                 top_p=top_p,
                 top_k=top_k,
+                min_p=min_p,
                 repetition_penalty=repetition_penalty,
                 seed=seed,
                 stop_sequences=stops,
@@ -563,7 +569,7 @@ def chat(
         }
     if provider not in _PROVIDER_CONFIG:
         raise ValueError(f"Unsupported LLM provider: {provider!r}.")
-    if top_p != 0.9 or top_k != 0 or repetition_penalty != 1.0 or seed is not None or stops:
+    if top_p != 0.9 or top_k != 0 or min_p != 0.0 or repetition_penalty != 1.0 or seed is not None or stops:
         raise ValueError("Advanced sampling controls currently support the local AXIOM Native Engine and Ollama providers only; no settings were sent to the cloud provider.")
     if not consent:
         raise ValueError("Explicitly confirm that the selected cloud provider will receive your conversation before sending it.")
