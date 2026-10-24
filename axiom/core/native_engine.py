@@ -575,6 +575,21 @@ class NativeLlamaRuntime:
                     raise NativeEngineError(f"Precision {precision!r} is not available in the installed PyTorch runtime.")
                 if precision != "auto" and precision == "bf16" and str(getattr(device, "type", device)).split(":", 1)[0] == "mps":
                     raise NativeEngineError("BF16 compute precision is not supported by the AXIOM MPS backend contract; choose auto, fp16, or fp32.")
+                if precision == "bf16":
+                    backend_name = str(getattr(device, "type", device)).split(":", 1)[0]
+                    backend = getattr(torch_module, backend_name, None)
+                    probe = getattr(backend, "is_bf16_supported", None)
+                    if backend_name in {"cuda", "xpu"} and callable(probe):
+                        try:
+                            supported = probe()
+                        except TypeError:
+                            supported = probe(device=device)
+                        except Exception:
+                            supported = None
+                        if supported is False:
+                            raise NativeEngineError(
+                                f"BF16 compute precision is not supported by the selected {backend_name.upper()} device; choose auto, fp16, or fp32."
+                            )
                 weight_shapes["model.embed_tokens.weight"] = tuple(int(dimension) for dimension in embedding.shape)
                 weights["model.embed_tokens.weight"] = embedding.to(device=device, dtype=dtype)
                 load_names = [name for name in required if name != "model.embed_tokens.weight"]
