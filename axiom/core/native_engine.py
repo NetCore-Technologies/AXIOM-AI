@@ -17,7 +17,7 @@ _MAX_CONFIG_BYTES = 1_048_576
 _MAX_TOKENIZER_BYTES = 64 * 1024 * 1024
 _MAX_INDEX_BYTES = 64 * 1024 * 1024
 _MAX_WEIGHT_SHARDS = 512
-_SUPPORTED_MODEL_TYPES = {"llama", "mistral"}
+_SUPPORTED_MODEL_TYPES = {"llama", "mistral", "qwen2"}
 
 class NativeEngineError(ValueError):
     """An unsupported, unsafe, or invalid native-engine checkpoint."""
@@ -49,10 +49,10 @@ class NativeLlamaConfig:
     def from_mapping(cls, value: Mapping[str, Any]) -> "NativeLlamaConfig":
         model_type = value.get("model_type")
         if model_type not in _SUPPORTED_MODEL_TYPES:
-            raise NativeEngineError("AXIOM Native Engine supports llama and mistral model_type only; there is no Transformers/Ollama fallback.")
+            raise NativeEngineError("AXIOM Native Engine supports llama, mistral, and qwen2 model_type only; there is no Transformers/Ollama fallback.")
         architectures = value.get("architectures", [])
-        if architectures and not any(isinstance(x, str) and x in {"LlamaForCausalLM", "MistralForCausalLM"} for x in architectures):
-            raise NativeEngineError("Checkpoint architecture is not a supported Llama/Mistral causal-LM class.")
+        if architectures and not any(isinstance(x, str) and x in {"LlamaForCausalLM", "MistralForCausalLM", "Qwen2ForCausalLM"} for x in architectures):
+            raise NativeEngineError("Checkpoint architecture is not a supported Llama/Mistral/Qwen2 causal-LM class.")
         rope = value.get("rope_scaling")
         if rope:
             if not isinstance(rope, dict) or rope.get("rope_type", rope.get("type", "default")) != "default" or rope.get("factor", 1.0) != 1.0:
@@ -211,7 +211,7 @@ def inspect_native_adapter_compatibility(
         mapping = _read_json_object(model_dir / "config.json", _MAX_CONFIG_BYTES, "Model config.json", roots)
         config = NativeLlamaConfig.from_mapping(mapping)
         model_type = config.model_type
-        architecture = "LlamaForCausalLM" if model_type == "llama" else "MistralForCausalLM"
+        architecture = {"llama": "LlamaForCausalLM", "mistral": "MistralForCausalLM", "qwen2": "Qwen2ForCausalLM"}[model_type]
         layer_count = config.num_hidden_layers
         tokenizer_path = _resolve_trusted_file(model_dir / "tokenizer.json", roots, "Tokenizer file")
         if tokenizer_path.stat().st_size > _MAX_TOKENIZER_BYTES:
