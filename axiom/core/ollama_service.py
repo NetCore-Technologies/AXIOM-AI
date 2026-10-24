@@ -302,10 +302,16 @@ def start_service() -> dict[str, Any]:
             time.sleep(0.1)
         if record is None:
             try:
-                process.terminate()
-            except OSError:
+                if process.poll() is None:
+                    process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=3)
+            except (OSError, subprocess.TimeoutExpired):
                 pass
-            raise OllamaServiceError("AXIOM could not verify ownership of the started Ollama process; it was not registered for later stop.")
+            raise OllamaServiceError("AXIOM could not verify ownership of the started Ollama process; the process was terminated and not registered for later stop.")
 
         while time.monotonic() < deadline:
             if process.poll() is not None:
