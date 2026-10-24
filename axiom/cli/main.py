@@ -79,6 +79,7 @@ mcp_app.add_typer(mcp_profile_app, name="profile")
 app.add_typer(tools_app, name="tools")
 
 app.add_typer(ai_app, name="ai")
+app.add_typer(optimizer_app, name="optimize")
 train_app = typer.Typer(help="Plan and manage AI training jobs.")
 experiment_app = typer.Typer(help="Review saved local experiment plans.", no_args_is_help=True)
 workflow_app = typer.Typer(help="Inspect saved local workflow designs.", no_args_is_help=True)
@@ -1809,5 +1810,3 @@ def mcp_serve():
 
 if __name__ == "__main__":
     app()
-
-app.add_typer(optimizer_app, name="optimize")
