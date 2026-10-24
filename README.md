@@ -120,7 +120,7 @@ Package downloads and checksums are on [GitHub Releases](https://github.com/mani
 | **Training** | Hardware-aware plans, saved experiment history, optional local LoRA fine-tuning | `axiom train plan 7 --method qlora` |
 | **AXIOM Engine** | Direct local inference on PyTorch. No Ollama and no `model.generate` | `axiom engine status` |
 | **Unified LLM client** | One local/cloud client for AXIOM Native Engine, Ollama (including GGUF via Ollama), OpenAI, Anthropic, Gemini, DeepSeek, Moonshot/Kimi, OpenRouter, and public OpenAI-compatible HTTPS endpoints | `axiom llm providers` |
-| **Mobile-agent bridge** | Token-protected OpenAI-compatible native-model endpoint for compatible mobile clients | `axiom mobile-bridge` |
+| **Mobile-agent bridge** | Token-protected OpenAI-compatible endpoint for native AXIOM and local Ollama models in compatible mobile clients | `axiom mobile-bridge` |
 | **Inference** | Local text generation through Ollama, plus request history | `axiom infer status` |
 | **Model Studio** | Search GGUF models, install them, convert local models to GGUF | `axiom model studio wizard` |
 | **Agent Optimizer** | Eight workload profiles that pick quantization and build a runtime bundle | `axiom optimize profiles` |
