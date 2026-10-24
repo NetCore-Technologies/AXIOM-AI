@@ -48,7 +48,11 @@ def test_infer_loaded_model_inventory_command_is_registered():
 
 
 def test_infer_run_help_exposes_advanced_sampling_options():
-    result = CliRunner().invoke(app, ["--no-banner", "infer", "run", "--help"])
+    result = CliRunner().invoke(
+        app,
+        ["--no-banner", "infer", "run", "--help"],
+        env={"TERMINAL_WIDTH": "140"},
+    )
     assert result.exit_code == 0, result.output
     for option in ("--top-p", "--top-k", "--repeat-penalty", "--seed", "--num-ctx", "--stop"):
         assert option in result.output
