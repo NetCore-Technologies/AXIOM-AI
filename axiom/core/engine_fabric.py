@@ -638,6 +638,10 @@ def run_engine_fabric_chat(
     inventory = {backend.get("id"): backend for backend in report.get("backends", []) if isinstance(backend, dict)}
     candidates: list[dict[str, Any]] = []
     for backend_id in _PROFILES[profile]:
+        # Filter incompatible runtimes before applying the attempt limit. Otherwise
+        # three earlier unsupported backends could hide a later native/Ollama match.
+        if min_p > 0 and backend_id not in {"axiom-native", "ollama"}:
+            continue
         backend = inventory.get(backend_id)
         if (
             isinstance(backend, dict)
@@ -648,8 +652,6 @@ def run_engine_fabric_chat(
             candidates.append(backend)
         if len(candidates) >= _AUTO_ROUTE_MAX_ATTEMPTS:
             break
-    if min_p > 0:
-        candidates = [backend for backend in candidates if backend.get("id") in {"axiom-native", "ollama"}]
     if not candidates:
         if min_p > 0:
             raise EngineFabricError("Min-p requires a ready AXIOM Native Engine or Ollama backend with this exact model ID.")
