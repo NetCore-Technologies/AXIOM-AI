@@ -143,3 +143,46 @@ def test_engine_run_passes_explicit_device_to_native_stream(tmp_path: Path, monk
     assert observed["memory_mode"] == "layer_streaming"
     assert "Memory mode: layer_streaming" in result.output
     assert "CPU-selected response" in result.output
+
+
+def test_engine_pull_downloads_native_model_for_axiom_runtime(monkeypatch, tmp_path: Path) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_pull(repo_id, *, on_log=None, on_progress=None):
+        observed["repo_id"] = repo_id
+        observed["on_log"] = on_log
+        observed["on_progress"] = on_progress
+        if on_log:
+            on_log("validated native checkpoint")
+        if on_progress:
+            on_progress(128, 256)
+        return {
+            "operation": "pull_native",
+            "repo_id": repo_id,
+            "model_type": "qwen2",
+            "path": str(tmp_path / "qwen"),
+            "runtime": "axiom-native",
+        }
+
+    monkeypatch.setattr(engine_cli.model_studio, "pull_native_model", fake_pull)
+    result = runner.invoke(engine_app, ["pull", "Qwen/Qwen2.5-0.5B-Instruct", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["operation"] == "pull_native"
+    assert payload["model_type"] == "qwen2"
+    assert observed["repo_id"] == "Qwen/Qwen2.5-0.5B-Instruct"
+    assert observed["on_log"] is None
+    assert observed["on_progress"] is None
+
+
+def test_engine_pull_reports_unsupported_model_cleanly(monkeypatch) -> None:
+    from axiom.core.model_studio import ModelStudioError
+
+    monkeypatch.setattr(
+        engine_cli.model_studio,
+        "pull_native_model",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ModelStudioError("unsupported architecture")),
+    )
+    result = runner.invoke(engine_app, ["pull", "example/unsupported"])
+    assert result.exit_code == 1
+    assert "unsupported architecture" in result.output
