@@ -1,0 +1,181 @@
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+from axiom.core import llm_client
+
+
+def test_provider_catalog_lists_local_and_cloud_adapters_without_credentials() -> None:
+    result = llm_client.provider_catalog()
+    providers = {item["id"]: item for item in result["providers"]}
+
+    assert {"axiom-local", "openai", "anthropic", "gemini", "deepseek", "moonshot", "openai-compatible"} <= providers.keys()
+    assert providers["axiom-local"]["privacy"] == "local-only"
+    assert providers["deepseek"]["requires_api_key"] is True
+    assert result["credentials_persisted"] is False
+
+
+def test_local_model_inventory_uses_only_native_compatible_models(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        llm_client,
+        "_native_models",
+        lambda: [
+            {"name": "local-llama", "path": "/trusted/local-llama", "model_type": "llama", "architecture": "LlamaForCausalLM"},
+            {"name": "local-gguf", "path": "/trusted/local-gguf", "model_type": "gguf", "architecture": None},
+        ],
+    )
+
+    result = llm_client.list_models("axiom-local")
+
+    assert result["models"] == ["local-llama"]
+    assert result["execution"] == "local"
+    assert result["credential_storage"] == "not_applicable"
+
+
+def test_local_chat_uses_axiom_native_stream_without_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        llm_client,
+        "_native_models",
+        lambda: [{"name": "tiny-llama", "path": "/trusted/tiny-llama", "model_type": "llama"}],
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_generate(model_path: str, prompt: str, **kwargs: Any):
+        captured.update({"model_path": model_path, "prompt": prompt, **kwargs})
+        return iter([{
+            "type": "complete",
+            "result": {
+                "response": "Local result",
+                "prompt_tokens": 3,
+                "completion_tokens": 2,
+                "device": "cpu",
+            },
+        }])
+
+    monkeypatch.setattr(llm_client, "generate_local_stream", fake_generate)
+    result = llm_client.chat(
+        "axiom-local",
+        "tiny-llama",
+        [{"role": "user", "content": "Hello"}],
+        max_tokens=7,
+        temperature=0,
+    )
+
+    assert result["response"] == "Local result"
+    assert result["execution"] == "local"
+    assert result["device"] == "cpu"
+    assert captured["model_path"] == "/trusted/tiny-llama"
+    assert captured["chat_messages"] == [{"role": "user", "content": "Hello"}]
+    assert captured["max_new_tokens"] == 7
+
+
+def test_cloud_chat_requires_explicit_consent_before_any_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unexpected_request(*_args: Any, **_kwargs: Any):
+        pytest.fail("No provider request is allowed without explicit consent.")
+
+    monkeypatch.setattr(llm_client, "_provider_request", unexpected_request)
+
+    with pytest.raises(ValueError, match="Explicitly confirm"):
+        llm_client.chat(
+            "deepseek",
+            "deepseek-chat",
+            [{"role": "user", "content": "private prompt"}],
+            api_key="sentinel-secret",
+            consent=False,
+        )
+
+
+def test_deepseek_openai_compatible_chat_maps_response_and_usage(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_request(provider: str, api_key: str, endpoint: str, payload=None, *, base_url=None):
+        captured.update({"provider": provider, "api_key": api_key, "endpoint": endpoint, "payload": payload, "base_url": base_url})
+        return {
+            "choices": [{"message": {"role": "assistant", "content": "Answer"}}],
+            "usage": {"prompt_tokens": 9, "completion_tokens": 4},
+        }
+
+    monkeypatch.setattr(llm_client, "_provider_request", fake_request)
+    result = llm_client.chat(
+        "deepseek",
+        "deepseek-chat",
+        [{"role": "system", "content": "Be brief"}, {"role": "user", "content": "Question"}],
+        api_key="secret-sentinel",
+        consent=True,
+        max_tokens=32,
+        temperature=0.2,
+    )
+
+    assert result["response"] == "Answer"
+    assert result["prompt_tokens"] == 9
+    assert result["completion_tokens"] == 4
+    assert result["credential_storage"] == "not_saved"
+    assert result["execution"] == "remote"
+    assert captured["endpoint"] == "/chat/completions"
+    assert captured["payload"]["messages"] == [
+        {"role": "system", "content": "Be brief"},
+        {"role": "user", "content": "Question"},
+    ]
+    assert "secret-sentinel" not in str(result)
+
+
+def test_provider_specific_anthropic_payload_keeps_system_out_of_messages(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_request(provider: str, api_key: str, endpoint: str, payload=None, *, base_url=None):
+        captured.update({"provider": provider, "endpoint": endpoint, "payload": payload})
+        return {
+            "content": [{"type": "text", "text": "Claude response"}],
+            "usage": {"input_tokens": 11, "output_tokens": 8},
+        }
+
+    monkeypatch.setattr(llm_client, "_provider_request", fake_request)
+    result = llm_client.chat(
+        "anthropic",
+        "claude-test",
+        [{"role": "system", "content": "Carefully answer"}, {"role": "user", "content": "Explain"}],
+        api_key="unused-in-test",
+        consent=True,
+    )
+
+    assert result["response"] == "Claude response"
+    assert result["prompt_tokens"] == 11
+    assert captured["endpoint"] == "/messages"
+    assert captured["payload"]["system"] == "Carefully answer"
+    assert captured["payload"]["messages"] == [{"role": "user", "content": "Explain"}]
+
+
+def test_gemini_model_listing_normalizes_model_names() -> None:
+    model_ids = llm_client._model_ids("gemini", {
+        "models": [
+            {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/embedding-only", "supportedGenerationMethods": ["embedContent"]},
+        ],
+    })
+    assert model_ids == ["gemini-2.5-flash"]
+
+
+@pytest.mark.parametrize("messages", [
+    [],
+    [{"role": "assistant", "content": "No user input"}],
+    [{"role": "user", "content": "   "}],
+])
+def test_chat_rejects_empty_or_userless_conversations(messages: list[dict[str, str]]) -> None:
+    with pytest.raises(ValueError):
+        llm_client._validate_messages(messages)
+
+
+def test_chat_rejects_combined_message_budget_overflow() -> None:
+    messages = [{"role": "user", "content": "x" * 12_000}, {"role": "assistant", "content": "y" * 12_000}, {"role": "user", "content": "z"}]
+    with pytest.raises(ValueError, match="Combined chat content"):
+        llm_client._validate_messages(messages)
+
+
+def test_custom_provider_requires_public_https_v1_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(llm_client, "validate_remote_base_url", lambda value: value.rstrip("/"))
+    result = llm_client._base_url("openai-compatible", "https://public.example/api/v1/")
+    assert result == "https://public.example/api/v1"
+    with pytest.raises(ValueError, match="custom base URL"):
+        llm_client._base_url("deepseek", "https://other.example/v1")
