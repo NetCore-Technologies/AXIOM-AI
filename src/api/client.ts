@@ -280,7 +280,7 @@ export type AxiomEngineStatus = {
   setup_note: string; scope_note: string; checked_at: string;
 };
 export type AxiomEngineSampling = {
-  temperature: number; top_p: number; top_k: number;
+  temperature: number; top_p: number; top_k: number; min_p: number;
   repetition_penalty: number; seed: number | null;
 };
 export type AxiomEngineMemoryStats = {
@@ -1092,7 +1092,7 @@ async function streamLocalInferenceRequest(
 
 
 async function streamAxiomEngineRequest(
-  input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "auto" | "full" | "layer_streaming" | "disk_streaming"; precision?: "auto" | "fp32" | "fp16" | "bf16" },
+  input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; min_p: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "auto" | "full" | "layer_streaming" | "disk_streaming"; precision?: "auto" | "fp32" | "fp16" | "bf16" },
   onEvent: (event: AxiomEngineStreamEvent) => void,
   signal: AbortSignal,
 ): Promise<AxiomEngineResult> {
