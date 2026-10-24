@@ -5,6 +5,7 @@ import { axiomApi, type LLMProvider, type LLMProviderInfo, type LLMChatResult } 
 
 const providerFallback: LLMProviderInfo[] = [
   { id: "axiom-local", label: "AXIOM Native Engine", kind: "local", requires_api_key: false, supports_model_listing: true, privacy: "local-only", note: "Local trusted safetensors checkpoints." },
+  { id: "ollama-local", label: "Ollama (local)", kind: "local", requires_api_key: false, supports_model_listing: true, privacy: "local-only", note: "Uses locally installed Ollama models, including GGUF through Ollama." },
   { id: "openai", label: "OpenAI", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Credentials are request-only." },
   { id: "anthropic", label: "Anthropic", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Credentials are request-only." },
   { id: "gemini", label: "Google Gemini", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Credentials are request-only." },
@@ -32,7 +33,7 @@ export default function LLMClientPanel() {
   const [result, setResult] = useState<LLMChatResult | null>(null);
   const [conversation, setConversation] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
 
-  const local = provider === "axiom-local";
+  const local = provider === "axiom-local" || provider === "ollama-local";
   const selected = providers.find((item) => item.id === provider);
   const loadModels = async (targetProvider = provider) => {
     setLoadingModels(true);
@@ -133,11 +134,11 @@ export default function LLMClientPanel() {
         <RefreshCcw size={14} /> {loadingModels ? "Loading" : "Load models"}
       </button>
     </div>
-    <p>Use the AXIOM Native Engine or connect to OpenAI, Anthropic, Google Gemini, DeepSeek, Moonshot/Kimi, OpenRouter, or a public OpenAI-compatible endpoint. Local prompts stay on this computer; cloud requests are sent only after confirmation.</p>
+    <p>Use AXIOM Native Engine or local Ollama models (including GGUF via Ollama), or connect to OpenAI, Anthropic, Google Gemini, DeepSeek, Moonshot/Kimi, OpenRouter, or a public OpenAI-compatible endpoint. Local prompts stay on this computer; cloud requests are sent only after confirmation.</p>
     <div className="status-strip" aria-label="Unified LLM client status">
       <div className="status-strip-item">
         <span className={"status-pill " + (local ? "success" : "warning")}><i />{local ? "LOCAL EXECUTION" : "CLOUD PROVIDER"}</span>
-        <div><b>{selected?.label || provider}</b><span>{local ? "No API key or cloud service required for compatible installed models." : "The provider receives your prompt after you confirm consent."}</span></div>
+        <div><b>{selected?.label || provider}</b><span>{local ? "No API key or cloud service required for local models." : "The provider receives your prompt after you confirm consent."}</span></div>
       </div>
     </div>
     <form onSubmit={(event) => void run(event)}>
