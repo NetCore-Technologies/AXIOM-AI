@@ -16,7 +16,13 @@ from axiom.core.ollama_service import (
     start_model_pull, start_service, stop_service,
 )
 
-infer_app = typer.Typer(help="Manage and run local Ollama inference.", no_args_is_help=True)
+infer_app = typer.Typer(
+    help="Manage and run local Ollama inference.",
+    no_args_is_help=True,
+    # Click 8.5 added first-class argument help. Use Click's renderer for this
+    # sub-app until Typer's Rich renderer handles that new positional section.
+    rich_markup_mode=None,
+)
 service_app = typer.Typer(help="Manage the loopback Ollama service.", no_args_is_help=True)
 infer_app.add_typer(service_app, name="service")
 console = Console()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typer.main import get_command
 from typer.testing import CliRunner
 
 from axiom.cli.main import app
@@ -28,7 +29,9 @@ def test_infer_service_commands_are_registered():
 def test_infer_pull_command_is_registered(plain):
     result = CliRunner().invoke(app, ["--no-banner", "infer", "pull", "--help"])
     assert result.exit_code == 0, plain(result.output)
-    assert "Ollama model tag" in plain(result.output)
+    pull_command = get_command(app).commands["infer"].commands["pull"]
+    argument_help = " ".join(str(getattr(parameter, "help", "") or "") for parameter in pull_command.params)
+    assert "Ollama model tag" in argument_help
 
 
 def test_infer_model_operation_commands_are_registered():
@@ -52,7 +55,41 @@ def test_infer_run_help_exposes_advanced_sampling_options(plain):
         app,
         ["--no-banner", "infer", "run", "--help"],
         env={"COLUMNS": "140", "TERMINAL_WIDTH": "140"},
+        terminal_width=140,
     )
     assert result.exit_code == 0, plain(result.output)
+    run_command = get_command(app).commands["infer"].commands["run"]
+    option_flags = {
+        option
+        for parameter in run_command.params
+        for option in (*getattr(parameter, "opts", ()), *getattr(parameter, "secondary_opts", ()))
+    }
+    for option in ("--top-p", "--top-k", "--repeat-penalty", "--seed", "--num-ctx", "--stop"):
+        assert option in option_flags
     for option in ("--top-p", "--top-k", "--repeat-penalty", "--seed", "--num-ctx", "--stop"):
         assert option in plain(result.output)
+
+
+def test_infer_run_forwards_advanced_sampling_options_to_local_runtime(monkeypatch):
+    observed = {}
+
+    def fake_run(model, prompt, **options):
+        observed.update(model=model, prompt=prompt, **options)
+        return {"response": "local test response", "execution": "local"}
+
+    monkeypatch.setattr("axiom.cli.inference.run_local_inference", fake_run)
+    result = CliRunner().invoke(app, [
+        "--no-banner", "infer", "run", "qwen2.5:0.5b",
+        "--prompt", "Keep this local.", "--top-p", "0.82", "--top-k", "32",
+        "--repeat-penalty", "1.15", "--seed", "17", "--num-ctx", "4096",
+        "--stop", "END_OF_TEXT", "--json",
+    ])
+    assert result.exit_code == 0, result.output
+    assert observed["model"] == "qwen2.5:0.5b"
+    assert observed["prompt"] == "Keep this local."
+    assert observed["top_p"] == 0.82
+    assert observed["top_k"] == 32
+    assert observed["repetition_penalty"] == 1.15
+    assert observed["seed"] == 17
+    assert observed["num_ctx"] == 4096
+    assert observed["stop_sequences"] == ["END_OF_TEXT"]
