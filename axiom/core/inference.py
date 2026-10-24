@@ -50,7 +50,7 @@ def _open_loopback(request: Request, timeout: float):
 
 
 def _request_json(path: str, *, payload: dict[str, Any] | None = None, timeout: float) -> dict[str, Any]:
-    if path not in {"/api/tags", "/api/generate", "/api/chat"}:
+    if path not in {"/api/tags", "/api/generate", "/api/chat", "/api/show", "/api/ps"}:
         raise ValueError("Unsupported local inference endpoint.")
     data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = Request(
@@ -116,6 +116,90 @@ def runtime_status() -> dict[str, Any]:
     except InferenceRuntimeError:
         base["error"] = f"Local inference runtime is unavailable at {OLLAMA_ENDPOINT}."
     return base
+
+
+
+def inspect_local_model(model: str) -> dict[str, Any]:
+    """Return a deliberately small metadata summary for a model already in Ollama."""
+    model = validate_model_name(model)
+    result = _request_json(
+        "/api/show",
+        payload={"model": model, "verbose": False},
+        timeout=15,
+    )
+    raw_details = result.get("details")
+    details = raw_details if isinstance(raw_details, dict) else {}
+    raw_info = result.get("model_info")
+    model_info = raw_info if isinstance(raw_info, dict) else {}
+
+    context_length: int | None = None
+    parameter_count: int | None = None
+    for key, value in model_info.items():
+        lowered = str(key).lower()
+        if context_length is None and ("context_length" in lowered or lowered == "context_length"):
+            if isinstance(value, int) and not isinstance(value, bool) and 0 < value <= 10_000_000:
+                context_length = value
+        if parameter_count is None and ("parameter_count" in lowered or lowered == "parameter_count"):
+            if isinstance(value, int) and not isinstance(value, bool) and 0 < value <= 10**15:
+                parameter_count = value
+
+    tags = _request_json("/api/tags", timeout=_STATUS_TIMEOUT_SECONDS)
+    model_entry: dict[str, Any] = {}
+    raw_models = tags.get("models")
+    if isinstance(raw_models, list):
+        for item in raw_models[:500]:
+            if isinstance(item, dict) and item.get("name") == model:
+                model_entry = item
+                break
+
+    def safe_text(value: Any, limit: int = 100) -> str | None:
+        return value[:limit] if isinstance(value, str) and value.strip() else None
+
+    size = model_entry.get("size")
+    modified_at = model_entry.get("modified_at")
+    families = details.get("families")
+    capabilities = result.get("capabilities")
+    return {
+        "schema_version": 1,
+        "model": model,
+        "installed": bool(model_entry),
+        "size_bytes": size if isinstance(size, int) and not isinstance(size, bool) and size >= 0 else None,
+        "modified_at": modified_at if isinstance(modified_at, str) else None,
+        "format": safe_text(details.get("format")),
+        "family": safe_text(details.get("family")),
+        "families": [value[:60] for value in families[:16] if isinstance(value, str)] if isinstance(families, list) else [],
+        "parameter_size": safe_text(details.get("parameter_size")),
+        "parameter_count": parameter_count,
+        "quantization_level": safe_text(details.get("quantization_level")),
+        "context_length": context_length,
+        "capabilities": [value[:60] for value in capabilities[:16] if isinstance(value, str)] if isinstance(capabilities, list) else [],
+        "template_configured": bool(safe_text(result.get("template"), 1)),
+        "license_present": bool(safe_text(result.get("license"), 1)),
+        "system_prompt_configured": bool(safe_text(result.get("system"), 1)),
+        "scope_note": "Metadata only from the local Ollama API. Templates, license text, modelfile contents, prompts, and generated responses are not returned.",
+    }
+
+
+def unload_local_model(model: str) -> dict[str, Any]:
+    """Ask Ollama to unload one model from memory without removing its downloaded files."""
+    model = validate_model_name(model)
+    _request_json(
+        "/api/generate",
+        payload={
+            "model": model,
+            "prompt": "",
+            "stream": False,
+            "keep_alive": 0,
+        },
+        timeout=30,
+    )
+    return {
+        "schema_version": 1,
+        "model": model,
+        "unloaded": True,
+        "model_files_deleted": False,
+        "scope_note": "Ollama was asked to release this model from memory. Downloaded model files remain installed.",
+    }
 
 
 def run_local_inference(
