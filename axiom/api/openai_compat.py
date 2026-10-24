@@ -40,7 +40,7 @@ def _native_models() -> list[dict[str, Any]]:
         if isinstance(item, dict)
         and isinstance(item.get("name"), str)
         and isinstance(item.get("path"), str)
-        and item.get("model_type") in {"llama", "mistral", "qwen2"}
+        and item.get("model_type") in {"llama", "mistral", "qwen2", "qwen3"}
     ]
 
 
