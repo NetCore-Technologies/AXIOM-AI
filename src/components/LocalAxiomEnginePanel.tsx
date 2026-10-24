@@ -26,6 +26,7 @@ export default function LocalAxiomEnginePanel() {
   const [modelPath, setModelPath] = useState("");
   const [devicePreference, setDevicePreference] = useState<"auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu">("auto");
   const [memoryMode, setMemoryMode] = useState<"auto" | "full" | "layer_streaming" | "disk_streaming">("auto");
+  const [precision, setPrecision] = useState<"auto" | "fp32" | "fp16" | "bf16">("auto");
   const [selectedModelPath, setSelectedModelPath] = useState("");
   const [adapterPath, setAdapterPath] = useState("");
   const [selectedAdapterPath, setSelectedAdapterPath] = useState("");
@@ -210,6 +211,7 @@ export default function LocalAxiomEnginePanel() {
         adapter_path: adapterPath.trim() || undefined,
         device: devicePreference,
         memory_mode: memoryMode,
+        precision,
         prompt,
         max_new_tokens: tokenLimit,
         temperature: temp,
@@ -354,6 +356,16 @@ export default function LocalAxiomEnginePanel() {
         <small>Auto prefers CUDA/ROCm, then Apple Metal or Intel XPU, and finally CPU. An explicit unavailable device fails with a diagnostic instead of silently changing the selected backend.</small>
       </label>
       <label className="field">
+        <span className="field-label-row"><span>Compute precision</span></span>
+        <select aria-label="Compute precision" value={precision} onChange={(event) => setPrecision(event.target.value as typeof precision)}>
+          <option value="auto">Auto · preserve checkpoint dtype</option>
+          <option value="fp32">FP32 · highest compatibility, highest memory</option>
+          <option value="fp16">FP16 · half-precision weights and activations</option>
+          <option value="bf16">BF16 · wider dynamic range where supported</option>
+        </select>
+        <small>Floating-point precision is not INT8/INT4 quantization. Hardware/kernel support varies; an unsupported dtype returns a diagnostic instead of silently switching precision.</small>
+      </label>
+      <label className="field">
         <span className="field-label-row"><span>Memory strategy</span></span>
         <select aria-label="Memory strategy" value={memoryMode} onChange={(event) => setMemoryMode(event.target.value as typeof memoryMode)}>
           <option value="auto">Auto-fit from model size, context and available memory · recommended</option>
@@ -451,6 +463,7 @@ export default function LocalAxiomEnginePanel() {
         <p className="surface-eyebrow">{result ? `GENERATED ON THIS MACHINE · ${result.architecture}` : running ? "STREAMING TOKEN OUTPUT · LOCAL ONLY" : "PARTIAL LOCAL OUTPUT"}</p>
         <h3>{result ? `${result.model}${result.adapter ? ` + ${result.adapter}` : ""}` : (assets?.models.find((model) => model.path === modelPath)?.name || "AXIOM Native Engine")}</h3>
         {result?.device_selection && <p className="quiet-note">Execution device: {result.device_selection.selected}. {result.device_selection.reason}</p>}
+        {result?.precision && <p className="quiet-note">Compute precision: requested {result.precision_selection?.requested ?? precision} · selected {result.precision}</p>}
         {result?.memory_mode && <p className="quiet-note">Memory strategy: {result.memory_mode.replaceAll("_", " ")}{result.memory_stats ? (result.memory_mode === "disk_streaming" ? " · Disk layer tensors read: " + result.memory_stats.disk_layer_weight_loads + " · Bytes read: " + (result.memory_stats.disk_layer_weight_bytes_read / (1024 ** 2)).toFixed(1) + " MiB · Layer bytes released: " + (result.memory_stats.layer_weight_bytes_released / (1024 ** 2)).toFixed(1) + " MiB" : " · Layer weight bytes staged: " + (result.memory_stats.layer_weight_bytes_staged / (1024 ** 2)).toFixed(1) + " MiB · Returned to CPU: " + (result.memory_stats.layer_weight_bytes_returned_to_cpu / (1024 ** 2)).toFixed(1) + " MiB") + " · KV-cache bytes offloaded: " + (result.memory_stats.kv_cache_bytes_offloaded / (1024 ** 2)).toFixed(1) + " MiB" : ""}</p>}
         {result?.prompt_format && <p className="quiet-note">Prompt formatting: {result.prompt_format === "tokenizer-config-template" ? "checkpoint chat template" : result.prompt_format === "qwen2-chatml-fallback" ? "Qwen2 ChatML fallback" : result.prompt_format === "qwen3-chatml-fallback" ? "Qwen3 ChatML fallback" : "raw completion"}</p>}
         {result?.context_management?.chat_history_supplied && <p className="quiet-note">Context budget: {result.context_management.original_message_count} message(s) · {result.context_management.messages_dropped_to_fit_context} older turn(s) dropped to fit · {result.context_management.prompt_tokens_used.toLocaleString()} / {result.context_management.prompt_tokens_before_token_truncation.toLocaleString()} prompt token(s) used{result.context_management.token_truncation_applied ? " after token-level truncation" : ""}{result.context_management.system_prompt_may_be_truncated ? " · Warning: system instructions may have been truncated by the hard context limit." : ""}</p>}
