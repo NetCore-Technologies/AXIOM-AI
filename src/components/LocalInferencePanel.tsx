@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Activity, BarChart3, Download, Info, Play, Power, RefreshCcw, Square } from "lucide-react";
-import { axiomApi, type LocalInferenceBenchmark, type LocalInferenceResult, type LocalInferenceStatus, type OllamaPullJob, type OllamaModelDetails, type OllamaRunningModels } from "../api/client";
+import { axiomApi, type LocalInferenceBenchmark, type LocalInferenceResult, type LocalInferenceStatus, type OllamaPullJob, type OllamaModelDetails, type OllamaRunningModels, type LocalInferenceStreamEvent } from "../api/client";
 import LocalAxiomEnginePanel from "./LocalAxiomEnginePanel";
 
 export default function LocalInferencePanel() {
@@ -19,6 +19,7 @@ export default function LocalInferencePanel() {
   const [benchmarkError, setBenchmarkError] = useState("");
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [streamController, setStreamController] = useState<AbortController | null>(null);
   const [error, setError] = useState("");
   const [serviceBusy, setServiceBusy] = useState(false);
   const [serviceError, setServiceError] = useState("");
@@ -129,12 +130,29 @@ export default function LocalInferencePanel() {
     if (!Number.isInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 2048) { setError("Maximum generated tokens must be between 1 and 2048."); return; }
     if (!Number.isFinite(temperatureValue) || temperatureValue < 0 || temperatureValue > 2) { setError("Temperature must be between 0 and 2."); return; }
     setRunning(true);
+    const controller = new AbortController();
+    setStreamController(controller);
+    setResult({ model: model.trim(), response: "", done: false, prompt_eval_count: null, eval_count: null, total_duration_ms: null, generated_at: new Date().toISOString() });
     try {
-      setResult(await axiomApi.runLocalInference({ model: model.trim(), prompt, num_predict: tokenLimit, temperature: temperatureValue }));
+      const finalResult = await axiomApi.streamLocalInference(
+        { model: model.trim(), prompt, num_predict: tokenLimit, temperature: temperatureValue },
+        (event: LocalInferenceStreamEvent) => {
+          if (event.type === "token") {
+            setResult((current) => current ? { ...current, response: current.response + event.token, done: false } : current);
+          }
+        },
+        controller.signal,
+      );
+      setResult(finalResult);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Local generation failed.");
+      if (cause instanceof DOMException && cause.name === "AbortError") {
+        setError("Generation stopped. Partial output is retained.");
+      } else {
+        setError(cause instanceof Error ? cause.message : "Local generation failed.");
+      }
     } finally {
       setRunning(false);
+      setStreamController(null);
     }
   };
 
@@ -280,12 +298,13 @@ export default function LocalInferencePanel() {
       </div>
       <div className="integration-form-actions">
         <button type="submit" className="button primary-button" disabled={!online || loading || running || !model.trim() || !prompt.trim()}><Play size={15} /> {running ? "Generating locally…" : "Run locally"}</button>
+        {running && <button type="button" className="button secondary-button" onClick={() => streamController?.abort()} disabled={!streamController}><Square size={13} /> Stop generation</button>}
         {result && <span className="quiet-note"><Activity size={14} /> {result.eval_count ?? "—"} generated tokens{result.total_duration_ms !== null ? ` · ${result.total_duration_ms} ms` : ""}</span>}
       </div>
     </form>
     {error && <div className="inline-alert warning" role="alert">{error}</div>}
     {result && <section className="local-inference-result" aria-label="Generated response">
-      <div className="surface-head"><div><p className="surface-eyebrow">GENERATED ON THIS MACHINE</p><h3>{result.model}</h3><small className="quiet-note">Request ID: {result.request_id || "unavailable"}</small></div><span className="status-pill success"><i />COMPLETED</span></div>
+      <div className="surface-head"><div><p className="surface-eyebrow">GENERATED ON THIS MACHINE</p><h3>{result.model}</h3><small className="quiet-note">Request ID: {result.request_id || "unavailable"}</small></div><span className={`status-pill ${running ? "warning" : result.done ? "success" : "warning"}`}><i />{running ? "GENERATING" : result.done ? "COMPLETED" : "STOPPED"}</span></div>
       <pre data-testid="local-inference-output" className="local-inference-output">{result.response || "(The model returned an empty response.)"}</pre>
     </section>}
     <section className="surface" aria-labelledby="inference-benchmark-title" style={{ marginTop: 18, padding: 18, border: "1px solid var(--line-strong)", borderRadius: 2, background: "var(--surface)" }}>
