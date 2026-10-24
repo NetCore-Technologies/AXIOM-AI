@@ -145,15 +145,23 @@ def test_streaming_inference_emits_ndjson_token_deltas_and_request_id(monkeypatc
             "execution": "local",
         }},
     ]
-    monkeypatch.setattr(inference, "stream_local_inference", lambda *_args, **_kwargs: iter(events))
+    observed: dict[str, object] = {}
+
+    def fake_stream(*args, **kwargs):
+        observed.update(kwargs)
+        return iter(events)
+
+    monkeypatch.setattr(inference, "stream_local_inference", fake_stream)
     monkeypatch.setattr(inference, "record_runtime_trace", lambda **_kwargs: None)
 
     response = _client().post("/api/inference/generate/stream", json={
         "model": "qwen2.5:0.5b", "prompt": "Say hello", "num_predict": 32, "temperature": 0.2,
+        "min_p": 0.2,
     })
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/x-ndjson")
+    assert observed["min_p"] == 0.2
     assert response.headers.get("x-request-id")
     payloads = [json.loads(line) for line in response.text.splitlines() if line.strip()]
     assert [payload["type"] for payload in payloads] == ["token", "token", "complete"]
