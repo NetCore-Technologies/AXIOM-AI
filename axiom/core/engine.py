@@ -875,7 +875,7 @@ def _choose_memory_mode(
     Estimates intentionally use a safety margin and return their assumptions.
     A choice is advisory, not a guarantee that the selected kernel/model will fit.
     """
-    from axiom.core.native_engine import NativeLlamaConfig, _resolve_safetensor_files
+    from axiom.core.native_engine import NativeLlamaConfig, _resolve_safetensor_files, _resolve_trusted_file
 
     try:
         config = NativeLlamaConfig.from_mapping(inspected["config"])
@@ -885,9 +885,11 @@ def _choose_memory_mode(
             raise ValueError("the checkpoint weight file size is unavailable")
         adapter_weight_bytes = 0
         if adapter_dir is not None:
-            adapter_file = (adapter_dir / "adapter_model.safetensors").resolve(strict=True)
-            if not adapter_file.is_file() or not any(adapter_file == root / adapter_file.relative_to(root) for root in _allowed_model_roots() if adapter_file.is_relative_to(root)):
-                raise ValueError("the LoRA adapter weight path is not a regular file inside a trusted root")
+            adapter_file = _resolve_trusted_file(
+                adapter_dir / "adapter_model.safetensors",
+                _allowed_model_roots(),
+                "LoRA safetensors checkpoint",
+            )
             adapter_weight_bytes = int(adapter_file.stat().st_size)
             if adapter_weight_bytes <= 0:
                 raise ValueError("the LoRA adapter weight file is empty")
