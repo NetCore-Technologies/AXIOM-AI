@@ -132,3 +132,25 @@ def test_gui_port_rejects_invalid_environment_configuration(monkeypatch):
         assert "0 to 65535" in str(exc)
     else:
         raise AssertionError("Out-of-range AXIOM_GUI_PORT must be rejected")
+
+
+def test_engine_fabric_cli_advertises_native_backend_and_sampler_contract():
+    from typer.main import get_command
+
+    root = get_command(app)
+    engine = root.commands["engine"]
+    route_chat = engine.commands["route-chat"]
+    benchmark = engine.commands["route-benchmark"]
+
+    backend_parameter = next(parameter for parameter in route_chat.params if "--backend" in getattr(parameter, "opts", ()))
+    assert "axiom-native" in (backend_parameter.help or "")
+    for command in (route_chat, engine.commands["auto-chat"], benchmark):
+        flags = {
+            option
+            for parameter in command.params
+            for option in (*getattr(parameter, "opts", ()), *getattr(parameter, "secondary_opts", ()))
+        }
+        for option in ("--top-p", "--top-k", "--repeat-penalty", "--seed", "--stop-sequence"):
+            assert option in flags
+    benchmark_backend = next(parameter for parameter in benchmark.params if "--backend" in getattr(parameter, "opts", ()))
+    assert "axiom-native" in (benchmark_backend.help or "")

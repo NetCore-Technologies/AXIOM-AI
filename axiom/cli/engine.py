@@ -392,7 +392,7 @@ def engine_backends_cli(
 
 @engine_app.command("route-chat")
 def engine_route_chat(
-    backend: str = typer.Option(..., "--backend", help="ollama, llama-cpp, lm-studio, vllm, llama-cpp-python"),
+    backend: str = typer.Option(..., "--backend", help="axiom-native, ollama, llama-cpp, lm-studio, vllm, llama-cpp-python"),
     model: str = typer.Option(..., "--model", help="Exact model ID reported by the selected local service."),
     prompt: str = typer.Option(..., "--prompt", help="Prompt text, at most 12,000 characters."),
     max_new_tokens: int = typer.Option(256, "--max-new-tokens", min=1, max=2048),
@@ -473,7 +473,7 @@ def engine_auto_chat(
 
 @engine_app.command("route-benchmark")
 def engine_route_benchmark(
-    backend: str = typer.Option(..., "--backend", help="ollama, llama-cpp, lm-studio, vllm, llama-cpp-python"),
+    backend: str = typer.Option(..., "--backend", help="axiom-native, ollama, llama-cpp, lm-studio, vllm, llama-cpp-python"),
     model: str = typer.Option(..., "--model", help="Exact model ID reported by the selected local service."),
     prompt: str = typer.Option(..., "--prompt", help="Short representative prompt, at most 12,000 characters."),
     max_new_tokens: int = typer.Option(64, "--max-new-tokens", min=1, max=256),
