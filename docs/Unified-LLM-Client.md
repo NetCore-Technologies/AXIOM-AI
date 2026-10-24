@@ -41,7 +41,7 @@ Cloud requests include `consent: true`; otherwise the API rejects the request be
 
 ## Mobile and third-party clients
 
-The `axiom mobile-bridge` command exposes only `/v1/models` and `/v1/chat/completions` from AXIOM's native engine, so an OpenAI-compatible mobile client can use AXIOM's computer as its inference host:
+The `axiom mobile-bridge` command exposes only `/v1/models` and `/v1/chat/completions` for AXIOM Native Engine models and locally installed Ollama models, so an OpenAI-compatible mobile client can use AXIOM's computer as its inference host:
 
 ```bash
 axiom engine discover --json
@@ -50,11 +50,11 @@ axiom mobile-bridge
 axiom mobile-bridge --listen-lan --port 40509
 ```
 
-The command prints the exact base URL and a random bearer token. Configure the client with base URL `http://<AXIOM-PC-LAN-IP>:40509/v1`, use the printed token as its API key, and select an exact model ID reported by `axiom engine discover --json`. The bridge keeps its bearer token active only for the lifetime of that process and clears it on exit.
+The command prints the exact base URL and a random bearer token. Configure the client with base URL `http://<AXIOM-PC-LAN-IP>:40509/v1` and use the printed token as its API key. Native model IDs are listed by `axiom engine discover --json`; installed Ollama models are listed at `/v1/models` with an explicit `ollama/` prefix, for example `ollama/qwen2.5:0.5b`. The bridge routes those namespaced IDs only to the local Ollama endpoint; it does not forward prompts to a cloud provider. The bearer token is active only for that process and is cleared on exit.
 
 **LAN security:** the bearer token authenticates requests, but the bridge uses plain HTTP, not TLS. Run it only on a trusted private network, never port-forward it to the public internet, and prefer a VPN or encrypted tunnel across untrusted networks. Stop the bridge when it is no longer needed. Only the mobile-bridge app is bound to the LAN; it does not mount the full AXIOM workspace API.
 
-PrivateLM's [cross-platform-llm-client](https://github.com/orailnoor/cross-platform-llm-client) and [PrivateAgent](https://github.com/orailnoor/private-agent) are useful external compatibility references for local/cloud model switching and Android automation. AXIOM does not vendor their Flutter code. Direct interoperability with every release of those apps is not guaranteed; configure them as an OpenAI-compatible provider and test with a local model on a trusted network before enabling automation.
+PrivateLM's [cross-platform-llm-client](https://github.com/orailnoor/cross-platform-llm-client) and [PrivateAgent](https://github.com/orailnoor/private-agent) are useful external compatibility references for local/cloud model switching and Android automation. For PrivateAgent, set the custom base URL to the bridge address, paste the one-time bearer token as its API key, and choose an `/v1/models` ID (using `ollama/` for Ollama models). AXIOM does not vendor their Flutter code. Direct interoperability with every release of those apps is not guaranteed; configure them as an OpenAI-compatible provider and test with a local model on a trusted network before enabling automation.
 
 ## Current limits
 
