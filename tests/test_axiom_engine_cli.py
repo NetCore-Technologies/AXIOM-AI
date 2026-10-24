@@ -72,7 +72,10 @@ def test_engine_telemetry_json_is_machine_readable_and_path_private(monkeypatch)
     payload = json.loads(result.output)
     assert payload["sample_type"] == "point_in_time"
     assert payload["disks"][0]["label"] == "trusted_model_root_1"
-    assert "path" not in json.dumps(payload).lower()
+    serialized = json.dumps(payload).lower()
+    assert "/home/" not in serialized
+    assert "/tmp/" not in serialized
+    assert payload["privacy_scope"]["model_paths_included"] is False
 
 
 def test_engine_discover_json_returns_empty_inventory_cleanly(tmp_path: Path, monkeypatch) -> None:
