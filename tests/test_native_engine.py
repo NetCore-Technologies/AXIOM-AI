@@ -28,6 +28,37 @@ def _config(**overrides):
     return value
 
 
+def test_native_sampler_sanitizes_nonfinite_logits_and_rejects_empty_distribution() -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import _sanitize_sampling_scores
+
+    scores = _sanitize_sampling_scores(
+        torch.tensor([[2.0, float("nan"), float("-inf"), -1.0]]),
+        torch,
+    )
+    assert scores[0, 0].item() == 2.0
+    assert scores[0, 1].item() == float("-inf")
+    assert scores[0, 2].item() == float("-inf")
+    assert scores[0, 3].item() == -1.0
+
+    # Overflowed positive-infinity logits dominate normal finite logits, but
+    # are converted to a valid equal-probability candidate set before softmax.
+    overflowed = _sanitize_sampling_scores(
+        torch.tensor([[float("inf"), 5.0, float("inf")]]),
+        torch,
+    )
+    assert overflowed[0, 0].item() == 0.0
+    assert overflowed[0, 1].item() == float("-inf")
+    assert overflowed[0, 2].item() == 0.0
+    assert torch.isfinite(torch.softmax(overflowed, dim=-1)).all().item()
+
+    with pytest.raises(NativeEngineError, match="no usable token logits"):
+        _sanitize_sampling_scores(
+            torch.tensor([[float("nan"), float("-inf")]]),
+            torch,
+        )
+
+
 def test_stop_sequences_are_bounded_and_deduplicated() -> None:
     from axiom.core.engine import validate_stop_sequences
 
