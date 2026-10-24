@@ -78,6 +78,17 @@ def test_native_top_k_keeps_exact_candidate_count_when_logits_tie() -> None:
     assert torch.equal(_apply_top_k_filter(logits, logits.shape[-1], torch), logits)
 
 
+def test_validate_min_p_rejects_nonfinite_and_out_of_range_values() -> None:
+    from axiom.core.engine import validate_min_p
+
+    assert validate_min_p(0) == 0.0
+    assert validate_min_p(0.05) == 0.05
+    assert validate_min_p(1) == 1.0
+    for invalid in (-0.01, 1.01, float("nan"), float("inf"), True, "0.2"):
+        with pytest.raises(ValueError, match="Min-p"):
+            validate_min_p(invalid)
+
+
 def test_native_min_p_filters_by_probability_relative_to_best_logit() -> None:
     torch = pytest.importorskip("torch")
     from axiom.core.native_engine import _apply_min_p_filter
