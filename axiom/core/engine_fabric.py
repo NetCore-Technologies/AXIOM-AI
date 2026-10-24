@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import platform
 import shutil
 import time
@@ -340,6 +341,35 @@ def _validate_engine_chat_inputs(
     return model, normalized
 
 
+def _validate_sampling_options(
+    top_p: float,
+    top_k: int,
+    repetition_penalty: float,
+    seed: int | None,
+    stop_sequences: list[str] | tuple[str, ...],
+) -> tuple[float, int, float, int | None, tuple[str, ...]]:
+    """Validate shared generation settings before contacting any runtime."""
+    if isinstance(top_p, bool) or not isinstance(top_p, (int, float)) or not math.isfinite(float(top_p)) or not 0 < float(top_p) <= 1:
+        raise ValueError("Top-p must be a finite number greater than 0 and at most 1.")
+    if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
+        raise ValueError("Top-k must be an integer between 0 and 100,000; 0 disables the limit.")
+    if isinstance(repetition_penalty, bool) or not isinstance(repetition_penalty, (int, float)) or not math.isfinite(float(repetition_penalty)) or not 0.1 <= float(repetition_penalty) <= 5:
+        raise ValueError("Repetition penalty must be a finite number between 0.1 and 5.")
+    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 9_223_372_036_854_775_807):
+        raise ValueError("Seed must be an integer between 0 and 9,223,372,036,854,775,807.")
+    if not isinstance(stop_sequences, (list, tuple)) or len(stop_sequences) > 16:
+        raise ValueError("Provide no more than 16 stop sequences.")
+    stops: list[str] = []
+    for stop in stop_sequences:
+        if not isinstance(stop, str) or not stop or not stop.strip():
+            raise ValueError("Stop sequences must be non-empty text.")
+        if len(stop) > 256:
+            raise ValueError("Each stop sequence is limited to 256 characters.")
+        if stop not in stops:
+            stops.append(stop)
+    return float(top_p), top_k, float(repetition_penalty), seed, tuple(stops)
+
+
 def run_engine_backend_chat(
     backend_id: str,
     model: str,
@@ -347,6 +377,11 @@ def run_engine_backend_chat(
     *,
     max_new_tokens: int = 256,
     temperature: float = 0.7,
+    top_p: float = 0.9,
+    top_k: int = 0,
+    repetition_penalty: float = 1.0,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] = (),
     request_timeout: float | None = None,
 ) -> dict[str, Any]:
     """Run a bounded conversation through a chosen, fixed loopback-only backend."""
@@ -355,6 +390,9 @@ def run_engine_backend_chat(
     if backend_id not in _BACKEND_BY_ID:
         raise ValueError("Choose a supported external local backend from the engine inventory.")
     model, normalized = _validate_engine_chat_inputs(model, messages, max_new_tokens, temperature)
+    top_p, top_k, repetition_penalty, seed, stops = _validate_sampling_options(
+        top_p, top_k, repetition_penalty, seed, stop_sequences
+    )
     if request_timeout is not None and (
         isinstance(request_timeout, bool)
         or not isinstance(request_timeout, (int, float))
@@ -364,11 +402,24 @@ def run_engine_backend_chat(
     timeout = _REQUEST_TIMEOUT if request_timeout is None else float(request_timeout)
     started = time.perf_counter()
     if backend_id == "ollama":
+        options: dict[str, Any] = {
+            "num_predict": max_new_tokens,
+            "temperature": float(temperature),
+            "top_p": top_p,
+        }
+        if top_k:
+            options["top_k"] = top_k
+        if repetition_penalty != 1.0:
+            options["repeat_penalty"] = repetition_penalty
+        if seed is not None:
+            options["seed"] = seed
+        if stops:
+            options["stop"] = list(stops)
         payload = {
             "model": model,
             "messages": normalized,
             "stream": False,
-            "options": {"num_predict": max_new_tokens, "temperature": float(temperature)},
+            "options": options,
         }
         result = _request_json(backend_id, _BACKEND_BY_ID[backend_id]["chat_path"], payload, timeout=timeout)
         message = result.get("message")
@@ -378,13 +429,24 @@ def run_engine_backend_chat(
         duration_ns = result.get("total_duration")
         finished = bool(result.get("done", True))
     else:
+        # OpenAI-compatible runtimes share top_p/stop/seed; top-k and
+        # repetition-penalty extensions differ in spelling.
         payload = {
             "model": model,
             "messages": normalized,
             "stream": False,
             "max_tokens": max_new_tokens,
             "temperature": float(temperature),
+            "top_p": top_p,
         }
+        if stops:
+            payload["stop"] = list(stops)
+        if seed is not None:
+            payload["seed"] = seed
+        if top_k:
+            payload["top_k"] = top_k
+        if repetition_penalty != 1.0:
+            payload["repetition_penalty" if backend_id == "vllm" else "repeat_penalty"] = repetition_penalty
         result = _request_json(backend_id, _BACKEND_BY_ID[backend_id]["chat_path"], payload, timeout=timeout)
         choices = result.get("choices")
         choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
@@ -430,11 +492,19 @@ def run_engine_fabric_chat(
     *,
     max_new_tokens: int = 256,
     temperature: float = 0.7,
+    top_p: float = 0.9,
+    top_k: int = 0,
+    repetition_penalty: float = 1.0,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Select a local backend by workload profile and fail over only to exact-ID matches."""
     if profile not in _PROFILES:
         raise ValueError("Profile must be one of: " + ", ".join(_PROFILES))
     model, normalized = _validate_engine_chat_inputs(model, messages, max_new_tokens, temperature)
+    top_p, top_k, repetition_penalty, seed, stops = _validate_sampling_options(
+        top_p, top_k, repetition_penalty, seed, stop_sequences
+    )
     report = discover_engine_backends(profile)
     inventory = {backend.get("id"): backend for backend in report.get("backends", []) if isinstance(backend, dict)}
     candidates: list[dict[str, Any]] = []
@@ -469,6 +539,11 @@ def run_engine_fabric_chat(
                 normalized,
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                repetition_penalty=repetition_penalty,
+                seed=seed,
+                stop_sequences=stops,
                 request_timeout=_AUTO_ROUTE_TIMEOUT_SECONDS,
             )
         except EngineFabricError as exc:
@@ -505,6 +580,11 @@ def run_engine_backend_benchmark(
     warmup_runs: int = 1,
     iterations: int = 3,
     temperature: float = 0.2,
+    top_p: float = 0.9,
+    top_k: int = 0,
+    repetition_penalty: float = 1.0,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Measure bounded local end-to-end latency without returning or saving generated text."""
     import statistics
@@ -523,11 +603,15 @@ def run_engine_backend_benchmark(
         raise ValueError("Benchmark temperature must be between 0 and 2.")
     if backend_id not in _BACKEND_BY_ID:
         raise ValueError("Choose a supported external local backend.")
+    top_p, top_k, repetition_penalty, seed, stops = _validate_sampling_options(
+        top_p, top_k, repetition_penalty, seed, stop_sequences
+    )
 
     messages = [{"role": "user", "content": prompt}]
     for _ in range(warmup_runs):
         warmup = run_engine_backend_chat(
-            backend_id, model, messages, max_new_tokens=max_new_tokens, temperature=temperature
+            backend_id, model, messages, max_new_tokens=max_new_tokens, temperature=temperature,
+            top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stops,
         )
         del warmup
 
@@ -538,7 +622,8 @@ def run_engine_backend_benchmark(
     for _ in range(iterations):
         request_started = time.perf_counter()
         measured = run_engine_backend_chat(
-            backend_id, model, messages, max_new_tokens=max_new_tokens, temperature=temperature
+            backend_id, model, messages, max_new_tokens=max_new_tokens, temperature=temperature,
+            top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stops,
         )
         latency_ms = max(0.0, (time.perf_counter() - request_started) * 1000.0)
         latencies.append(round(latency_ms, 2))
@@ -564,6 +649,11 @@ def run_engine_backend_benchmark(
             "prompt_characters": len(prompt),
             "max_new_tokens": max_new_tokens,
             "temperature": float(temperature),
+            "top_p": top_p,
+            "top_k": top_k,
+            "repetition_penalty": repetition_penalty,
+            "seed": seed,
+            "stop_sequence_count": len(stops),
             "warmup_runs": warmup_runs,
             "iterations": iterations,
             "measured_requests": iterations,
