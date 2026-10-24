@@ -110,6 +110,17 @@ If PowerShell cannot find `axiom`, close and reopen it so the updated `PATH` tak
 
 Package downloads and checksums are on [GitHub Releases](https://github.com/manit6752025/AXIOM-AI/releases). Packaging recipes for APT, AUR, Homebrew, npm, Scoop, and WinGet live in [`packaging/`](packaging). More options: [installers/README.md](installers/README.md).
 
+## Container images
+
+AXIOM publishes verified OCI images through [GitHub Container Registry](https://github.com/manit6752025?tab=packages). The core image is multi-platform (Linux AMD64 and ARM64); separate inference and training images include their optional Python dependencies.
+
+```bash
+docker pull ghcr.io/manit6752025/axiom-ai:latest
+docker run --rm -p 127.0.0.1:8765:8765 ghcr.io/manit6752025/axiom-ai:latest
+```
+
+Open `http://127.0.0.1:8765/ui/` for the Control Center. For native inference or training dependencies, use `ghcr.io/manit6752025/axiom-ai-inference` or `ghcr.io/manit6752025/axiom-ai-training`. See the [container image guide](docs/Container-Image.md) for exact tags, Compose setup, architectures, and security guidance.
+
 ## Feature map
 
 | Area | What it does | Start with |
@@ -572,7 +583,7 @@ Tab completion also works for `zsh`, `fish`, and `powershell`.
 
 **Features**
 - [Model Registry](docs/Model-Registry.md) · [Model Studio](docs/Model-Studio.md)
-- [Local fine-tuning](docs/Local-Fine-Tuning.md) · [AXIOM Engine](docs/Local-Engine.md) · [Unified LLM client](docs/Unified-LLM-Client.md)
+- [Local fine-tuning](docs/Local-Fine-Tuning.md) · [Container image guide](docs/Container-Image.md) · [AXIOM Engine](docs/Local-Engine.md) · [Unified LLM client](docs/Unified-LLM-Client.md)
 - [Local inference](docs/Local-Inference.md) · [Inference Benchmarking](docs/Inference-Benchmarking.md) · [Runtime Discovery](docs/Runtime-Discovery.md)
 - [Evaluation](docs/Evaluation.md) · [Agent Profiles](docs/Agent-Profiles.md)
 - [Integrations](docs/integrations.md) · [Developer tools contract](docs/developer-tools-contract.md)
