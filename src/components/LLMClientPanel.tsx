@@ -26,6 +26,11 @@ export default function LLMClientPanel() {
   const [prompt, setPrompt] = useState("");
   const [maxTokens, setMaxTokens] = useState("256");
   const [temperature, setTemperature] = useState("0.7");
+  const [topP, setTopP] = useState("0.9");
+  const [topK, setTopK] = useState("0");
+  const [repetitionPenalty, setRepetitionPenalty] = useState("1.0");
+  const [seed, setSeed] = useState("");
+  const [stopSequencesText, setStopSequencesText] = useState("");
   const [precision, setPrecision] = useState<"auto" | "fp32" | "fp16" | "bf16">("auto");
   const [consent, setConsent] = useState(false);
   const [loadingModels, setLoadingModels] = useState(false);
@@ -84,10 +89,20 @@ export default function LLMClientPanel() {
     setResult(null);
     const tokenLimit = Number(maxTokens);
     const temp = Number(temperature);
+    const topPValue = Number(topP);
+    const topKValue = Number(topK);
+    const repeatPenaltyValue = Number(repetitionPenalty);
+    const seedValue = seed.trim() === "" ? null : Number(seed);
+    const stopSequences = stopSequencesText.split(/\r?\n/).filter((value) => value.trim().length > 0);
     if (!model.trim()) { setError("Choose a model or enter an exact provider model ID."); return; }
     if (!prompt.trim()) { setError("Enter a prompt before generating."); return; }
     if (!Number.isInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 2048) { setError("Maximum output tokens must be between 1 and 2048."); return; }
     if (!Number.isFinite(temp) || temp < 0 || temp > 2) { setError("Temperature must be between 0 and 2."); return; }
+    if (local && (!Number.isFinite(topPValue) || topPValue <= 0 || topPValue > 1)) { setError("Top-p must be greater than 0 and at most 1."); return; }
+    if (local && (!Number.isInteger(topKValue) || topKValue < 0 || topKValue > 100000)) { setError("Top-k must be an integer from 0 to 100,000; 0 disables the limit."); return; }
+    if (local && (!Number.isFinite(repeatPenaltyValue) || repeatPenaltyValue < 0.1 || repeatPenaltyValue > 5)) { setError("Repetition penalty must be between 0.1 and 5."); return; }
+    if (local && seedValue !== null && (!Number.isSafeInteger(seedValue) || seedValue < 0)) { setError("Seed must be a non-negative safe integer, or leave it blank."); return; }
+    if (local && (stopSequences.length > 16 || stopSequences.some((stop) => stop.length > 256))) { setError("Use at most 16 stop sequences, each up to 256 characters."); return; }
     if (!local && !consent) { setError("Confirm that the selected cloud provider may receive this conversation."); return; }
     setRunning(true);
     try {
@@ -114,6 +129,13 @@ export default function LLMClientPanel() {
         max_tokens: tokenLimit,
         temperature: temp,
         consent: local || consent,
+        ...(local ? {
+          top_p: topPValue,
+          top_k: topKValue,
+          repetition_penalty: repeatPenaltyValue,
+          seed: seedValue,
+          stop_sequences: stopSequences,
+        } : {}),
         precision: provider === "axiom-local" ? precision : undefined,
       });
       setResult(nextResult);
@@ -191,6 +213,16 @@ export default function LLMClientPanel() {
         <label className="field"><span className="field-label-row"><span>Maximum output tokens</span></span><input type="number" min={1} max={2048} step={1} value={maxTokens} onChange={(event) => setMaxTokens(event.target.value)} required /></label>
         <label className="field"><span className="field-label-row"><span>Temperature</span></span><input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(event) => setTemperature(event.target.value)} required /></label>
       </div>
+      {local && <div className="panel-surface" style={{ padding: 14 }}>
+        <p className="surface-eyebrow">ADVANCED LOCAL SAMPLING</p>
+        <div className="two-column-grid">
+          <label className="field"><span className="field-label-row"><span>Top-p</span></span><input type="number" value={topP} onChange={(event) => setTopP(event.target.value)} min={0.000001} max={1} step={0.05} required /><small>Cumulative probability cutoff.</small></label>
+          <label className="field"><span className="field-label-row"><span>Top-k</span></span><input type="number" value={topK} onChange={(event) => setTopK(event.target.value)} min={0} max={100000} step={1} required /><small>0 disables the top-k cutoff.</small></label>
+          <label className="field"><span className="field-label-row"><span>Repetition penalty</span></span><input type="number" value={repetitionPenalty} onChange={(event) => setRepetitionPenalty(event.target.value)} min={0.1} max={5} step={0.05} required /><small>1.0 disables the penalty.</small></label>
+          <label className="field"><span className="field-label-row"><span>Seed (optional)</span></span><input type="number" value={seed} onChange={(event) => setSeed(event.target.value)} min={0} step={1} placeholder="Runtime default" /><small>Repeatability may differ between devices and runtimes.</small></label>
+        </div>
+        <label className="field"><span className="field-label-row"><span>Stop sequences</span><span>One per line</span></span><textarea value={stopSequencesText} onChange={(event) => setStopSequencesText(event.target.value)} rows={2} placeholder={"\n---\nEND"} /><small>At most 16 strings of up to 256 characters each. These options apply only to AXIOM Native Engine and local Ollama, not cloud providers.</small></label>
+      </div>}
       {!local && <label className="consent-check">
         <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
         <span>I understand this conversation will be sent to {selected?.label || "the selected provider"} and processed under its terms.</span>

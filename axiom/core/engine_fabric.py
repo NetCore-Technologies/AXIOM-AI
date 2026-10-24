@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import platform
 import shutil
 import time
@@ -160,6 +161,70 @@ def _model_ids(backend_id: str, payload: dict[str, Any]) -> list[str]:
     return output
 
 
+def _generation_capabilities(backend_id: str) -> dict[str, Any]:
+    """Describe the request dialect and separate extensions from common controls."""
+    if backend_id == "axiom-native":
+        return {
+            "transport": "in_process",
+            "parameter_mapping": {
+                "max_new_tokens": "max_new_tokens",
+                "temperature": "temperature",
+                "top_p": "top_p",
+                "top_k": "top_k",
+                "repetition_penalty": "repetition_penalty",
+                "seed": "seed",
+                "stop_sequences": "stop_sequences",
+            },
+            "native_sampling_controls": [
+                "temperature", "top_p", "top_k", "repetition_penalty", "seed", "stop_sequences",
+            ],
+            "extension_sampling_controls": [],
+            "note": "Controls are passed into AXIOM's own sampler; reproducibility still depends on device and kernel behavior.",
+        }
+    if backend_id == "ollama":
+        return {
+            "transport": "ollama_options",
+            "parameter_mapping": {
+                "max_new_tokens": "options.num_predict",
+                "temperature": "options.temperature",
+                "top_p": "options.top_p",
+                "top_k": "options.top_k",
+                "repetition_penalty": "options.repeat_penalty",
+                "seed": "options.seed",
+                "stop_sequences": "options.stop",
+            },
+            "native_sampling_controls": [
+                "temperature", "top_p", "top_k", "repetition_penalty", "seed", "stop_sequences",
+            ],
+            "extension_sampling_controls": [],
+            "note": "Uses Ollama's /api/chat options dialect; exact output behavior depends on model and installed runtime version.",
+        }
+    if backend_id not in _BACKEND_BY_ID:
+        raise ValueError("Unknown engine backend for generation capability lookup.")
+    penalty_field = "repetition_penalty" if backend_id == "vllm" else "repeat_penalty"
+    notes = {
+        "llama-cpp": "Uses llama.cpp's OpenAI-compatible endpoint and server-specific top-k and repeat-penalty fields.",
+        "lm-studio": "Advanced sampler extensions depend on the installed server and model backend.",
+        "vllm": "Uses vLLM's repetition_penalty extension; API-version support can differ.",
+        "llama-cpp-python": "Advanced sampler extensions depend on package version and server configuration.",
+    }
+    return {
+        "transport": "openai_compatible",
+        "parameter_mapping": {
+            "max_new_tokens": "max_tokens",
+            "temperature": "temperature",
+            "top_p": "top_p",
+            "top_k": "top_k (extension)",
+            "repetition_penalty": penalty_field,
+            "seed": "seed",
+            "stop_sequences": "stop",
+        },
+        "native_sampling_controls": ["temperature", "top_p", "seed", "stop_sequences"],
+        "extension_sampling_controls": ["top_k", "repetition_penalty"],
+        "note": notes[backend_id],
+    }
+
+
 def _probe_backend(definition: dict[str, Any]) -> dict[str, Any]:
     backend_id = definition["id"]
     executable = definition["executable"]
@@ -190,30 +255,46 @@ def _probe_backend(definition: dict[str, Any]) -> dict[str, Any]:
         "model_count": len(models),
         "error": error,
         "scope": "fixed_loopback_only",
+        "generation": _generation_capabilities(backend_id),
     }
+
 
 
 def _native_backend() -> dict[str, Any]:
     try:
-        from axiom.core.engine import discover_local_engine_assets, runtime_status
+        from axiom.core.engine import runtime_status
+        from axiom.core.llm_client import _native_models
+
         runtime = runtime_status()
-        assets = discover_local_engine_assets()
-        count = len(assets.get("models", [])) if isinstance(assets, dict) else 0
+        native_models = _native_models()
+        names: dict[str, int] = {}
+        for item in native_models:
+            name = item.get("name")
+            if isinstance(name, str):
+                names[name] = names.get(name, 0) + 1
+        models = sorted(name for name, count in names.items() if count == 1)
+        count = len(models)
         ready = bool(runtime.get("ready")) and count > 0
         status = "ready" if ready else "setup_required"
         error = None if ready else (
             runtime.get("setup_note") if not runtime.get("ready")
-            else "Install or add a compatible local safetensors checkpoint under a trusted model root."
+            else "Add a uniquely named compatible Llama, Mistral, Qwen2 or Qwen3 safetensors checkpoint under a trusted model root."
         )
         installed = bool(runtime.get("ready"))
     except Exception:
-        status, error, installed, count = "setup_required", "Install AXIOM's native-inference extra and add a supported local checkpoint.", False, 0
+        status, error, installed, models, count = (
+            "setup_required",
+            "Install AXIOM's native-inference extra and add a supported local checkpoint.",
+            False,
+            [],
+            0,
+        )
     return {
         "id": "axiom-native",
         "name": "AXIOM Native Engine",
         "kind": "native",
         "endpoint": None,
-        "supports_chat": False,
+        "supports_chat": status == "ready",
         "formats": ["Floating-point safetensors"],
         "strengths": [
             "AXIOM-owned transformer forward pass and autoregressive KV-cache decode",
@@ -229,10 +310,11 @@ def _native_backend() -> dict[str, Any]:
         "status": status,
         "installed": installed,
         "reachable": True,
-        "models": [],
+        "models": models,
         "model_count": count,
         "error": error,
         "scope": "in_process_native_engine",
+        "generation": _generation_capabilities("axiom-native"),
     }
 
 
@@ -308,19 +390,12 @@ def discover_engine_backends(profile: str = "balanced") -> dict[str, Any]:
     }
 
 
-def run_engine_backend_chat(
-    backend_id: str,
+def _validate_engine_chat_inputs(
     model: str,
     messages: list[dict[str, str]],
-    *,
-    max_new_tokens: int = 256,
-    temperature: float = 0.7,
-) -> dict[str, Any]:
-    """Run a bounded conversation through a chosen, fixed loopback-only backend."""
-    if backend_id == "axiom-native":
-        raise ValueError("Use AXIOM Native Engine's trusted model-path generation route for axiom-native.")
-    if backend_id not in _BACKEND_BY_ID:
-        raise ValueError("Choose a supported external local backend from the engine inventory.")
+    max_new_tokens: int,
+    temperature: float,
+) -> tuple[str, list[dict[str, str]]]:
     model = validate_model_name(model)
     if not isinstance(messages, list) or not 1 <= len(messages) <= _MAX_MESSAGES:
         raise ValueError("Provide between 1 and 64 conversation messages.")
@@ -344,16 +419,126 @@ def run_engine_backend_chat(
         raise ValueError("Maximum output tokens must be between 1 and 2,048.")
     if isinstance(temperature, bool) or not isinstance(temperature, (int, float)) or not 0 <= float(temperature) <= 2:
         raise ValueError("Temperature must be between 0 and 2.")
+    return model, normalized
 
+
+def _validate_sampling_options(
+    top_p: float,
+    top_k: int,
+    repetition_penalty: float,
+    seed: int | None,
+    stop_sequences: list[str] | tuple[str, ...],
+) -> tuple[float, int, float, int | None, tuple[str, ...]]:
+    """Validate shared generation settings before contacting any runtime."""
+    if isinstance(top_p, bool) or not isinstance(top_p, (int, float)) or not math.isfinite(float(top_p)) or not 0 < float(top_p) <= 1:
+        raise ValueError("Top-p must be a finite number greater than 0 and at most 1.")
+    if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
+        raise ValueError("Top-k must be an integer between 0 and 100,000; 0 disables the limit.")
+    if isinstance(repetition_penalty, bool) or not isinstance(repetition_penalty, (int, float)) or not math.isfinite(float(repetition_penalty)) or not 0.1 <= float(repetition_penalty) <= 5:
+        raise ValueError("Repetition penalty must be a finite number between 0.1 and 5.")
+    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 9_223_372_036_854_775_807):
+        raise ValueError("Seed must be an integer between 0 and 9,223,372,036,854,775,807.")
+    if not isinstance(stop_sequences, (list, tuple)) or len(stop_sequences) > 16:
+        raise ValueError("Provide no more than 16 stop sequences.")
+    stops: list[str] = []
+    for stop in stop_sequences:
+        if not isinstance(stop, str) or not stop or not stop.strip():
+            raise ValueError("Stop sequences must be non-empty text.")
+        if len(stop) > 256:
+            raise ValueError("Each stop sequence is limited to 256 characters.")
+        if stop not in stops:
+            stops.append(stop)
+    return float(top_p), top_k, float(repetition_penalty), seed, tuple(stops)
+
+
+def run_engine_backend_chat(
+    backend_id: str,
+    model: str,
+    messages: list[dict[str, str]],
+    *,
+    max_new_tokens: int = 256,
+    temperature: float = 0.7,
+    top_p: float = 0.9,
+    top_k: int = 0,
+    repetition_penalty: float = 1.0,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] = (),
+    request_timeout: float | None = None,
+) -> dict[str, Any]:
+    """Run a bounded conversation through a chosen, fixed loopback-only backend."""
+    if backend_id not in _BACKEND_BY_ID and backend_id != "axiom-native":
+        raise ValueError("Choose a supported local backend from the engine inventory.")
+    model, normalized = _validate_engine_chat_inputs(model, messages, max_new_tokens, temperature)
+    top_p, top_k, repetition_penalty, seed, stops = _validate_sampling_options(
+        top_p, top_k, repetition_penalty, seed, stop_sequences
+    )
+    if backend_id == "axiom-native":
+        if request_timeout is not None:
+            raise ValueError("AXIOM Native Engine runs in-process and does not accept an external HTTP request timeout.")
+        from axiom.core import llm_client
+
+        started = time.perf_counter()
+        try:
+            native_result = llm_client.chat(
+                "axiom-local",
+                model,
+                normalized,
+                max_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                repetition_penalty=repetition_penalty,
+                seed=seed,
+                stop_sequences=stops,
+            )
+        except (ValueError, llm_client.LLMClientError) as exc:
+            raise EngineFabricError(str(exc)) from None
+        elapsed_ms = max(0.0, (time.perf_counter() - started) * 1000.0)
+        return {
+            "schema_version": _SCHEMA_VERSION,
+            "backend_id": "axiom-native",
+            "backend_name": "AXIOM Native Engine",
+            "model": model,
+            "response": str(native_result.get("response", ""))[:100_000],
+            "done": True,
+            "prompt_eval_count": native_result.get("prompt_tokens"),
+            "eval_count": native_result.get("completion_tokens"),
+            "total_duration_ms": round(elapsed_ms, 2),
+            "generated_at": native_result.get("generated_at") or datetime.now(UTC).isoformat(),
+            "execution": "in_process_native",
+            "device": native_result.get("device"),
+            "precision": native_result.get("precision"),
+            "privacy": {"prompt_returned": False, "response_persisted": False, "cloud_provider_used": False},
+        }
+    if request_timeout is not None and (
+        isinstance(request_timeout, bool)
+        or not isinstance(request_timeout, (int, float))
+        or not 0.1 <= float(request_timeout) <= _REQUEST_TIMEOUT
+    ):
+        raise ValueError(f"Request timeout must be between 0.1 and {_REQUEST_TIMEOUT} seconds.")
+    timeout = _REQUEST_TIMEOUT if request_timeout is None else float(request_timeout)
     started = time.perf_counter()
     if backend_id == "ollama":
+        options: dict[str, Any] = {
+            "num_predict": max_new_tokens,
+            "temperature": float(temperature),
+            "top_p": top_p,
+        }
+        if top_k:
+            options["top_k"] = top_k
+        if repetition_penalty != 1.0:
+            options["repeat_penalty"] = repetition_penalty
+        if seed is not None:
+            options["seed"] = seed
+        if stops:
+            options["stop"] = list(stops)
         payload = {
             "model": model,
             "messages": normalized,
             "stream": False,
-            "options": {"num_predict": max_new_tokens, "temperature": float(temperature)},
+            "options": options,
         }
-        result = _request_json(backend_id, _BACKEND_BY_ID[backend_id]["chat_path"], payload, timeout=_REQUEST_TIMEOUT)
+        result = _request_json(backend_id, _BACKEND_BY_ID[backend_id]["chat_path"], payload, timeout=timeout)
         message = result.get("message")
         response_text = message.get("content") if isinstance(message, dict) else None
         prompt_tokens = result.get("prompt_eval_count")
@@ -361,14 +546,25 @@ def run_engine_backend_chat(
         duration_ns = result.get("total_duration")
         finished = bool(result.get("done", True))
     else:
+        # OpenAI-compatible runtimes share top_p/stop/seed; top-k and
+        # repetition-penalty extensions differ in spelling.
         payload = {
             "model": model,
             "messages": normalized,
             "stream": False,
             "max_tokens": max_new_tokens,
             "temperature": float(temperature),
+            "top_p": top_p,
         }
-        result = _request_json(backend_id, _BACKEND_BY_ID[backend_id]["chat_path"], payload, timeout=_REQUEST_TIMEOUT)
+        if stops:
+            payload["stop"] = list(stops)
+        if seed is not None:
+            payload["seed"] = seed
+        if top_k:
+            payload["top_k"] = top_k
+        if repetition_penalty != 1.0:
+            payload["repetition_penalty" if backend_id == "vllm" else "repeat_penalty"] = repetition_penalty
+        result = _request_json(backend_id, _BACKEND_BY_ID[backend_id]["chat_path"], payload, timeout=timeout)
         choices = result.get("choices")
         choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
         message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
@@ -398,6 +594,96 @@ def run_engine_backend_chat(
     }
 
 
+_AUTO_ROUTE_MAX_ATTEMPTS = 3
+_AUTO_ROUTE_TIMEOUT_SECONDS = 45.0
+_AUTO_ROUTE_SCOPE = (
+    "Auto-routing uses fixed loopback services only and matches exact model IDs in live inventories. "
+    "Matching names do not prove identical checkpoint weights or quantization across runtimes."
+)
+
+
+def run_engine_fabric_chat(
+    profile: str,
+    model: str,
+    messages: list[dict[str, str]],
+    *,
+    max_new_tokens: int = 256,
+    temperature: float = 0.7,
+    top_p: float = 0.9,
+    top_k: int = 0,
+    repetition_penalty: float = 1.0,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] = (),
+) -> dict[str, Any]:
+    """Select a local backend by workload profile and fail over only to exact-ID matches."""
+    if profile not in _PROFILES:
+        raise ValueError("Profile must be one of: " + ", ".join(_PROFILES))
+    model, normalized = _validate_engine_chat_inputs(model, messages, max_new_tokens, temperature)
+    top_p, top_k, repetition_penalty, seed, stops = _validate_sampling_options(
+        top_p, top_k, repetition_penalty, seed, stop_sequences
+    )
+    report = discover_engine_backends(profile)
+    inventory = {backend.get("id"): backend for backend in report.get("backends", []) if isinstance(backend, dict)}
+    candidates: list[dict[str, Any]] = []
+    for backend_id in _PROFILES[profile]:
+        backend = inventory.get(backend_id)
+        if (
+            isinstance(backend, dict)
+            and backend.get("status") == "ready"
+            and backend.get("supports_chat") is True
+            and model in backend.get("models", [])
+        ):
+            candidates.append(backend)
+        if len(candidates) >= _AUTO_ROUTE_MAX_ATTEMPTS:
+            break
+    if not candidates:
+        raise EngineFabricError(
+            f"No ready local backend advertises the exact model ID {model!r}. "
+            "Load/configure that model on a supported local service and refresh discovery."
+        )
+
+    attempts: list[dict[str, Any]] = []
+    for backend in candidates:
+        backend_id = str(backend["id"])
+        backend_name = str(backend["name"])
+        try:
+            dispatch_options: dict[str, Any] = {
+                "max_new_tokens": max_new_tokens,
+                "temperature": temperature,
+                "top_p": top_p,
+                "top_k": top_k,
+                "repetition_penalty": repetition_penalty,
+                "seed": seed,
+                "stop_sequences": stops,
+            }
+            if backend_id != "axiom-native":
+                dispatch_options["request_timeout"] = _AUTO_ROUTE_TIMEOUT_SECONDS
+            result = run_engine_backend_chat(backend_id, model, normalized, **dispatch_options)
+        except EngineFabricError as exc:
+            attempts.append({
+                "backend_id": backend_id,
+                "backend_name": backend_name,
+                "outcome": "failed",
+                "reason": str(exc),
+            })
+            continue
+        attempts.append({"backend_id": backend_id, "backend_name": backend_name, "outcome": "selected"})
+        result["routing"] = {
+            "strategy": "profile_order_exact_model_id",
+            "profile": profile,
+            "requested_model": model,
+            "fallback_used": len(attempts) > 1,
+            "attempts": attempts,
+            "max_attempts": _AUTO_ROUTE_MAX_ATTEMPTS,
+            "scope_note": _AUTO_ROUTE_SCOPE,
+        }
+        return result
+
+    failures = "; ".join(f"{item['backend_name']}: {item['reason']}" for item in attempts)
+    raise EngineFabricError("All matching local backends failed: " + failures)
+
+
+
 def run_engine_backend_benchmark(
     backend_id: str,
     model: str,
@@ -407,6 +693,11 @@ def run_engine_backend_benchmark(
     warmup_runs: int = 1,
     iterations: int = 3,
     temperature: float = 0.2,
+    top_p: float = 0.9,
+    top_k: int = 0,
+    repetition_penalty: float = 1.0,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Measure bounded local end-to-end latency without returning or saving generated text."""
     import statistics
@@ -423,13 +714,17 @@ def run_engine_backend_benchmark(
         raise ValueError("Benchmark iterations must be between 1 and 5.")
     if isinstance(temperature, bool) or not isinstance(temperature, (int, float)) or not 0 <= float(temperature) <= 2:
         raise ValueError("Benchmark temperature must be between 0 and 2.")
-    if backend_id not in _BACKEND_BY_ID:
-        raise ValueError("Choose a supported external local backend.")
+    if backend_id not in _BACKEND_BY_ID and backend_id != "axiom-native":
+        raise ValueError("Choose a supported local backend.")
+    top_p, top_k, repetition_penalty, seed, stops = _validate_sampling_options(
+        top_p, top_k, repetition_penalty, seed, stop_sequences
+    )
 
     messages = [{"role": "user", "content": prompt}]
     for _ in range(warmup_runs):
         warmup = run_engine_backend_chat(
-            backend_id, model, messages, max_new_tokens=max_new_tokens, temperature=temperature
+            backend_id, model, messages, max_new_tokens=max_new_tokens, temperature=temperature,
+            top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stops,
         )
         del warmup
 
@@ -440,7 +735,8 @@ def run_engine_backend_benchmark(
     for _ in range(iterations):
         request_started = time.perf_counter()
         measured = run_engine_backend_chat(
-            backend_id, model, messages, max_new_tokens=max_new_tokens, temperature=temperature
+            backend_id, model, messages, max_new_tokens=max_new_tokens, temperature=temperature,
+            top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stops,
         )
         latency_ms = max(0.0, (time.perf_counter() - request_started) * 1000.0)
         latencies.append(round(latency_ms, 2))
@@ -460,12 +756,17 @@ def run_engine_backend_benchmark(
     return {
         "schema_version": _SCHEMA_VERSION,
         "backend_id": backend_id,
-        "backend_name": _BACKEND_BY_ID[backend_id]["name"],
+        "backend_name": "AXIOM Native Engine" if backend_id == "axiom-native" else _BACKEND_BY_ID[backend_id]["name"],
         "model": model,
         "configuration": {
             "prompt_characters": len(prompt),
             "max_new_tokens": max_new_tokens,
             "temperature": float(temperature),
+            "top_p": top_p,
+            "top_k": top_k,
+            "repetition_penalty": repetition_penalty,
+            "seed": seed,
+            "stop_sequence_count": len(stops),
             "warmup_runs": warmup_runs,
             "iterations": iterations,
             "measured_requests": iterations,

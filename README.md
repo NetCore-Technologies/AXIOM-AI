@@ -233,6 +233,7 @@ AXIOM owns this inference path. It runs Llama, Mistral, Qwen2, and Qwen3 text-de
 
 ```bash
 axiom --no-banner engine status
+axiom --no-banner engine estimate --model-path "$HOME/models/my-llama-model" --context-length 4096 --ram-budget-gib 16 --vram-budget-gib 8
 axiom --no-banner engine run --model-path "$HOME/models/my-llama-model" --prompt "Explain AXIOM in one sentence." --max-new-tokens 128
 ```
 
@@ -241,6 +242,7 @@ axiom --no-banner engine run --model-path "$HOME/models/my-llama-model" --prompt
 - Pick `--precision auto|fp32|fp16|bf16`. Auto preserves the checkpoint dtype; FP16/BF16 may reduce memory for FP32 checkpoints where the backend supports them. This is floating-point precision, not INT8/INT4 quantization.
 - Choose `--memory-mode layer_streaming` when accelerator memory is constrained. This is not quantization; native GGUF/EXL2/GPTQ/AWQ support remains pending.
 - Choose `--memory-mode disk_streaming` when the entire model's layer weights also do not fit in CPU RAM. Expect extra disk I/O on every prompt/decode forward pass.
+- Use `engine estimate` to compare estimated weights, KV-cache, and workspace against RAM/VRAM budgets. INT4/INT8 figures are planning-only; AXIOM's native loader still requires supported floating-point Safetensors.
 - Model Studio can pull compatible public Hugging Face safetensors checkpoints directly into AXIOM's trusted native-model directory; the runtime also accepts compatible local checkpoints.
 
 Details: [AXIOM Engine](docs/Local-Engine.md). A local OpenAI-compatible chat endpoint is available at `/v1/chat/completions`; it only exposes native-compatible models discovered inside AXIOM's trusted model roots and currently supports text chat, not tool calling or continuous batching.

@@ -23,6 +23,13 @@ export type EngineFabricBackend = {
   formats: string[]; strengths: string[]; tradeoffs: string[]; best_for: string[];
   status: "ready" | "offline" | "auth_required" | "incompatible" | "setup_required";
   installed: boolean; reachable: boolean; models: string[]; model_count: number; error: string | null; scope: string;
+  generation: {
+    transport: "in_process" | "ollama_options" | "openai_compatible";
+    parameter_mapping: Record<string, string>;
+    native_sampling_controls: string[];
+    extension_sampling_controls: string[];
+    note: string;
+  };
 };
 export type EngineFabricReport = {
   schema_version: number; checked_at: string; host: { os: string; architecture: string };
@@ -33,17 +40,22 @@ export type EngineFabricReport = {
   scope_note: string;
 };
 export type EngineFabricChatResult = {
-  schema_version: number; backend_id: "ollama" | "llama-cpp" | "lm-studio" | "vllm" | "llama-cpp-python";
+  schema_version: number; backend_id: "axiom-native" | "ollama" | "llama-cpp" | "lm-studio" | "vllm" | "llama-cpp-python";
   backend_name: string; model: string; response: string; done: boolean;
   prompt_eval_count: number | null; eval_count: number | null; total_duration_ms: number;
-  generated_at: string; execution: "local_loopback";
+  generated_at: string; execution: "local_loopback" | "in_process_native"; device?: string | null; precision?: string | null;
   privacy: { prompt_returned: false; response_persisted: false; cloud_provider_used: false };
+  routing?: {
+    strategy: string; profile: EngineFabricProfile; requested_model: string; fallback_used: boolean;
+    attempts: Array<{ backend_id: string; backend_name: string; outcome: "failed" | "selected"; reason?: string }>;
+    max_attempts: number; scope_note: string;
+  };
 };
 
 
 export type EngineFabricBenchmarkResult = {
   schema_version: number; backend_id: EngineFabricChatResult["backend_id"]; backend_name: string; model: string;
-  configuration: { prompt_characters: number; max_new_tokens: number; temperature: number; warmup_runs: number; iterations: number; measured_requests: number };
+  configuration: { prompt_characters: number; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequence_count: number; warmup_runs: number; iterations: number; measured_requests: number };
   measurements: {
     wall_time_ms: number; requests_per_second: number; completion_tokens_known: number; total_completion_tokens: number | null;
     completion_tokens_per_second: number | null; latency_ms: { min: number; median: number; p95: number; max: number };
@@ -335,6 +347,7 @@ export type LLMModelResult = {
 export type LLMChatMessage = { role: "system" | "user" | "assistant"; content: string };
 export type LLMChatRequest = LLMModelRequest & {
   model: string; messages: LLMChatMessage[]; max_tokens: number; temperature: number; consent: boolean;
+  top_p?: number; top_k?: number; repetition_penalty?: number; seed?: number | null; stop_sequences?: string[];
   device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu";
   memory_mode?: "auto" | "full" | "layer_streaming" | "disk_streaming";
   precision?: "auto" | "fp32" | "fp16" | "bf16";
@@ -1540,9 +1553,11 @@ export const axiomApi = {
   }),
   axiomEngineStatus: () => requestJson<AxiomEngineStatus>("/api/engine/status"),
   engineBackends: (profile: EngineFabricProfile = "balanced") => requestJson<EngineFabricReport>("/api/engine/backends?" + new URLSearchParams({ profile })),
-  engineBackendChat: (input: { backend_id: EngineFabricChatResult["backend_id"]; model: string; messages: Array<{ role: "system" | "user" | "assistant"; content: string }>; max_new_tokens: number; temperature: number }) =>
+  engineBackendChat: (input: { backend_id: EngineFabricChatResult["backend_id"]; model: string; messages: Array<{ role: "system" | "user" | "assistant"; content: string }>; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[] }) =>
     requestJson<EngineFabricChatResult>("/api/engine/backends/chat", { method: "POST", body: JSON.stringify(input) }, 300_000),
-  engineBackendBenchmark: (input: { backend_id: EngineFabricChatResult["backend_id"]; model: string; prompt: string; max_new_tokens: number; warmup_runs: number; iterations: number; temperature: number }) =>
+  engineBackendAutoChat: (input: { profile: EngineFabricProfile; model: string; messages: Array<{ role: "system" | "user" | "assistant"; content: string }>; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[] }) =>
+    requestJson<EngineFabricChatResult>("/api/engine/backends/auto-chat", { method: "POST", body: JSON.stringify(input) }, 300_000),
+  engineBackendBenchmark: (input: { backend_id: EngineFabricChatResult["backend_id"]; model: string; prompt: string; max_new_tokens: number; warmup_runs: number; iterations: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[] }) =>
     requestJson<EngineFabricBenchmarkResult>("/api/engine/backends/benchmark", { method: "POST", body: JSON.stringify(input) }, 300_000),
   axiomEngineTelemetry: () => requestJson<AxiomEngineSystemTelemetry>("/api/engine/telemetry"),
   axiomEngineModels: () => requestJson<AxiomEngineAssets>("/api/engine/models"),

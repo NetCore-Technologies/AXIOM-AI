@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
 from starlette.responses import StreamingResponse
 from axiom.core import model_studio
-from axiom.core.engine_fabric import EngineFabricError, discover_engine_backends, run_engine_backend_benchmark, run_engine_backend_chat
+from axiom.core.engine_fabric import EngineFabricError, discover_engine_backends, run_engine_backend_benchmark, run_engine_backend_chat, run_engine_fabric_chat
 
 from axiom.core.engine import (
     AxiomEngineError,
@@ -364,11 +364,37 @@ class EngineFabricMessage(BaseModel):
 
 
 class EngineFabricChatRequest(BaseModel):
-    backend_id: str = Field(pattern="^(ollama|llama-cpp|lm-studio|vllm|llama-cpp-python)$")
+    backend_id: str = Field(pattern="^(axiom-native|ollama|llama-cpp|lm-studio|vllm|llama-cpp-python)$")
     model: str = Field(min_length=1, max_length=120)
     messages: list[EngineFabricMessage] = Field(min_length=1, max_length=64)
     max_new_tokens: int = Field(default=256, ge=1, le=2048)
     temperature: float = Field(default=0.7, ge=0, le=2)
+
+    top_p: float = Field(default=0.9, gt=0, le=1)
+    top_k: int = Field(default=0, ge=0, le=100_000, strict=True)
+    repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
+    seed: int | None = Field(default=None, ge=0, le=9_223_372_036_854_775_807, strict=True)
+    stop_sequences: list[str] = Field(default_factory=list, max_length=16)
+
+    @field_validator("model")
+    @classmethod
+    def model_must_be_a_name_not_a_url(cls, value: str) -> str:
+        from axiom.core.inference import validate_model_name
+        return validate_model_name(value)
+
+
+class EngineFabricAutoChatRequest(BaseModel):
+    profile: str = Field(pattern="^(balanced|low-memory|throughput|easy-setup|portable|minimal-daemons)$")
+    model: str = Field(min_length=1, max_length=120)
+    messages: list[EngineFabricMessage] = Field(min_length=1, max_length=64)
+    max_new_tokens: int = Field(default=256, ge=1, le=2048)
+    temperature: float = Field(default=0.7, ge=0, le=2)
+
+    top_p: float = Field(default=0.9, gt=0, le=1)
+    top_k: int = Field(default=0, ge=0, le=100_000, strict=True)
+    repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
+    seed: int | None = Field(default=None, ge=0, le=9_223_372_036_854_775_807, strict=True)
+    stop_sequences: list[str] = Field(default_factory=list, max_length=16)
 
     @field_validator("model")
     @classmethod
@@ -396,6 +422,11 @@ def engine_backend_chat(request: EngineFabricChatRequest) -> dict[str, Any]:
             [message.model_dump() for message in request.messages],
             max_new_tokens=request.max_new_tokens,
             temperature=request.temperature,
+            top_p=request.top_p,
+            top_k=request.top_k,
+            repetition_penalty=request.repetition_penalty,
+            seed=request.seed,
+            stop_sequences=request.stop_sequences,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
@@ -403,14 +434,42 @@ def engine_backend_chat(request: EngineFabricChatRequest) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="The selected local backend could not complete this request.") from None
 
 
+@router.post("/backends/auto-chat")
+def engine_backend_auto_chat(request: EngineFabricAutoChatRequest) -> dict[str, Any]:
+    """Route a chat request across ready local services by profile and exact model ID."""
+    try:
+        return run_engine_fabric_chat(
+            request.profile,
+            request.model,
+            [message.model_dump() for message in request.messages],
+            max_new_tokens=request.max_new_tokens,
+            temperature=request.temperature,
+            top_p=request.top_p,
+            top_k=request.top_k,
+            repetition_penalty=request.repetition_penalty,
+            seed=request.seed,
+            stop_sequences=request.stop_sequences,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except EngineFabricError:
+        raise HTTPException(status_code=503, detail="No matching local backend could complete this request.") from None
+
+
 class EngineFabricBenchmarkRequest(BaseModel):
-    backend_id: str = Field(pattern="^(ollama|llama-cpp|lm-studio|vllm|llama-cpp-python)$")
+    backend_id: str = Field(pattern="^(axiom-native|ollama|llama-cpp|lm-studio|vllm|llama-cpp-python)$")
     model: str = Field(min_length=1, max_length=120)
     prompt: str = Field(min_length=1, max_length=12_000)
     max_new_tokens: int = Field(default=64, ge=1, le=256)
     warmup_runs: int = Field(default=1, ge=0, le=1)
     iterations: int = Field(default=3, ge=1, le=5)
     temperature: float = Field(default=0.2, ge=0, le=2)
+
+    top_p: float = Field(default=0.9, gt=0, le=1)
+    top_k: int = Field(default=0, ge=0, le=100_000, strict=True)
+    repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
+    seed: int | None = Field(default=None, ge=0, le=9_223_372_036_854_775_807, strict=True)
+    stop_sequences: list[str] = Field(default_factory=list, max_length=16)
 
     @field_validator("model")
     @classmethod
@@ -438,6 +497,11 @@ def engine_backend_benchmark(request: EngineFabricBenchmarkRequest) -> dict[str,
             warmup_runs=request.warmup_runs,
             iterations=request.iterations,
             temperature=request.temperature,
+            top_p=request.top_p,
+            top_k=request.top_k,
+            repetition_penalty=request.repetition_penalty,
+            seed=request.seed,
+            stop_sequences=request.stop_sequences,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None

@@ -78,11 +78,21 @@ def test_llm_chat_endpoint_returns_normalized_result(monkeypatch) -> None:
         "messages": [{"role": "user", "content": "hello"}],
         "max_tokens": 16,
         "temperature": 0,
+        "top_p": 0.82,
+        "top_k": 32,
+        "repetition_penalty": 1.15,
+        "seed": 13,
+        "stop_sequences": ["END"],
     })
 
     assert response.status_code == 200
     assert response.json()["response"] == "hello"
     assert captured["device"] == "auto"
+    assert captured["top_p"] == 0.82
+    assert captured["top_k"] == 32
+    assert captured["repetition_penalty"] == 1.15
+    assert captured["seed"] == 13
+    assert captured["stop_sequences"] == ["END"]
 
 
 def test_ollama_local_chat_does_not_require_cloud_consent(monkeypatch) -> None:
@@ -135,3 +145,21 @@ def test_openai_compatible_bridge_requires_bearer_token_when_configured(monkeypa
     assert authorized.status_code == 200
     assert authorized.json()["data"][0]["id"] == "tiny"
     assert "bridge-token-sentinel" not in authorized.text
+
+
+def test_llm_chat_api_rejects_invalid_sampling_limits() -> None:
+    for body in (
+        {"top_p": 0},
+        {"top_k": -1},
+        {"repetition_penalty": 0},
+        {"seed": -1},
+        {"stop_sequences": ["x" * 257]},
+        {"stop_sequences": ["STOP"] * 17},
+    ):
+        response = _client(llm_api.router).post("/api/llm/chat", json={
+            "provider": "axiom-local",
+            "model": "tiny",
+            "messages": [{"role": "user", "content": "test"}],
+            **body,
+        })
+        assert response.status_code == 422, body

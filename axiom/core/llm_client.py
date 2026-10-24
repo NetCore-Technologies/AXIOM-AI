@@ -8,6 +8,7 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import json
+import math
 import re
 import socket
 import ssl
@@ -99,13 +100,19 @@ def _native_models() -> list[dict[str, Any]]:
     except Exception:
         raise LLMClientError("AXIOM could not inspect the trusted local model inventory.") from None
     models = report.get("models", []) if isinstance(report, dict) else []
-    return [
+    compatible = [
         item for item in models
         if isinstance(item, dict)
         and isinstance(item.get("name"), str)
         and isinstance(item.get("path"), str)
         and item.get("model_type") in {"llama", "mistral", "qwen2", "qwen3"}
     ]
+    # Model aliases are public CLI/API identifiers. Never silently choose one
+    # checkpoint when several trusted directories share the same alias.
+    name_counts: dict[str, int] = {}
+    for item in compatible:
+        name_counts[item["name"]] = name_counts.get(item["name"], 0) + 1
+    return [item for item in compatible if name_counts[item["name"]] == 1]
 
 
 def _base_url(provider: str, base_url: str | None) -> str:
@@ -383,6 +390,35 @@ def _validate_generation(model: str, max_tokens: int, temperature: float) -> tup
     return value, max_tokens, float(temperature)
 
 
+def _validate_sampling_options(
+    top_p: float,
+    top_k: int,
+    repetition_penalty: float,
+    seed: int | None,
+    stop_sequences: list[str] | tuple[str, ...],
+) -> tuple[float, int, float, int | None, tuple[str, ...]]:
+    """Validate shared controls for local inference engines."""
+    if isinstance(top_p, bool) or not isinstance(top_p, (int, float)) or not math.isfinite(float(top_p)) or not 0 < float(top_p) <= 1:
+        raise ValueError("Top-p must be a finite number greater than 0 and at most 1.")
+    if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
+        raise ValueError("Top-k must be an integer between 0 and 100,000; 0 disables the limit.")
+    if isinstance(repetition_penalty, bool) or not isinstance(repetition_penalty, (int, float)) or not math.isfinite(float(repetition_penalty)) or not 0.1 <= float(repetition_penalty) <= 5:
+        raise ValueError("Repetition penalty must be a finite number between 0.1 and 5.")
+    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 9_223_372_036_854_775_807):
+        raise ValueError("Seed must be an integer between 0 and 9,223,372,036,854,775,807.")
+    if not isinstance(stop_sequences, (list, tuple)) or len(stop_sequences) > 16:
+        raise ValueError("Provide no more than 16 stop sequences.")
+    stops: list[str] = []
+    for value in stop_sequences:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("Stop sequences must be non-empty text.")
+        if len(value) > 256:
+            raise ValueError("Each stop sequence is limited to 256 characters.")
+        if value not in stops:
+            stops.append(value)
+    return float(top_p), top_k, float(repetition_penalty), seed, tuple(stops)
+
+
 def _extract_openai(data: dict[str, Any]) -> tuple[str, int | None, int | None]:
     choices = data.get("choices")
     message = choices[0].get("message") if isinstance(choices, list) and choices and isinstance(choices[0], dict) else None
@@ -429,6 +465,11 @@ def chat(
     base_url: str | None = None,
     max_tokens: int = 256,
     temperature: float = 0.7,
+    top_p: float = 0.9,
+    top_k: int = 0,
+    repetition_penalty: float = 1.0,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] = (),
     consent: bool = False,
     device: str = "auto",
     memory_mode: str = "auto",
@@ -437,6 +478,9 @@ def chat(
     """Run one local or explicitly consented remote chat completion."""
     normalized = _validate_messages(messages)
     model_id, token_limit, temp = _validate_generation(model, max_tokens, temperature)
+    top_p, top_k, repetition_penalty, seed, stops = _validate_sampling_options(
+        top_p, top_k, repetition_penalty, seed, stop_sequences
+    )
     if provider == _LOCAL_PROVIDER:
         if base_url or api_key:
             raise ValueError("The local AXIOM provider does not accept API keys or remote base URLs.")
@@ -458,6 +502,11 @@ def chat(
                 last_user,
                 max_new_tokens=token_limit,
                 temperature=temp,
+                top_p=top_p,
+                top_k=top_k,
+                repetition_penalty=repetition_penalty,
+                seed=seed,
+                stop_sequences=stops,
                 chat_messages=normalized,
                 include_token_events=False,
                 device_preference=device,
@@ -488,7 +537,17 @@ def chat(
         if api_key or base_url:
             raise ValueError("The local Ollama provider does not accept API keys or remote base URLs.")
         try:
-            final = run_local_chat(model_id, normalized, num_predict=token_limit, temperature=temp)
+            final = run_local_chat(
+                model_id,
+                normalized,
+                num_predict=token_limit,
+                temperature=temp,
+                top_p=top_p,
+                top_k=top_k,
+                repetition_penalty=repetition_penalty,
+                seed=seed,
+                stop_sequences=stops,
+            )
         except (InferenceRuntimeError, ValueError) as exc:
             raise LLMClientError(str(exc)) from None
         return {
@@ -504,6 +563,8 @@ def chat(
         }
     if provider not in _PROVIDER_CONFIG:
         raise ValueError(f"Unsupported LLM provider: {provider!r}.")
+    if top_p != 0.9 or top_k != 0 or repetition_penalty != 1.0 or seed is not None or stops:
+        raise ValueError("Advanced sampling controls currently support the local AXIOM Native Engine and Ollama providers only; no settings were sent to the cloud provider.")
     if not consent:
         raise ValueError("Explicitly confirm that the selected cloud provider will receive your conversation before sending it.")
     key = _validate_key(api_key)

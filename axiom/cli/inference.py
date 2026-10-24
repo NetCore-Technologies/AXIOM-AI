@@ -16,7 +16,13 @@ from axiom.core.ollama_service import (
     start_model_pull, start_service, stop_service,
 )
 
-infer_app = typer.Typer(help="Manage and run local Ollama inference.", no_args_is_help=True)
+infer_app = typer.Typer(
+    help="Manage and run local Ollama inference.",
+    no_args_is_help=True,
+    # Click 8.5 added first-class argument help. Use Click's renderer for this
+    # sub-app until Typer's Rich renderer handles that new positional section.
+    rich_markup_mode=None,
+)
 service_app = typer.Typer(help="Manage the loopback Ollama service.", no_args_is_help=True)
 infer_app.add_typer(service_app, name="service")
 console = Console()
@@ -97,7 +103,7 @@ def infer_pull(
     model: str = typer.Argument(..., help="Ollama model tag to download after explicitly invoking this command."),
     json_output: bool = typer.Option(False, "--json", help="Print the final job report as JSON."),
 ) -> None:
-    """Download a local Ollama model and print progress; this requires network access."""
+    """Download a local Ollama model tag and print progress; this requires network access."""
     try:
         job = start_model_pull(model)
     except (ValueError, OllamaServiceError) as exc:
