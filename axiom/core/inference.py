@@ -162,6 +162,11 @@ def run_local_chat(
     *,
     num_predict: int = 256,
     temperature: float = 0.7,
+    top_p: float = 0.9,
+    top_k: int = 0,
+    repetition_penalty: float = 1.0,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Run a bounded multi-turn chat through the fixed loopback Ollama API."""
     model = validate_model_name(model)
@@ -185,13 +190,41 @@ def run_local_chat(
         raise ValueError("At least one user message is required.")
     last_user = next(item["content"] for item in reversed(normalized) if item["role"] == "user")
     _, num_predict, temperature = validate_generation(last_user, num_predict, temperature)
+    if isinstance(top_p, bool) or not isinstance(top_p, (int, float)) or not 0 < float(top_p) <= 1:
+        raise ValueError("top_p must be greater than 0 and at most 1.")
+    if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
+        raise ValueError("top_k must be between 0 and 100,000.")
+    if isinstance(repetition_penalty, bool) or not isinstance(repetition_penalty, (int, float)) or not 0.1 <= float(repetition_penalty) <= 5:
+        raise ValueError("repetition_penalty must be between 0.1 and 5.")
+    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 9_223_372_036_854_775_807):
+        raise ValueError("seed must be a non-negative signed 64-bit integer.")
+    if not isinstance(stop_sequences, (list, tuple)) or len(stop_sequences) > 16:
+        raise ValueError("At most 16 stop sequences may be supplied.")
+    stops: list[str] = []
+    for value in stop_sequences:
+        if not isinstance(value, str) or not value.strip() or len(value) > 256:
+            raise ValueError("Each stop sequence must contain 1–256 non-whitespace characters.")
+        if value not in stops:
+            stops.append(value)
+    options: dict[str, Any] = {
+        "num_predict": num_predict,
+        "temperature": float(temperature),
+        "top_p": float(top_p),
+        "repeat_penalty": float(repetition_penalty),
+    }
+    if top_k > 0:
+        options["top_k"] = top_k
+    if seed is not None:
+        options["seed"] = seed
+    if stops:
+        options["stop"] = stops
     result = _request_json(
         "/api/chat",
         payload={
             "model": model,
             "messages": normalized,
             "stream": False,
-            "options": {"num_predict": num_predict, "temperature": temperature},
+            "options": options,
         },
         timeout=_GENERATION_TIMEOUT_SECONDS,
     )
