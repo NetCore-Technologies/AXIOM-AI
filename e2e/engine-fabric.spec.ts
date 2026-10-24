@@ -38,7 +38,7 @@ test("Engine Fabric compares local engines and routes chat to the chosen service
     if (route.request().method() === "POST" && route.request().url().includes("/benchmark")) {
       benchmarkRequestBody = route.request().postDataJSON() as Record<string, unknown>;
       await route.fulfill({ json: {
-        schema_version: 1, backend_id: "llama-cpp", backend_name: "llama.cpp server", model: "tiny-local",
+        schema_version: 1, backend_id: "ollama", backend_name: "Ollama", model: "tiny-local",
         configuration: { prompt_characters: 18, max_new_tokens: 16, temperature: 0.2, top_p: 0.9, top_k: 0, min_p: 0.2, repetition_penalty: 1, seed: null, stop_sequence_count: 0, warmup_runs: 0, iterations: 2, measured_requests: 2 },
         measurements: {
           wall_time_ms: 42, requests_per_second: 47.6, completion_tokens_known: 2, total_completion_tokens: 14,
