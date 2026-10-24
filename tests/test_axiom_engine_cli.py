@@ -117,6 +117,7 @@ def test_engine_run_stream_shows_live_output_and_final_metrics(tmp_path: Path, m
     result = runner.invoke(engine_app, [
         "run", "--model-path", str(model_path), "--prompt", "Say hello.",
         "--stream", "--max-new-tokens", "4", "--temperature", "0", "--precision", "fp16",
+        "--top-p", "0.82", "--top-k", "32", "--repeat-penalty", "1.15", "--seed", "17",
         "--stop-sequence", "<END>", "--stop-sequence", "###",
     ])
 
@@ -128,6 +129,34 @@ def test_engine_run_stream_shows_live_output_and_final_metrics(tmp_path: Path, m
     assert observed["stop_sequences"] == ["<END>", "###"]
     assert observed["memory_mode"] == "auto"
     assert observed["precision"] == "fp16"
+    assert observed["top_p"] == 0.82
+    assert observed["top_k"] == 32
+    assert observed["repetition_penalty"] == 1.15
+    assert observed["seed"] == 17
+
+
+def test_engine_run_forwards_sampling_controls_for_complete_generation(tmp_path: Path, monkeypatch) -> None:
+    model_path = tmp_path / "model"
+    model_path.mkdir()
+    observed: dict[str, object] = {}
+
+    def fake_generate(*_args, **kwargs):
+        observed.update(kwargs)
+        return {"execution_backend": "pytorch-native-axiom", "response": "sampled output"}
+
+    monkeypatch.setattr(engine_cli, "generate_local", fake_generate)
+    result = runner.invoke(engine_app, [
+        "run", "--model-path", str(model_path), "--prompt", "Say hello.",
+        "--top-p", "0.82", "--top-k", "32", "--repeat-penalty", "1.15",
+        "--seed", "17", "--json",
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["response"] == "sampled output"
+    assert observed["top_p"] == 0.82
+    assert observed["top_k"] == 32
+    assert observed["repetition_penalty"] == 1.15
+    assert observed["seed"] == 17
 
 
 def test_engine_run_rejects_stream_with_json_mode(tmp_path: Path) -> None:
