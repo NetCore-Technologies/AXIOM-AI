@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from axiom.core.inference import InferenceRuntimeError, run_local_inference
+from axiom.core.inference import InferenceRuntimeError, inspect_local_model, run_local_inference, unload_local_model
 from axiom.core.ollama_service import (
     OllamaServiceError, cancel_model_pull, get_model_pull, service_status,
     start_model_pull, start_service, stop_service,
@@ -124,6 +124,40 @@ def infer_pull(
     else:
         pull_status = job["status"]
         _fail(job.get("error") or f"Model pull {pull_status}.")
+
+
+@infer_app.command("inspect")
+def infer_inspect(
+    model: str = typer.Argument(..., help="Exact model tag already installed in local Ollama."),
+    json_output: bool = typer.Option(False, "--json", help="Print model metadata as JSON."),
+) -> None:
+    """Inspect local model family, format, parameter size, quantization and context metadata."""
+    try:
+        report = inspect_local_model(model)
+    except (ValueError, InferenceRuntimeError) as exc:
+        _fail(str(exc))
+    if json_output:
+        console.print_json(json.dumps(report, ensure_ascii=False))
+        return
+    model_name = report["model"]
+    table = Table(title=f"Local model · {model_name}")
+    table.add_column("Field", style="cyan")
+    table.add_column("Value")
+    for key, label in (("format", "Format"), ("family", "Family"), ("parameter_size", "Parameter size"), ("quantization_level", "Quantization"), ("context_length", "Context length"), ("size_bytes", "Disk size (bytes)"), ("capabilities", "Capabilities")):
+        value = report.get(key)
+        table.add_row(label, str(value) if value not in (None, []) else "Not reported")
+    console.print(table)
+    console.print(report["scope_note"])
+
+
+@infer_app.command("unload")
+def infer_unload(model: str = typer.Argument(..., help="Installed local model to unload from memory without deleting its files.")) -> None:
+    """Ask Ollama to unload a model from RAM/VRAM without deleting its download."""
+    try:
+        result = unload_local_model(model)
+    except (ValueError, InferenceRuntimeError) as exc:
+        _fail(str(exc))
+    console.print(result["scope_note"])
 
 
 @infer_app.command("models")
