@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
 from starlette.responses import StreamingResponse
 from axiom.core import model_studio
+from axiom.core.engine_fabric import EngineFabricError, discover_engine_backends, run_engine_backend_benchmark, run_engine_backend_chat
 
 from axiom.core.engine import (
     AxiomEngineError,
@@ -348,3 +349,97 @@ async def engine_generate_stream(
         media_type="application/x-ndjson",
         headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
     )
+
+
+class EngineFabricMessage(BaseModel):
+    role: str = Field(pattern="^(system|user|assistant)$")
+    content: str = Field(min_length=1, max_length=12_000)
+
+    @field_validator("content")
+    @classmethod
+    def content_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Conversation messages must not be blank.")
+        return value
+
+
+class EngineFabricChatRequest(BaseModel):
+    backend_id: str = Field(pattern="^(ollama|llama-cpp|lm-studio|vllm|llama-cpp-python)$")
+    model: str = Field(min_length=1, max_length=120)
+    messages: list[EngineFabricMessage] = Field(min_length=1, max_length=64)
+    max_new_tokens: int = Field(default=256, ge=1, le=2048)
+    temperature: float = Field(default=0.7, ge=0, le=2)
+
+    @field_validator("model")
+    @classmethod
+    def model_must_be_a_name_not_a_url(cls, value: str) -> str:
+        from axiom.core.inference import validate_model_name
+        return validate_model_name(value)
+
+
+@router.get("/backends")
+def engine_backends(profile: str = "balanced") -> dict[str, Any]:
+    """Inventory local execution backends and recommend one using an explicit workload profile."""
+    try:
+        return discover_engine_backends(profile)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+
+
+@router.post("/backends/chat")
+def engine_backend_chat(request: EngineFabricChatRequest) -> dict[str, Any]:
+    """Dispatch a bounded chat request to a selected fixed-loopback backend."""
+    try:
+        return run_engine_backend_chat(
+            request.backend_id,
+            request.model,
+            [message.model_dump() for message in request.messages],
+            max_new_tokens=request.max_new_tokens,
+            temperature=request.temperature,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except EngineFabricError:
+        raise HTTPException(status_code=503, detail="The selected local backend could not complete this request.") from None
+
+
+class EngineFabricBenchmarkRequest(BaseModel):
+    backend_id: str = Field(pattern="^(ollama|llama-cpp|lm-studio|vllm|llama-cpp-python)$")
+    model: str = Field(min_length=1, max_length=120)
+    prompt: str = Field(min_length=1, max_length=12_000)
+    max_new_tokens: int = Field(default=64, ge=1, le=256)
+    warmup_runs: int = Field(default=1, ge=0, le=1)
+    iterations: int = Field(default=3, ge=1, le=5)
+    temperature: float = Field(default=0.2, ge=0, le=2)
+
+    @field_validator("model")
+    @classmethod
+    def model_must_be_a_name_not_a_url(cls, value: str) -> str:
+        from axiom.core.inference import validate_model_name
+        return validate_model_name(value)
+
+    @field_validator("prompt")
+    @classmethod
+    def prompt_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Benchmark prompt must not be blank.")
+        return value
+
+
+@router.post("/backends/benchmark")
+def engine_backend_benchmark(request: EngineFabricBenchmarkRequest) -> dict[str, Any]:
+    """Run a small real-workload benchmark and retain only timing/token metadata."""
+    try:
+        return run_engine_backend_benchmark(
+            request.backend_id,
+            request.model,
+            request.prompt,
+            max_new_tokens=request.max_new_tokens,
+            warmup_runs=request.warmup_runs,
+            iterations=request.iterations,
+            temperature=request.temperature,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except EngineFabricError:
+        raise HTTPException(status_code=503, detail="The selected local backend could not complete the benchmark.") from None

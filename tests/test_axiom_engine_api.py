@@ -701,3 +701,84 @@ def test_openai_bridge_rejects_unknown_namespaced_ollama_model(monkeypatch) -> N
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "model_not_found"
 
+
+
+def test_engine_fabric_endpoint_returns_backend_matrix(monkeypatch) -> None:
+    expected = {
+        "schema_version": 1,
+        "profile": "low-memory",
+        "backends": [{"id": "llama-cpp", "status": "ready"}],
+        "recommendation": {"backend_id": "llama-cpp", "status": "ready"},
+    }
+    monkeypatch.setattr(engine_api, "discover_engine_backends", lambda profile: {**expected, "profile": profile})
+    response = _client().get("/api/engine/backends?profile=low-memory")
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
+def test_engine_fabric_endpoint_rejects_unknown_profile() -> None:
+    response = _client().get("/api/engine/backends?profile=remote-cloud")
+    assert response.status_code == 422
+
+
+def test_engine_fabric_chat_endpoint_dispatches_validated_local_request(monkeypatch) -> None:
+    observed = {}
+    expected = {
+        "schema_version": 1, "backend_id": "llama-cpp", "backend_name": "llama.cpp server",
+        "model": "tiny-local", "response": "Hello from a local backend.", "done": True,
+        "prompt_eval_count": 5, "eval_count": 4, "total_duration_ms": 12.0,
+        "generated_at": "2026-10-24T00:00:00+00:00", "execution": "local_loopback",
+        "privacy": {"prompt_returned": False, "response_persisted": False, "cloud_provider_used": False},
+    }
+
+    def fake_dispatch(backend_id, model, messages, *, max_new_tokens, temperature):
+        observed.update(backend_id=backend_id, model=model, messages=messages, max_new_tokens=max_new_tokens, temperature=temperature)
+        return expected
+
+    monkeypatch.setattr(engine_api, "run_engine_backend_chat", fake_dispatch)
+    response = _client().post("/api/engine/backends/chat", json={
+        "backend_id": "llama-cpp", "model": "tiny-local",
+        "messages": [{"role": "user", "content": "Say hello."}],
+        "max_new_tokens": 64, "temperature": 0.2,
+    })
+    assert response.status_code == 200
+    assert response.json() == expected
+    assert observed["backend_id"] == "llama-cpp"
+    assert observed["max_new_tokens"] == 64
+    assert observed["messages"] == [{"role": "user", "content": "Say hello."}]
+
+
+def test_engine_fabric_chat_rejects_external_and_unknown_targets() -> None:
+    invalid = _client().post("/api/engine/backends/chat", json={
+        "backend_id": "openai", "model": "tiny-local",
+        "messages": [{"role": "user", "content": "Do not route externally."}],
+    })
+    assert invalid.status_code == 422
+
+
+def test_engine_fabric_benchmark_endpoint_returns_metadata_only_result(monkeypatch) -> None:
+    expected = {
+        "schema_version": 1,
+        "backend_id": "llama-cpp",
+        "backend_name": "llama.cpp server",
+        "model": "tiny-local",
+        "configuration": {"iterations": 2, "measured_requests": 2},
+        "measurements": {"latency_ms": {"median": 15.0, "p95": 19.0}, "requests": []},
+        "privacy": {"prompt_returned": False, "responses_returned": False, "results_persisted": False},
+        "scope_note": "Measured local calls only.",
+    }
+    monkeypatch.setattr(engine_api, "run_engine_backend_benchmark", lambda *args, **kwargs: expected)
+    response = _client().post("/api/engine/backends/benchmark", json={
+        "backend_id": "llama-cpp", "model": "tiny-local", "prompt": "Measure this.",
+        "max_new_tokens": 32, "warmup_runs": 0, "iterations": 2, "temperature": 0.2,
+    })
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
+def test_engine_fabric_benchmark_endpoint_rejects_large_run_budget() -> None:
+    response = _client().post("/api/engine/backends/benchmark", json={
+        "backend_id": "llama-cpp", "model": "tiny-local", "prompt": "Measure this.",
+        "max_new_tokens": 2048, "warmup_runs": 1, "iterations": 10,
+    })
+    assert response.status_code == 422

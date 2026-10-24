@@ -16,6 +16,42 @@ export const playgroundEndpoints = [
 export type PlaygroundEndpoint = (typeof playgroundEndpoints)[number]["path"];
 const playgroundEndpointPaths = new Set<string>(playgroundEndpoints.map((endpoint) => endpoint.path));
 
+
+export type EngineFabricProfile = "balanced" | "low-memory" | "throughput" | "easy-setup" | "portable" | "minimal-daemons";
+export type EngineFabricBackend = {
+  id: string; name: string; kind: string; endpoint: string | null; supports_chat: boolean;
+  formats: string[]; strengths: string[]; tradeoffs: string[]; best_for: string[];
+  status: "ready" | "offline" | "auth_required" | "incompatible" | "setup_required";
+  installed: boolean; reachable: boolean; models: string[]; model_count: number; error: string | null; scope: string;
+};
+export type EngineFabricReport = {
+  schema_version: number; checked_at: string; host: { os: string; architecture: string };
+  profile: EngineFabricProfile; profiles: Array<{ id: EngineFabricProfile; label: string }>;
+  backends: EngineFabricBackend[];
+  recommendation: { profile: EngineFabricProfile; backend_id: string; name: string; status: "ready" | "setup_required"; reason: string };
+  security: { network_scope: string; environment_proxies_used: false; remote_endpoints_configurable: false; credentials_sent: false; model_downloads_started: false; processes_launched: false };
+  scope_note: string;
+};
+export type EngineFabricChatResult = {
+  schema_version: number; backend_id: "ollama" | "llama-cpp" | "lm-studio" | "vllm" | "llama-cpp-python";
+  backend_name: string; model: string; response: string; done: boolean;
+  prompt_eval_count: number | null; eval_count: number | null; total_duration_ms: number;
+  generated_at: string; execution: "local_loopback";
+  privacy: { prompt_returned: false; response_persisted: false; cloud_provider_used: false };
+};
+
+
+export type EngineFabricBenchmarkResult = {
+  schema_version: number; backend_id: EngineFabricChatResult["backend_id"]; backend_name: string; model: string;
+  configuration: { prompt_characters: number; max_new_tokens: number; temperature: number; warmup_runs: number; iterations: number; measured_requests: number };
+  measurements: {
+    wall_time_ms: number; requests_per_second: number; completion_tokens_known: number; total_completion_tokens: number | null;
+    completion_tokens_per_second: number | null; latency_ms: { min: number; median: number; p95: number; max: number };
+    requests: Array<{ latency_ms: number; completion_tokens: number | null }>;
+  };
+  privacy: { prompt_returned: false; responses_returned: false; results_persisted: false }; scope_note: string;
+};
+
 export type LocalInferenceStatus = {
   backend: "ollama";
   endpoint: string;
@@ -24,17 +60,70 @@ export type LocalInferenceStatus = {
   models: string[];
   error: string | null;
   checked_at: string;
+  service_managed_by_axiom?: boolean;
+  service_can_start?: boolean;
+  service_can_stop?: boolean;
+  service_control_scope?: "loopback_only" | string;
+  service_message?: string;
 };
+export type OllamaPullJob = {
+  id: string;
+  model: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  created_at: string;
+  updated_at: string;
+  progress: string;
+  percent: number | null;
+  logs: string[];
+  error: string | null;
+  cancel_requested: boolean;
+};
+export type OllamaRunningModel = {
+  name: string; size_bytes: number | null; size_vram_bytes: number | null;
+  size_ram_bytes: number | null; memory_placement: "mixed" | "gpu" | "cpu_or_unreported";
+  expires_at: string | null; digest_prefix: string | null; format: string | null;
+  family: string | null; parameter_size: string | null; quantization_level: string | null;
+};
+export type OllamaRunningModels = {
+  schema_version: 1; backend: "ollama"; endpoint: string; models: OllamaRunningModel[];
+  count: number; scope_note: string;
+};
+export type OllamaModelDetails = {
+  schema_version: 1; model: string; installed: boolean; size_bytes: number | null;
+  modified_at: string | null; format: string | null; family: string | null; families: string[];
+  parameter_size: string | null; parameter_count: number | null; quantization_level: string | null;
+  context_length: number | null; capabilities: string[]; template_configured: boolean;
+  license_present: boolean; system_prompt_configured: boolean; scope_note: string;
+};
+export type OllamaModelRemoval = {
+  schema_version: 1; model: string; removed: boolean; model_files_deleted: boolean;
+  remaining_models: string[]; scope_note: string;
+};
+export type OllamaModelUnload = {
+  schema_version: 1; model: string; unloaded: boolean; model_files_deleted: false; scope_note: string;
+};
+
 export type LocalInferenceResult = {
   request_id?: string;
   model: string;
   response: string;
   done: boolean;
+  done_reason?: string | null;
+  execution?: "local";
   prompt_eval_count: number | null;
   eval_count: number | null;
   total_duration_ms: number | null;
   generated_at: string;
 };
+export type LocalInferenceInput = {
+  model: string; prompt: string; num_predict: number; temperature: number;
+  top_p?: number; top_k?: number; repetition_penalty?: number; seed?: number;
+  num_ctx?: number; stop_sequences?: string[];
+};
+export type LocalInferenceStreamEvent =
+  | { type: "token"; token: string; request_id?: string }
+  | { type: "complete"; result: LocalInferenceResult }
+  | { type: "error"; message: string; request_id?: string };
 
 export type LocalInferenceBenchmark = {
   request_id: string;
@@ -915,6 +1004,80 @@ async function requestJson<T>(path: string, init: RequestInit = {}, timeoutMs = 
   }
 }
 
+async function streamLocalInferenceRequest(
+  input: LocalInferenceInput,
+  onEvent: (event: LocalInferenceStreamEvent) => void,
+  signal: AbortSignal,
+): Promise<LocalInferenceResult> {
+  const requestId = globalThis.crypto?.randomUUID?.()
+    ?? ("ui-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 12));
+  const response = await fetch(API_BASE + "/api/inference/generate/stream", {
+    method: "POST",
+    headers: {
+      Accept: "application/x-ndjson",
+      "Content-Type": "application/json",
+      "X-Request-ID": requestId,
+    },
+    body: JSON.stringify(input),
+    signal,
+  });
+  if (!response.ok) {
+    const raw = await response.text();
+    let payload: unknown = raw;
+    try { payload = raw ? JSON.parse(raw) as unknown : null; } catch { /* retain a safe fallback */ }
+    const rid = response.headers.get("X-Request-ID") || requestId;
+    throw new Error(messageFromPayload(payload, "AXIOM stream request failed (" + response.status + ")") + " (request ID " + rid + ")");
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("AXIOM streaming response did not expose a readable body.");
+
+  const decoder = new TextDecoder();
+  let pending = "";
+  let responseText = "";
+  let completed: LocalInferenceResult | null = null;
+  const consumeLine = (line: string): LocalInferenceResult | null => {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+    let event: LocalInferenceStreamEvent;
+    try { event = JSON.parse(trimmed) as LocalInferenceStreamEvent; }
+    catch { throw new Error("AXIOM returned an invalid newline-delimited inference event."); }
+    if (event.type === "error") throw new Error(event.message || "Local Ollama generation failed.");
+    if (event.type === "token") {
+      if (typeof event.token !== "string") throw new Error("AXIOM returned an invalid token delta.");
+      responseText += event.token;
+      onEvent(event);
+      return null;
+    }
+    if (event.type !== "complete" || !event.result || typeof event.result !== "object") {
+      throw new Error("AXIOM returned an unknown local inference stream event.");
+    }
+    const result = { ...event.result, response: responseText, request_id: event.result.request_id || requestId };
+    onEvent(event);
+    return result;
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (value) pending += decoder.decode(value, { stream: !done });
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      for (const line of lines) completed = consumeLine(line) ?? completed;
+      if (done) break;
+    }
+    if (pending.trim()) completed = consumeLine(pending) ?? completed;
+  } finally {
+    if (!signal.aborted) {
+      try { await reader.cancel(); } catch { /* upstream may already have closed */ }
+    }
+    reader.releaseLock();
+  }
+  if (signal.aborted) throw new DOMException("Local inference was stopped.", "AbortError");
+  if (!completed) throw new Error("Ollama stream ended without a completion event.");
+  return completed;
+}
+
+
 async function streamAxiomEngineRequest(
   input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "auto" | "full" | "layer_streaming" | "disk_streaming"; precision?: "auto" | "fp32" | "fp16" | "bf16" },
   onEvent: (event: AxiomEngineStreamEvent) => void,
@@ -1348,7 +1511,17 @@ export const axiomApi = {
   },
 
   inferenceStatus: () => requestJson<LocalInferenceStatus>("/api/inference/status"),
-  runLocalInference: (input: { model: string; prompt: string; num_predict: number; temperature: number }) =>
+  streamLocalInference: (input: LocalInferenceInput, onEvent: (event: LocalInferenceStreamEvent) => void, signal: AbortSignal) => streamLocalInferenceRequest(input, onEvent, signal),
+  startLocalOllama: () => requestJson<{ started: boolean; already_running: boolean; service: LocalInferenceStatus }>("/api/inference/service/start", { method: "POST", body: JSON.stringify({}) }),
+  stopLocalOllama: () => requestJson<{ stopped: boolean; service: LocalInferenceStatus }>("/api/inference/service/stop", { method: "POST", body: JSON.stringify({}) }),
+  runningOllamaModels: () => requestJson<OllamaRunningModels>("/api/inference/models/running"),
+  inspectOllamaModel: (model: string) => requestJson<OllamaModelDetails>("/api/inference/models/inspect", { method: "POST", body: JSON.stringify({ model }) }),
+  unloadOllamaModel: (model: string) => requestJson<OllamaModelUnload>("/api/inference/models/unload", { method: "POST", body: JSON.stringify({ model }) }),
+  removeOllamaModel: (model: string) => requestJson<OllamaModelRemoval>("/api/inference/models/remove", { method: "POST", body: JSON.stringify({ model }) }),
+  startOllamaModelPull: (model: string) => requestJson<OllamaPullJob>("/api/inference/models/pull", { method: "POST", body: JSON.stringify({ model }) }),
+  ollamaModelPullStatus: (jobId: string) => requestJson<OllamaPullJob>(`/api/inference/models/pull/${encodeURIComponent(jobId)}`),
+  cancelOllamaModelPull: (jobId: string) => requestJson<OllamaPullJob>(`/api/inference/models/pull/${encodeURIComponent(jobId)}/cancel`, { method: "POST", body: JSON.stringify({}) }),
+  runLocalInference: (input: LocalInferenceInput) =>
     requestJson<LocalInferenceResult>("/api/inference/generate", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
@@ -1366,6 +1539,11 @@ export const axiomApi = {
     method: "POST", body: JSON.stringify(input),
   }),
   axiomEngineStatus: () => requestJson<AxiomEngineStatus>("/api/engine/status"),
+  engineBackends: (profile: EngineFabricProfile = "balanced") => requestJson<EngineFabricReport>("/api/engine/backends?" + new URLSearchParams({ profile })),
+  engineBackendChat: (input: { backend_id: EngineFabricChatResult["backend_id"]; model: string; messages: Array<{ role: "system" | "user" | "assistant"; content: string }>; max_new_tokens: number; temperature: number }) =>
+    requestJson<EngineFabricChatResult>("/api/engine/backends/chat", { method: "POST", body: JSON.stringify(input) }, 300_000),
+  engineBackendBenchmark: (input: { backend_id: EngineFabricChatResult["backend_id"]; model: string; prompt: string; max_new_tokens: number; warmup_runs: number; iterations: number; temperature: number }) =>
+    requestJson<EngineFabricBenchmarkResult>("/api/engine/backends/benchmark", { method: "POST", body: JSON.stringify(input) }, 300_000),
   axiomEngineTelemetry: () => requestJson<AxiomEngineSystemTelemetry>("/api/engine/telemetry"),
   axiomEngineModels: () => requestJson<AxiomEngineAssets>("/api/engine/models"),
   checkAxiomEngineAdapterCompatibility: (input: { model_path: string; adapter_path: string }) =>

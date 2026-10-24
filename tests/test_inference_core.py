@@ -147,3 +147,42 @@ def test_chat_rejects_invalid_messages_before_loopback(monkeypatch):
             {"role": "assistant", "content": "y" * 12_000},
             {"role": "user", "content": "z"},
         ])
+
+
+def test_advanced_sampling_options_are_forwarded_as_bounded_ollama_options(monkeypatch):
+    observed = {}
+
+    def fake_open(request, timeout):
+        observed["payload"] = json.loads(request.data.decode("utf-8"))
+        return FakeResponse({"response": "Configured", "done": True, "eval_count": 2, "total_duration": 1_000_000})
+
+    monkeypatch.setattr(inference, "_open_loopback", fake_open)
+    inference.run_local_inference(
+        "qwen2.5:0.5b", "Say hello",
+        top_p=0.82, top_k=40, repetition_penalty=1.15,
+        seed=17, stop_sequences=["END", "STOP", "END"], num_ctx=8192,
+    )
+
+    assert observed["payload"]["options"] == {
+        "num_predict": 256,
+        "temperature": 0.7,
+        "top_p": 0.82,
+        "top_k": 40,
+        "repeat_penalty": 1.15,
+        "seed": 17,
+        "stop": ["END", "STOP"],
+        "num_ctx": 8192,
+    }
+
+
+@pytest.mark.parametrize("options", [
+    {"top_p": 0}, {"top_p": 1.1}, {"top_k": -1}, {"top_k": 100001},
+    {"repetition_penalty": 0.09}, {"repetition_penalty": 5.1},
+    {"seed": -1}, {"seed": True}, {"num_ctx": 511}, {"num_ctx": 131073},
+    {"stop_sequences": [""]}, {"stop_sequences": ["x" * 257]},
+    {"stop_sequences": ["X"] * 17},
+])
+def test_invalid_sampling_options_are_rejected_before_any_request(monkeypatch, options):
+    monkeypatch.setattr(inference, "_open_loopback", lambda *_args, **_kwargs: pytest.fail("invalid sampling options must not reach Ollama"))
+    with pytest.raises(ValueError):
+        inference.run_local_inference("qwen2.5:0.5b", "Hello", **options)

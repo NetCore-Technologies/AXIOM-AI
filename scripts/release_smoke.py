@@ -360,9 +360,9 @@ def inspect(root: Path) -> dict[str, Any]:
     required = [
         "pyproject.toml", "axiom/version.py", "ROADMAP.md", "src/App.tsx",
         "src/api/client.ts", "src/components/ApiPlayground.tsx", "src/components/RuntimeConnectorPanel.tsx", "src/components/AgentProfiles.tsx", "src/components/LocalInferencePanel.tsx", "src/components/RuntimeTracePanel.tsx", "src/styles.css",
-        "axiom/api/server.py", "axiom/api/workspace.py", "axiom/api/engine.py", "axiom/api/inference.py", "axiom/core/inference.py", "axiom/core/native_engine.py", "axiom/core/runtime_traces.py", "axiom/models/compatibility.py", "axiom/api/diagnostics.py", "axiom/api/runtime_discovery.py", "axiom/api/agent_profiles.py", "axiom/core/runtime_discovery.py", "axiom/core/agent_profiles.py", "axiom/cli/agent_profiles.py", "scripts/release_smoke.py",
-        "tests/test_release_smoke.py", "tests/test_axiom_engine.py", "tests/test_axiom_engine_api.py", "tests/test_native_engine.py", "e2e/axiom-engine.spec.ts", "e2e/helpers/auth.ts", "e2e/modules.spec.ts", "e2e/workflows.spec.ts", "e2e/evaluation.spec.ts",
-        "e2e/model-registry-filters.spec.ts", "e2e/inference-benchmark.spec.ts", "e2e/runtime-traces.spec.ts", "e2e/axiom-engine.spec.ts", "tests/test_workspace_model_registry_filters.py",
+        "axiom/api/server.py", "axiom/api/workspace.py", "axiom/api/engine.py", "axiom/api/inference.py", "axiom/core/inference.py", "axiom/core/ollama_service.py", "axiom/core/native_engine.py", "axiom/core/runtime_traces.py", "axiom/models/compatibility.py", "axiom/api/diagnostics.py", "axiom/api/runtime_discovery.py", "axiom/api/agent_profiles.py", "axiom/core/runtime_discovery.py", "axiom/core/agent_profiles.py", "axiom/cli/agent_profiles.py", "scripts/release_smoke.py",
+        "tests/test_release_smoke.py", "tests/test_ollama_service.py", "tests/test_ollama_service_api.py", "tests/test_ollama_model_operations.py", "tests/test_cli_inference.py", "tests/test_axiom_engine.py", "tests/test_axiom_engine_api.py", "tests/test_native_engine.py", "e2e/axiom-engine.spec.ts", "e2e/helpers/auth.ts", "e2e/modules.spec.ts", "e2e/workflows.spec.ts", "e2e/evaluation.spec.ts",
+        "e2e/model-registry-filters.spec.ts", "e2e/ollama-service.spec.ts", "e2e/inference-benchmark.spec.ts", "e2e/runtime-traces.spec.ts", "e2e/axiom-engine.spec.ts", "tests/test_workspace_model_registry_filters.py",
         "tests/test_model_compatibility.py", "tests/test_inference_benchmark.py", "tests/test_inference_benchmark_api.py", "tests/test_runtime_traces.py", "tests/test_runtime_traces_api.py", "tests/test_runtime_discovery.py", "tests/test_runtime_discovery_api.py", "tests/test_agent_profiles.py", "tests/test_agent_profiles_api.py", "tests/test_agent_profiles_cli.py", "e2e/api-playground.spec.ts", "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
         "docs/Runtime-Discovery.md", "docs/Agent-Profiles.md", "docs/Api-Playground.md", "docs/Inference-Benchmarking.md", "docs/Local-Engine.md", ".github/workflows/quality-gates.yml", ".github/workflows/nightly-build.yml",
     ]
@@ -405,6 +405,50 @@ def inspect(root: Path) -> dict[str, Any]:
     inference_panel = (root / "src/components/LocalInferencePanel.tsx").read_text(encoding="utf-8")
     inference_e2e = (root / "e2e/inference-benchmark.spec.ts").read_text(encoding="utf-8")
     failures.extend(inference_benchmark_issues(inference_core, inference_api, client, inference_panel, inference_e2e))
+    ollama_service = (root / "axiom/core/ollama_service.py").read_text(encoding="utf-8")
+    ollama_cli = (root / "axiom/cli/inference.py").read_text(encoding="utf-8")
+    ollama_e2e = (root / "e2e/ollama-service.spec.ts").read_text(encoding="utf-8")
+    ollama_tests = (root / "tests/test_ollama_service.py").read_text(encoding="utf-8")
+    inference_core_tests = (root / "tests/test_inference_core.py").read_text(encoding="utf-8")
+    ollama_model_tests = (root / "tests/test_ollama_model_operations.py").read_text(encoding="utf-8")
+    ollama_api_tests = (root / "tests/test_ollama_service_api.py").read_text(encoding="utf-8")
+    for token in ("OLLAMA_HOST = \"127.0.0.1:11434\"", "def start_service(", "def stop_service(", "def service_status(", "def start_model_pull(", "def cancel_model_pull(", "_MAX_CONCURRENT_PULLS = 2", "_MODEL_PULL_TIMEOUT_SECONDS = 1800.0", "def _matches_state("):
+        if token not in ollama_service:
+            failures.append("Managed Ollama service is missing a safety/lifecycle contract: " + token)
+    for token in ("def _sampling_kwargs(", "top_p: float | None", '@router.post("/generate/stream")', '@router.get("/models/running")', '@router.post("/service/start")', '@router.post("/service/stop")', '@router.post("/models/pull")', '@router.post("/models/inspect")', '@router.post("/models/unload")', "AXIOM_ALLOW_REMOTE_RUNTIME_MANAGEMENT", "cancel_model_pull("):
+        if token not in inference_api:
+            failures.append("Ollama API is missing local lifecycle/model operations: " + token)
+    for token in ("def validate_sampling_options(", "def stream_local_inference(", "def list_running_local_models(", "def inspect_local_model(", "def unload_local_model(", '"keep_alive": 0', '"template_configured": bool'):
+        if token not in inference_core:
+            failures.append("Ollama model operations are missing: " + token)
+    for token in ("export type LocalInferenceInput", "stop_sequences?: string[]", "streamLocalInference:", "LocalInferenceStreamEvent", "runningOllamaModels:", "startLocalOllama:", "stopLocalOllama:", "startOllamaModelPull:", "cancelOllamaModelPull:", "inspectOllamaModel:", "unloadOllamaModel:", "export type OllamaModelDetails"):
+        if token not in client:
+            failures.append("Typed Ollama client is missing a local model operation: " + token)
+    for token in ("Advanced sampling options", "top_p: topPValue", "stop_sequences: stops", "Stop generation", "streamLocalInference(", "Start Ollama", "Stop AXIOM service", "Pull model", "Show loaded models", "Cancel download", "Inspect model", "Unload from memory", "Local model metadata"):
+        if token not in inference_panel:
+            failures.append("Runtime GUI is missing Ollama service/model controls: " + token)
+    for token in ("--top-p", "--top-k", "--repeat-penalty", "--num-ctx", "--stop", '@infer_app.command("ps")', '@service_app.command("start")', '@service_app.command("stop")', '@infer_app.command("pull")', '@infer_app.command("inspect")', '@infer_app.command("unload")'):
+        if token not in ollama_cli:
+            failures.append("Ollama CLI is missing a lifecycle/model command: " + token)
+    for token in ("test_service_status_exposes_control_capabilities", "test_stop_refuses_to_signal_a_process_not_owned_by_axiom", "test_start_terminates_process_if_ownership_state_cannot_be_saved", "test_start_reaps_process_if_process_identity_cannot_be_verified", "test_progress_output_removes_terminal_controls"):
+        if token not in ollama_tests:
+            failures.append("Ollama process-safety tests are missing: " + token)
+    for token in ("test_stream_local_inference_yields_token_events", "test_running_model_inventory_reports_loaded_memory_without_raw_content", "test_model_inspection_returns_metadata_without_model_templates", "test_unload_releases_memory_without_deleting_downloaded_model"):
+        if token not in ollama_model_tests:
+            failures.append("Ollama metadata/unload tests are missing: " + token)
+    for token in ("test_advanced_sampling_options_are_forwarded", "test_invalid_sampling_options_are_rejected"):
+        if token not in inference_core_tests:
+            failures.append("Ollama advanced sampling core tests are missing: " + token)
+    inference_stream_e2e = (root / "e2e/inference.spec.ts").read_text(encoding="utf-8")
+    for token in ("test_streaming_api_passes_advanced_sampling_options", "test_generate_api_rejects_oversized_context_and_stop_sequence_lists", "test_streaming_inference_emits_ndjson_token_deltas", "test_streaming_inference_sanitizes_runtime_failures"):
+        if token not in ollama_api_tests:
+            failures.append("Ollama streaming API coverage is missing: " + token)
+    for token in ('"/api/inference/generate/stream"', "top_p: 0.83", 'stop_sequences: ["DONE", "END"]', "Stop generation", "Hello from the mocked local model"):
+        if token not in inference_stream_e2e:
+            failures.append("Streaming generation browser acceptance coverage is missing: " + token)
+    for token in ("start Ollama, pull a model with progress", "Show loaded models", "Inspect model", "Unload from memory", '"/api/inference/models/running"', '"/api/inference/models/inspect"', '"/api/inference/models/unload"'):
+        if token not in ollama_e2e:
+            failures.append("Ollama browser acceptance coverage is missing: " + token)
     trace_core = (root / "axiom/core/runtime_traces.py").read_text(encoding="utf-8")
     diagnostics_api = (root / "axiom/api/diagnostics.py").read_text(encoding="utf-8")
     trace_panel = (root / "src/components/RuntimeTracePanel.tsx").read_text(encoding="utf-8")
@@ -497,7 +541,7 @@ def inspect(root: Path) -> dict[str, Any]:
         "e2e/evaluation.spec.ts", "e2e/api-playground.spec.ts",
         "e2e/runtime-connectors.spec.ts", "e2e/agent-profiles.spec.ts",
         "e2e/model-registry-filters.spec.ts", "e2e/inference-benchmark.spec.ts",
-        "e2e/runtime-traces.spec.ts", "e2e/settings-retention.spec.ts",
+        "e2e/runtime-traces.spec.ts", "e2e/ollama-service.spec.ts", "e2e/settings-retention.spec.ts",
     ):
         target = root / relative
         if not target.is_file():

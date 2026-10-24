@@ -212,3 +212,45 @@ def test_engine_pull_reports_unsupported_model_cleanly(monkeypatch) -> None:
     result = runner.invoke(engine_app, ["pull", "example/unsupported"])
     assert result.exit_code == 1
     assert "unsupported architecture" in result.output
+
+
+def test_engine_backends_cli_json_shows_profile_recommendation(monkeypatch) -> None:
+    monkeypatch.setattr(engine_cli, "discover_engine_backends", lambda profile: {
+        "profile": profile,
+        "backends": [{"id": "llama-cpp", "name": "llama.cpp server", "status": "ready", "model_count": 1, "best_for": ["low_memory"]}],
+        "recommendation": {"name": "llama.cpp server", "status": "ready", "reason": "Quantized local inference."},
+        "scope_note": "Loopback only.",
+    })
+    result = runner.invoke(engine_app, ["backends", "--profile", "low-memory", "--json"])
+    assert result.exit_code == 0, result.output
+    assert '"profile": "low-memory"' in result.output
+    assert '"backend_id"' in result.output or '"llama-cpp"' in result.output
+
+
+def test_engine_route_chat_cli_uses_selected_local_backend(monkeypatch) -> None:
+    monkeypatch.setattr(engine_cli, "run_engine_backend_chat", lambda backend, model, messages, **kwargs: {
+        "backend_name": "llama.cpp server", "model": model, "response": "local response",
+        "eval_count": 3, "total_duration_ms": 7,
+    })
+    result = runner.invoke(engine_app, [
+        "route-chat", "--backend", "llama-cpp", "--model", "tiny-local", "--prompt", "Hello",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "local response" in result.output
+    assert "llama.cpp server" in result.output
+
+
+def test_engine_route_benchmark_cli_outputs_measurements_without_response_text(monkeypatch) -> None:
+    monkeypatch.setattr(engine_cli, "run_engine_backend_benchmark", lambda backend, model, prompt, **kwargs: {
+        "backend_name": "llama.cpp server", "model": model,
+        "configuration": {"measured_requests": 2},
+        "measurements": {"latency_ms": {"median": 15.0, "p95": 19.0}, "wall_time_ms": 30.0, "completion_tokens_per_second": 42.0},
+        "scope_note": "Session-only timings.",
+    })
+    result = runner.invoke(engine_app, [
+        "route-benchmark", "--backend", "llama-cpp", "--model", "tiny-local",
+        "--prompt", "Representative benchmark input.", "--iterations", "2", "--json",
+    ])
+    assert result.exit_code == 0, result.output
+    assert '"median": 15.0' in result.output
+    assert "Representative benchmark input." not in result.output

@@ -5,7 +5,7 @@ import json
 import re
 import shutil
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Callable, Iterator
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
@@ -43,6 +43,51 @@ def validate_generation(prompt: str, num_predict: int, temperature: float) -> tu
     return prompt, num_predict, float(temperature)
 
 
+def validate_sampling_options(
+    *,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    repetition_penalty: float | None = None,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] | None = None,
+    num_ctx: int | None = None,
+) -> dict[str, Any]:
+    """Validate optional Ollama generation settings and return Ollama option names."""
+    options: dict[str, Any] = {}
+    if top_p is not None:
+        if isinstance(top_p, bool) or not isinstance(top_p, (int, float)) or not 0 < float(top_p) <= 1:
+            raise ValueError("top_p must be greater than 0 and at most 1.")
+        options["top_p"] = float(top_p)
+    if top_k is not None:
+        if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
+            raise ValueError("top_k must be between 0 and 100,000.")
+        options["top_k"] = top_k
+    if repetition_penalty is not None:
+        if isinstance(repetition_penalty, bool) or not isinstance(repetition_penalty, (int, float)) or not 0.1 <= float(repetition_penalty) <= 5:
+            raise ValueError("repetition_penalty must be between 0.1 and 5.")
+        options["repeat_penalty"] = float(repetition_penalty)
+    if seed is not None:
+        if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 9_223_372_036_854_775_807:
+            raise ValueError("seed must be a non-negative signed 64-bit integer.")
+        options["seed"] = seed
+    if num_ctx is not None:
+        if isinstance(num_ctx, bool) or not isinstance(num_ctx, int) or not 512 <= num_ctx <= 131_072:
+            raise ValueError("num_ctx must be between 512 and 131,072 tokens.")
+        options["num_ctx"] = num_ctx
+    if stop_sequences is not None:
+        if not isinstance(stop_sequences, (list, tuple)) or len(stop_sequences) > 16:
+            raise ValueError("At most 16 stop sequences may be supplied.")
+        stops: list[str] = []
+        for value in stop_sequences:
+            if not isinstance(value, str) or not value.strip() or len(value) > 256:
+                raise ValueError("Each stop sequence must contain 1–256 non-whitespace characters.")
+            if value not in stops:
+                stops.append(value)
+        if stops:
+            options["stop"] = stops
+    return options
+
+
 def _open_loopback(request: Request, timeout: float):
     # Explicitly disable environment-configured proxies. The request destination
     # is a constant IPv4 loopback URL; callers cannot provide a hostname or URL.
@@ -50,7 +95,7 @@ def _open_loopback(request: Request, timeout: float):
 
 
 def _request_json(path: str, *, payload: dict[str, Any] | None = None, timeout: float) -> dict[str, Any]:
-    if path not in {"/api/tags", "/api/generate", "/api/chat"}:
+    if path not in {"/api/tags", "/api/generate", "/api/chat", "/api/show", "/api/ps"}:
         raise ValueError("Unsupported local inference endpoint.")
     data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = Request(
@@ -70,7 +115,7 @@ def _request_json(path: str, *, payload: dict[str, Any] | None = None, timeout: 
         except (ValueError, UnicodeError):
             detail = ""
         detail = str(detail).replace("\n", " ").strip()[:240]
-        if exc.code == 404 and path == "/api/generate":
+        if exc.code == 404 and path in {"/api/generate", "/api/show"}:
             raise InferenceRuntimeError(detail or "Ollama could not find that model. Pull the model locally first.") from None
         raise InferenceRuntimeError(f"Local Ollama request failed (HTTP {exc.code}). {detail}".strip()) from None
     except (URLError, TimeoutError, OSError) as exc:
@@ -118,22 +163,348 @@ def runtime_status() -> dict[str, Any]:
     return base
 
 
+
+
+
+def remove_local_model(model: str) -> dict[str, Any]:
+    """Remove one installed Ollama model tag after explicit caller confirmation."""
+    import os
+    import subprocess
+
+    model = validate_model_name(model)
+    before = runtime_status()
+    if before.get("status") != "online":
+        raise InferenceRuntimeError("Ollama must be online before removing a local model.")
+    if model not in before.get("models", []):
+        raise ValueError("That exact model tag is not installed in the local Ollama inventory.")
+    executable = shutil.which("ollama")
+    if not executable:
+        raise InferenceRuntimeError("Ollama's command-line executable was not found on PATH.")
+    environment = os.environ.copy()
+    environment["OLLAMA_HOST"] = "127.0.0.1:11434"
+    try:
+        result = subprocess.run(
+            [executable, "rm", model],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            env=environment,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise InferenceRuntimeError("Ollama model removal exceeded the 120-second time limit.") from None
+    except OSError:
+        raise InferenceRuntimeError("AXIOM could not run the local Ollama removal command.") from None
+    if result.returncode != 0:
+        raise InferenceRuntimeError(f"Ollama could not remove this model tag (exit status {result.returncode}).")
+    after = runtime_status()
+    still_installed = model in after.get("models", [])
+    if after.get("status") == "online" and still_installed:
+        raise InferenceRuntimeError("Ollama returned success, but the selected model tag is still in the inventory.")
+    return {
+        "schema_version": 1,
+        "model": model,
+        "removed": not still_installed,
+        "model_files_deleted": not still_installed,
+        "remaining_models": after.get("models", []) if after.get("status") == "online" else [],
+        "scope_note": "The requested Ollama model tag was passed to the local removal command. Shared model blobs may remain when other installed tags reference them.",
+    }
+
+
+
+def list_running_local_models() -> dict[str, Any]:
+    """List loaded Ollama models and their reported CPU/GPU memory footprint."""
+    result = _request_json("/api/ps", timeout=_STATUS_TIMEOUT_SECONDS)
+    raw_models = result.get("models")
+    if not isinstance(raw_models, list):
+        raise InferenceRuntimeError("Ollama returned an invalid loaded-model inventory.")
+
+    models: list[dict[str, Any]] = []
+    for item in raw_models[:100]:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name") or item.get("model")
+        if not isinstance(name, str):
+            continue
+        try:
+            name = validate_model_name(name)
+        except ValueError:
+            continue
+        size = item.get("size")
+        size_vram = item.get("size_vram")
+        expires_at = item.get("expires_at")
+        digest = item.get("digest")
+        details = item.get("details")
+        details = details if isinstance(details, dict) else {}
+
+        def nonnegative_bytes(value: Any) -> int | None:
+            return value if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 2**63 - 1 else None
+
+        def safe_text(value: Any, limit: int = 100) -> str | None:
+            return value[:limit] if isinstance(value, str) and value.strip() else None
+
+        size_bytes = nonnegative_bytes(size)
+        vram_bytes = nonnegative_bytes(size_vram)
+        models.append({
+            "name": name,
+            "size_bytes": size_bytes,
+            "size_vram_bytes": vram_bytes,
+            "size_ram_bytes": max(0, size_bytes - vram_bytes) if size_bytes is not None and vram_bytes is not None else None,
+            "memory_placement": "mixed" if vram_bytes and size_bytes and vram_bytes < size_bytes else "gpu" if vram_bytes else "cpu_or_unreported",
+            "expires_at": expires_at if isinstance(expires_at, str) else None,
+            "digest_prefix": digest[:12] if isinstance(digest, str) and len(digest) >= 12 else None,
+            "format": safe_text(details.get("format")),
+            "family": safe_text(details.get("family")),
+            "parameter_size": safe_text(details.get("parameter_size")),
+            "quantization_level": safe_text(details.get("quantization_level")),
+        })
+    return {
+        "schema_version": 1,
+        "backend": "ollama",
+        "endpoint": OLLAMA_ENDPOINT,
+        "models": models,
+        "count": len(models),
+        "scope_note": "Point-in-time local Ollama process inventory. Memory sizes are runtime-reported estimates, not guaranteed allocator measurements. Prompts and generated text are never requested.",
+    }
+
+
+def inspect_local_model(model: str) -> dict[str, Any]:
+    """Return a deliberately small metadata summary for a model already in Ollama."""
+    model = validate_model_name(model)
+    result = _request_json(
+        "/api/show",
+        payload={"model": model, "verbose": False},
+        timeout=15,
+    )
+    raw_details = result.get("details")
+    details = raw_details if isinstance(raw_details, dict) else {}
+    raw_info = result.get("model_info")
+    model_info = raw_info if isinstance(raw_info, dict) else {}
+
+    context_length: int | None = None
+    parameter_count: int | None = None
+    for key, value in model_info.items():
+        lowered = str(key).lower()
+        if context_length is None and ("context_length" in lowered or lowered == "context_length"):
+            if isinstance(value, int) and not isinstance(value, bool) and 0 < value <= 10_000_000:
+                context_length = value
+        if parameter_count is None and ("parameter_count" in lowered or lowered == "parameter_count"):
+            if isinstance(value, int) and not isinstance(value, bool) and 0 < value <= 10**15:
+                parameter_count = value
+
+    tags = _request_json("/api/tags", timeout=_STATUS_TIMEOUT_SECONDS)
+    model_entry: dict[str, Any] = {}
+    raw_models = tags.get("models")
+    if isinstance(raw_models, list):
+        for item in raw_models[:500]:
+            if isinstance(item, dict) and item.get("name") == model:
+                model_entry = item
+                break
+
+    def safe_text(value: Any, limit: int = 100) -> str | None:
+        return value[:limit] if isinstance(value, str) and value.strip() else None
+
+    size = model_entry.get("size")
+    modified_at = model_entry.get("modified_at")
+    families = details.get("families")
+    capabilities = result.get("capabilities")
+    return {
+        "schema_version": 1,
+        "model": model,
+        "installed": bool(model_entry),
+        "size_bytes": size if isinstance(size, int) and not isinstance(size, bool) and size >= 0 else None,
+        "modified_at": modified_at if isinstance(modified_at, str) else None,
+        "format": safe_text(details.get("format")),
+        "family": safe_text(details.get("family")),
+        "families": [value[:60] for value in families[:16] if isinstance(value, str)] if isinstance(families, list) else [],
+        "parameter_size": safe_text(details.get("parameter_size")),
+        "parameter_count": parameter_count,
+        "quantization_level": safe_text(details.get("quantization_level")),
+        "context_length": context_length,
+        "capabilities": [value[:60] for value in capabilities[:16] if isinstance(value, str)] if isinstance(capabilities, list) else [],
+        "template_configured": bool(safe_text(result.get("template"), 1)),
+        "license_present": bool(safe_text(result.get("license"), 1)),
+        "system_prompt_configured": bool(safe_text(result.get("system"), 1)),
+        "scope_note": "Metadata only from the local Ollama API. Templates, license text, modelfile contents, prompts, and generated responses are not returned.",
+    }
+
+
+def unload_local_model(model: str) -> dict[str, Any]:
+    """Ask Ollama to unload one model from memory without removing its downloaded files."""
+    model = validate_model_name(model)
+    _request_json(
+        "/api/generate",
+        payload={
+            "model": model,
+            "prompt": "",
+            "stream": False,
+            "keep_alive": 0,
+        },
+        timeout=30,
+    )
+    return {
+        "schema_version": 1,
+        "model": model,
+        "unloaded": True,
+        "model_files_deleted": False,
+        "scope_note": "Ollama was asked to release this model from memory. Downloaded model files remain installed.",
+    }
+
+
+
+def stream_local_inference(
+    model: str,
+    prompt: str,
+    *,
+    num_predict: int = 256,
+    temperature: float = 0.7,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    repetition_penalty: float | None = None,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] | None = None,
+    num_ctx: int | None = None,
+    cancel_event: Any = None,
+    on_response: Callable[[Any], None] | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Stream Ollama NDJSON token events from the fixed loopback service.
+
+    The iterator does not persist prompts or output. The on_response callback
+    lets the API layer close the upstream socket when its caller disconnects.
+    """
+    model = validate_model_name(model)
+    prompt, num_predict, temperature = validate_generation(prompt, num_predict, temperature)
+    sampling_options = validate_sampling_options(top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stop_sequences, num_ctx=num_ctx)
+    if cancel_event is not None and cancel_event.is_set():
+        return
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": True,
+        "options": {"num_predict": num_predict, "temperature": temperature, **sampling_options},
+    }
+    request = Request(
+        f"{OLLAMA_ENDPOINT}/api/generate",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        method="POST",
+        headers={"Accept": "application/x-ndjson, application/json", "Content-Type": "application/json"},
+    )
+    chars_returned = 0
+    response_parts: list[str] = []
+    prompt_eval_count: int | None = None
+    eval_count: int | None = None
+    total_duration_ms: float | None = None
+    done_reason: str | None = None
+    completed = False
+    started_at = datetime.now(UTC).isoformat()
+
+    try:
+        with _open_loopback(request, timeout=_GENERATION_TIMEOUT_SECONDS) as response:
+            if on_response is not None:
+                on_response(response)
+            while True:
+                if cancel_event is not None and cancel_event.is_set():
+                    return
+                raw_line = response.readline(2_000_000)
+                if not raw_line:
+                    break
+                if len(raw_line) >= 2_000_000 and not raw_line.endswith(b"\n"):
+                    raise InferenceRuntimeError("Ollama returned an oversized streaming event.")
+                try:
+                    item = json.loads(raw_line.decode("utf-8"))
+                except (ValueError, UnicodeError):
+                    raise InferenceRuntimeError("Ollama returned an invalid streaming event.") from None
+                if not isinstance(item, dict):
+                    raise InferenceRuntimeError("Ollama returned an unexpected streaming event shape.")
+                error = item.get("error")
+                if isinstance(error, str) and error.strip():
+                    raise InferenceRuntimeError(error.replace("\n", " ")[:240])
+                token = item.get("response")
+                if isinstance(token, str) and token:
+                    remaining = max(0, 100_000 - chars_returned)
+                    token = token[:remaining]
+                    if token:
+                        chars_returned += len(token)
+                        response_parts.append(token)
+                        yield {"type": "token", "token": token}
+                if isinstance(item.get("prompt_eval_count"), int) and not isinstance(item.get("prompt_eval_count"), bool):
+                    if item["prompt_eval_count"] >= 0:
+                        prompt_eval_count = item["prompt_eval_count"]
+                if isinstance(item.get("eval_count"), int) and not isinstance(item.get("eval_count"), bool):
+                    if item["eval_count"] >= 0:
+                        eval_count = item["eval_count"]
+                duration = item.get("total_duration")
+                if isinstance(duration, (int, float)) and not isinstance(duration, bool) and duration >= 0:
+                    total_duration_ms = round(float(duration) / 1_000_000, 2)
+                if isinstance(item.get("done_reason"), str):
+                    done_reason = item["done_reason"][:80]
+                if item.get("done") is True:
+                    completed = True
+                    break
+    except HTTPError as exc:
+        try:
+            body = exc.read(8192).decode("utf-8", errors="replace")
+            parsed = json.loads(body) if body else {}
+            detail = parsed.get("error", "") if isinstance(parsed, dict) else ""
+        except (ValueError, UnicodeError):
+            detail = ""
+        detail = str(detail).replace("\n", " ").strip()[:240]
+        if exc.code == 404:
+            raise InferenceRuntimeError(detail or "Ollama could not find that model or endpoint. Check the local model name and Ollama version.") from None
+        raise InferenceRuntimeError(f"Local Ollama stream failed (HTTP {exc.code}). {detail}".strip()) from None
+    except (URLError, TimeoutError, OSError):
+        if cancel_event is not None and cancel_event.is_set():
+            return
+        raise InferenceRuntimeError("Ollama stopped responding while streaming. Check the local service and retry.") from None
+
+    if cancel_event is not None and cancel_event.is_set():
+        return
+    if not completed:
+        raise InferenceRuntimeError("Ollama closed the generation stream before reporting completion.")
+    yield {
+        "type": "complete",
+        "result": {
+            "model": model,
+            "response": "".join(response_parts),
+            "done": True,
+            "done_reason": done_reason,
+            "prompt_eval_count": prompt_eval_count,
+            "eval_count": eval_count,
+            "total_duration_ms": total_duration_ms,
+            "generated_at": started_at,
+            "execution": "local",
+        },
+    }
+
+
+
 def run_local_inference(
     model: str,
     prompt: str,
     num_predict: int = 256,
     temperature: float = 0.7,
+    *,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    repetition_penalty: float | None = None,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] | None = None,
+    num_ctx: int | None = None,
 ) -> dict[str, Any]:
     """Generate text through a local Ollama service with bounded input/output."""
     model = validate_model_name(model)
     prompt, num_predict, temperature = validate_generation(prompt, num_predict, temperature)
+    sampling_options = validate_sampling_options(top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stop_sequences, num_ctx=num_ctx)
     result = _request_json(
         "/api/generate",
         payload={
             "model": model,
             "prompt": prompt,
             "stream": False,
-            "options": {"num_predict": num_predict, "temperature": temperature},
+            "options": {"num_predict": num_predict, "temperature": temperature, **sampling_options},
         },
         timeout=_GENERATION_TIMEOUT_SECONDS,
     )
