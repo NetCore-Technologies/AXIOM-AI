@@ -39,6 +39,8 @@ export default function LocalInferencePanel() {
   const [unloadBusy, setUnloadBusy] = useState(false);
   const [unloadingModel, setUnloadingModel] = useState<string | null>(null);
   const [unloadMessage, setUnloadMessage] = useState("");
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const [removeMessage, setRemoveMessage] = useState("");
   const [runningModels, setRunningModels] = useState<OllamaRunningModels | null>(null);
   const [runningBusy, setRunningBusy] = useState(false);
   const [runningError, setRunningError] = useState("");
@@ -118,6 +120,25 @@ export default function LocalInferencePanel() {
       if (runningModels) await refreshRunningModels();
     } catch (cause) { setUnloadMessage(cause instanceof Error ? cause.message : "Could not unload this model."); }
     finally { setUnloadBusy(false); setUnloadingModel(null); }
+  };
+
+  const removeModel = async () => {
+    setRemoveMessage("");
+    const modelName = model.trim();
+    if (!online || !modelName || !status?.models.includes(modelName)) { setRemoveMessage("Choose an exact installed model tag before removing it."); return; }
+    const confirmed = window.confirm(`Permanently remove the downloaded Ollama model tag “${modelName}”? This cannot be undone from AXIOM. Model blobs shared with other tags may remain.`);
+    if (!confirmed) return;
+    setRemoveBusy(true);
+    try {
+      const result = await axiomApi.removeOllamaModel(modelName);
+      setRemoveMessage(result.removed ? `${modelName} was removed from the local Ollama inventory. ${result.scope_note}` : `Ollama did not confirm removal of ${modelName}.`);
+      if (result.removed) {
+        setModel(""); setResult(null); setModelDetails(null);
+        await refresh();
+        if (runningModels) await refreshRunningModels();
+      }
+    } catch (cause) { setRemoveMessage(cause instanceof Error ? cause.message : "Could not remove the selected local model."); }
+    finally { setRemoveBusy(false); }
   };
 
   const unloadModel = async () => {
@@ -272,10 +293,12 @@ export default function LocalInferencePanel() {
       <div className="integration-form-actions">
         <button type="button" className="button secondary-button" onClick={() => void refreshRunningModels()} disabled={!online || loading || runningBusy}><Activity size={14} /> {runningBusy ? "Checking memory…" : "Show loaded models"}</button>
         <button type="button" className="button secondary-button" onClick={() => void inspectModel()} disabled={!online || loading || inspectBusy || running || !model.trim()}><Info size={14} /> {inspectBusy ? "Inspecting…" : "Inspect model"}</button>
+        <button type="button" className="button secondary-button" onClick={() => void removeModel()} disabled={!online || loading || removeBusy || running || !model.trim() || !status?.models.includes(model.trim())}><Square size={12} /> {removeBusy ? "Removing model…" : "Remove downloaded model"}</button>
         <button type="button" className="button secondary-button" onClick={() => void unloadModel()} disabled={!online || loading || unloadBusy || running || !model.trim()}><Square size={12} /> {unloadBusy ? "Unloading…" : "Unload from memory"}</button>
       </div>
       {inspectError && <div className="inline-alert warning" role="alert">{inspectError}</div>}
       {unloadMessage && <div className="inline-alert" role="status">{unloadMessage}</div>}
+      {removeMessage && <div className="inline-alert" role="status">{removeMessage}</div>}
       {runningError && <div className="inline-alert warning" role="alert">{runningError}</div>}
       {runningModels && <section className="panel-surface" aria-label="Loaded Ollama models" style={{ marginTop: 12, padding: 16 }}>
         <div className="surface-head"><div><p className="surface-eyebrow">LIVE PROCESS INVENTORY</p><h3>Loaded models · {runningModels.count}</h3></div><button type="button" className="button secondary-button" onClick={() => void refreshRunningModels()} disabled={runningBusy}><RefreshCcw size={13} /> Refresh</button></div>
