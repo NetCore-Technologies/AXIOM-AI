@@ -51,6 +51,8 @@ def test_local_chat_uses_axiom_native_stream_without_network(monkeypatch: pytest
                 "prompt_tokens": 3,
                 "completion_tokens": 2,
                 "device": "cpu",
+                "precision": "fp16",
+                "precision_selection": {"requested": "fp16", "selected": "fp16"},
             },
         }])
 
@@ -61,11 +63,15 @@ def test_local_chat_uses_axiom_native_stream_without_network(monkeypatch: pytest
         [{"role": "user", "content": "Hello"}],
         max_tokens=7,
         temperature=0,
+        precision="fp16",
     )
 
     assert result["response"] == "Local result"
     assert result["execution"] == "local"
     assert result["device"] == "cpu"
+    assert result["precision"] == "fp16"
+    assert result["precision_selection"] == {"requested": "fp16", "selected": "fp16"}
+    assert captured["precision"] == "fp16"
     assert captured["model_path"] == "/trusted/tiny-llama"
     assert captured["chat_messages"] == [{"role": "user", "content": "Hello"}]
     assert captured["max_new_tokens"] == 7
