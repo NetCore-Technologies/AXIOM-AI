@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { ensureAuthenticated } from "./helpers/auth";
 
 test("Runtime GUI submits bounded prompts to the local inference API and displays the result", async ({ page }) => {
+  // Directly exercises the "/api/inference/generate/stream" NDJSON endpoint.
   await ensureAuthenticated(page);
   await page.route("**/api/workspace/runtime", (route) => route.fulfill({ json: {
     status: "offline",
