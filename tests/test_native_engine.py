@@ -119,7 +119,7 @@ def test_native_stream_stops_on_a_sequence_spanning_token_boundaries(monkeypatch
     assert runtime.requested == 2
 
 
-def test_native_config_accepts_llama_mistral_and_qwen2() -> None:
+def test_native_config_accepts_llama_mistral_qwen2_and_qwen3() -> None:
     assert NativeLlamaConfig.from_mapping(_config()).model_type == "llama"
     assert NativeLlamaConfig.from_mapping(
         _config(model_type="mistral", architectures=["MistralForCausalLM"], sliding_window=16)
@@ -134,12 +134,19 @@ def test_native_config_accepts_llama_mistral_and_qwen2() -> None:
     assert qwen.model_type == "qwen2"
     assert qwen.rope_theta == 1_000_000.0
     assert qwen.max_position_embeddings == 32768
+    qwen3 = NativeLlamaConfig.from_mapping(_config(
+        model_type="qwen3", architectures=["Qwen3ForCausalLM"],
+        rope_theta=1_000_000.0, max_position_embeddings=32768,
+        tie_word_embeddings=True,
+    ))
+    assert qwen3.model_type == "qwen3"
+    assert qwen3.qk_norm is True
 
 
 @pytest.mark.parametrize(
     "overrides,detail",
     [
-        ({"model_type": "gemma3"}, "supports llama, mistral, and qwen2"),
+        ({"model_type": "gemma3"}, "supports llama, mistral, qwen2, and qwen3"),
         ({"hidden_size": 7}, "even-sized attention heads"),
         ({"rope_scaling": {"rope_type": "yarn", "factor": 2.0}}, "RoPE scaling"),
         ({"num_attention_heads": 3, "hidden_size": 12, "num_key_value_heads": 2}, "num_key_value_heads"),
@@ -643,6 +650,33 @@ def test_layer_streaming_mode_matches_full_cpu_forward_and_offloads_kv_cache() -
     assert streamed.memory_stats["kv_cache_layer_offloads"] == config.num_hidden_layers
     assert streamed.memory_stats["kv_cache_bytes_offloaded"] > 0
     assert streamed.memory_stats["layer_weight_bytes_staged"] == 0
+
+
+def test_qwen3_native_loader_applies_query_key_rms_norm(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    safetensors_torch = pytest.importorskip("safetensors.torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    root = tmp_path / "trusted"
+    model_dir = root / "tiny-qwen3"
+    model_dir.mkdir(parents=True)
+    config = _config(model_type="qwen3", architectures=["Qwen3ForCausalLM"], rope_theta=1_000_000.0)
+    (model_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    (model_dir / "tokenizer.json").write_text("{}", encoding="utf-8")
+    weights = _tiny_weights(torch)
+    weights["model.layers.0.self_attn.q_norm.weight"] = torch.ones(4)
+    weights["model.layers.0.self_attn.k_norm.weight"] = torch.ones(4)
+    safetensors_torch.save_file(
+        {name: tensor.detach().cpu().contiguous() for name, tensor in weights.items()},
+        str(model_dir / "model.safetensors"),
+    )
+    runtime = NativeLlamaRuntime.from_directory(
+        model_dir, torch, torch.device("cpu"), trusted_roots=(root.resolve(),), memory_mode="full",
+    )
+    logits, cache = runtime.forward(torch.tensor([[1, 2, 3]], dtype=torch.long))
+    assert logits.shape == (1, config["vocab_size"])
+    assert len(cache) == config["num_hidden_layers"]
+    assert runtime.config.qk_norm is True
 
 
 def test_disk_streaming_reads_layer_weights_on_demand_and_matches_full_forward(tmp_path: Path) -> None:
