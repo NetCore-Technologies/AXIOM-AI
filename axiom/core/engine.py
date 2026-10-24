@@ -1201,7 +1201,12 @@ def _format_prompt_for_native_model(
             from jinja2.sandbox import SandboxedEnvironment
         except ImportError:
             if model_type == "qwen2":
-                return f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n", "qwen2-chatml-fallback"
+                fallback_messages = chat_messages or [{"role": "user", "content": prompt}]
+                rendered = "".join(
+                    f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>\n"
+                    for message in fallback_messages
+                ) + "<|im_start|>assistant\n"
+                return rendered, "qwen2-chatml-fallback"
             raise AxiomEngineError(
                 "This checkpoint supplies a chat template, but Jinja2 is unavailable. Install the template runtime dependency or use a raw/completion checkpoint."
             ) from None

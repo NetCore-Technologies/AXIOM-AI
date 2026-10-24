@@ -178,14 +178,8 @@ def openai_list_models() -> dict[str, Any]:
     }
 
 
-@router.post("/v1/chat/completions")
-def openai_chat_completions(request: OpenAIChatCompletionRequest) -> Any:
-    """Create a non-streaming OpenAI-compatible chat completion using native local inference."""
-    if request.stream:
-        return _openai_error("Use the streaming HTTP handler for stream=true.", 400, code="stream_route_required")
-    model = _resolve_model(request.model)
-    if model is None:
-        return _openai_error(f"Native model {request.model!r} was not found or its ID is ambiguous.", 404, code="model_not_found")
+
+def _run_nonstream(request: OpenAIChatCompletionRequest, model: dict[str, Any]) -> Any:
     try:
         final: dict[str, Any] | None = None
         for event in generate_local_stream(**_generation_args(request, model), include_token_events=False):
@@ -219,16 +213,11 @@ def openai_chat_completions(request: OpenAIChatCompletionRequest) -> Any:
     }
 
 
-@router.post("/v1/chat/completions/stream")
-async def openai_chat_completions_stream(request: OpenAIChatCompletionRequest, http_request: Request) -> StreamingResponse:
-    """Stream OpenAI-compatible chat-completion chunks over Server-Sent Events."""
-    model = _resolve_model(request.model)
-    if model is None:
-        return StreamingResponse(
-            iter([f"data: {json.dumps({'error': {'message': f'Native model {request.model!r} was not found.', 'type': 'invalid_request_error', 'code': 'model_not_found'}})}\n\ndata: [DONE]\n\n"]),
-            status_code=404,
-            media_type="text/event-stream",
-        )
+def _streaming_response(
+    request: OpenAIChatCompletionRequest,
+    model: dict[str, Any],
+    http_request: Request,
+) -> StreamingResponse:
     args = _generation_args(request, model)
     cancelled = Event()
     output: Queue = Queue(maxsize=_STREAM_QUEUE_SIZE)
@@ -239,6 +228,7 @@ async def openai_chat_completions_stream(request: OpenAIChatCompletionRequest, h
 
     async def events() -> AsyncIterator[str]:
         previous = ""
+        completed = False
         yield "data: " + json.dumps({
             "id": stream_id, "object": "chat.completion.chunk", "created": created, "model": request.model,
             "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
@@ -261,7 +251,8 @@ async def openai_chat_completions_stream(request: OpenAIChatCompletionRequest, h
                     yield "data: " + json.dumps({
                         "error": {"message": item.get("message", "Native inference failed."), "type": "server_error", "code": "native_engine_error"}
                     }) + "\n\n"
-                    break
+                    yield "data: [DONE]\n\n"
+                    return
                 if item.get("type") == "token":
                     cumulative = str(item.get("response", ""))
                     delta = cumulative[len(previous):] if cumulative.startswith(previous) else cumulative
@@ -277,6 +268,7 @@ async def openai_chat_completions_stream(request: OpenAIChatCompletionRequest, h
                         "id": stream_id, "object": "chat.completion.chunk", "created": created, "model": request.model,
                         "choices": [{"index": 0, "delta": {}, "finish_reason": _finish_reason(str(result.get("stop_reason", "stop")))}],
                     }, ensure_ascii=False) + "\n\n"
+                    completed = True
                     break
             yield "data: [DONE]\n\n"
         finally:
@@ -284,3 +276,12 @@ async def openai_chat_completions_stream(request: OpenAIChatCompletionRequest, h
     return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+@router.post("/v1/chat/completions")
+async def openai_chat_completions(request: OpenAIChatCompletionRequest, http_request: Request) -> Any:
+    """Create OpenAI-compatible native chat completions, either JSON or SSE."""
+    model = _resolve_model(request.model)
+    if model is None:
+        return _openai_error(f"Native model {request.model!r} was not found or its ID is ambiguous.", 404, code="model_not_found")
+    if request.stream:
+        return _streaming_response(request, model, http_request)
+    return await asyncio.to_thread(_run_nonstream, request, model)

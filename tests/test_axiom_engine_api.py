@@ -561,7 +561,7 @@ def test_openai_chat_stream_formats_cumulative_tokens_as_sse_deltas(monkeypatch)
         yield {"type": "complete", "result": {"response": "Hello", "stop_reason": "max_new_tokens"}}
 
     monkeypatch.setattr(openai_compat, "generate_local_stream", fake_stream)
-    response = _client().post("/v1/chat/completions/stream", json={
+    response = _client().post("/v1/chat/completions", json={
         "model": "tiny-llama", "messages": [{"role": "user", "content": "hi"}], "stream": True,
     })
     assert response.status_code == 200
