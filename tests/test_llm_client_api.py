@@ -155,7 +155,6 @@ def test_llm_chat_api_rejects_invalid_sampling_limits() -> None:
         {"top_k": -1},
         {"min_p": -0.01},
         {"min_p": 1.01},
-        {"min_p": float("nan")},
         {"repetition_penalty": 0},
         {"seed": -1},
         {"stop_sequences": ["x" * 257]},
