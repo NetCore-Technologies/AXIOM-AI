@@ -116,7 +116,7 @@ def test_engine_run_stream_shows_live_output_and_final_metrics(tmp_path: Path, m
     monkeypatch.setattr(engine_cli, "generate_local_stream", fake_stream)
     result = runner.invoke(engine_app, [
         "run", "--model-path", str(model_path), "--prompt", "Say hello.",
-        "--stream", "--max-new-tokens", "4", "--temperature", "0",
+        "--stream", "--max-new-tokens", "4", "--temperature", "0", "--precision", "fp16",
         "--stop-sequence", "<END>", "--stop-sequence", "###",
     ])
 
@@ -127,6 +127,7 @@ def test_engine_run_stream_shows_live_output_and_final_metrics(tmp_path: Path, m
     assert "Finish reason: stop_sequence" in result.output
     assert observed["stop_sequences"] == ["<END>", "###"]
     assert observed["memory_mode"] == "auto"
+    assert observed["precision"] == "fp16"
 
 
 def test_engine_run_rejects_stream_with_json_mode(tmp_path: Path) -> None:
