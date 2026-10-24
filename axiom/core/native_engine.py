@@ -30,6 +30,16 @@ class NativeDependencyError(RuntimeError):
     """A required runtime dependency for the native engine is unavailable."""
 
 
+def _apply_top_k_filter(scores: Any, top_k: int, torch_module: Any) -> Any:
+    """Keep at most exactly k logits per row, including when boundary scores tie."""
+    if top_k <= 0 or top_k >= scores.shape[-1]:
+        return scores
+    indices = torch_module.topk(scores, top_k, dim=-1).indices
+    selected = torch_module.zeros_like(scores, dtype=torch_module.bool)
+    selected.scatter_(-1, indices, True)
+    return scores.masked_fill(~selected, float("-inf"))
+
+
 def _sanitize_sampling_scores(scores: Any, torch_module: Any) -> Any:
     """Make decoder logits safe for argmax/softmax without inventing a fallback token."""
     if bool(torch_module.isfinite(scores).all().item()):
@@ -960,9 +970,7 @@ class NativeLlamaRuntime:
                         next_token = torch.argmax(scores, dim=-1)
                     else:
                         scores = _sanitize_sampling_scores(scores / float(temperature), torch)
-                        if top_k > 0 and top_k < self.config.vocab_size:
-                            threshold = torch.topk(scores, top_k, dim=-1).values[:, -1].unsqueeze(-1)
-                            scores = scores.masked_fill(scores < threshold, float("-inf"))
+                        scores = _apply_top_k_filter(scores, top_k, torch)
                         if top_p < 1:
                             sorted_scores, sorted_ids = torch.sort(scores, descending=True, dim=-1)
                             cumulative = torch.softmax(sorted_scores, dim=-1).cumsum(dim=-1)
