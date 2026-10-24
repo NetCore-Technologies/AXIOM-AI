@@ -221,6 +221,29 @@ export type ModelStudioModel = { id: string; author: string; downloads: number; 
 export type ModelStudioFile = { filename: string; size_bytes: number | null; quantization: string };
 export type ModelStudioStatus = { schema_version: number; ollama_installed: boolean; ollama_endpoint: string; download_limit_bytes: number; gguf_directory: string; native_model_root?: string; native_model_download_limit_bytes?: number; native_model_file_limit_bytes?: number; native_pull_available?: boolean; catalogue: string; network_search_is_explicit: boolean };
 export type ModelStudioJob = { schema_version: 1; id: string; status: "queued" | "running" | "completed" | "failed"; operation: string; created_at: string; updated_at: string; started_at?: string | null; finished_at?: string | null; config: Record<string, unknown>; progress_bytes: number; total_bytes: number | null; logs: string[]; error: string | null; result: Record<string, unknown> | null };
+export type LLMProvider = "axiom-local" | "openai" | "anthropic" | "gemini" | "deepseek" | "moonshot" | "openai-compatible";
+export type LLMProviderInfo = {
+  id: LLMProvider; label: string; kind: "local" | "cloud"; requires_api_key: boolean;
+  supports_model_listing: boolean; privacy: "local-only" | "remote-consent-required"; note: string;
+};
+export type LLMProviderCatalog = { schema_version: 1; providers: LLMProviderInfo[]; credentials_persisted: false };
+export type LLMModelRequest = { provider: LLMProvider; api_key?: string; base_url?: string };
+export type LLMModelResult = {
+  provider: LLMProvider; models: string[]; model_details?: Array<{ id: string; model_type?: string | null; architecture?: string | null }>;
+  count?: number; credential_storage: "not_saved" | "not_applicable"; execution: "local" | "remote"; note?: string;
+};
+export type LLMChatMessage = { role: "system" | "user" | "assistant"; content: string };
+export type LLMChatRequest = LLMModelRequest & {
+  model: string; messages: LLMChatMessage[]; max_tokens: number; temperature: number; consent: boolean;
+  device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu";
+  memory_mode?: "auto" | "full" | "layer_streaming" | "disk_streaming";
+};
+export type LLMChatResult = {
+  provider: LLMProvider; model: string; response: string; prompt_tokens: number | null;
+  completion_tokens: number | null; credential_storage: "not_saved" | "not_applicable";
+  execution: "local" | "remote"; device?: string | null; generated_at: string;
+};
+
 export type RemoteModelCatalog = { provider: string; base_url: string; models: string[]; count: number; credential_storage: "not_saved"; note: string };
 export type RemoteModelResponse = { provider: string; base_url: string; model: string; response: string; prompt_tokens: number | null; completion_tokens: number | null; credential_storage: "not_saved"; generated_at: string };
 
@@ -1350,6 +1373,9 @@ export const axiomApi = {
   modelStudioStatus: () => requestJson<ModelStudioStatus>("/api/models/studio/status"),
   modelStudioSearch: (q: string, limit = 12) => requestJson<{ provider: string; query: string; count: number; results: ModelStudioModel[]; note: string }>(`/api/models/studio/search?${new URLSearchParams({ q, limit: String(limit) })}`),
   modelStudioFiles: (repoId: string) => requestJson<{ repo_id: string; files: ModelStudioFile[]; count: number; url: string; note: string }>(`/api/models/studio/files?${new URLSearchParams({ repo_id: repoId })}`),
+  llmProviders: () => requestJson<LLMProviderCatalog>("/api/llm/providers"),
+  llmModels: (input: LLMModelRequest) => requestJson<LLMModelResult>("/api/llm/models", { method: "POST", body: JSON.stringify(input) }),
+  llmChat: (input: LLMChatRequest) => requestJson<LLMChatResult>("/api/llm/chat", { method: "POST", body: JSON.stringify(input) }, 300_000),
   testRemoteModelConnection: (input: { base_url: string; api_key: string }) => requestJson<RemoteModelCatalog>("/api/models/studio/remote/models", { method: "POST", body: JSON.stringify(input) }),
   remoteModelChat: (input: { base_url: string; api_key: string; model: string; prompt: string; max_tokens: number; temperature: number }) => requestJson<RemoteModelResponse>("/api/models/studio/remote/chat", { method: "POST", body: JSON.stringify(input) }),
   modelStudioJobs: (limit = 20) => requestJson<{ jobs: ModelStudioJob[] }>(`/api/models/studio/jobs?limit=${limit}`),
