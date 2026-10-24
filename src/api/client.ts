@@ -129,7 +129,7 @@ export type LocalInferenceResult = {
 };
 export type LocalInferenceInput = {
   model: string; prompt: string; num_predict: number; temperature: number;
-  top_p?: number; top_k?: number; repetition_penalty?: number; seed?: number;
+  top_p?: number; top_k?: number; min_p?: number; repetition_penalty?: number; seed?: number;
   num_ctx?: number; stop_sequences?: string[];
 };
 export type LocalInferenceStreamEvent =
