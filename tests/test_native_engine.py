@@ -809,11 +809,11 @@ def test_qwen2_chat_fallback_preserves_all_turns(tmp_path: Path) -> None:
         ],
     )
     assert formatted == (
-        "<|im_start|>system\\nYou are concise.<|im_end|>\\n"
-        "<|im_start|>user\\nFirst question<|im_end|>\\n"
-        "<|im_start|>assistant\\nFirst answer<|im_end|>\\n"
-        "<|im_start|>user\\nlast question<|im_end|>\\n"
-        "<|im_start|>assistant\\n"
+        "<|im_start|>system\nYou are concise.<|im_end|>\n"
+        "<|im_start|>user\nFirst question<|im_end|>\n"
+        "<|im_start|>assistant\nFirst answer<|im_end|>\n"
+        "<|im_start|>user\nlast question<|im_end|>\n"
+        "<|im_start|>assistant\n"
     )
     assert source == "qwen2-chatml-fallback"
 
