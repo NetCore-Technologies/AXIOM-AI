@@ -25,6 +25,11 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 
 _MAX_RESULTS = 20
 _MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024 * 1024
+_MAX_NATIVE_MODEL_BYTES = 160 * 1024**3
+_MAX_NATIVE_MODEL_FILE_BYTES = 20 * 1024**3
+_NATIVE_MODEL_ROOT = Path.home() / ".local" / "share" / "axiom" / "models"
+_NATIVE_OPTIONAL_FILES = {"tokenizer_config.json", "special_tokens_map.json", "generation_config.json", "added_tokens.json"}
+_NATIVE_SHARD_RE = re.compile(r"^model-[0-9]{5}-of-[0-9]{5}\.safetensors$")
 _MAX_MODEL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
 _REPO_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}/[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _FILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+() -]{0,240}\.gguf$", re.IGNORECASE)
@@ -423,6 +428,232 @@ def install_hf_gguf(repo_id: str, filename: str, model_name: str, register_ollam
     return result
 
 
+
+def native_model_root() -> Path:
+    """Return AXIOM's trusted root for downloaded native model checkpoints."""
+    return _NATIVE_MODEL_ROOT
+
+
+def _is_native_asset_name(filename: str) -> bool:
+    if not isinstance(filename, str) or Path(filename).name != filename or filename in {"", ".", ".."}:
+        return False
+    return filename in {
+        "config.json", "tokenizer.json", "tokenizer_config.json", "special_tokens_map.json",
+        "generation_config.json", "added_tokens.json", "model.safetensors",
+        "model.safetensors.index.json",
+    } or bool(_NATIVE_SHARD_RE.fullmatch(filename))
+
+
+def _download_native_file(
+    repo_id: str,
+    filename: str,
+    destination: Path,
+    *,
+    on_progress: Callable[[int, int | None], None] | None = None,
+    progress_offset: int = 0,
+    progress_total: int | None = None,
+    free_bytes: int | None = None,
+) -> int:
+    """Download one whitelisted public Hub file into staging."""
+    if not _is_native_asset_name(filename):
+        raise ModelStudioError("The Hub manifest contains a native-model filename AXIOM does not allow.")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    url = f"https://huggingface.co/{quote(repo_id, safe='/')}/resolve/main/{quote(filename, safe='')}?download=true"
+    request = Request(url, headers={"User-Agent": "AXIOM-Native-Model-Studio/1", "Accept": "application/octet-stream"})
+    temp = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.part")
+    written = 0
+    try:
+        with urlopen(request, timeout=60) as response:
+            raw_length = response.headers.get("Content-Length")
+            total = int(raw_length) if raw_length and raw_length.isdigit() else None
+            if total is not None and total > _MAX_NATIVE_MODEL_FILE_BYTES:
+                raise ModelStudioError("A native-model file exceeds AXIOM's 20 GiB per-file limit.")
+            if free_bytes is not None and total is not None and total + progress_offset > free_bytes:
+                raise ModelStudioError("There is not enough free disk space for this native model.")
+            with temp.open("xb") as handle:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > _MAX_NATIVE_MODEL_FILE_BYTES:
+                        raise ModelStudioError("A native-model file exceeded AXIOM's 20 GiB per-file limit.")
+                    if progress_offset + written > _MAX_NATIVE_MODEL_BYTES:
+                        raise ModelStudioError("Native-model download exceeded AXIOM's 160 GiB total limit.")
+                    if free_bytes is not None and progress_offset + written > free_bytes:
+                        raise ModelStudioError("The native-model download reached the available disk-space limit.")
+                    handle.write(chunk)
+                    if on_progress:
+                        on_progress(progress_offset + written, progress_total)
+        if written <= 0:
+            raise ModelStudioError(f"The Hub returned an empty native-model file: {filename}.")
+        os.replace(temp, destination)
+        return written
+    except ModelStudioError:
+        temp.unlink(missing_ok=True)
+        raise
+    except HTTPError as exc:
+        temp.unlink(missing_ok=True)
+        if exc.code in {401, 403}:
+            raise ModelStudioError("This repository requires authentication. AXIOM native pull currently supports public Hub repositories only.") from None
+        if exc.code == 404:
+            raise ModelStudioError(f"Required native-model file {filename!r} was not found in the public repository.") from None
+        raise ModelStudioError(f"Native-model download failed for {filename!r} (HTTP {exc.code}).") from None
+    except (URLError, TimeoutError, OSError):
+        temp.unlink(missing_ok=True)
+        raise ModelStudioError(f"Native-model download was interrupted while retrieving {filename!r}; partial files were removed.") from None
+
+
+def pull_native_model(
+    repo_id: str,
+    on_log: Callable[[str], None] | None = None,
+    on_progress: Callable[[int, int | None], None] | None = None,
+) -> dict[str, Any]:
+    """Acquire public Llama/Mistral/Qwen2 safetensors assets for AXIOM's native runtime.
+
+    Only allowlisted data/config files are downloaded; model-provided Python is never fetched or executed.
+    Existing installs are left untouched.
+    """
+    repo = validate_repo_id(repo_id)
+    repo_url = quote(repo, safe="/")
+    metadata = _read_public_json(f"https://huggingface.co/api/models/{repo_url}?blobs=true")
+    siblings = metadata.get("siblings", []) if isinstance(metadata, dict) else []
+    if not isinstance(siblings, list):
+        raise ModelStudioError("The Hub did not return a usable file inventory for this model.")
+    sizes: dict[str, int | None] = {}
+    for item in siblings:
+        if not isinstance(item, dict) or not isinstance(item.get("rfilename"), str):
+            continue
+        name = item["rfilename"]
+        if not _is_native_asset_name(name):
+            continue
+        raw_size = item.get("size")
+        if not isinstance(raw_size, int) or isinstance(raw_size, bool) or raw_size < 0:
+            lfs = item.get("lfs")
+            raw_size = lfs.get("size") if isinstance(lfs, dict) else None
+        sizes[name] = raw_size if isinstance(raw_size, int) and not isinstance(raw_size, bool) and raw_size >= 0 else None
+
+    if "config.json" not in sizes or "tokenizer.json" not in sizes:
+        raise ModelStudioError("Native pull requires top-level config.json and tokenizer.json files.")
+    if on_log:
+        on_log(f"Inspecting public Hub metadata for {repo} before downloading weights.")
+    config = _read_public_json(f"https://huggingface.co/{repo_url}/resolve/main/config.json")
+    if not isinstance(config, dict):
+        raise ModelStudioError("The repository config.json is not a JSON object.")
+    try:
+        from axiom.core.native_engine import NativeLlamaConfig
+        native_config = NativeLlamaConfig.from_mapping(config)
+    except (ImportError, OSError):
+        raise ModelStudioError("Install AXIOM's native-inference extra before pulling native checkpoints.") from None
+    except (ValueError, TypeError, KeyError) as exc:
+        raise ModelStudioError(f"This checkpoint is not supported by AXIOM Native Engine: {exc}") from None
+
+    selected = ["config.json", "tokenizer.json"]
+    selected.extend(name for name in sorted(_NATIVE_OPTIONAL_FILES) if name in sizes)
+    if "model.safetensors.index.json" in sizes:
+        index = _read_public_json(f"https://huggingface.co/{repo_url}/resolve/main/model.safetensors.index.json")
+        weight_map = index.get("weight_map") if isinstance(index, dict) else None
+        if not isinstance(weight_map, dict) or not weight_map:
+            raise ModelStudioError("The native safetensors index has no valid weight_map.")
+        shards: set[str] = set()
+        for tensor_name, filename in weight_map.items():
+            if (
+                not isinstance(tensor_name, str) or not tensor_name
+                or not isinstance(filename, str)
+                or not _is_native_asset_name(filename)
+                or not filename.endswith(".safetensors")
+            ):
+                raise ModelStudioError("The native safetensors index contains an unsafe or unsupported shard filename.")
+            shards.add(filename)
+        if not shards or len(shards) > 512:
+            raise ModelStudioError("The native checkpoint must contain between 1 and 512 safetensors shards.")
+        missing = sorted(shard for shard in shards if shard not in sizes)
+        if missing:
+            raise ModelStudioError("The native safetensors index references a shard not listed by the Hub: " + ", ".join(missing[:4]))
+        selected.append("model.safetensors.index.json")
+        selected.extend(sorted(shards))
+    elif "model.safetensors" in sizes:
+        selected.append("model.safetensors")
+    else:
+        raise ModelStudioError("This repository has no supported model.safetensors file or shard index.")
+
+    selected = list(dict.fromkeys(selected))
+    for filename in selected:
+        if not _is_native_asset_name(filename) or filename not in sizes:
+            raise ModelStudioError(f"Required native-model file {filename!r} is missing from the public Hub inventory.")
+        size = sizes[filename]
+        if size is not None and size > _MAX_NATIVE_MODEL_FILE_BYTES:
+            raise ModelStudioError(f"Native-model file {filename!r} exceeds the 20 GiB per-file limit.")
+    known_sizes = [sizes[name] for name in selected]
+    total_size = sum(size for size in known_sizes if size is not None)
+    expected_total = total_size if all(size is not None for size in known_sizes) else None
+    if total_size > _MAX_NATIVE_MODEL_BYTES:
+        raise ModelStudioError("This native checkpoint exceeds AXIOM's 160 GiB total model limit.")
+
+    root = native_model_root().expanduser().resolve(strict=False)
+    model_name = _slug(repo.replace("/", "-"))
+    target = root / model_name
+    if target.exists() or target.is_symlink():
+        raise ModelStudioError(f"AXIOM refuses to overwrite the existing native model directory: {target}")
+    root.mkdir(parents=True, exist_ok=True)
+    try:
+        free_bytes = shutil.disk_usage(root).free
+    except OSError:
+        free_bytes = None
+    if expected_total is not None and free_bytes is not None and expected_total > free_bytes:
+        raise ModelStudioError("There is not enough free disk space for the complete native checkpoint.")
+    staging = root / f".{model_name}.{uuid.uuid4().hex}.staging"
+    staging.mkdir(mode=0o700)
+    downloaded = 0
+    try:
+        if on_log:
+            summary = f"{expected_total:,} bytes estimated" if expected_total is not None else "total size unknown"
+            on_log(f"Downloading {len(selected)} allowlisted model/tokenizer files ({summary}).")
+        for filename in selected:
+            written = _download_native_file(
+                repo, filename, staging / filename,
+                on_progress=on_progress,
+                progress_offset=downloaded,
+                progress_total=expected_total,
+                free_bytes=free_bytes,
+            )
+            downloaded += written
+            if downloaded > _MAX_NATIVE_MODEL_BYTES:
+                raise ModelStudioError("Native-model download exceeded AXIOM's 160 GiB total limit.")
+        local_config = json.loads((staging / "config.json").read_text(encoding="utf-8"))
+        from axiom.core.native_engine import NativeLlamaConfig
+        verified = NativeLlamaConfig.from_mapping(local_config)
+        if verified.model_type != native_config.model_type:
+            raise ModelStudioError("The downloaded model config changed during the pull; installation was cancelled.")
+        if not (staging / "tokenizer.json").is_file():
+            raise ModelStudioError("The completed download is missing tokenizer.json.")
+        if not (staging / "model.safetensors").is_file() and not (staging / "model.safetensors.index.json").is_file():
+            raise ModelStudioError("The completed download is missing its native safetensors weights.")
+        os.replace(staging, target)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    if on_log:
+        on_log(f"Installed native checkpoint at {target}. Select it on the Runtime page to run AXIOM inference.")
+    architectures = config.get("architectures")
+    architecture_name = architectures[0] if isinstance(architectures, list) and architectures and isinstance(architectures[0], str) else native_config.model_type
+    return {
+        "operation": "pull_native",
+        "repo_id": repo,
+        "model_name": model_name,
+        "model_type": native_config.model_type,
+        "architecture": architecture_name,
+        "path": str(target),
+        "files": len(selected),
+        "file_names": selected,
+        "size_bytes": downloaded,
+        "expected_size_bytes": expected_total,
+        "runtime": "axiom-native",
+        "remote_code_executed": False,
+    }
+
+
+
 def convert_local_model_to_gguf(source_dir: str, llama_cpp_dir: str, output_path: str,
                                  outtype: str = "f16", quantization: str = "Q4_K_M",
                                  on_log: Callable[[str], None] | None = None) -> dict[str, Any]:
@@ -581,6 +812,8 @@ def _worker(job_id: str) -> None:
         operation = config["operation"]
         if operation == "pull":
             result = pull_ollama_model(config["model_name"], on_log=log)
+        elif operation == "pull_native":
+            result = pull_native_model(config["repo_id"], on_log=log, on_progress=progress)
         elif operation == "install_gguf":
             result = install_hf_gguf(config["repo_id"], config["filename"], config["model_name"], config["register_ollama"], on_log=log, on_progress=progress)
         elif operation == "convert_gguf":
@@ -601,6 +834,8 @@ def start_job(config: dict[str, Any]) -> dict[str, Any]:
         clean = {"operation": operation, "model_name": validate_ollama_name(config.get("model_name", ""))}
         if not shutil.which("ollama"):
             raise ModelStudioError("Ollama is not installed. Install it before pulling from the Ollama library.")
+    elif operation == "pull_native":
+        clean = {"operation": operation, "repo_id": validate_repo_id(config.get("repo_id", ""))}
     elif operation == "install_gguf":
         repo = validate_repo_id(config.get("repo_id", ""))
         filename = validate_gguf_filename(config.get("filename", ""))
@@ -630,7 +865,7 @@ def start_job(config: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("Unsupported quantization type.")
         clean = {"operation": operation, "source_dir": config["source_dir"], "llama_cpp_dir": config["llama_cpp_dir"], "output_path": config["output_path"], "outtype": outtype, "quantization": quantization}
     else:
-        raise ValueError("Choose pull, install_gguf, or convert_gguf.")
+        raise ValueError("Choose pull, pull_native, install_gguf, or convert_gguf.")
     with _ACTIVE_LOCK:
         active = [job for job in list_jobs(100) if job.get("status") in {"queued", "running"}]
         if active:
@@ -650,5 +885,7 @@ def model_studio_status() -> dict[str, Any]:
     executable = shutil.which("ollama")
     status = {"schema_version": 1, "ollama_installed": executable is not None, "ollama_endpoint": "http://127.0.0.1:11434",
               "download_limit_bytes": _MAX_DOWNLOAD_BYTES, "gguf_directory": str(studio_home() / "gguf"),
+              "native_model_root": str(native_model_root()), "native_model_download_limit_bytes": _MAX_NATIVE_MODEL_BYTES,
+              "native_model_file_limit_bytes": _MAX_NATIVE_MODEL_FILE_BYTES, "native_pull_available": True,
               "catalogue": "Hugging Face public model API", "network_search_is_explicit": True}
     return status
