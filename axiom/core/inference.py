@@ -289,6 +289,7 @@ def stream_local_inference(
         headers={"Accept": "application/x-ndjson, application/json", "Content-Type": "application/json"},
     )
     chars_returned = 0
+    response_parts: list[str] = []
     prompt_eval_count: int | None = None
     eval_count: int | None = None
     total_duration_ms: float | None = None
@@ -323,6 +324,7 @@ def stream_local_inference(
                     token = token[:remaining]
                     if token:
                         chars_returned += len(token)
+                        response_parts.append(token)
                         yield {"type": "token", "token": token}
                 if isinstance(item.get("prompt_eval_count"), int) and not isinstance(item.get("prompt_eval_count"), bool):
                     if item["prompt_eval_count"] >= 0:
@@ -362,7 +364,7 @@ def stream_local_inference(
         "type": "complete",
         "result": {
             "model": model,
-            "response": "",
+            "response": "".join(response_parts),
             "done": True,
             "done_reason": done_reason,
             "prompt_eval_count": prompt_eval_count,
