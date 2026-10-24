@@ -469,3 +469,24 @@ def test_engine_stream_endpoint_yields_token_snapshots_and_final_metrics(tmp_pat
         "repetition_penalty": 1.0,
         "seed": None,
     }
+
+
+def test_native_engine_pull_endpoint_starts_model_studio_job(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+    job = {"job_id": "native-job-123", "status": "queued", "operation": "pull_native"}
+
+    def fake_start_job(config):
+        observed.update(config)
+        return job
+
+    monkeypatch.setattr(engine_api.model_studio, "start_job", fake_start_job)
+    response = _client().post("/api/engine/pull", json={"repo_id": "Qwen/Qwen2.5-0.5B-Instruct"})
+
+    assert response.status_code == 202, response.text
+    assert response.json() == job
+    assert observed == {"operation": "pull_native", "repo_id": "Qwen/Qwen2.5-0.5B-Instruct"}
+
+
+def test_native_engine_pull_endpoint_rejects_invalid_repository_id() -> None:
+    response = _client().post("/api/engine/pull", json={"repo_id": "../escape"})
+    assert response.status_code == 422
