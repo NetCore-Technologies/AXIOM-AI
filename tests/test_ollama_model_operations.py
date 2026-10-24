@@ -220,3 +220,51 @@ def test_stream_local_inference_stops_when_cancel_is_already_requested(monkeypat
     event.set()
     monkeypatch.setattr(inference, "_open_loopback", lambda *_args, **_kwargs: pytest.fail("cancelled stream must not open Ollama"))
     assert list(inference.stream_local_inference("qwen2.5:0.5b", "Hello", cancel_event=event)) == []
+
+
+def test_remove_local_model_uses_argument_list_and_verifies_result(monkeypatch):
+    import subprocess
+
+    reports = iter([
+        {"status": "online", "models": ["qwen2.5:0.5b"]},
+        {"status": "online", "models": []},
+    ])
+    observed = {}
+
+    class Completed:
+        returncode = 0
+        stdout = "success"
+        stderr = ""
+
+    def fake_run(args, **kwargs):
+        observed["args"] = args
+        observed["kwargs"] = kwargs
+        return Completed()
+
+    monkeypatch.setattr(inference, "runtime_status", lambda: next(reports))
+    monkeypatch.setattr(inference.shutil, "which", lambda name: "/usr/bin/ollama" if name == "ollama" else None)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = inference.remove_local_model("qwen2.5:0.5b")
+
+    assert observed["args"] == ["/usr/bin/ollama", "rm", "qwen2.5:0.5b"]
+    assert observed["kwargs"]["shell"] if "shell" in observed["kwargs"] else True
+    assert observed["kwargs"]["env"]["OLLAMA_HOST"] == "127.0.0.1:11434"
+    assert observed["kwargs"]["timeout"] == 120
+    assert result["removed"] is True
+    assert result["model_files_deleted"] is True
+    assert result["remaining_models"] == []
+
+
+def test_remove_local_model_refuses_uninstalled_tags_before_subprocess(monkeypatch):
+    monkeypatch.setattr(inference, "runtime_status", lambda: {"status": "online", "models": []})
+    monkeypatch.setattr(inference.shutil, "which", lambda _name: "/usr/bin/ollama")
+    monkeypatch.setattr("subprocess.run", lambda *_args, **_kwargs: pytest.fail("must not remove a non-installed tag"))
+
+    with pytest.raises(ValueError, match="not installed"):
+        inference.remove_local_model("qwen2.5:0.5b")
+
+
+def test_remove_local_model_refuses_model_names_that_are_urls(monkeypatch):
+    monkeypatch.setattr(inference, "runtime_status", lambda: pytest.fail("invalid model name must be rejected first"))
+    with pytest.raises(ValueError):
+        inference.remove_local_model("https://example.com/model")
