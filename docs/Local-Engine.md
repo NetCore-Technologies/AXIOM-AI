@@ -1,6 +1,6 @@
 # AXIOM Native Engine: independent local inference execution
 
-AXIOM Native Engine executes Llama/Mistral-family causal language models directly inside AXIOM's Python process. PyTorch supplies tensor operations and device kernels; AXIOM implements the model's forward pass, RMSNorm, rotary position embeddings (RoPE), grouped-query attention, causal/sliding-window masks, per-layer key/value cache, SwiGLU MLP, LoRA deltas, sampling and token-by-token decoding. AXIOM uses PyTorch's scaled-dot-product attention kernel when available to benefit from fused/optimized kernels; the exact cache-aware causal and sliding-window mask is built by AXIOM, with a manual attention implementation as the fallback.
+AXIOM Native Engine executes Llama, Mistral, and Qwen2-family causal language models directly inside AXIOM's Python process. PyTorch supplies tensor operations and device kernels; AXIOM implements the model's forward pass, RMSNorm, rotary position embeddings (RoPE), grouped-query attention, causal/sliding-window masks, per-layer key/value cache, SwiGLU MLP, LoRA deltas, sampling and token-by-token decoding. AXIOM uses PyTorch's scaled-dot-product attention kernel when available to benefit from fused/optimized kernels; the exact cache-aware causal and sliding-window mask is built by AXIOM, with a manual attention implementation as the fallback.
 
 **It is not an Ollama wrapper.** The inference request does not start, call, or require an Ollama service. It does not call Transformers' AutoModel loader or model.generate. Checkpoint weights are read from the safetensors format and run through AXIOM's own native execution code. Tokenization is performed by the local tokenizers package using the checkpoint's tokenizer.json; AXIOM does not download a tokenizer or model.
 
@@ -15,12 +15,12 @@ This extra installs PyTorch, tokenizers, and safetensors. The separate training 
 ## Supported checkpoint format
 
 A supported base model directory must contain:
-- config.json declaring model_type llama or mistral, with ordinary unscaled RoPE.
+- config.json declaring model_type llama, mistral, or qwen2, with RoPE settings implemented by the native decoder.
 - tokenizer.json, used locally for encoding and decoding.
 - model.safetensors, or model.safetensors.index.json plus the indexed safetensors shards.
-- Standard floating-point model tensors in float16, bfloat16, or float32 with expected Llama/Mistral tensor names and shapes.
+- Standard floating-point model tensors in float16, bfloat16, or float32 with expected Llama/Mistral/Qwen2 tensor names and shapes.
 
-The current native engine explicitly rejects GGUF, GPTQ/AWQ and other quantized weights, pickle-based pytorch_model.bin weights, custom remote model code, unsupported architectures, and non-default RoPE scaling. It does not silently route generation through another engine. PyTorch remains the tensor-kernel dependency, while the supported model forward pass and decode loop are AXIOM-owned.
+The current native engine explicitly rejects GGUF, EXL2, GPTQ/AWQ and other quantized weights, pickle-based pytorch_model.bin weights, custom remote model code, unsupported architectures, and RoPE scaling modes it does not implement. Qwen2 support is limited to the standard Qwen2 causal decoder layout; Qwen3, multimodal Qwen-VL, and Qwen models with additional attention normalization are not implied. It does not silently route generation through another engine. PyTorch remains the tensor-kernel dependency, while the supported model forward pass and decode loop are AXIOM-owned.
 
 ## Trusted model roots
 
