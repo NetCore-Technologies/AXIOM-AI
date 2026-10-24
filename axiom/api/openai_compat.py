@@ -1,7 +1,7 @@
-"""OpenAI-compatible chat-completions surface over AXIOM Native Engine.
+"""Token-protected OpenAI-compatible chat for AXIOM Native Engine and loopback Ollama.
 
-This API intentionally serves only models discovered under AXIOM's configured trusted
-model roots. It does not forward inference to Ollama, Transformers, or remote providers.
+The bridge serves trusted native checkpoints and already-installed Ollama models only. It
+never forwards the request to an external inference provider or exposes workspace endpoints.
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from starlette.responses import JSONResponse, StreamingResponse
 
 from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, generate_local_stream
+from axiom.core.inference import InferenceRuntimeError, run_local_chat, runtime_status as ollama_runtime_status
 
 router = APIRouter()
 _STREAM_END = object()
@@ -66,6 +67,118 @@ def _native_models() -> list[dict[str, Any]]:
 def _resolve_model(model_id: str) -> dict[str, Any] | None:
     matches = [item for item in _native_models() if item.get("name") == model_id]
     return matches[0] if len(matches) == 1 else None
+
+
+def _ollama_model_names() -> list[str]:
+    """Return installed Ollama model identifiers from the fixed loopback-only inventory."""
+    try:
+        status = ollama_runtime_status()
+    except Exception:
+        return []
+    names = status.get("models", []) if isinstance(status, dict) and status.get("status") == "online" else []
+    return [
+        name for name in names[:100]
+        if isinstance(name, str) and name and len(name) <= 120 and not any(ord(char) < 32 for char in name)
+    ]
+
+
+def _resolve_ollama_model(model_id: str) -> str | None:
+    """Resolve the explicit ollama/ namespace without colliding with native model IDs."""
+    if not model_id.startswith("ollama/"):
+        return None
+    candidate = model_id[len("ollama/"):]
+    return candidate if candidate and candidate in _ollama_model_names() else ""
+
+
+def _ollama_completion_payload(request: "OpenAIChatCompletionRequest", model_name: str) -> dict[str, Any]:
+    """Execute one bounded local Ollama chat and normalize its result to OpenAI's schema."""
+    if request.adapter_path:
+        raise ValueError("LoRA adapter paths apply only to AXIOM-native checkpoints, not Ollama models.")
+    result = run_local_chat(
+        model_name,
+        [message.model_dump() for message in request.messages],
+        num_predict=request.max_completion_tokens or request.max_tokens or 256,
+        temperature=request.temperature,
+        top_p=request.top_p,
+        top_k=request.top_k,
+        repetition_penalty=request.repetition_penalty,
+        seed=request.seed,
+        stop_sequences=_stop_sequences(request),
+    )
+    prompt_tokens = result.get("prompt_eval_count")
+    completion_tokens = result.get("eval_count")
+    prompt_tokens = prompt_tokens if isinstance(prompt_tokens, int) and not isinstance(prompt_tokens, bool) else 0
+    completion_tokens = completion_tokens if isinstance(completion_tokens, int) and not isinstance(completion_tokens, bool) else 0
+    finish_reason = "length" if result.get("done_reason") in {"length", "max_tokens"} else "stop"
+    return {
+        "id": "chatcmpl-" + uuid.uuid4().hex,
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": request.model,
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": str(result.get("response", ""))[:100_000]},
+            "finish_reason": finish_reason,
+        }],
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+        },
+        "system_fingerprint": "ollama-local",
+    }
+
+
+def _run_ollama_nonstream(request: "OpenAIChatCompletionRequest", model_name: str) -> Any:
+    try:
+        return _ollama_completion_payload(request, model_name)
+    except ValueError as exc:
+        return _openai_error(str(exc), 422, code="invalid_request")
+    except InferenceRuntimeError as exc:
+        return _openai_error(str(exc), 503, code="ollama_local_error", error_type="server_error")
+
+
+def _ollama_streaming_response(
+    request: "OpenAIChatCompletionRequest",
+    model_name: str,
+    http_request: Request,
+) -> StreamingResponse:
+    """SSE-compatible response for Ollama; output arrives in one final content delta."""
+    stream_id = "chatcmpl-" + uuid.uuid4().hex
+    created = int(time.time())
+
+    async def events() -> AsyncIterator[str]:
+        yield "data: " + json.dumps({
+            "id": stream_id, "object": "chat.completion.chunk", "created": created, "model": request.model,
+            "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
+        }, ensure_ascii=False) + "\n\n"
+        if await http_request.is_disconnected():
+            return
+        result = await asyncio.to_thread(_run_ollama_nonstream, request, model_name)
+        if isinstance(result, JSONResponse):
+            try:
+                payload = json.loads(result.body.decode("utf-8"))
+            except (UnicodeError, json.JSONDecodeError):
+                payload = {"error": {"message": "Local Ollama generation failed.", "type": "server_error", "code": "ollama_local_error"}}
+            yield "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        choice = result["choices"][0]
+        message = choice.get("message", {})
+        content = message.get("content", "")
+        if content:
+            yield "data: " + json.dumps({
+                "id": stream_id, "object": "chat.completion.chunk", "created": created, "model": request.model,
+                "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": None}],
+            }, ensure_ascii=False) + "\n\n"
+        yield "data: " + json.dumps({
+            "id": stream_id, "object": "chat.completion.chunk", "created": created, "model": request.model,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": choice.get("finish_reason", "stop")}],
+        }, ensure_ascii=False) + "\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
 
 
 class OpenAIChatMessage(BaseModel):
@@ -193,13 +306,15 @@ def openai_list_models(request: Request) -> Any:
         return auth_error
     created = int(time.time())
     models = _native_models()
-    return {
-        "object": "list",
-        "data": [
-            {"id": model["name"], "object": "model", "created": created, "owned_by": "axiom"}
-            for model in models
-        ],
-    }
+    data = [
+        {"id": model["name"], "object": "model", "created": created, "owned_by": "axiom"}
+        for model in models
+    ]
+    data.extend(
+        {"id": "ollama/" + model_name, "object": "model", "created": created, "owned_by": "ollama"}
+        for model_name in _ollama_model_names()
+    )
+    return {"object": "list", "data": data}
 
 
 
@@ -306,6 +421,13 @@ async def openai_chat_completions(request: OpenAIChatCompletionRequest, http_req
     auth_error = _authorization_error(http_request)
     if auth_error is not None:
         return auth_error
+    if request.model.startswith("ollama/"):
+        ollama_model = _resolve_ollama_model(request.model)
+        if not ollama_model:
+            return _openai_error(f"Installed local Ollama model {request.model!r} was not found.", 404, code="model_not_found")
+        if request.stream:
+            return _ollama_streaming_response(request, ollama_model, http_request)
+        return await asyncio.to_thread(_run_ollama_nonstream, request, ollama_model)
     model = _resolve_model(request.model)
     if model is None:
         return _openai_error(f"Native model {request.model!r} was not found or its ID is ambiguous.", 404, code="model_not_found")
