@@ -3,6 +3,8 @@ import AxiomQuantizer from "./components/AxiomQuantizer";
 import ApiPlayground from "./components/ApiPlayground";
 import RuntimeConnectorPanel from "./components/RuntimeConnectorPanel";
 import RuntimeTracePanel from "./components/RuntimeTracePanel";
+import LocalAxiomEnginePanel from "./components/LocalAxiomEnginePanel";
+import LocalEngineFabricPanel from "./components/LocalEngineFabricPanel";
 import LocalInferencePanel from "./components/LocalInferencePanel";
 import LLMClientPanel from "./components/LLMClientPanel";
 import AgentProfiles from "./components/AgentProfiles";
@@ -3151,9 +3153,11 @@ function Runtime() {
   const statusTone: Tone = hardware ? "success" : "warning";
 
   return <FeaturePage page="runtime" actions={<button type="button" className="button secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCcw size={16} /> {loading ? "Checking" : "Refresh status"}</button>}>
-    <div className="runtime-banner"><div className="runtime-state-icon"><RadioTower size={20} /></div><div><StatusPill tone={statusTone}>{loading ? "CHECKING" : hardware ? "HARDWARE READY" : "HARDWARE UNAVAILABLE"}</StatusPill><h2>Local runtime and inference</h2><p>{error || "Hardware detection is live. Use the Local model inference panel below to check Ollama and run prompts."}</p></div><code>axiom mcp serve</code></div>
+    <div className="runtime-banner"><div className="runtime-state-icon"><RadioTower size={20} /></div><div><StatusPill tone={statusTone}>{loading ? "CHECKING" : hardware ? "HARDWARE READY" : "HARDWARE UNAVAILABLE"}</StatusPill><h2>Local runtime and inference</h2><p>{error || "Hardware detection is live. Run AXIOM-native inference directly, compare local execution runtimes in Engine Fabric, or use the unified LLM client to switch providers."}</p></div><code>axiom mcp serve</code></div>
     <div className="info-grid"><InfoCard icon={Cpu} label="Processor" value={hardware?.architecture || "—"} detail={hardware ? `${hardware.cpu_cores} CPU cores` : loading ? "Checking" : "Unavailable"} tone={hardware ? "success" : "neutral"} /><InfoCard icon={HardDrive} label="System memory" value={hardware ? `${hardware.ram_gb.toFixed(1)} GB` : "—"} detail="Detected locally" tone={hardware ? "success" : "neutral"} /><InfoCard icon={Zap} label="GPU memory" value={hardware?.vram_gb === null || hardware?.vram_gb === undefined ? "Not detected" : `${hardware.vram_gb.toFixed(1)} GB`} detail={hardware?.gpu_name || "No compatible GPU reported"} tone={hardware?.cuda_available ? "success" : "warning"} /></div>
     {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
+    <LocalAxiomEnginePanel />
+    <LocalEngineFabricPanel />
     <LocalInferencePanel />
     <LLMClientPanel />
     <RuntimeTracePanel />

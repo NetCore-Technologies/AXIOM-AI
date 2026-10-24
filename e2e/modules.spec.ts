@@ -58,4 +58,12 @@ test.describe("AXIOM module explorer", () => {
     await expect(page.getByText(/does not mark planned roadmap items as implemented/i)).toBeVisible();
     await expect(page.getByRole("group", { name: "Workflow builder" })).toContainText("Design only");
   });
+  
+  test("opens the native engine and Engine Fabric from Runtime", async ({ page }) => {
+    await page.goto("/?page=runtime");
+    await expect(page.getByRole("heading", { name: "AXIOM Local Engine" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Choose the right local engine" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Run a local chat" })).toBeVisible();
+  });
+
 });

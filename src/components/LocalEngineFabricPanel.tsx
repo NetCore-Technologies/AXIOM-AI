@@ -6,6 +6,7 @@ const formatStatus = (status: string) => status.replaceAll("_", " ").toUpperCase
 
 export default function LocalEngineFabricPanel() {
   const [profile, setProfile] = useState<EngineFabricProfile>("balanced");
+  const [routingMode, setRoutingMode] = useState<"auto" | "selected">("auto");
   const [report, setReport] = useState<EngineFabricReport | null>(null);
   const [selectedBackend, setSelectedBackend] = useState("ollama");
   const [model, setModel] = useState("");
@@ -54,12 +55,15 @@ export default function LocalEngineFabricPanel() {
 
   const selected = report?.backends.find((item) => item.id === selectedBackend) ?? null;
   const choices = report?.backends.filter((item) => item.supports_chat) ?? [];
+  const modelOptions = routingMode === "auto"
+    ? [...new Set((report?.backends ?? []).filter((item) => item.supports_chat && item.status === "ready").flatMap((item) => item.models))]
+    : selected?.models ?? [];
 
   const run = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
     setResult(null);
-    if (!selected || selected.status !== "ready") {
+    if (routingMode === "selected" && (!selected || selected.status !== "ready")) {
       setError("Select a local backend whose loopback API is ready.");
       return;
     }
@@ -83,13 +87,18 @@ export default function LocalEngineFabricPanel() {
     }
     setRunning(true);
     try {
-      const response = await axiomApi.engineBackendChat({
-        backend_id: selected.id as EngineFabricChatResult["backend_id"],
+      const input = {
         model: model.trim(),
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "user" as const, content: prompt }],
         max_new_tokens: tokenLimit,
         temperature: temperatureValue,
-      });
+      };
+      const response = routingMode === "auto"
+        ? await axiomApi.engineBackendAutoChat({ ...input, profile })
+        : await axiomApi.engineBackendChat({
+            ...input,
+            backend_id: selected!.id as EngineFabricChatResult["backend_id"],
+          });
       setResult(response);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Local backend generation failed.");
@@ -185,15 +194,22 @@ export default function LocalEngineFabricPanel() {
       <p className="quiet-note">Only loopback APIs are contacted; AXIOM sends no API keys and does not start services or download models. The Native Engine uses its own trusted model-path form above this adapter section.</p>
       <form onSubmit={(event) => void run(event)}>
         <div className="two-column-grid">
-          <label className="field"><span className="field-label-row"><span>External local backend</span></span>
+          <label className="field"><span className="field-label-row"><span>Execution strategy</span></span>
+            <select value={routingMode} onChange={(event) => { setRoutingMode(event.target.value as "auto" | "selected"); setResult(null); }} disabled={loading || running}>
+              <option value="auto">Automatic profile routing + safe failover</option>
+              <option value="selected">Choose a specific local runtime</option>
+            </select>
+            <small>Automatic routing stays local and only fails over to ready services advertising the exact same model ID.</small>
+          </label>
+          {routingMode === "selected" && <label className="field"><span className="field-label-row"><span>External local backend</span></span>
             <select value={selectedBackend} onChange={(event) => { const id = event.target.value; setSelectedBackend(id); setResult(null); const target = report?.backends.find((item) => item.id === id); setModel(target?.models[0] ?? ""); }} disabled={loading || running}>
               {choices.map((item) => <option key={item.id} value={item.id}>{item.name} — {formatStatus(item.status)}</option>)}
             </select>
-          </label>
+          </label>}
           <label className="field"><span className="field-label-row"><span>Model ID</span></span>
-            <input list="axiom-fabric-model-options" value={model} onChange={(event) => setModel(event.target.value)} maxLength={120} required placeholder="Model ID reported by the local server" disabled={!selected || selected.status !== "ready" || running} />
-            <datalist id="axiom-fabric-model-options">{(selected?.models ?? []).map((name) => <option key={name} value={name} />)}</datalist>
-            <small>{selected?.status === "ready" ? "Choose an ID from this service or enter its exact configured alias." : "Start the selected service and refresh discovery to enable local chat."}</small>
+            <input list="axiom-fabric-model-options" value={model} onChange={(event) => setModel(event.target.value)} maxLength={120} required placeholder={routingMode === "auto" ? "Exact model ID shared by matching local services" : "Model ID reported by the selected local server"} disabled={running || (routingMode === "selected" && (!selected || selected.status !== "ready"))} />
+            <datalist id="axiom-fabric-model-options">{modelOptions.map((name) => <option key={name} value={name} />)}</datalist>
+            <small>{routingMode === "auto" ? "Pick an ID shared by a ready local service; model names do not guarantee identical weights across engines." : selected?.status === "ready" ? "Choose an ID from this service or enter its exact configured alias." : "Start the selected service and refresh discovery to enable local chat."}</small>
           </label>
         </div>
         <label className="field"><span className="field-label-row"><span>Prompt</span><span>{prompt.length.toLocaleString()} / 12,000 characters</span></span>
@@ -204,7 +220,7 @@ export default function LocalEngineFabricPanel() {
           <label className="field"><span className="field-label-row"><span>Temperature</span></span><input type="number" value={temperature} onChange={(event) => setTemperature(event.target.value)} min={0} max={2} step={0.1} required /></label>
         </div>
         <div className="integration-form-actions">
-          <button type="submit" className="button primary-button" disabled={loading || running || !selected || selected.status !== "ready" || !model.trim() || !prompt.trim()}><PlayIcon />{running ? "Generating locally…" : "Run on selected engine"}</button>
+          <button type="submit" className="button primary-button" disabled={loading || running || (routingMode === "selected" && (!selected || selected.status !== "ready")) || !model.trim() || !prompt.trim()}><PlayIcon />{running ? "Generating locally…" : routingMode === "auto" ? "Auto-route local request" : "Run on selected engine"}</button>
           {result && <span className="quiet-note">{result.eval_count ?? "—"} completion tokens · {result.total_duration_ms} ms · {result.backend_name}</span>}
         </div>
       </form>
@@ -214,11 +230,11 @@ export default function LocalEngineFabricPanel() {
     <section className="surface" aria-labelledby="fabric-benchmark-title" style={{ marginTop: 18, padding: 18, border: "1px solid var(--line-strong)", borderRadius: 2, background: "var(--surface)" }}>
       <div className="surface-head">
         <div><p className="surface-eyebrow">MEASURED ON THIS MACHINE · SESSION-ONLY</p><h3 id="fabric-benchmark-title"><BarChart3 size={17} style={{ verticalAlign: "middle", marginRight: 8 }} />Local engine shootout</h3></div>
-        <button type="button" className="button primary-button" onClick={() => void benchmarkSelected()} disabled={loading || benchmarking || running || !selected || selected.status !== "ready" || !model.trim() || !prompt.trim()}>
+        <button type="button" className="button primary-button" onClick={() => void benchmarkSelected()} disabled={loading || benchmarking || running || routingMode === "auto" || !selected || selected.status !== "ready" || !model.trim() || !prompt.trim()}>
           <Activity size={15} /> {benchmarking ? "Measuring…" : "Benchmark selected engine"}
         </button>
       </div>
-      <p className="quiet-note">Runs the same representative prompt and settings on the selected local service. Warm-up is excluded; each measured request is real. Generated text is discarded by the API; only latency and reported token counts are returned. No samples are saved to disk.</p>
+      <p className="quiet-note">Runs repeated requests against one selected local service. Switch Execution strategy to “Choose a specific local runtime” before benchmarking; automatic failover is deliberately excluded so every sample measures the same backend. Generated text is discarded by the API, and samples stay in this screen session only.</p>
       <div className="two-column-grid">
         <label className="field"><span className="field-label-row"><span>Warm-up requests</span></span><select value={benchmarkWarmups} onChange={(event) => setBenchmarkWarmups(event.target.value)} disabled={benchmarking}><option value="0">0</option><option value="1">1</option></select></label>
         <label className="field"><span className="field-label-row"><span>Measured requests</span></span><select value={benchmarkIterations} onChange={(event) => setBenchmarkIterations(event.target.value)} disabled={benchmarking}>{[1,2,3,4,5].map((count) => <option key={count} value={String(count)}>{count}</option>)}</select></label>
@@ -233,6 +249,15 @@ export default function LocalEngineFabricPanel() {
         <p className="quiet-note">Compare results carefully: model IDs, quantization, context, hardware, cache state and runtime settings can differ. These measurements are observational, not a universal ranking.</p>
       </div>}
     </section>
+    {result?.routing && <div className="panel-surface" aria-label="Automatic routing attempts" style={{ padding: 14, marginTop: 12 }}>
+      <p className="surface-eyebrow">AUTOMATIC ROUTING · {result.routing.profile}</p>
+      <p>{result.routing.fallback_used ? "A fallback was used after an earlier backend failed." : "The first matching ready backend completed the request."}</p>
+      <ul>{result.routing.attempts.map((attempt, index) => <li key={attempt.backend_id + ":" + index}>
+        <strong>{attempt.backend_name}</strong>: {attempt.outcome === "selected" ? "selected" : "failed"}
+        {attempt.reason ? " — " + attempt.reason : ""}
+      </li>)}</ul>
+      <p className="quiet-note">{result.routing.scope_note}</p>
+    </div>}
     {report?.scope_note && <p className="quiet-note" style={{ marginTop: 12 }}>{report.scope_note}</p>}
   </section>;
 }
