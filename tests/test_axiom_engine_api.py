@@ -108,12 +108,12 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
 
     def fake_stream(
         model_path, prompt, *, adapter_path=None, max_new_tokens=256, temperature=0.7,
-        top_p=0.9, top_k=0, repetition_penalty=1.0, seed=None, stop_sequences=(), include_token_events=True,
+        top_p=0.9, top_k=0, min_p=0.0, repetition_penalty=1.0, seed=None, stop_sequences=(), include_token_events=True,
         cancel_event=None, device_preference="auto", memory_mode="full", precision="auto",
     ):
         observed.update({
             "model_path": model_path, "prompt": prompt, "max_new_tokens": max_new_tokens,
-            "temperature": temperature, "top_p": top_p, "top_k": top_k,
+            "temperature": temperature, "top_p": top_p, "top_k": top_k, "min_p": min_p,
             "repetition_penalty": repetition_penalty, "seed": seed,
             "stop_sequences": list(stop_sequences),
             "include_token_events": include_token_events,
@@ -143,6 +143,7 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
             "temperature": 0,
             "top_p": 0.8,
             "top_k": 4,
+            "min_p": 0.2,
             "repetition_penalty": 1.1,
             "seed": 42,
             "stop_sequences": ["<END>", "###"],
@@ -165,6 +166,7 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
         "temperature": 0,
         "top_p": 0.8,
         "top_k": 4,
+        "min_p": 0.2,
         "repetition_penalty": 1.1,
         "seed": 42,
         "stop_sequences": ["<END>", "###"],
