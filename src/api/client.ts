@@ -192,6 +192,7 @@ export type AxiomEngineLiveTelemetry = {
     stop_reason?: string;
   };
   memory_mode: "full" | "layer_streaming" | "disk_streaming";
+  memory_selection?: { requested: string; selected: "full" | "layer_streaming" | "disk_streaming"; reason: string; estimated_checkpoint_weight_bytes?: number; estimated_kv_cache_bytes?: number; estimated_context_tokens?: number; available_system_ram_bytes?: number | null; available_device_memory_bytes?: number | null; estimates_are_advisory?: boolean };
   memory_stats: AxiomEngineMemoryStats;
   device_memory: AxiomEngineDeviceMemory;
 };
