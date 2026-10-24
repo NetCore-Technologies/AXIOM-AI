@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, generate_local, generate_local_stream, runtime_status
+from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, generate_local, generate_local_stream, runtime_status, runtime_telemetry
 from axiom.core import model_studio
 
 engine_app = typer.Typer(help="Run causal language models directly through AXIOM's local engine.", no_args_is_help=True)
@@ -95,6 +95,49 @@ def engine_status(json_output: bool = typer.Option(False, "--json", help="Print 
             console.print(f"[yellow]{report['setup_note']}[/yellow]")
     if not report["ready"]:
         raise typer.Exit(code=1)
+
+
+@engine_app.command("telemetry")
+def engine_telemetry(
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable resource telemetry."),
+) -> None:
+    """Inspect local CPU, RAM, device allocator and trusted model-storage resources."""
+    report = runtime_telemetry()
+    if json_output:
+        typer.echo(json.dumps(report, indent=2, ensure_ascii=False))
+        return
+    table = Table(title="AXIOM Engine resource telemetry")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Current sample")
+    table.add_row("Sampled at", report["sampled_at"])
+    table.add_row("CPU cores", str(report["cpu"].get("logical_cores") or "not exposed"))
+    table.add_row("System CPU", str(report["cpu"].get("system_percent")) + "%" if report["cpu"].get("system_percent") is not None else "not exposed")
+    table.add_row("Process CPU", str(report["cpu"].get("process_percent")) + "%" if report["cpu"].get("process_percent") is not None else "not exposed")
+    table.add_row("System RAM total", str(report["memory"].get("total_bytes")) + " bytes" if report["memory"].get("total_bytes") is not None else "not exposed")
+    table.add_row("System RAM available", str(report["memory"].get("available_bytes")) + " bytes" if report["memory"].get("available_bytes") is not None else "not exposed")
+    table.add_row("Process RSS", str(report["process"].get("rss_bytes")) + " bytes" if report["process"].get("rss_bytes") is not None else "not exposed")
+    table.add_row("Model loaded", "yes" if report["loaded_runtime"]["loaded"] else "no")
+    table.add_row("Active device", str(report["loaded_runtime"].get("device") or "none"))
+    console.print(table)
+    device_table = Table(title="Device memory")
+    device_table.add_column("Device", style="cyan")
+    device_table.add_column("Available")
+    device_table.add_column("Free / total")
+    for item in report["devices"]:
+        free = item.get("memory_free_gib")
+        total = item.get("memory_total_gib")
+        memory_text = f"{free} / {total} GiB" if free is not None and total is not None else "not exposed"
+        device_table.add_row(str(item.get("name") or item.get("id")), "yes" if item.get("available") else "no", memory_text)
+    console.print(device_table)
+    if report["disks"]:
+        disk_table = Table(title="Trusted model storage (paths hidden)")
+        disk_table.add_column("Root")
+        disk_table.add_column("Free bytes")
+        disk_table.add_column("Total bytes")
+        for disk in report["disks"]:
+            disk_table.add_row(disk["label"], str(disk["free_bytes"]), str(disk["total_bytes"]))
+        console.print(disk_table)
+    console.print(report["scope_note"])
 
 
 @engine_app.command("pull")
