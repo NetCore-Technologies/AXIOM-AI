@@ -1751,6 +1751,7 @@ def generate_local(
     temperature: float = 0.7,
     top_p: float = 0.9,
     top_k: int = 0,
+    min_p: float = 0.0,
     repetition_penalty: float = 1.0,
     seed: int | None = None,
     stop_sequences: list[str] | tuple[str, ...] = (),
