@@ -89,7 +89,7 @@ test.describe("Measured local inference benchmark", () => {
 
     await ensureAuthenticated(page);
     await page.goto("/?page=runtime");
-    const inferencePanel = page.locator(".local-inference-panel");
+    const inferencePanel = page.locator(".ollama-inference-panel");
     await expect(page.getByRole("heading", { level: 1, name: "Runtime", exact: true })).toBeVisible();
     await expect(inferencePanel.getByRole("heading", { name: "Inference benchmark" })).toBeVisible();
     await expect(inferencePanel.getByText("OLLAMA ONLINE", { exact: true })).toBeVisible();
@@ -155,7 +155,7 @@ test.describe("Measured local inference benchmark", () => {
 
     await ensureAuthenticated(page);
     await page.goto("/?page=runtime");
-    const inferencePanel = page.locator(".local-inference-panel");
+    const inferencePanel = page.locator(".ollama-inference-panel");
     await inferencePanel.getByPlaceholder("Ask your local model to do something…").fill("Test bounded work.");
     await inferencePanel.getByRole("combobox", { name: "Benchmark iterations" }).selectOption("10");
     await inferencePanel.getByRole("combobox", { name: "Benchmark concurrency" }).selectOption("2");

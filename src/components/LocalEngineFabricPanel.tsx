@@ -190,7 +190,7 @@ export default function LocalEngineFabricPanel() {
     }
   };
 
-  return <section className="surface local-inference-panel" aria-labelledby="engine-fabric-title">
+  return <section className="surface local-inference-panel engine-fabric-panel" aria-labelledby="engine-fabric-title">
     <div className="surface-head">
       <div>
         <p className="surface-eyebrow">AXIOM ENGINE FABRIC · LOCAL ROUTING</p>

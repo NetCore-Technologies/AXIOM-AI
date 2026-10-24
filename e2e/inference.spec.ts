@@ -32,7 +32,7 @@ test("Runtime GUI submits bounded prompts to the local inference API and display
 
 
   await page.goto("/?page=runtime");
-  const inferencePanel = page.locator(".local-inference-panel");
+  const inferencePanel = page.locator(".ollama-inference-panel");
   await expect(inferencePanel.getByRole("heading", { name: "Local model inference" })).toBeVisible();
   await expect(inferencePanel.getByText("OLLAMA ONLINE", { exact: true })).toBeVisible();
   await inferencePanel.getByPlaceholder("Ask your local model to do something…").fill("Say hello in one sentence.");
@@ -87,7 +87,7 @@ test("Runtime can stop a streamed local Ollama generation and retain partial out
   });
 
   await page.goto("/?page=runtime");
-  const inferencePanel = page.locator(".local-inference-panel");
+  const inferencePanel = page.locator(".ollama-inference-panel");
   await inferencePanel.getByPlaceholder("Ask your local model to do something…").fill("Write a long response.");
   await inferencePanel.getByRole("button", { name: "Run locally" }).click();
   await routeReady;

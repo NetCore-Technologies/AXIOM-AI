@@ -79,7 +79,7 @@ test("Runtime can start Ollama, pull a model with progress, and stop only the ma
   });
 
   await page.goto("/?page=runtime");
-  const inferencePanel = page.locator(".local-inference-panel");
+  const inferencePanel = page.locator(".ollama-inference-panel");
   await expect(inferencePanel.getByRole("heading", { name: "Local model inference" })).toBeVisible();
   await expect(inferencePanel.getByText("OLLAMA OFFLINE", { exact: true })).toBeVisible();
   await inferencePanel.getByRole("button", { name: "Start Ollama" }).click();
@@ -93,7 +93,7 @@ test("Runtime can start Ollama, pull a model with progress, and stop only the ma
   await inferencePanel.getByRole("button", { name: "Show loaded models" }).click();
   await expect(inferencePanel.getByRole("heading", { name: "Loaded models · 1" })).toBeVisible();
   await expect(inferencePanel.getByText("CPU + GPU", { exact: true })).toBeVisible();
-  await expect(inferencePanel.getByText("0.28 GiB", { exact: true })).toBeVisible();
+  await expect(inferencePanel.getByText("GPU memory: 0.28 GiB", { exact: true })).toBeVisible();
 
   await inferencePanel.getByRole("button", { name: "Inspect model" }).click();
   await expect(inferencePanel.getByText("Q4_K_M", { exact: true })).toBeVisible();

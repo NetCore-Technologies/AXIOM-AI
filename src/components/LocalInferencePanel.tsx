@@ -246,7 +246,7 @@ export default function LocalInferencePanel() {
   };
 
   const online = status?.status === "online";
-  return <section className="surface local-inference-panel">
+  return <section className="surface local-inference-panel ollama-inference-panel">
     <div className="surface-head">
       <div>
         <p className="surface-eyebrow">REAL GENERATION · LOOPBACK ONLY</p>
