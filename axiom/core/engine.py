@@ -8,6 +8,7 @@ Transformers model generation or an Ollama service.
 from __future__ import annotations
 
 import gc
+from contextlib import contextmanager
 from functools import lru_cache
 import importlib.metadata
 import importlib.util
@@ -26,11 +27,37 @@ from typing import Any, Iterator
 _MAX_PROMPT_CHARS = 12_000
 _MAX_CHAT_CHARS = 24_000
 _MAX_NEW_TOKENS = 2_048
+_MAX_ENGINE_QUEUE_WAIT_SECONDS = 30.0
 _MAX_INPUT_TOKENS = 8_192
 _MAX_CONFIG_BYTES = 1_048_576
 _LOG = logging.getLogger(__name__)
 # A plain Lock is deliberate: the streaming generator may resume on a different worker thread.
 _ENGINE_LOCK = threading.Lock()
+
+
+@contextmanager
+def _engine_request_lock(cancel_event: threading.Event | None = None) -> Iterator[None]:
+    """Bound admission wait for the single loaded native runtime.
+
+    The current engine executes one request per loaded runtime. Waiting
+    requests are bounded and cooperatively cancellable instead of accumulating
+    indefinitely behind the runtime lock.
+    """
+    deadline = time.monotonic() + _MAX_ENGINE_QUEUE_WAIT_SECONDS
+    acquired = False
+    while not acquired:
+        if cancel_event is not None and cancel_event.is_set():
+            raise AxiomEngineError("Native generation was cancelled while waiting for the engine.")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise AxiomEngineError(
+                "AXIOM Native Engine is busy with another request. Retry shortly or use a second AXIOM process for concurrent inference."
+            )
+        acquired = _ENGINE_LOCK.acquire(timeout=min(0.1, remaining))
+    try:
+        yield
+    finally:
+        _ENGINE_LOCK.release()
 _LOADED_RUNTIME: dict[str, Any] | None = None
 _LOADED_ARCHITECTURE: str | None = None
 _MODEL_ROOT_ENV = "AXIOM_MODEL_ROOTS"
@@ -1469,7 +1496,7 @@ def generate_local_stream(
         prompt = next(message["content"] for message in reversed(chat_messages) if message["role"] == "user")
     top_p, top_k, repetition_penalty, seed = validate_sampling_parameters(top_p, top_k, repetition_penalty, seed)
     stop_sequences = validate_stop_sequences(stop_sequences)
-    with _ENGINE_LOCK:
+    with _engine_request_lock(cancel_event):
         model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path, device_preference, memory_mode)
         selected_backend = details.get("device_selection", {}).get("selected")
         device_memory_before = _device_memory_snapshot(torch, device, selected_backend=selected_backend)
