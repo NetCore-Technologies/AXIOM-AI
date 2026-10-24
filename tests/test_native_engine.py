@@ -59,6 +59,25 @@ def test_native_sampler_sanitizes_nonfinite_logits_and_rejects_empty_distributio
         )
 
 
+def test_native_top_k_keeps_exact_candidate_count_when_logits_tie() -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import _apply_top_k_filter
+
+    logits = torch.tensor([[5.0, 5.0, 3.0, 1.0, -2.0]])
+    one = _apply_top_k_filter(logits, 1, torch)
+    assert torch.isfinite(one).sum().item() == 1
+    assert one.max().item() == 5.0
+
+    two = _apply_top_k_filter(logits, 2, torch)
+    assert torch.isfinite(two).sum().item() == 2
+    assert torch.isfinite(two[0, :2]).all().item()
+    assert torch.isneginf(two[0, 2:]).all().item()
+
+    # A disabled or full-vocabulary top-k must be a no-op.
+    assert torch.equal(_apply_top_k_filter(logits, 0, torch), logits)
+    assert torch.equal(_apply_top_k_filter(logits, logits.shape[-1], torch), logits)
+
+
 def test_stop_sequences_are_bounded_and_deduplicated() -> None:
     from axiom.core.engine import validate_stop_sequences
 
