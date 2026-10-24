@@ -782,3 +782,45 @@ def test_engine_fabric_benchmark_endpoint_rejects_large_run_budget() -> None:
         "max_new_tokens": 2048, "warmup_runs": 1, "iterations": 10,
     })
     assert response.status_code == 422
+
+
+def test_engine_fabric_auto_chat_endpoint_routes_with_requested_profile(monkeypatch) -> None:
+    captured = {}
+    expected = {
+        "schema_version": 1, "backend_id": "ollama", "backend_name": "Ollama",
+        "model": "tiny-local", "response": "Routed locally.", "done": True,
+        "prompt_eval_count": 3, "eval_count": 4, "total_duration_ms": 20.0,
+        "generated_at": "2026-10-24T00:00:00+00:00", "execution": "local_loopback",
+        "privacy": {"prompt_returned": False, "response_persisted": False, "cloud_provider_used": False},
+        "routing": {
+            "strategy": "profile_order_exact_model_id", "profile": "low-memory",
+            "requested_model": "tiny-local", "fallback_used": False,
+            "attempts": [{"backend_id": "ollama", "backend_name": "Ollama", "outcome": "selected"}],
+            "max_attempts": 3, "scope_note": "Fixed loopback only.",
+        },
+    }
+    def fake_route(profile, model, messages, *, max_new_tokens, temperature):
+        captured.update(profile=profile, model=model, messages=messages, max_new_tokens=max_new_tokens, temperature=temperature)
+        return expected
+
+    monkeypatch.setattr(engine_api, "run_engine_fabric_chat", fake_route)
+    response = _client().post("/api/engine/backends/auto-chat", json={
+        "profile": "low-memory", "model": "tiny-local",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "max_new_tokens": 64, "temperature": 0.2,
+    })
+    assert response.status_code == 200
+    assert response.json() == expected
+    assert captured == {
+        "profile": "low-memory", "model": "tiny-local",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "max_new_tokens": 64, "temperature": 0.2,
+    }
+
+
+def test_engine_fabric_auto_chat_endpoint_rejects_unknown_profiles() -> None:
+    response = _client().post("/api/engine/backends/auto-chat", json={
+        "profile": "cloud", "model": "tiny-local",
+        "messages": [{"role": "user", "content": "Hello"}],
+    })
+    assert response.status_code == 422

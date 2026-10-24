@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
 from starlette.responses import StreamingResponse
 from axiom.core import model_studio
-from axiom.core.engine_fabric import EngineFabricError, discover_engine_backends, run_engine_backend_benchmark, run_engine_backend_chat
+from axiom.core.engine_fabric import EngineFabricError, discover_engine_backends, run_engine_backend_benchmark, run_engine_backend_chat, run_engine_fabric_chat
 
 from axiom.core.engine import (
     AxiomEngineError,
@@ -377,6 +377,20 @@ class EngineFabricChatRequest(BaseModel):
         return validate_model_name(value)
 
 
+class EngineFabricAutoChatRequest(BaseModel):
+    profile: str = Field(pattern="^(balanced|low-memory|throughput|easy-setup|portable|minimal-daemons)$")
+    model: str = Field(min_length=1, max_length=120)
+    messages: list[EngineFabricMessage] = Field(min_length=1, max_length=64)
+    max_new_tokens: int = Field(default=256, ge=1, le=2048)
+    temperature: float = Field(default=0.7, ge=0, le=2)
+
+    @field_validator("model")
+    @classmethod
+    def model_must_be_a_name_not_a_url(cls, value: str) -> str:
+        from axiom.core.inference import validate_model_name
+        return validate_model_name(value)
+
+
 @router.get("/backends")
 def engine_backends(profile: str = "balanced") -> dict[str, Any]:
     """Inventory local execution backends and recommend one using an explicit workload profile."""
@@ -401,6 +415,23 @@ def engine_backend_chat(request: EngineFabricChatRequest) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=str(exc)) from None
     except EngineFabricError:
         raise HTTPException(status_code=503, detail="The selected local backend could not complete this request.") from None
+
+
+@router.post("/backends/auto-chat")
+def engine_backend_auto_chat(request: EngineFabricAutoChatRequest) -> dict[str, Any]:
+    """Route a chat request across ready local services by profile and exact model ID."""
+    try:
+        return run_engine_fabric_chat(
+            request.profile,
+            request.model,
+            [message.model_dump() for message in request.messages],
+            max_new_tokens=request.max_new_tokens,
+            temperature=request.temperature,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except EngineFabricError:
+        raise HTTPException(status_code=503, detail="No matching local backend could complete this request.") from None
 
 
 class EngineFabricBenchmarkRequest(BaseModel):

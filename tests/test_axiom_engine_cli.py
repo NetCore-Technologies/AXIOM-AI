@@ -311,3 +311,34 @@ def test_engine_estimate_cli_requires_at_least_one_memory_budget(tmp_path: Path)
     assert result.exit_code == 1
     assert "--ram-budget-gib" in result.output
     assert "--vram-budget-gib" in result.output
+
+
+def test_engine_auto_chat_cli_exposes_local_routing_metadata(monkeypatch) -> None:
+    observed = {}
+    def fake_route(profile, model, messages, **kwargs):
+        observed.update(profile=profile, model=model, messages=messages, **kwargs)
+        return {
+            "backend_id": "ollama", "backend_name": "Ollama", "model": model,
+            "response": "Routed response", "eval_count": 5, "total_duration_ms": 12.0,
+            "routing": {
+                "strategy": "profile_order_exact_model_id", "profile": profile,
+                "requested_model": model, "fallback_used": True,
+                "attempts": [
+                    {"backend_id": "llama-cpp", "backend_name": "llama.cpp", "outcome": "failed", "reason": "busy"},
+                    {"backend_id": "ollama", "backend_name": "Ollama", "outcome": "selected"},
+                ],
+                "max_attempts": 3, "scope_note": "Loopback-only test scope.",
+            },
+        }
+
+    monkeypatch.setattr(engine_cli, "run_engine_fabric_chat", fake_route)
+    result = runner.invoke(engine_app, [
+        "auto-chat", "--profile", "low-memory", "--model", "tiny-local",
+        "--prompt", "Hello", "--max-new-tokens", "64", "--json",
+    ])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["routing"]["fallback_used"] is True
+    assert payload["routing"]["attempts"][1]["outcome"] == "selected"
+    assert observed["profile"] == "low-memory"
+    assert observed["messages"] == [{"role": "user", "content": "Hello"}]

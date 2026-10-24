@@ -118,3 +118,65 @@ def test_benchmark_rejects_unbounded_iterations_before_dispatch(monkeypatch):
         assert "between 1 and 5" in str(exc)
     else:
         raise AssertionError("benchmark must enforce iteration cap")
+
+
+def test_auto_router_fails_over_only_between_ready_exact_model_matches(monkeypatch):
+    report = {
+        "profile": "balanced",
+        "backends": [
+            {"id": "axiom-native", "name": "AXIOM Native Engine", "status": "ready", "supports_chat": True, "models": ["tiny-local"]},
+            {"id": "llama-cpp", "name": "llama.cpp server", "status": "ready", "supports_chat": True, "models": ["tiny-local"]},
+            {"id": "ollama", "name": "Ollama", "status": "ready", "supports_chat": True, "models": ["tiny-local"]},
+            {"id": "vllm", "name": "vLLM", "status": "ready", "supports_chat": True, "models": ["other-model"]},
+        ],
+    }
+    monkeypatch.setattr(engine_fabric, "discover_engine_backends", lambda profile: report)
+    observed = []
+
+    def fake_chat(backend_id, model, messages, **kwargs):
+        observed.append((backend_id, model, messages, kwargs))
+        if backend_id == "llama-cpp":
+            raise engine_fabric.EngineFabricError("simulated local timeout")
+        return {
+            "schema_version": 1, "backend_id": "ollama", "backend_name": "Ollama",
+            "model": model, "response": "local fallback response", "done": True,
+            "prompt_eval_count": 3, "eval_count": 5, "total_duration_ms": 18.0,
+            "generated_at": "2026-10-24T00:00:00+00:00", "execution": "local_loopback",
+            "privacy": {"prompt_returned": False, "response_persisted": False, "cloud_provider_used": False},
+        }
+
+    monkeypatch.setattr(engine_fabric, "run_engine_backend_chat", fake_chat)
+    result = engine_fabric.run_engine_fabric_chat(
+        "balanced", "tiny-local", [{"role": "user", "content": "Hello"}],
+        max_new_tokens=64, temperature=0.2,
+    )
+    assert [item[0] for item in observed] == ["llama-cpp", "ollama"]
+    assert all(item[1] == "tiny-local" for item in observed)
+    assert observed[0][3]["request_timeout"] == 45.0
+    assert result["response"] == "local fallback response"
+    assert result["routing"]["fallback_used"] is True
+    assert result["routing"]["max_attempts"] == 3
+    assert [item["outcome"] for item in result["routing"]["attempts"]] == ["failed", "selected"]
+    assert "do not prove identical checkpoint weights" in result["routing"]["scope_note"]
+
+
+def test_auto_router_rejects_model_ids_not_advertised_by_any_ready_local_service(monkeypatch):
+    monkeypatch.setattr(engine_fabric, "discover_engine_backends", lambda profile: {
+        "profile": profile,
+        "backends": [
+            {"id": "ollama", "name": "Ollama", "status": "ready", "supports_chat": True, "models": ["qwen-local"]},
+            {"id": "llama-cpp", "name": "llama.cpp", "status": "offline", "supports_chat": True, "models": ["not-ready"]},
+        ],
+    })
+    monkeypatch.setattr(
+        engine_fabric, "run_engine_backend_chat",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not dispatch")),
+    )
+    try:
+        engine_fabric.run_engine_fabric_chat(
+            "balanced", "missing-model", [{"role": "user", "content": "Hello"}],
+        )
+    except engine_fabric.EngineFabricError as exc:
+        assert "exact model ID" in str(exc)
+    else:
+        raise AssertionError("auto-routing must not guess a model alias")

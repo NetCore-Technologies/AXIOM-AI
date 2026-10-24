@@ -13,7 +13,7 @@ from rich.text import Text
 
 from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, estimate_native_quantization, generate_local, generate_local_stream, runtime_status, runtime_telemetry
 from axiom.core import model_studio
-from axiom.core.engine_fabric import EngineFabricError, discover_engine_backends, run_engine_backend_benchmark, run_engine_backend_chat
+from axiom.core.engine_fabric import EngineFabricError, discover_engine_backends, run_engine_backend_benchmark, run_engine_backend_chat, run_engine_fabric_chat
 
 engine_app = typer.Typer(help="Run causal language models directly through AXIOM's local engine.", no_args_is_help=True)
 console = Console()
@@ -412,6 +412,47 @@ def engine_route_chat(
         return
     console.print(Panel(result["response"] or "(The model returned an empty response.)", title=f"{result['backend_name']} · {result['model']}"))
     console.print(f"{result['eval_count'] if result['eval_count'] is not None else 'Unknown'} output tokens · {result['total_duration_ms']} ms · local only")
+
+
+@engine_app.command("auto-chat")
+def engine_auto_chat(
+    model: str = typer.Option(..., "--model", help="Exact model ID advertised by a local service."),
+    prompt: str = typer.Option(..., "--prompt", help="Prompt text, at most 12,000 characters."),
+    profile: str = typer.Option("balanced", "--profile", help="balanced, low-memory, throughput, easy-setup, portable, minimal-daemons"),
+    max_new_tokens: int = typer.Option(256, "--max-new-tokens", min=1, max=2048),
+    temperature: float = typer.Option(0.7, min=0, max=2),
+    json_output: bool = typer.Option(False, "--json", help="Print response, selected backend and routing attempts as JSON."),
+) -> None:
+    """Auto-route to an exact-ID match across ready local inference engines."""
+    if not model.strip():
+        _fail("Model ID must not be blank.")
+    if not prompt.strip() or len(prompt) > 12_000:
+        _fail("Prompt must contain non-whitespace text and be at most 12,000 characters.")
+    try:
+        result = run_engine_fabric_chat(
+            profile, model.strip(), [{"role": "user", "content": prompt}],
+            max_new_tokens=max_new_tokens, temperature=temperature,
+        )
+    except (ValueError, EngineFabricError) as exc:
+        _fail(str(exc))
+    if json_output:
+        typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    routing = result.get("routing", {})
+    console.print(Panel(
+        result["response"] or "(The model returned an empty response.)",
+        title=f"{result['backend_name']} · {result['model']} · auto-routed",
+    ))
+    console.print(
+        f"{result['eval_count'] if result['eval_count'] is not None else 'Unknown'} output tokens · "
+        f"{result['total_duration_ms']} ms · local only"
+    )
+    for attempt in routing.get("attempts", []):
+        status = "selected" if attempt.get("outcome") == "selected" else "failed"
+        reason = f" — {attempt['reason']}" if attempt.get("reason") else ""
+        console.print(f"{attempt.get('backend_name', attempt.get('backend_id', 'backend'))}: {status}{reason}")
+    if routing.get("scope_note"):
+        console.print(routing["scope_note"])
 
 
 @engine_app.command("route-benchmark")
