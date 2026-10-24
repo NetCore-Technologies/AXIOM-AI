@@ -101,7 +101,7 @@ test("unified LLM client runs local chats and requires consent for cloud chats",
   expect(continuedMessages.some((message) => message.role === "assistant" && message.content === "local-only answer")).toBe(true);
   expect(continuedMessages.some((message) => message.role === "user" && message.content === "Continue our previous answer")).toBe(true);
 
-  await panel.getByLabel("Provider").selectOption("ollama-local");
+  await panel.getByLabel("LLM provider", { exact: true }).selectOption("ollama-local");
   await panel.getByRole("button", { name: "Load models" }).click();
   await expect(panel.getByLabel("Model ID")).toHaveValue("qwen2.5:0.5b");
   await panel.getByLabel("Prompt").fill("Hello Ollama local model");
@@ -113,7 +113,7 @@ test("unified LLM client runs local chats and requires consent for cloud chats",
   expect(chatRequests[2]["api_key"]).toBeUndefined();
   expect((chatRequests[2]["messages"] as Array<{ role: string; content: string }>).some((message) => message.content === "Hello Ollama local model")).toBe(true);
 
-  await panel.getByLabel("Provider").selectOption("deepseek");
+  await panel.getByLabel("LLM provider", { exact: true }).selectOption("deepseek");
   await panel.getByLabel("Provider API key").fill("never-return-this");
   await panel.getByRole("button", { name: "Load models" }).click();
   await expect(panel.getByLabel("Model ID")).toHaveValue("deepseek-chat");
