@@ -70,7 +70,7 @@ def _request_json(path: str, *, payload: dict[str, Any] | None = None, timeout: 
         except (ValueError, UnicodeError):
             detail = ""
         detail = str(detail).replace("\n", " ").strip()[:240]
-        if exc.code == 404 and path == "/api/generate":
+        if exc.code == 404 and path in {"/api/generate", "/api/show"}:
             raise InferenceRuntimeError(detail or "Ollama could not find that model. Pull the model locally first.") from None
         raise InferenceRuntimeError(f"Local Ollama request failed (HTTP {exc.code}). {detail}".strip()) from None
     except (URLError, TimeoutError, OSError) as exc:
