@@ -112,6 +112,7 @@ def test_chat_uses_loopback_ollama_api_with_bounded_conversation(monkeypatch):
             "prompt_eval_count": 8,
             "eval_count": 5,
             "total_duration": 2_500_000,
+            "done_reason": "stop",
         })
 
     monkeypatch.setattr(inference, "_open_loopback", fake_open)
@@ -132,6 +133,7 @@ def test_chat_uses_loopback_ollama_api_with_bounded_conversation(monkeypatch):
     assert result["response"] == "Ollama chat answer"
     assert result["prompt_eval_count"] == 8
     assert result["eval_count"] == 5
+    assert result["done_reason"] == "stop"
     assert result["execution"] == "local"
 
 
