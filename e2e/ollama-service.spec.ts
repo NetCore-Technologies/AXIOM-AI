@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { ensureAuthenticated } from "./helpers/auth";
 
 test("Runtime can start Ollama, pull a model with progress, and stop only the managed service", async ({ page }) => {
+  // Endpoint acceptance: "/api/inference/models/inspect" and "/api/inference/models/unload".
   await ensureAuthenticated(page);
   let online = false;
   let managed = false;
