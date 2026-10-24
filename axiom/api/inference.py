@@ -18,6 +18,7 @@ from axiom.core.inference import (
     InferenceRuntimeError,
     inspect_local_model,
     list_running_local_models,
+    remove_local_model,
     unload_local_model,
     run_local_inference,
     stream_local_inference,
@@ -176,6 +177,17 @@ def inference_model_inspect(request: Request, payload: PullModelRequest) -> dict
         raise HTTPException(status_code=422, detail=str(exc)) from None
     except InferenceRuntimeError:
         raise HTTPException(status_code=503, detail="The local Ollama API could not inspect this model.") from None
+
+
+@router.post("/models/remove")
+def inference_model_remove(request: Request, payload: PullModelRequest) -> dict[str, Any]:
+    _require_local_runtime_management(request)
+    try:
+        return remove_local_model(payload.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except InferenceRuntimeError:
+        raise HTTPException(status_code=503, detail="The local Ollama API could not remove this model tag.") from None
 
 
 @router.post("/models/unload")
