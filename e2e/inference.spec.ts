@@ -71,7 +71,7 @@ test("Runtime can stop a streamed local Ollama generation and retain partial out
       } },
     ];
     try {
-      await route.fulfill({ status: 200, contentType: "application/x-ndjson", body: events.map((event) => JSON.stringify(event)).join("\\n") + "\\n" });
+      await route.fulfill({ status: 200, contentType: "application/x-ndjson", body: events.map((event) => JSON.stringify(event)).join("\n") + "\n" });
     } catch {
       // The test deliberately aborts this request before releasing the mock response.
     }
