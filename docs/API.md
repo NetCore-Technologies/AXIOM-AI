@@ -41,6 +41,8 @@ it beyond the machine.
 - `GET /api/llm/providers` lists local/cloud adapters without requiring credentials or contacting a provider.
 - `POST /api/llm/models` lists models for the selected provider. Cloud provider requests require a key and can perform a network request.
 - `POST /api/llm/chat` runs one bounded text completion. Cloud requests require `consent: true`; otherwise the API rejects the request before the provider call.
+
+The `ollama-local` provider uses the existing local inference adapter, which talks only to `127.0.0.1:11434` and uses Ollama's structured chat API. It does not require cloud consent or credentials. Use `axiom-local` for AXIOM's native safetensors engine; these local runtimes have distinct model-format support.
 - `GET /v1/models` and `POST /v1/chat/completions` expose AXIOM Native Engine models using the OpenAI-compatible schema.
 
 The shared LLM API uses request-scoped credentials. It does not persist provider keys, prompts, or generated answers to the AXIOM workspace. Cloud requests are sent over HTTPS to fixed provider hosts including OpenAI, Anthropic, Gemini, DeepSeek, Moonshot/Kimi, and OpenRouter; custom OpenAI-compatible base URLs must pass the public-HTTPS validator. Request sizes and output tokens are bounded.
