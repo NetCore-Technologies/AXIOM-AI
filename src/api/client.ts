@@ -110,7 +110,7 @@ export type AxiomQuantizationCandidate = {
 export type AxiomQuantizationEstimate = {
   schema_version: number;
   model: {
-    name: string; model_type: "llama" | "mistral"; architecture: string;
+    name: string; model_type: "llama" | "mistral" | "qwen2"; architecture: string;
     estimated_parameter_count: number; parameter_count_method: string;
   };
   request: {
