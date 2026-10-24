@@ -39,3 +39,9 @@ def test_infer_model_operation_commands_are_registered():
     assert unload.exit_code == 0, unload.output
     assert "metadata" in inspect.output.lower()
     assert "without deleting" in unload.output.lower()
+
+
+def test_infer_loaded_model_inventory_command_is_registered():
+    result = CliRunner().invoke(app, ["--no-banner", "infer", "ps", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "loaded" in result.output.lower() and "memory" in result.output.lower()
