@@ -179,3 +179,45 @@ def test_streaming_inference_sanitizes_runtime_failures(monkeypatch):
     payloads = [__import__("json").loads(line) for line in response.text.splitlines() if line.strip()]
     assert payloads[-1]["type"] == "error"
     assert payloads[-1]["message"] == "Local Ollama stream failed unexpectedly."
+
+
+def test_streaming_api_passes_advanced_sampling_options_to_local_runtime(monkeypatch):
+    captured = {}
+    def fake_stream(_model, _prompt, **kwargs):
+        captured.update(kwargs)
+        return iter([
+            {"type": "token", "token": "configured"},
+            {"type": "complete", "result": {
+                "model": "qwen2.5:0.5b", "response": "configured", "done": True,
+                "done_reason": "stop", "prompt_eval_count": 2, "eval_count": 1,
+                "total_duration_ms": 2, "generated_at": "2026-10-24T00:00:00+00:00",
+                "execution": "local",
+            }},
+        ])
+    monkeypatch.setattr(inference, "stream_local_inference", fake_stream)
+    monkeypatch.setattr(inference, "record_runtime_trace", lambda **_kwargs: None)
+
+    response = _client().post("/api/inference/generate/stream", json={
+        "model": "qwen2.5:0.5b", "prompt": "Hello", "top_p": 0.83, "top_k": 36,
+        "repetition_penalty": 1.2, "seed": 123, "num_ctx": 8192,
+        "stop_sequences": ["DONE", "END"],
+    })
+
+    assert response.status_code == 200
+    assert captured == {
+        "num_predict": 256, "temperature": 0.7, "top_p": 0.83, "top_k": 36,
+        "repetition_penalty": 1.2, "seed": 123, "num_ctx": 8192,
+        "stop_sequences": ["DONE", "END"], "cancel_event": captured["cancel_event"],
+        "on_response": captured["on_response"],
+    }
+
+
+def test_generate_api_rejects_oversized_context_and_stop_sequence_lists():
+    too_large_context = _client().post("/api/inference/generate/stream", json={
+        "model": "qwen2.5:0.5b", "prompt": "Hello", "num_ctx": 999999,
+    })
+    too_many_stops = _client().post("/api/inference/generate/stream", json={
+        "model": "qwen2.5:0.5b", "prompt": "Hello", "stop_sequences": [str(i) for i in range(17)],
+    })
+    assert too_large_context.status_code == 422
+    assert too_many_stops.status_code == 422
