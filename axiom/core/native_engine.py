@@ -410,12 +410,16 @@ class NativeLlamaRuntime:
         adapter: dict[str, dict[str, Any]] | None = None,
         adapter_scaling: dict[str, float] | None = None,
         memory_mode: str = "full",
+        layer_weight_sources: dict[str, Path] | None = None,
+        weight_shapes: dict[str, tuple[int, ...]] | None = None,
     ) -> None:
-        if memory_mode not in {"full", "layer_streaming"}:
-            raise NativeEngineError("Native memory mode must be full or layer_streaming.")
+        if memory_mode not in {"full", "layer_streaming", "disk_streaming"}:
+            raise NativeEngineError("Native memory mode must be full, layer_streaming, or disk_streaming.")
         self.config, self.weights, self.torch, self.device = config, weights, torch_module, device
         self.adapter, self.adapter_scaling = adapter or {}, adapter_scaling or {}
         self.memory_mode = memory_mode
+        self.layer_weight_sources = layer_weight_sources or {}
+        self.weight_shapes = weight_shapes or {name: tuple(value.shape) for name, value in weights.items()}
         self.dtype = weights["model.embed_tokens.weight"].dtype
         self.name = "axiom-native-pytorch-llama"
         self.last_generation: dict[str, Any] = {}
@@ -424,15 +428,53 @@ class NativeLlamaRuntime:
             "layer_weight_tensors_staged": 0,
             "layer_weight_bytes_staged": 0,
             "layer_weight_bytes_returned_to_cpu": 0,
+            "layer_weight_bytes_released": 0,
+            "disk_layer_weight_loads": 0,
+            "disk_layer_weight_bytes_read": 0,
             "kv_cache_layer_offloads": 0,
             "kv_cache_bytes_offloaded": 0,
         }
 
     @contextmanager
     def _layer_weights(self, layer_index: int):
-        """Stage one CPU-resident transformer layer on the execution device."""
-        if self.memory_mode != "layer_streaming":
+        """Stage a CPU-resident or disk-resident transformer layer on the execution device."""
+        if self.memory_mode not in {"layer_streaming", "disk_streaming"}:
             yield
+            return
+        prefix = f"model.layers.{layer_index}."
+        if self.memory_mode == "disk_streaming":
+            loaded: list[str] = []
+            try:
+                from safetensors import safe_open
+                with ExitStack() as stack:
+                    handles: dict[str, Any] = {}
+                    for name, source in self.layer_weight_sources.items():
+                        if not name.startswith(prefix):
+                            continue
+                        source_text = str(source)
+                        if source_text not in handles:
+                            handles[source_text] = stack.enter_context(
+                                safe_open(source_text, framework="pt", device="cpu")
+                            )
+                        tensor = handles[source_text].get_tensor(name)
+                        if tensor.dtype not in (self.torch.float16, self.torch.bfloat16, self.torch.float32):
+                            raise NativeEngineError(f"Unsupported on-disk layer tensor dtype for {name!r}.")
+                        byte_count = int(tensor.numel() * tensor.element_size())
+                        active = tensor.to(device=self.device, dtype=self.dtype)
+                        del tensor
+                        self.weights[name] = active
+                        loaded.append(name)
+                        self.memory_stats["disk_layer_weight_loads"] += 1
+                        self.memory_stats["disk_layer_weight_bytes_read"] += byte_count
+                        self.memory_stats["layer_weight_bytes_staged"] += byte_count
+                    yield
+            finally:
+                for name in loaded:
+                    active_weight = self.weights.pop(name, None)
+                    if active_weight is not None:
+                        self.memory_stats["layer_weight_bytes_released"] += int(
+                            active_weight.numel() * active_weight.element_size()
+                        )
             return
         prefix = f"model.layers.{layer_index}."
         staged: dict[str, Any] = {}
@@ -478,6 +520,8 @@ class NativeLlamaRuntime:
         trusted_roots: tuple[Path, ...] | None = None,
         memory_mode: str = "full",
     ) -> "NativeLlamaRuntime":
+        if memory_mode not in {"full", "layer_streaming", "disk_streaming"}:
+            raise NativeEngineError("Native memory mode must be full, layer_streaming, or disk_streaming.")
         roots = trusted_roots or (model_dir.resolve(),)
         config = NativeLlamaConfig.from_mapping(_read_json_object(model_dir / "config.json", _MAX_CONFIG_BYTES, "Model config.json", roots))
         tokenizer_path = _resolve_trusted_file(model_dir / "tokenizer.json", roots, "Tokenizer file")
@@ -497,11 +541,15 @@ class NativeLlamaRuntime:
         except (ImportError, OSError):
             raise NativeDependencyError("AXIOM Native Engine requires safetensors; install the native-inference extra.") from None
         weights: dict[str, Any] = {}
+        weight_shapes: dict[str, tuple[int, ...]] = {}
+        layer_weight_sources: dict[str, Path] = {}
+        file_paths = {p.name: _resolve_trusted_file(p, roots, "Safetensors shard") for p in files}
         try:
             with ExitStack() as stack:
-                handles = {p.name: stack.enter_context(safe_open(str(_resolve_trusted_file(p, roots, "Safetensors shard")), framework="pt", device="cpu")) for p in files}
+                handles = {name: stack.enter_context(safe_open(str(path), framework="pt", device="cpu")) for name, path in file_paths.items()}
                 embedding = handles[weight_map["model.embed_tokens.weight"]].get_tensor("model.embed_tokens.weight")
                 dtype = embedding.dtype
+                weight_shapes["model.embed_tokens.weight"] = tuple(int(dimension) for dimension in embedding.shape)
                 weights["model.embed_tokens.weight"] = embedding.to(device=device, dtype=dtype)
                 load_names = [name for name in required if name != "model.embed_tokens.weight"]
                 if "lm_head.weight" in weight_map and "lm_head.weight" not in load_names:
@@ -516,8 +564,14 @@ class NativeLlamaRuntime:
                     tensor = handles[weight_map[name]].get_tensor(name)
                     if tensor.dtype not in (torch_module.float16, torch_module.bfloat16, torch_module.float32):
                         raise NativeEngineError(f"Unsupported weight dtype for tensor {name!r}.")
+                    weight_shapes[name] = tuple(int(dimension) for dimension in tensor.shape)
+                    if memory_mode == "disk_streaming" and name.startswith("model.layers."):
+                        layer_weight_sources[name] = file_paths[weight_map[name]]
+                        del tensor
+                        continue
                     load_device = "cpu" if memory_mode == "layer_streaming" and name.startswith("model.layers.") else device
                     weights[name] = tensor.to(device=load_device, dtype=dtype)
+                    del tensor
         except NativeEngineError:
             raise
         except Exception as exc:
@@ -543,23 +597,27 @@ class NativeLlamaRuntime:
         if "lm_head.weight" in weight_map:
             expected["lm_head.weight"] = (config.vocab_size, config.hidden_size)
         for name, shape in expected.items():
-            if name not in weights or tuple(weights[name].shape) != shape:
+            if name not in weight_shapes or weight_shapes[name] != shape:
+                if name == "lm_head.weight" and config.tie_word_embeddings and name not in weight_shapes:
+                    continue
                 raise NativeEngineError(f"Checkpoint tensor {name!r} has a shape inconsistent with config.json.")
         if "lm_head.weight" not in weights:
             if not config.tie_word_embeddings:
                 raise NativeEngineError("Checkpoint has no lm_head.weight and does not declare tied embeddings.")
             weights["lm_head.weight"] = weights["model.embed_tokens.weight"]
+            weight_shapes["lm_head.weight"] = tuple(weights["model.embed_tokens.weight"].shape)
         adapters: dict[str, dict[str, Any]] = {}
         scaling: dict[str, float] = {}
         if adapter_dir is not None:
             adapters, scaling = cls._load_lora_adapter(adapter_dir, config, torch_module, device, dtype, roots)
             for path, pair in adapters.items():
-                base = weights.get(path + ".weight")
-                if base is None or pair["A"].shape[1] != base.shape[1] or pair["B"].shape != (base.shape[0], pair["A"].shape[0]):
+                base_shape = weight_shapes.get(path + ".weight")
+                if base_shape is None or pair["A"].shape[1] != base_shape[1] or pair["B"].shape != (base_shape[0], pair["A"].shape[0]):
                     raise NativeEngineError(f"LoRA weight shapes do not match base module {path!r}.")
         return cls(
             config, weights, torch_module, device,
             adapter=adapters, adapter_scaling=scaling, memory_mode=memory_mode,
+            layer_weight_sources=layer_weight_sources, weight_shapes=weight_shapes,
         )
 
     @classmethod
@@ -697,10 +755,10 @@ class NativeLlamaRuntime:
                 v = v.view(1, seq_len, c.num_key_value_heads, head_dim).transpose(1, 2)
                 if past_key_values is not None:
                     old_k, old_v = past_key_values[i]
-                    if self.memory_mode == "layer_streaming":
+                    if self.memory_mode in {"layer_streaming", "disk_streaming"}:
                         old_k, old_v = old_k.to(device=self.device), old_v.to(device=self.device)
                     k, v = torch.cat((old_k, k), dim=-2), torch.cat((old_v, v), dim=-2)
-                if self.memory_mode == "layer_streaming":
+                if self.memory_mode in {"layer_streaming", "disk_streaming"}:
                     cache_k, cache_v = k.detach().to(device="cpu"), v.detach().to(device="cpu")
                     self.memory_stats["kv_cache_layer_offloads"] += 1
                     self.memory_stats["kv_cache_bytes_offloaded"] += int(
@@ -767,6 +825,9 @@ class NativeLlamaRuntime:
             "layer_weight_tensors_staged": 0,
             "layer_weight_bytes_staged": 0,
             "layer_weight_bytes_returned_to_cpu": 0,
+            "layer_weight_bytes_released": 0,
+            "disk_layer_weight_loads": 0,
+            "disk_layer_weight_bytes_read": 0,
             "kv_cache_layer_offloads": 0,
             "kv_cache_bytes_offloaded": 0,
         }
