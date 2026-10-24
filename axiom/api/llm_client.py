@@ -40,6 +40,7 @@ class ChatRequest(ProviderRequest):
     consent: bool = False
     device: Literal["auto", "cpu", "cuda", "rocm", "mps", "xpu"] = "auto"
     memory_mode: Literal["auto", "full", "layer_streaming", "disk_streaming"] = "auto"
+    precision: Literal["auto", "fp32", "fp16", "bf16"] = "auto"
 
     @model_validator(mode="after")
     def validate_conversation(self) -> "ChatRequest":
@@ -94,4 +95,5 @@ def run_chat(request: ChatRequest) -> dict[str, Any]:
         consent=request.consent,
         device=request.device,
         memory_mode=request.memory_mode,
+        precision=request.precision,
     ))
