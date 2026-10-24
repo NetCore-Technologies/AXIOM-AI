@@ -150,6 +150,7 @@ def test_generate_request_rejects_invalid_stop_sequence_lists(monkeypatch) -> No
     base = {"model_path": "/trusted/models/tiny", "prompt": "hello"}
     with pytest.raises(ValidationError, match="device"):
         engine_api.GenerateRequest(**base, device="network")
+    assert engine_api.GenerateRequest(**base, memory_mode="disk_streaming").memory_mode == "disk_streaming"
     with pytest.raises(ValidationError, match="memory_mode"):
         engine_api.GenerateRequest(**base, memory_mode="automatic")
     with pytest.raises(ValidationError, match="stop sequences|Stop sequences"):
