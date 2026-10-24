@@ -35,9 +35,16 @@ test("Runtime GUI submits bounded prompts to the local inference API and display
   await expect(page.getByRole("heading", { name: "Local model inference" })).toBeVisible();
   await expect(page.getByText("OLLAMA ONLINE", { exact: true })).toBeVisible();
   await page.getByPlaceholder("Ask your local model to do something…").fill("Say hello in one sentence.");
+  await page.getByText("Advanced sampling options").click();
+  await page.getByLabel("Top-p").fill("0.83");
+  await page.getByLabel("Top-k").fill("36");
+  await page.getByLabel("Repetition penalty").fill("1.2");
+  await page.getByLabel("Random seed (optional)").fill("123");
+  await page.getByLabel("Context window (optional)").fill("8192");
+  await page.getByLabel(/Stop sequences/).fill("DONE\\nEND");
   await page.getByRole("button", { name: "Run locally" }).click();
   await expect(page.getByTestId("local-inference-output")).toContainText("Hello from the mocked local model.");
-  expect(received).toMatchObject({ model: "qwen2.5:0.5b", prompt: "Say hello in one sentence.", num_predict: 256, temperature: 0.7 });
+  expect(received).toMatchObject({ model: "qwen2.5:0.5b", prompt: "Say hello in one sentence.", num_predict: 256, temperature: 0.7, top_p: 0.83, top_k: 36, repetition_penalty: 1.2, seed: 123, num_ctx: 8192, stop_sequences: ["DONE", "END"] });
 });
 
 
