@@ -106,8 +106,9 @@ axiom --no-banner infer service stop
 
 # Explicitly download an Ollama library model (network and disk space required)
 axiom --no-banner infer pull qwen2.5:0.5b
+axiom --no-banner infer ps --json
 axiom --no-banner infer inspect qwen2.5:0.5b --json
 axiom --no-banner infer unload qwen2.5:0.5b
 ```
 
-Control Center exposes the same service actions in **Runtime → Local model inference**, including bounded progress reporting and cancellation for model pulls, metadata inspection, and memory unload. Inspection returns only bounded metadata summaries; it does not return template/license text or prompt contents. Unload releases the selected model from runtime memory and does not delete downloaded files. AXIOM-managed service startup binds to `127.0.0.1:11434`. AXIOM will not stop an independently managed service.
+Control Center exposes the same service actions in **Runtime → Local model inference**, including bounded progress reporting and cancellation for model pulls, loaded-model memory inventory, metadata inspection, and memory unload. `axiom infer ps --json` lists point-in-time runtime-reported sizes and VRAM placement without claiming exact allocator telemetry. Inspection returns only bounded metadata summaries; it does not return template/license text or prompt contents. Unload releases the selected model from runtime memory and does not delete downloaded files. AXIOM-managed service startup binds to `127.0.0.1:11434`. AXIOM will not stop an independently managed service.
