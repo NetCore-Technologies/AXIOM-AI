@@ -114,7 +114,7 @@ export default function LLMClientPanel() {
         consent: local || consent,
       });
       setResult(nextResult);
-      setConversation([...priorConversation, currentUserMessage, { role: "assistant", content: nextResult.response }].slice(-62));
+      setConversation([...priorConversation, currentUserMessage, { role: "assistant" as const, content: nextResult.response }].slice(-62));
       setPrompt("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The selected model could not generate a response.");
