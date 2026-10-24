@@ -990,9 +990,9 @@ async function streamLocalInferenceRequest(
   let pending = "";
   let responseText = "";
   let completed: LocalInferenceResult | null = null;
-  const consumeLine = (line: string): void => {
+  const consumeLine = (line: string): LocalInferenceResult | null => {
     const trimmed = line.trim();
-    if (!trimmed) return;
+    if (!trimmed) return null;
     let event: LocalInferenceStreamEvent;
     try { event = JSON.parse(trimmed) as LocalInferenceStreamEvent; }
     catch { throw new Error("AXIOM returned an invalid newline-delimited inference event."); }
@@ -1001,13 +1001,14 @@ async function streamLocalInferenceRequest(
       if (typeof event.token !== "string") throw new Error("AXIOM returned an invalid token delta.");
       responseText += event.token;
       onEvent(event);
-      return;
+      return null;
     }
     if (event.type !== "complete" || !event.result || typeof event.result !== "object") {
       throw new Error("AXIOM returned an unknown local inference stream event.");
     }
-    completed = { ...event.result, response: responseText, request_id: event.result.request_id || requestId };
+    const result = { ...event.result, response: responseText, request_id: event.result.request_id || requestId };
     onEvent(event);
+    return result;
   };
 
   try {
@@ -1016,10 +1017,10 @@ async function streamLocalInferenceRequest(
       if (value) pending += decoder.decode(value, { stream: !done });
       const lines = pending.split("\n");
       pending = lines.pop() ?? "";
-      for (const line of lines) consumeLine(line);
+      for (const line of lines) completed = consumeLine(line) ?? completed;
       if (done) break;
     }
-    if (pending.trim()) consumeLine(pending);
+    if (pending.trim()) completed = consumeLine(pending) ?? completed;
   } finally {
     if (!signal.aborted) {
       try { await reader.cancel(); } catch { /* upstream may already have closed */ }
