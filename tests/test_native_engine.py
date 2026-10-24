@@ -762,7 +762,7 @@ def test_qwen2_prompt_uses_chatml_when_template_metadata_is_missing(tmp_path: Pa
     formatted, source = _format_prompt_for_native_model(
         "What is 2+2?", tmp_path, "qwen2", TinyTokenizer()
     )
-    assert formatted == "<|im_start|>user\\nWhat is 2+2?<|im_end|>\\n<|im_start|>assistant\\n"
+    assert formatted == "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n"
     assert source == "qwen2-chatml-fallback"
 
 
@@ -784,7 +784,7 @@ def test_native_prompt_renders_checkpoint_chat_template_in_sandbox(tmp_path: Pat
     formatted, source = _format_prompt_for_native_model(
         "Hello", tmp_path, "llama", TinyTokenizer()
     )
-    assert formatted == "<|im_start|>user\\nHello<|im_end|>\\n<|im_start|>assistant\\n"
+    assert formatted == "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n"
     assert source == "tokenizer-config-template"
 
 
