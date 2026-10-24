@@ -5,8 +5,12 @@ conversation content to the workspace, logs, traces, or a persistent settings st
 """
 from __future__ import annotations
 
+import http.client
+import ipaddress
 import json
 import re
+import socket
+import ssl
 from datetime import UTC, datetime
 from typing import Any, Mapping
 from urllib.error import HTTPError, URLError
@@ -108,6 +112,97 @@ def _base_url(provider: str, base_url: str | None) -> str:
     return str(config["base_url"])
 
 
+def _resolve_public_addresses(base_url: str) -> tuple[str, ...]:
+    """Resolve a custom HTTPS endpoint once, reject any non-public result, and pin the connection to these IPs."""
+    parsed = urlsplit(base_url)
+    host = parsed.hostname
+    try:
+        port = parsed.port or 443
+        if not host:
+            raise ValueError("hostname missing")
+        results = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except (OSError, ValueError, IndexError):
+        raise LLMClientError("The custom HTTPS provider hostname could not be resolved safely.") from None
+    addresses: list[str] = []
+    for result in results:
+        try:
+            address = ipaddress.ip_address(result[4][0].split("%", 1)[0])
+        except (ValueError, IndexError, TypeError):
+            raise LLMClientError("The custom HTTPS provider returned an invalid network address.") from None
+        if not address.is_global:
+            raise LLMClientError("The custom HTTPS provider resolved to a non-public address; private, loopback, link-local, and reserved targets are blocked.")
+        normalized = address.compressed
+        if normalized not in addresses:
+            addresses.append(normalized)
+    if not addresses:
+        raise LLMClientError("The custom HTTPS provider hostname has no public addresses.")
+    return tuple(addresses)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS connection with DNS resolution pinned to prevalidated public addresses."""
+
+    def __init__(self, host: str, *, addresses: tuple[str, ...], **kwargs: Any) -> None:
+        self._pinned_addresses = addresses
+        super().__init__(host, **kwargs)
+
+    def connect(self) -> None:
+        # Proxies are deliberately disabled by the only caller; do not add tunnel
+        # support that could change the destination after the address check.
+        if self._tunnel_host:
+            raise OSError("HTTP tunnels are not supported for custom provider requests.")
+        failures: list[OSError] = []
+        for address in self._pinned_addresses:
+            sock = None
+            try:
+                sock = socket.create_connection((address, self.port), self.timeout, self.source_address)
+                # Validate the certificate against the original DNS hostname, not its pinned IP.
+                self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+                return
+            except OSError as exc:
+                if sock is not None:
+                    sock.close()
+                failures.append(exc)
+        if failures:
+            raise failures[-1]
+        raise OSError("No validated HTTPS destination address was available.")
+
+
+def _pinned_public_request(
+    base_url: str,
+    endpoint: str,
+    body: bytes | None,
+    headers: dict[str, str],
+    timeout: float,
+) -> tuple[int, bytes]:
+    """Send an HTTP request to a validated public IP while retaining TLS hostname verification."""
+    parsed = urlsplit(base_url)
+    host = parsed.hostname
+    if not host:
+        raise LLMClientError("The custom HTTPS provider hostname is missing.")
+    try:
+        port = parsed.port or 443
+    except ValueError:
+        raise LLMClientError("The custom HTTPS provider port is invalid.") from None
+    addresses = _resolve_public_addresses(base_url)
+    path = parsed.path.rstrip("/") + endpoint
+    connection = _PinnedHTTPSConnection(
+        host,
+        port=port,
+        timeout=timeout,
+        context=ssl.create_default_context(),
+        addresses=addresses,
+    )
+    try:
+        connection.request("GET" if body is None else "POST", path, body=body, headers=headers)
+        response = connection.getresponse()
+        return response.status, response.read(_MAX_RESPONSE_BYTES + 1)
+    except (OSError, TimeoutError, http.client.HTTPException):
+        raise LLMClientError("Could not connect safely to the configured public HTTPS model endpoint.") from None
+    finally:
+        connection.close()
+
+
 def _provider_request(
     provider: str,
     api_key: str,
@@ -131,20 +226,29 @@ def _provider_request(
     body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
     if body is not None:
         headers["Content-Type"] = "application/json"
-    req = Request(base + endpoint, data=body, method="GET" if body is None else "POST", headers=headers)
-    opener = build_opener(ProxyHandler({}), _RejectRedirects())
     timeout = 30 if body is None else 180
-    try:
-        with opener.open(req, timeout=timeout) as response:
-            raw = response.read(_MAX_RESPONSE_BYTES + 1)
-    except HTTPError as exc:
-        if exc.code in {301, 302, 303, 307, 308}:
-            raise LLMClientError("The provider redirected the request. Redirects are blocked to protect credentials; use its final HTTPS endpoint.") from None
-        if exc.code in {401, 403}:
-            raise LLMClientError(f"The provider rejected the API key or denied access (HTTP {exc.code}).") from None
-        raise LLMClientError(f"The provider request failed (HTTP {exc.code}); check the model ID, access, and provider status.") from None
-    except (URLError, TimeoutError, OSError):
-        raise LLMClientError("Could not connect to the configured HTTPS provider.") from None
+    if provider == "openai-compatible":
+        status, raw = _pinned_public_request(base, endpoint, body, headers, timeout)
+        if status in {301, 302, 303, 307, 308}:
+            raise LLMClientError("The online provider redirected the request. Redirects are blocked to protect the API key; enter its final HTTPS /v1 endpoint.")
+        if status in {401, 403}:
+            raise LLMClientError(f"The provider rejected the API key or denied access (HTTP {status}).")
+        if not 200 <= status < 300:
+            raise LLMClientError(f"Online provider request failed (HTTP {status}). Check the endpoint, model access, and provider status.")
+    else:
+        req = Request(base + endpoint, data=body, method="GET" if body is None else "POST", headers=headers)
+        opener = build_opener(ProxyHandler({}), _RejectRedirects())
+        try:
+            with opener.open(req, timeout=timeout) as response:
+                raw = response.read(_MAX_RESPONSE_BYTES + 1)
+        except HTTPError as exc:
+            if exc.code in {301, 302, 303, 307, 308}:
+                raise LLMClientError("The provider redirected the request. Redirects are blocked to protect credentials; use its final HTTPS endpoint.") from None
+            if exc.code in {401, 403}:
+                raise LLMClientError(f"The provider rejected the API key or denied access (HTTP {exc.code}).") from None
+            raise LLMClientError(f"The provider request failed (HTTP {exc.code}); check the model ID, access, and provider status.") from None
+        except (URLError, TimeoutError, OSError):
+            raise LLMClientError("Could not connect to the configured HTTPS provider.") from None
     if len(raw) > _MAX_RESPONSE_BYTES:
         raise LLMClientError("The provider response exceeded AXIOM's 2 MB response limit.")
     try:
