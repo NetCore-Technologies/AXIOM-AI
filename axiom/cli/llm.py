@@ -55,7 +55,7 @@ def providers(json_output: bool = typer.Option(False, "--json", help="Print mach
 
 @llm_app.command("models")
 def models(
-    provider: str = typer.Option("axiom-local", "--provider", help="axiom-local, openai, anthropic, gemini, deepseek, moonshot, or openai-compatible."),
+    provider: str = typer.Option("axiom-local", "--provider", help="axiom-local, openai, anthropic, gemini, deepseek, moonshot, openrouter, or openai-compatible."),
     base_url: str = typer.Option("", "--base-url", help="Required only for openai-compatible."),
     api_key_env: str = typer.Option("AXIOM_LLM_API_KEY", "--api-key-env", help="Environment variable to read the API key from."),
     json_output: bool = typer.Option(False, "--json", help="Print model IDs as JSON."),
