@@ -11,6 +11,7 @@ from typing import Any, AsyncIterator, Iterator
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
 from starlette.responses import StreamingResponse
+from axiom.core import model_studio
 
 from axiom.core.engine import (
     AxiomEngineError,
@@ -38,6 +39,15 @@ def _validated_path(value: Any, label: str) -> Any:
     # The core matches user input against filesystem-discovered directories
     # under explicitly configured trusted roots before returning a usable path.
     return resolve_local_model_directory(candidate, label)
+
+
+class NativePullRequest(BaseModel):
+    repo_id: str = Field(min_length=3, max_length=192)
+
+    @field_validator("repo_id")
+    @classmethod
+    def repository_must_be_validated(cls, value: str) -> str:
+        return model_studio.validate_repo_id(value)
 
 
 class GenerateRequest(BaseModel):
@@ -162,6 +172,17 @@ def engine_status() -> dict[str, Any]:
 def engine_unload() -> dict[str, Any]:
     """Release AXIOM's currently loaded local model and its cache references."""
     return unload_local_model()
+
+
+@router.post("/pull", status_code=202)
+def engine_pull(request: NativePullRequest) -> dict[str, Any]:
+    """Start a bounded public-Hub pull for a compatible AXIOM-native checkpoint."""
+    try:
+        return model_studio.start_job({"operation": "pull_native", "repo_id": request.repo_id})
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except model_studio.ModelStudioError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 @router.post("/generate")
