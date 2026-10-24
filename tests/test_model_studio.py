@@ -144,3 +144,20 @@ def test_native_hub_pull_rejects_unsupported_architecture_before_weights(tmp_pat
     with pytest.raises(studio.ModelStudioError, match="not supported by AXIOM Native Engine"):
         studio.pull_native_model("example/unsupported")
     assert not (tmp_path / "native-models").exists()
+
+
+def test_unified_local_provider_lists_qwen3_native_models(monkeypatch):
+    from axiom.core import llm_client
+
+    monkeypatch.setattr(llm_client, "discover_local_engine_assets", lambda: {
+        "models": [
+            {"name": "qwen3-local", "path": "/trusted/qwen3", "model_type": "qwen3", "architecture": "Qwen3ForCausalLM"},
+            {"name": "llama-local", "path": "/trusted/llama", "model_type": "llama", "architecture": "LlamaForCausalLM"},
+            {"name": "unsupported-local", "path": "/trusted/other", "model_type": "gemma", "architecture": "GemmaForCausalLM"},
+        ]
+    })
+
+    result = llm_client.list_models("axiom-local")
+    assert result["execution"] == "local"
+    assert result["models"] == ["qwen3-local", "llama-local"]
+    assert {item["model_type"] for item in result["model_details"]} == {"qwen3", "llama"}
