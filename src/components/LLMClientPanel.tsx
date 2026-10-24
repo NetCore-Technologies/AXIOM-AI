@@ -133,7 +133,7 @@ export default function LLMClientPanel() {
         <RefreshCcw size={14} /> {loadingModels ? "Loading" : "Load models"}
       </button>
     </div>
-    <p>Use the AXIOM Native Engine or connect to OpenAI, Anthropic, Google Gemini, DeepSeek, Moonshot/Kimi, or a public OpenAI-compatible endpoint. Local prompts stay on this computer; cloud requests are sent only after confirmation.</p>
+    <p>Use the AXIOM Native Engine or connect to OpenAI, Anthropic, Google Gemini, DeepSeek, Moonshot/Kimi, OpenRouter, or a public OpenAI-compatible endpoint. Local prompts stay on this computer; cloud requests are sent only after confirmation.</p>
     <div className="status-strip" aria-label="Unified LLM client status">
       <div className="status-strip-item">
         <span className={"status-pill " + (local ? "success" : "warning")}><i />{local ? "LOCAL EXECUTION" : "CLOUD PROVIDER"}</span>
