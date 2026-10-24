@@ -1,0 +1,112 @@
+import { expect, test } from "@playwright/test";
+import { ensureAuthenticated } from "./helpers/auth";
+
+test("unified LLM client runs local chats and requires consent for cloud chats", async ({ page }) => {
+  const chatRequests: Array<Record<string, unknown>> = [];
+  let modelCatalogueCalls = 0;
+
+  await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const path = url.pathname;
+
+    if (path === "/api/workspace/runtime") {
+      await route.fulfill({ json: { status: "ready", hardware: {
+        os_name: "Linux", architecture: "x86_64", cpu_cores: 8, ram_gb: 16,
+        gpu_name: null, vram_gb: null, cuda_available: false,
+      } } });
+    } else if (path === "/api/inference/status") {
+      await route.fulfill({ json: {
+        backend: "ollama", endpoint: "http://127.0.0.1:11434", runtime_installed: false,
+        status: "offline", models: [], error: "Ollama is offline for this test.", checked_at: "2026-10-24T00:00:00Z",
+      } });
+    } else if (path === "/api/engine/status") {
+      await route.fulfill({ json: {
+        engine: "axiom-native-pytorch-llama", ready: false, packages: {}, versions: {},
+        loaded: false, architecture: null, model_loading: "local_safetensors_only", remote_code: false,
+        setup_note: "Optional dependencies are not installed in this test.", scope_note: "Test fixture.",
+        checked_at: "2026-10-24T00:00:00Z",
+      } });
+    } else if (path === "/api/engine/models") {
+      await route.fulfill({ json: { schema_version: 1, models: [], adapters: [], truncated: false, scope_note: "Test fixture." } });
+    } else if (path === "/api/diagnostics/runtime-traces" && request.method() === "GET") {
+      await route.fulfill({ json: {
+        schema_version: 1, traces: [], total_retained: 0, limit: 50, max_retained: 200,
+        privacy: { prompt_bodies_stored: false, response_bodies_stored: false, disk_persistence: false },
+      } });
+    } else if (path === "/api/diagnostics/runtime-connectors") {
+      await route.fulfill({ json: {
+        schema_version: 1, discovery_mode: "passive_local_discovery", checked_at: "2026-10-24T00:00:00Z",
+        connectors: [], scope_note: "Test fixture.",
+      } });
+    } else if (path === "/api/llm/providers") {
+      await route.fulfill({ json: {
+        schema_version: 1, credentials_persisted: false,
+        providers: [
+          { id: "axiom-local", label: "AXIOM Native Engine", kind: "local", requires_api_key: false, supports_model_listing: true, privacy: "local-only", note: "Local test model." },
+          { id: "deepseek", label: "DeepSeek", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Cloud test provider." },
+        ],
+      } });
+    } else if (path === "/api/llm/models" && request.method() === "POST") {
+      modelCatalogueCalls += 1;
+      const body = request.postDataJSON() as { provider: string; api_key?: string };
+      expect(body.api_key).not.toBe("never-return-this");
+      await route.fulfill({ json: {
+        provider: body.provider,
+        models: body.provider === "axiom-local" ? ["tiny-llama"] : ["deepseek-chat"],
+        count: 1, credential_storage: body.provider === "axiom-local" ? "not_applicable" : "not_saved",
+        execution: body.provider === "axiom-local" ? "local" : "remote",
+        note: "Test fixture.",
+      } });
+    } else if (path === "/api/llm/chat" && request.method() === "POST") {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      chatRequests.push(body);
+      await route.fulfill({ json: {
+        provider: body.provider,
+        model: body.model,
+        response: body.provider === "axiom-local" ? "local-only answer" : "cloud answer",
+        prompt_tokens: 4, completion_tokens: 3,
+        credential_storage: body.provider === "axiom-local" ? "not_applicable" : "not_saved",
+        execution: body.provider === "axiom-local" ? "local" : "remote",
+        device: body.provider === "axiom-local" ? "cpu" : undefined,
+        generated_at: "2026-10-24T00:00:00Z",
+      } });
+    } else {
+      await route.fulfill({ status: 404, json: { detail: "No fixture registered for " + path } });
+    }
+  });
+
+  await ensureAuthenticated(page);
+  await page.goto("/?page=runtime");
+  const panel = page.locator(".llm-client-panel");
+  await expect(panel.getByRole("heading", { name: "Unified LLM client" })).toBeVisible();
+
+  await panel.getByLabel("Model ID").fill("tiny-llama");
+  await panel.getByLabel("Prompt").fill("Hello local model");
+  await panel.getByRole("button", { name: "Generate locally" }).click();
+  await expect(panel.getByText("local-only answer", { exact: true })).toBeVisible();
+  expect(chatRequests).toHaveLength(1);
+  expect(chatRequests[0]["provider"]).toBe("axiom-local");
+  expect(chatRequests[0]["consent"]).toBe(true);
+
+  await panel.getByLabel("Provider").selectOption("deepseek");
+  await panel.getByLabel("Provider API key").fill("never-return-this");
+  await panel.getByRole("button", { name: "Load models" }).click();
+  await expect(panel.getByLabel("Model ID")).toHaveValue("deepseek-chat");
+  await expect.poll(() => modelCatalogueCalls).toBeGreaterThan(1);
+
+  await panel.getByLabel("Prompt").fill("Hello cloud model");
+  const consent = panel.getByRole("checkbox", { name: /this conversation will be sent to DeepSeek/i });
+  await expect(panel.getByRole("button", { name: "Send and generate" })).toBeDisabled();
+  await consent.check();
+  await panel.getByRole("button", { name: "Send and generate" }).click();
+  await expect(panel.getByText("cloud answer", { exact: true })).toBeVisible();
+
+  expect(chatRequests).toHaveLength(2);
+  expect(chatRequests[1]["provider"]).toBe("deepseek");
+  expect(chatRequests[1]["consent"]).toBe(true);
+  expect(chatRequests[1]["api_key"]).toBe("never-return-this");
+  const messages = chatRequests[1]["messages"] as Array<{ role: string; content: string }>;
+  expect(messages.some((message) => message.role === "user" && message.content === "Hello cloud model")).toBe(true);
+  await expect(panel).not.toContainText("never-return-this");
+});
