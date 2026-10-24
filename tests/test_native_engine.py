@@ -363,6 +363,10 @@ def test_mistral_sliding_window_bounds_cache_and_preserves_absolute_rope_positio
         assert tuple(logits.shape) == (1, config.vocab_size)
         assert tuple(cache[0][0].shape) == (1, config.num_key_value_heads, 3, 4)
         assert tuple(cache[0][1].shape) == (1, config.num_key_value_heads, 3, 4)
+        # Compact storage must not retain the original seven-token prefill
+        # allocation behind a three-token slice view.
+        assert cache[0][0].untyped_storage().nbytes() == cache[0][0].numel() * cache[0][0].element_size()
+        assert cache[0][1].untyped_storage().nbytes() == cache[0][1].numel() * cache[0][1].element_size()
 
         next_logits, next_cache = runtime.forward(
             torch.tensor([[2]], dtype=torch.long),
@@ -371,6 +375,7 @@ def test_mistral_sliding_window_bounds_cache_and_preserves_absolute_rope_positio
         )
         assert tuple(next_logits.shape) == (1, config.vocab_size)
         assert tuple(next_cache[0][0].shape) == (1, config.num_key_value_heads, 3, 4)
+        assert next_cache[0][0].untyped_storage().nbytes() == next_cache[0][0].numel() * next_cache[0][0].element_size()
 
     # The one-token decode must use absolute position 7, not the cache's
     # truncated length (3). _apply_rope is called once for Q and once for K.
