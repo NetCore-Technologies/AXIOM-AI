@@ -294,7 +294,7 @@ def runtime_status() -> dict[str, Any]:
         "cpu" if any(item["id"] == "cpu" and item["available"] for item in devices) else None,
     )
     return {
-        "engine": "axiom-native-pytorch-llama",
+        "engine": "axiom-native-pytorch-causal-lm",
         "ready": ready,
         "packages": packages,
         "versions": versions,
