@@ -106,11 +106,11 @@ def engine_pull(
     try:
         result = model_studio.pull_native_model(
             repo_id,
-            on_log=lambda message: console.print(message),
-            on_progress=lambda current, total: console.print(
+            on_log=(lambda message: console.print(message)) if not json_output else None,
+            on_progress=(lambda current, total: console.print(
                 "\rDownloaded " + f"{current:,}" + (f" / {total:,} bytes" if total else " bytes"),
                 end="",
-            ),
+            )) if not json_output else None,
         )
     except (ValueError, model_studio.ModelStudioError) as exc:
         _fail(str(exc))
