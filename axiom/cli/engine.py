@@ -248,6 +248,7 @@ def engine_run(
     console.print(Panel.fit(
         f"Engine: AXIOM Native Engine\nModel: {result['model']}\nArchitecture: {result['architecture']}\n"
         f"Execution device: {actual_device}\nMemory mode: {result.get('memory_mode', memory_mode)}\n"
+        f"Compute precision: {result.get('precision', 'unknown')} (requested {result.get('precision_selection', {}).get('requested', precision) if isinstance(result.get('precision_selection'), dict) else precision})\n"
         f"{device_reason + chr(10) if device_reason else ''}"
         f"Generated tokens: {result['completion_tokens']}\nFinish reason: {result.get('stop_reason', 'unknown')}\nElapsed: {result['elapsed_ms']} ms",
         title="AXIOM ENGINE",
