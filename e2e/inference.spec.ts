@@ -26,7 +26,7 @@ test("Runtime GUI submits bounded prompts to the local inference API and display
         total_duration_ms: 21.4, generated_at: "2026-10-21T00:00:00Z", execution: "local",
       } },
     ];
-    await route.fulfill({ status: 200, contentType: "application/x-ndjson", body: events.map((event) => JSON.stringify(event)).join("\\n") + "\\n" });
+    await route.fulfill({ status: 200, contentType: "application/x-ndjson", body: events.map((event) => JSON.stringify(event)).join("\n") + "\n" });
   });
 
 
