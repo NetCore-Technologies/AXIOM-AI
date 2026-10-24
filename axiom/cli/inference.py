@@ -103,7 +103,7 @@ def infer_pull(
     model: str = typer.Argument(..., help="Ollama model tag to download after explicitly invoking this command."),
     json_output: bool = typer.Option(False, "--json", help="Print the final job report as JSON."),
 ) -> None:
-    """Download a local Ollama model and print progress; this requires network access."""
+    """Download a local Ollama model tag and print progress; this requires network access."""
     try:
         job = start_model_pull(model)
     except (ValueError, OllamaServiceError) as exc:
