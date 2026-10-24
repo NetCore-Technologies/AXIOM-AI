@@ -119,6 +119,63 @@ def runtime_status() -> dict[str, Any]:
 
 
 
+
+def list_running_local_models() -> dict[str, Any]:
+    """List loaded Ollama models and their reported CPU/GPU memory footprint."""
+    result = _request_json("/api/ps", timeout=_STATUS_TIMEOUT_SECONDS)
+    raw_models = result.get("models")
+    if not isinstance(raw_models, list):
+        raise InferenceRuntimeError("Ollama returned an invalid loaded-model inventory.")
+
+    models: list[dict[str, Any]] = []
+    for item in raw_models[:100]:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name") or item.get("model")
+        if not isinstance(name, str):
+            continue
+        try:
+            name = validate_model_name(name)
+        except ValueError:
+            continue
+        size = item.get("size")
+        size_vram = item.get("size_vram")
+        expires_at = item.get("expires_at")
+        digest = item.get("digest")
+        details = item.get("details")
+        details = details if isinstance(details, dict) else {}
+
+        def nonnegative_bytes(value: Any) -> int | None:
+            return value if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 2**63 - 1 else None
+
+        def safe_text(value: Any, limit: int = 100) -> str | None:
+            return value[:limit] if isinstance(value, str) and value.strip() else None
+
+        size_bytes = nonnegative_bytes(size)
+        vram_bytes = nonnegative_bytes(size_vram)
+        models.append({
+            "name": name,
+            "size_bytes": size_bytes,
+            "size_vram_bytes": vram_bytes,
+            "size_ram_bytes": max(0, size_bytes - vram_bytes) if size_bytes is not None and vram_bytes is not None else None,
+            "memory_placement": "mixed" if vram_bytes and size_bytes and vram_bytes < size_bytes else "gpu" if vram_bytes else "cpu_or_unreported",
+            "expires_at": expires_at if isinstance(expires_at, str) else None,
+            "digest_prefix": digest[:12] if isinstance(digest, str) and len(digest) >= 12 else None,
+            "format": safe_text(details.get("format")),
+            "family": safe_text(details.get("family")),
+            "parameter_size": safe_text(details.get("parameter_size")),
+            "quantization_level": safe_text(details.get("quantization_level")),
+        })
+    return {
+        "schema_version": 1,
+        "backend": "ollama",
+        "endpoint": OLLAMA_ENDPOINT,
+        "models": models,
+        "count": len(models),
+        "scope_note": "Point-in-time local Ollama process inventory. Memory sizes are runtime-reported estimates, not guaranteed allocator measurements. Prompts and generated text are never requested.",
+    }
+
+
 def inspect_local_model(model: str) -> dict[str, Any]:
     """Return a deliberately small metadata summary for a model already in Ollama."""
     model = validate_model_name(model)
