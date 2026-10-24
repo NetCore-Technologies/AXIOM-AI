@@ -218,8 +218,10 @@ def runtime_status() -> dict[str, Any]:
         ),
         "scope_note": (
             "AXIOM implements its own Llama/Mistral/Qwen2 forward pass, RMSNorm, RoPE, grouped-query attention, KV cache, "
-            "LoRA application and token-by-token decoder using PyTorch tensor operations. It does not call "
-            "Transformers model.generate or an Ollama server. Checkpoint acquisition and model training are separate."
+            "LoRA application and token-by-token decoder using PyTorch tensor operations. It supports full-weight, "
+            "CPU-staged layer streaming, and disk-resident safetensors layer streaming with CPU KV-cache offload. It does not call "
+            "Transformers model.generate or an Ollama server. Model Studio can pull compatible public checkpoints; quantized "
+            "checkpoint formats, additional architectures, and training remain separate capabilities."
         ),
         "checked_at": datetime.now(UTC).isoformat(),
     }
