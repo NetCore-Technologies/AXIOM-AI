@@ -892,16 +892,16 @@ class NativeLlamaRuntime:
             raise NativeEngineError("Tokenizer returned no IDs for the prompt.")
         if isinstance(max_new_tokens, bool) or not isinstance(max_new_tokens, int) or not 1 <= max_new_tokens <= 2048:
             raise NativeEngineError("Native generation token limit must be between 1 and 2048.")
-        if not math.isfinite(float(temperature)) or not 0 <= float(temperature) <= 2:
-            raise NativeEngineError("Native generation temperature must be between 0 and 2.")
-        if not math.isfinite(float(top_p)) or not 0 < float(top_p) <= 1:
-            raise NativeEngineError("Native generation top_p must be greater than 0 and at most 1.")
+        if isinstance(temperature, bool) or not isinstance(temperature, (int, float)) or not math.isfinite(float(temperature)) or not 0 <= float(temperature) <= 2:
+            raise NativeEngineError("Native generation temperature must be a finite number between 0 and 2.")
+        if isinstance(top_p, bool) or not isinstance(top_p, (int, float)) or not math.isfinite(float(top_p)) or not 0 < float(top_p) <= 1:
+            raise NativeEngineError("Native generation top_p must be a finite number greater than 0 and at most 1.")
         if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
             raise NativeEngineError("Native generation top_k must be an integer from 0 through 100000 (0 disables top-k).")
         if isinstance(min_p, bool) or not isinstance(min_p, (int, float)) or not math.isfinite(float(min_p)) or not 0 <= float(min_p) <= 1:
             raise NativeEngineError("Native generation min_p must be between 0 and 1 (0 disables min-p).")
-        if not math.isfinite(float(repetition_penalty)) or not 0.1 <= float(repetition_penalty) <= 5:
-            raise NativeEngineError("Native repetition_penalty must be between 0.1 and 5.")
+        if isinstance(repetition_penalty, bool) or not isinstance(repetition_penalty, (int, float)) or not math.isfinite(float(repetition_penalty)) or not 0.1 <= float(repetition_penalty) <= 5:
+            raise NativeEngineError("Native repetition_penalty must be a finite number between 0.1 and 5.")
         if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= (2**63 - 1)):
             raise NativeEngineError("Native sampling seed must be an integer from 0 through 2^63-1.")
         if top_k > self.config.vocab_size:
@@ -1080,6 +1080,7 @@ class NativeLlamaRuntime:
         temperature: float,
         top_p: float = 0.9,
         top_k: int = 0,
+        min_p: float = 0.0,
         repetition_penalty: float = 1.0,
         seed: int | None = None,
         eos_token_ids: tuple[int, ...] | None = None,
@@ -1091,6 +1092,7 @@ class NativeLlamaRuntime:
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
+            min_p=min_p,
             repetition_penalty=repetition_penalty,
             seed=seed,
             eos_token_ids=eos_token_ids,
