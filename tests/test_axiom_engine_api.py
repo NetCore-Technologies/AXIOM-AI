@@ -614,3 +614,90 @@ def test_openai_chat_rejects_unknown_native_model_and_unsupported_message_role(m
         "model": "not-installed", "messages": [{"role": "tool", "content": "hello"}],
     })
     assert invalid.status_code == 422
+
+
+def test_openai_bridge_lists_ollama_models_with_explicit_namespace(monkeypatch) -> None:
+    monkeypatch.delenv("AXIOM_OPENAI_API_TOKEN", raising=False)
+    monkeypatch.setattr(openai_compat, "_native_models", lambda: [
+        {"name": "tiny-native", "path": "/trusted/tiny-native", "model_type": "llama"}
+    ])
+    monkeypatch.setattr(openai_compat, "_ollama_model_names", lambda: ["qwen2.5:0.5b", "deepseek-r1:8b"])
+
+    response = _client().get("/v1/models")
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["data"]] == [
+        "tiny-native", "ollama/qwen2.5:0.5b", "ollama/deepseek-r1:8b"
+    ]
+    assert response.json()["data"][0]["owned_by"] == "axiom"
+    assert response.json()["data"][1]["owned_by"] == "ollama"
+
+
+def test_openai_bridge_routes_namespaced_ollama_chat_with_sampling_options(monkeypatch) -> None:
+    monkeypatch.setenv("AXIOM_OPENAI_API_TOKEN", "bridge-token")
+    monkeypatch.setattr(openai_compat, "_ollama_model_names", lambda: ["qwen2.5:0.5b"])
+    captured = {}
+
+    def fake_chat(model, messages, **kwargs):
+        captured.update({"model": model, "messages": messages, **kwargs})
+        return {
+            "model": model,
+            "response": "Local Ollama answer",
+            "prompt_eval_count": 9,
+            "eval_count": 4,
+            "done_reason": "stop",
+        }
+
+    monkeypatch.setattr(openai_compat, "run_local_chat", fake_chat)
+    response = _client().post("/v1/chat/completions", headers={
+        "Authorization": "Bearer bridge-token",
+    }, json={
+        "model": "ollama/qwen2.5:0.5b",
+        "messages": [
+            {"role": "system", "content": "Be precise."},
+            {"role": "user", "content": "Hello"},
+        ],
+        "max_tokens": 30,
+        "temperature": 0.2,
+        "top_p": 0.8,
+        "top_k": 4,
+        "repetition_penalty": 1.2,
+        "seed": 42,
+        "stop": ["END"],
+    })
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["model"] == "ollama/qwen2.5:0.5b"
+    assert body["choices"][0]["message"]["content"] == "Local Ollama answer"
+    assert body["usage"] == {"prompt_tokens": 9, "completion_tokens": 4, "total_tokens": 13}
+    assert captured == {
+        "model": "qwen2.5:0.5b",
+        "messages": [
+            {"role": "system", "content": "Be precise."},
+            {"role": "user", "content": "Hello"},
+        ],
+        "num_predict": 30,
+        "temperature": 0.2,
+        "top_p": 0.8,
+        "top_k": 4,
+        "repetition_penalty": 1.2,
+        "seed": 42,
+        "stop_sequences": ["END"],
+    }
+    assert "bridge-token" not in response.text
+
+
+def test_openai_bridge_rejects_unknown_namespaced_ollama_model(monkeypatch) -> None:
+    monkeypatch.setenv("AXIOM_OPENAI_API_TOKEN", "bridge-token")
+    monkeypatch.setattr(openai_compat, "_ollama_model_names", lambda: ["qwen2.5:0.5b"])
+    response = _client().post("/v1/chat/completions", headers={
+        "Authorization": "Bearer bridge-token",
+    }, json={
+        "model": "ollama/other-model:latest",
+        "messages": [{"role": "user", "content": "hello"}],
+    })
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "model_not_found"
+
