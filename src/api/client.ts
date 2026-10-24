@@ -42,6 +42,16 @@ export type OllamaPullJob = {
   error: string | null;
   cancel_requested: boolean;
 };
+export type OllamaRunningModel = {
+  name: string; size_bytes: number | null; size_vram_bytes: number | null;
+  size_ram_bytes: number | null; memory_placement: "mixed" | "gpu" | "cpu_or_unreported";
+  expires_at: string | null; digest_prefix: string | null; format: string | null;
+  family: string | null; parameter_size: string | null; quantization_level: string | null;
+};
+export type OllamaRunningModels = {
+  schema_version: 1; backend: "ollama"; endpoint: string; models: OllamaRunningModel[];
+  count: number; scope_note: string;
+};
 export type OllamaModelDetails = {
   schema_version: 1; model: string; installed: boolean; size_bytes: number | null;
   modified_at: string | null; format: string | null; family: string | null; families: string[];
@@ -1378,6 +1388,7 @@ export const axiomApi = {
   inferenceStatus: () => requestJson<LocalInferenceStatus>("/api/inference/status"),
   startLocalOllama: () => requestJson<{ started: boolean; already_running: boolean; service: LocalInferenceStatus }>("/api/inference/service/start", { method: "POST", body: JSON.stringify({}) }),
   stopLocalOllama: () => requestJson<{ stopped: boolean; service: LocalInferenceStatus }>("/api/inference/service/stop", { method: "POST", body: JSON.stringify({}) }),
+  runningOllamaModels: () => requestJson<OllamaRunningModels>("/api/inference/models/running"),
   inspectOllamaModel: (model: string) => requestJson<OllamaModelDetails>("/api/inference/models/inspect", { method: "POST", body: JSON.stringify({ model }) }),
   unloadOllamaModel: (model: string) => requestJson<OllamaModelUnload>("/api/inference/models/unload", { method: "POST", body: JSON.stringify({ model }) }),
   startOllamaModelPull: (model: string) => requestJson<OllamaPullJob>("/api/inference/models/pull", { method: "POST", body: JSON.stringify({ model }) }),
