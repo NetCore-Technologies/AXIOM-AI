@@ -1,0 +1,185 @@
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
+import { Activity, KeyRound, Play, RefreshCcw, ShieldCheck } from "lucide-react";
+import { axiomApi, type LLMProvider, type LLMProviderInfo, type LLMChatResult } from "../api/client";
+
+const providerFallback: LLMProviderInfo[] = [
+  { id: "axiom-local", label: "AXIOM Native Engine", kind: "local", requires_api_key: false, supports_model_listing: true, privacy: "local-only", note: "Local trusted safetensors checkpoints." },
+  { id: "openai", label: "OpenAI", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Credentials are request-only." },
+  { id: "anthropic", label: "Anthropic", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Credentials are request-only." },
+  { id: "gemini", label: "Google Gemini", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Credentials are request-only." },
+  { id: "deepseek", label: "DeepSeek", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Credentials are request-only." },
+  { id: "moonshot", label: "Moonshot AI (Kimi)", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Credentials are request-only." },
+  { id: "openai-compatible", label: "Custom OpenAI-compatible", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Public HTTPS /v1 endpoints only." },
+];
+
+export default function LLMClientPanel() {
+  const [providers, setProviders] = useState<LLMProviderInfo[]>(providerFallback);
+  const [provider, setProvider] = useState<LLMProvider>("axiom-local");
+  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [models, setModels] = useState<string[]>([]);
+  const [model, setModel] = useState("");
+  const [systemPrompt, setSystemPrompt] = useState("You are a helpful, precise assistant.");
+  const [prompt, setPrompt] = useState("");
+  const [maxTokens, setMaxTokens] = useState("256");
+  const [temperature, setTemperature] = useState("0.7");
+  const [consent, setConsent] = useState(false);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<LLMChatResult | null>(null);
+
+  const local = provider === "axiom-local";
+  const selected = providers.find((item) => item.id === provider);
+  const loadModels = async (targetProvider = provider) => {
+    setLoadingModels(true);
+    setError("");
+    try {
+      const next = await axiomApi.llmModels({
+        provider: targetProvider,
+        api_key: targetProvider === "axiom-local" ? undefined : apiKey,
+        base_url: targetProvider === "openai-compatible" ? baseUrl : undefined,
+      });
+      setModels(next.models);
+      setModel((current) => current && next.models.includes(current) ? current : next.models[0] || current);
+      if (next.models.length === 0) setError("No models were returned. Check provider access or enter a model ID manually.");
+    } catch (cause) {
+      setModels([]);
+      setError(cause instanceof Error ? cause.message : "The model catalogue could not be loaded.");
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
+  useEffect(() => {
+    axiomApi.llmProviders().then((value) => setProviders(value.providers)).catch(() => setProviders(providerFallback));
+    void axiomApi.llmModels({ provider: "axiom-local" }).then((next) => {
+      setModels(next.models);
+      setModel(next.models[0] || "");
+    }).catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : "Local AXIOM model inventory is unavailable.");
+    });
+  }, []);
+
+  const changeProvider = (value: string) => {
+    setProvider(value as LLMProvider);
+    setApiKey("");
+    setConsent(false);
+    setModels([]);
+    setModel("");
+    setResult(null);
+    setError("");
+  };
+
+  const run = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    setResult(null);
+    const tokenLimit = Number(maxTokens);
+    const temp = Number(temperature);
+    if (!model.trim()) { setError("Choose a model or enter an exact provider model ID."); return; }
+    if (!prompt.trim()) { setError("Enter a prompt before generating."); return; }
+    if (!Number.isInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 2048) { setError("Maximum output tokens must be between 1 and 2048."); return; }
+    if (!Number.isFinite(temp) || temp < 0 || temp > 2) { setError("Temperature must be between 0 and 2."); return; }
+    if (!local && !consent) { setError("Confirm that the selected cloud provider may receive this conversation."); return; }
+    setRunning(true);
+    try {
+      const messages = [
+        ...(systemPrompt.trim() ? [{ role: "system" as const, content: systemPrompt.trim() }] : []),
+        { role: "user" as const, content: prompt.trim() },
+      ];
+      setResult(await axiomApi.llmChat({
+        provider,
+        api_key: local ? undefined : apiKey,
+        base_url: provider === "openai-compatible" ? baseUrl : undefined,
+        model: model.trim(),
+        messages,
+        max_tokens: tokenLimit,
+        temperature: temp,
+        consent: local || consent,
+      }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The selected model could not generate a response.");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return <section className="surface local-inference-panel llm-client-panel">
+    <div className="surface-head">
+      <div>
+        <p className="surface-eyebrow">ONE CLIENT · LOCAL OR CLOUD</p>
+        <h2>Unified LLM client</h2>
+      </div>
+      <button type="button" className="button secondary-button" onClick={() => void loadModels()} disabled={loadingModels || running}>
+        <RefreshCcw size={14} /> {loadingModels ? "Loading" : "Load models"}
+      </button>
+    </div>
+    <p>Use the AXIOM Native Engine or connect to OpenAI, Anthropic, Google Gemini, DeepSeek, Moonshot/Kimi, or a public OpenAI-compatible endpoint. Local prompts stay on this computer; cloud requests are sent only after confirmation.</p>
+    <div className="status-strip" aria-label="Unified LLM client status">
+      <div className="status-strip-item">
+        <span className={"status-pill " + (local ? "success" : "warning")}><i />{local ? "LOCAL EXECUTION" : "CLOUD PROVIDER"}</span>
+        <div><b>{selected?.label || provider}</b><span>{local ? "No API key or cloud service required for compatible installed models." : "The provider receives your prompt after you confirm consent."}</span></div>
+      </div>
+    </div>
+    <form onSubmit={(event) => void run(event)}>
+      <div className="two-column-grid">
+        <label className="field">
+          <span className="field-label-row"><span>Provider</span></span>
+          <select value={provider} onChange={(event) => changeProvider(event.target.value)}>
+            {providers.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+          <small>{selected?.note || "Choose the inference backend for this conversation."}</small>
+        </label>
+        <label className="field">
+          <span className="field-label-row"><span>Model ID</span></span>
+          <input list="axiom-unified-llm-models" value={model} onChange={(event) => setModel(event.target.value)} maxLength={256} required autoComplete="off" placeholder="Load models or enter an exact ID" />
+          <datalist id="axiom-unified-llm-models">{models.map((name) => <option key={name} value={name} />)}</datalist>
+          <small>{models.length} model IDs returned by the selected provider; model IDs can also be entered manually.</small>
+        </label>
+      </div>
+      {provider === "openai-compatible" && <label className="field">
+        <span className="field-label-row"><span>Public HTTPS API base URL</span></span>
+        <input type="url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} required maxLength={512} placeholder="https://provider.example/api/v1" autoComplete="url" />
+        <small>Private, loopback, non-HTTPS, and redirecting endpoints are blocked.</small>
+      </label>}
+      {!local && <label className="field">
+        <span className="field-label-row"><span>Provider API key</span><KeyRound size={14} /></span>
+        <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} maxLength={512} required autoComplete="new-password" placeholder="Used only for requests in this page session" />
+        <small>Not written to localStorage, workspace files, settings, or runtime traces.</small>
+      </label>}
+      <label className="field">
+        <span className="field-label-row"><span>System instruction</span><span>{systemPrompt.length.toLocaleString()} / 12,000</span></span>
+        <textarea value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} maxLength={12000} rows={2} placeholder="Optional instructions for the model." />
+      </label>
+      <label className="field">
+        <span className="field-label-row"><span>Prompt</span><span>{prompt.length.toLocaleString()} / 12,000</span></span>
+        <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={12000} rows={5} required placeholder="Ask your selected local or cloud model…" />
+      </label>
+      <div className="two-column-grid">
+        <label className="field"><span className="field-label-row"><span>Maximum output tokens</span></span><input type="number" min={1} max={2048} step={1} value={maxTokens} onChange={(event) => setMaxTokens(event.target.value)} required /></label>
+        <label className="field"><span className="field-label-row"><span>Temperature</span></span><input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(event) => setTemperature(event.target.value)} required /></label>
+      </div>
+      {!local && <label className="consent-check">
+        <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
+        <span>I understand this conversation will be sent to {selected?.label || "the selected provider"} and processed under its terms.</span>
+      </label>}
+      <div className="integration-form-actions">
+        <button type="submit" className="button primary-button" disabled={running || loadingModels || !model.trim() || !prompt.trim() || (!local && (!apiKey.trim() || !consent || (provider === "openai-compatible" && !baseUrl.trim())))}><Play size={15} /> {running ? "Generating…" : local ? "Generate locally" : "Send and generate"}</button>
+        <span className="quiet-note"><ShieldCheck size={14} /> {local ? "Local model only" : "Explicit cloud consent"}</span>
+      </div>
+    </form>
+    {error && <div className="inline-alert warning" role="alert">{error}</div>}
+    {result && <section className="local-inference-result" aria-label="Unified LLM response">
+      <div className="surface-head"><div><p className="surface-eyebrow">{result.execution === "local" ? "GENERATED LOCALLY" : "GENERATED BY CLOUD PROVIDER"}</p><h3>{result.model}</h3><small className="quiet-note">{result.provider} · {result.prompt_tokens ?? "?"} input tokens · {result.completion_tokens ?? "?"} output tokens</small></div><span className="status-pill success"><i />COMPLETED</span></div>
+      <pre data-testid="llm-client-output" className="local-inference-output">{result.response}</pre>
+    </section>}
+    <div className="agent-bridge-note">
+      <div className="surface-eyebrow"><Activity size={13} /> ANDROID AGENT COMPATIBILITY</div>
+      <p>PrivateAgent-style clients can connect to AXIOM's token-protected OpenAI-compatible endpoint when you intentionally expose it on your trusted LAN:</p>
+      <code>axiom mobile-bridge --listen-lan</code>
+      <p>Use http://&lt;AXIOM-PC-LAN-IP&gt;:40509/v1 as the base URL, the one-time token printed by the command as the API key, and a model ID from axiom engine discover --json. Keep the bridge on a trusted network; do not port-forward it.</p>
+    </div>
+  </section>;
+}
