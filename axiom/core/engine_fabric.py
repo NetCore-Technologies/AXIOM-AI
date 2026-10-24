@@ -308,19 +308,12 @@ def discover_engine_backends(profile: str = "balanced") -> dict[str, Any]:
     }
 
 
-def run_engine_backend_chat(
-    backend_id: str,
+def _validate_engine_chat_inputs(
     model: str,
     messages: list[dict[str, str]],
-    *,
-    max_new_tokens: int = 256,
-    temperature: float = 0.7,
-) -> dict[str, Any]:
-    """Run a bounded conversation through a chosen, fixed loopback-only backend."""
-    if backend_id == "axiom-native":
-        raise ValueError("Use AXIOM Native Engine's trusted model-path generation route for axiom-native.")
-    if backend_id not in _BACKEND_BY_ID:
-        raise ValueError("Choose a supported external local backend from the engine inventory.")
+    max_new_tokens: int,
+    temperature: float,
+) -> tuple[str, list[dict[str, str]]]:
     model = validate_model_name(model)
     if not isinstance(messages, list) or not 1 <= len(messages) <= _MAX_MESSAGES:
         raise ValueError("Provide between 1 and 64 conversation messages.")
@@ -344,7 +337,31 @@ def run_engine_backend_chat(
         raise ValueError("Maximum output tokens must be between 1 and 2,048.")
     if isinstance(temperature, bool) or not isinstance(temperature, (int, float)) or not 0 <= float(temperature) <= 2:
         raise ValueError("Temperature must be between 0 and 2.")
+    return model, normalized
 
+
+def run_engine_backend_chat(
+    backend_id: str,
+    model: str,
+    messages: list[dict[str, str]],
+    *,
+    max_new_tokens: int = 256,
+    temperature: float = 0.7,
+    request_timeout: float | None = None,
+) -> dict[str, Any]:
+    """Run a bounded conversation through a chosen, fixed loopback-only backend."""
+    if backend_id == "axiom-native":
+        raise ValueError("Use AXIOM Native Engine's trusted model-path generation route for axiom-native.")
+    if backend_id not in _BACKEND_BY_ID:
+        raise ValueError("Choose a supported external local backend from the engine inventory.")
+    model, normalized = _validate_engine_chat_inputs(model, messages, max_new_tokens, temperature)
+    if request_timeout is not None and (
+        isinstance(request_timeout, bool)
+        or not isinstance(request_timeout, (int, float))
+        or not 0.1 <= float(request_timeout) <= _REQUEST_TIMEOUT
+    ):
+        raise ValueError(f"Request timeout must be between 0.1 and {_REQUEST_TIMEOUT} seconds.")
+    timeout = _REQUEST_TIMEOUT if request_timeout is None else float(request_timeout)
     started = time.perf_counter()
     if backend_id == "ollama":
         payload = {
@@ -353,7 +370,7 @@ def run_engine_backend_chat(
             "stream": False,
             "options": {"num_predict": max_new_tokens, "temperature": float(temperature)},
         }
-        result = _request_json(backend_id, _BACKEND_BY_ID[backend_id]["chat_path"], payload, timeout=_REQUEST_TIMEOUT)
+        result = _request_json(backend_id, _BACKEND_BY_ID[backend_id]["chat_path"], payload, timeout=timeout)
         message = result.get("message")
         response_text = message.get("content") if isinstance(message, dict) else None
         prompt_tokens = result.get("prompt_eval_count")
@@ -368,7 +385,7 @@ def run_engine_backend_chat(
             "max_tokens": max_new_tokens,
             "temperature": float(temperature),
         }
-        result = _request_json(backend_id, _BACKEND_BY_ID[backend_id]["chat_path"], payload, timeout=_REQUEST_TIMEOUT)
+        result = _request_json(backend_id, _BACKEND_BY_ID[backend_id]["chat_path"], payload, timeout=timeout)
         choices = result.get("choices")
         choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
         message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
@@ -396,6 +413,87 @@ def run_engine_backend_chat(
         "execution": "local_loopback",
         "privacy": {"prompt_returned": False, "response_persisted": False, "cloud_provider_used": False},
     }
+
+
+_AUTO_ROUTE_MAX_ATTEMPTS = 3
+_AUTO_ROUTE_TIMEOUT_SECONDS = 45.0
+_AUTO_ROUTE_SCOPE = (
+    "Auto-routing uses fixed loopback services only and matches exact model IDs in live inventories. "
+    "Matching names do not prove identical checkpoint weights or quantization across runtimes."
+)
+
+
+def run_engine_fabric_chat(
+    profile: str,
+    model: str,
+    messages: list[dict[str, str]],
+    *,
+    max_new_tokens: int = 256,
+    temperature: float = 0.7,
+) -> dict[str, Any]:
+    """Select a local backend by workload profile and fail over only to exact-ID matches."""
+    if profile not in _PROFILES:
+        raise ValueError("Profile must be one of: " + ", ".join(_PROFILES))
+    model, normalized = _validate_engine_chat_inputs(model, messages, max_new_tokens, temperature)
+    report = discover_engine_backends(profile)
+    inventory = {backend.get("id"): backend for backend in report.get("backends", []) if isinstance(backend, dict)}
+    candidates: list[dict[str, Any]] = []
+    for backend_id in _PROFILES[profile]:
+        if backend_id == "axiom-native":
+            # Native generation takes a trusted filesystem path, not a service model ID.
+            continue
+        backend = inventory.get(backend_id)
+        if (
+            isinstance(backend, dict)
+            and backend.get("status") == "ready"
+            and backend.get("supports_chat") is True
+            and model in backend.get("models", [])
+        ):
+            candidates.append(backend)
+        if len(candidates) >= _AUTO_ROUTE_MAX_ATTEMPTS:
+            break
+    if not candidates:
+        raise EngineFabricError(
+            f"No ready local backend advertises the exact model ID {model!r}. "
+            "Load/configure that model on a supported local service and refresh discovery."
+        )
+
+    attempts: list[dict[str, Any]] = []
+    for backend in candidates:
+        backend_id = str(backend["id"])
+        backend_name = str(backend["name"])
+        try:
+            result = run_engine_backend_chat(
+                backend_id,
+                model,
+                normalized,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                request_timeout=_AUTO_ROUTE_TIMEOUT_SECONDS,
+            )
+        except EngineFabricError as exc:
+            attempts.append({
+                "backend_id": backend_id,
+                "backend_name": backend_name,
+                "outcome": "failed",
+                "reason": str(exc),
+            })
+            continue
+        attempts.append({"backend_id": backend_id, "backend_name": backend_name, "outcome": "selected"})
+        result["routing"] = {
+            "strategy": "profile_order_exact_model_id",
+            "profile": profile,
+            "requested_model": model,
+            "fallback_used": len(attempts) > 1,
+            "attempts": attempts,
+            "max_attempts": _AUTO_ROUTE_MAX_ATTEMPTS,
+            "scope_note": _AUTO_ROUTE_SCOPE,
+        }
+        return result
+
+    failures = "; ".join(f"{item['backend_name']}: {item['reason']}" for item in attempts)
+    raise EngineFabricError("All matching local backends failed: " + failures)
+
 
 
 def run_engine_backend_benchmark(
