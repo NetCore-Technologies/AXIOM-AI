@@ -891,8 +891,10 @@ def _choose_memory_mode(
                     dtype_name = handle.get_slice("model.embed_tokens.weight").get_dtype()
                     dtype_bytes = {"F16": 2, "BF16": 2, "F32": 4}.get(str(dtype_name).upper(), 4)
                     break
-        except (ImportError, OSError, RuntimeError, ValueError):
-            pass
+        except Exception:
+            # Header inspection is an optional precision improvement. Keep the
+            # conservative FP32 estimate if a driver/format cannot expose dtype.
+            _LOG.debug("Could not inspect checkpoint dtype for memory planning.", exc_info=True)
     except Exception as exc:
         raise AxiomEngineError(f"AXIOM could not safely estimate this checkpoint for automatic memory selection: {exc}") from None
 
