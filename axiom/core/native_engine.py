@@ -863,8 +863,10 @@ class NativeLlamaRuntime:
                 # bounded cache is shorter than the full token history.
                 cache_k, cache_v = k, v
                 if c.sliding_window and cache_k.shape[-2] > c.sliding_window:
-                    cache_k = cache_k[..., -c.sliding_window:, :]
-                    cache_v = cache_v[..., -c.sliding_window:, :]
+                    # A slice view can retain the full prefill allocation as its
+                    # backing storage; copy the suffix so old KV tensors are freed.
+                    cache_k = cache_k[..., -c.sliding_window:, :].contiguous()
+                    cache_v = cache_v[..., -c.sliding_window:, :].contiguous()
                 if self.memory_mode in {"layer_streaming", "disk_streaming"}:
                     cache_k, cache_v = cache_k.detach().to(device="cpu"), cache_v.detach().to(device="cpu")
                     self.memory_stats["kv_cache_layer_offloads"] += 1
