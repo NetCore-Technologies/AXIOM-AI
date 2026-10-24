@@ -7,7 +7,7 @@ used by this module. Only local tokenizer.json and floating-point safetensors
 checkpoints are accepted; unsupported formats are rejected, not delegated.
 """
 from __future__ import annotations
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 import json, math, re, threading, time
 from pathlib import Path
@@ -400,13 +400,58 @@ def inspect_native_adapter_compatibility(
 class NativeLlamaRuntime:
     """AXIOM-owned implementation of Llama/Mistral forward and decode steps."""
 
-    def __init__(self, config: NativeLlamaConfig, weights: dict[str, Any], torch_module: Any, device: Any, *, adapter: dict[str, dict[str, Any]] | None = None, adapter_scaling: dict[str, float] | None = None) -> None:
+    def __init__(
+        self,
+        config: NativeLlamaConfig,
+        weights: dict[str, Any],
+        torch_module: Any,
+        device: Any,
+        *,
+        adapter: dict[str, dict[str, Any]] | None = None,
+        adapter_scaling: dict[str, float] | None = None,
+        memory_mode: str = "full",
+    ) -> None:
+        if memory_mode not in {"full", "layer_streaming"}:
+            raise NativeEngineError("Native memory mode must be full or layer_streaming.")
         self.config, self.weights, self.torch, self.device = config, weights, torch_module, device
         self.adapter, self.adapter_scaling = adapter or {}, adapter_scaling or {}
+        self.memory_mode = memory_mode
         self.dtype = weights["model.embed_tokens.weight"].dtype
         self.name = "axiom-native-pytorch-llama"
         self.last_generation: dict[str, Any] = {}
         self.last_attention_backend = "pytorch-scaled-dot-product-attention"
+        self.memory_stats: dict[str, int] = {
+            "layer_weight_tensors_staged": 0,
+            "layer_weight_bytes_staged": 0,
+            "layer_weight_bytes_returned_to_cpu": 0,
+            "kv_cache_layer_offloads": 0,
+            "kv_cache_bytes_offloaded": 0,
+        }
+
+    @contextmanager
+    def _layer_weights(self, layer_index: int):
+        """Stage one CPU-resident transformer layer on the execution device."""
+        if self.memory_mode != "layer_streaming":
+            yield
+            return
+        prefix = f"model.layers.{layer_index}."
+        staged: dict[str, Any] = {}
+        try:
+            for name, weight in list(self.weights.items()):
+                if not name.startswith(prefix) or getattr(weight, "device", None) == self.device:
+                    continue
+                staged[name] = weight
+                self.weights[name] = weight.to(device=self.device)
+                self.memory_stats["layer_weight_tensors_staged"] += 1
+                self.memory_stats["layer_weight_bytes_staged"] += int(weight.numel() * weight.element_size())
+            yield
+        finally:
+            for name in staged:
+                active_weight = self.weights[name]
+                self.weights[name] = active_weight.to(device="cpu")
+                self.memory_stats["layer_weight_bytes_returned_to_cpu"] += int(
+                    self.weights[name].numel() * self.weights[name].element_size()
+                )
 
     @staticmethod
     def _required_weight_names(c: NativeLlamaConfig) -> list[str]:
@@ -423,7 +468,16 @@ class NativeLlamaRuntime:
         return names
 
     @classmethod
-    def from_directory(cls, model_dir: Path, torch_module: Any, device: Any, *, adapter_dir: Path | None = None, trusted_roots: tuple[Path, ...] | None = None) -> "NativeLlamaRuntime":
+    def from_directory(
+        cls,
+        model_dir: Path,
+        torch_module: Any,
+        device: Any,
+        *,
+        adapter_dir: Path | None = None,
+        trusted_roots: tuple[Path, ...] | None = None,
+        memory_mode: str = "full",
+    ) -> "NativeLlamaRuntime":
         roots = trusted_roots or (model_dir.resolve(),)
         config = NativeLlamaConfig.from_mapping(_read_json_object(model_dir / "config.json", _MAX_CONFIG_BYTES, "Model config.json", roots))
         tokenizer_path = _resolve_trusted_file(model_dir / "tokenizer.json", roots, "Tokenizer file")
@@ -462,7 +516,8 @@ class NativeLlamaRuntime:
                     tensor = handles[weight_map[name]].get_tensor(name)
                     if tensor.dtype not in (torch_module.float16, torch_module.bfloat16, torch_module.float32):
                         raise NativeEngineError(f"Unsupported weight dtype for tensor {name!r}.")
-                    weights[name] = tensor.to(device=device, dtype=dtype)
+                    load_device = "cpu" if memory_mode == "layer_streaming" and name.startswith("model.layers.") else device
+                    weights[name] = tensor.to(device=load_device, dtype=dtype)
         except NativeEngineError:
             raise
         except Exception as exc:
@@ -502,7 +557,10 @@ class NativeLlamaRuntime:
                 base = weights.get(path + ".weight")
                 if base is None or pair["A"].shape[1] != base.shape[1] or pair["B"].shape != (base.shape[0], pair["A"].shape[0]):
                     raise NativeEngineError(f"LoRA weight shapes do not match base module {path!r}.")
-        return cls(config, weights, torch_module, device, adapter=adapters, adapter_scaling=scaling)
+        return cls(
+            config, weights, torch_module, device,
+            adapter=adapters, adapter_scaling=scaling, memory_mode=memory_mode,
+        )
 
     @classmethod
     def _load_lora_adapter(cls, adapter_dir: Path, config: NativeLlamaConfig, torch_module: Any, device: Any, dtype: Any, trusted_roots: tuple[Path, ...]) -> tuple[dict[str, dict[str, Any]], dict[str, float]]:
@@ -629,29 +687,40 @@ class NativeLlamaRuntime:
         for i in range(c.num_hidden_layers):
             if cancel_event is not None and cancel_event.is_set():
                 raise NativeGenerationCancelled("Native generation was cancelled.")
-            p = f"model.layers.{i}."
-            residual = hidden
-            normed = self._rms_norm(hidden, self.weights[p + "input_layernorm.weight"])
-            q, k, v = (self._linear(normed, p + "self_attn." + name) for name in ("q_proj", "k_proj", "v_proj"))
-            q = self._apply_rope(q.view(1, seq_len, c.num_attention_heads, head_dim).transpose(1, 2), positions)
-            k = self._apply_rope(k.view(1, seq_len, c.num_key_value_heads, head_dim).transpose(1, 2), positions)
-            v = v.view(1, seq_len, c.num_key_value_heads, head_dim).transpose(1, 2)
-            if past_key_values is not None:
-                old_k, old_v = past_key_values[i]
-                k, v = torch.cat((old_k, k), dim=-2), torch.cat((old_v, v), dim=-2)
-            cache.append((k, v))
-            ak = k.repeat_interleave(repeat_factor, dim=1) if repeat_factor > 1 else k
-            av = v.repeat_interleave(repeat_factor, dim=1) if repeat_factor > 1 else v
-            keys = torch.arange(ak.shape[-2], device=self.device)
-            blocked = keys[None, :] > positions[:, None]
-            if c.sliding_window:
-                blocked = blocked | (keys[None, :] <= positions[:, None] - c.sliding_window)
-            attended = self._attention(q, ak, av, blocked).transpose(1, 2).contiguous().view(1, seq_len, c.hidden_size)
-            hidden = residual + self._linear(attended, p + "self_attn.o_proj")
-            residual = hidden
-            normed = self._rms_norm(hidden, self.weights[p + "post_attention_layernorm.weight"])
-            gate, up = self._linear(normed, p + "mlp.gate_proj"), self._linear(normed, p + "mlp.up_proj")
-            hidden = residual + self._linear(torch.nn.functional.silu(gate) * up, p + "mlp.down_proj")
+            with self._layer_weights(i):
+                p = f"model.layers.{i}."
+                residual = hidden
+                normed = self._rms_norm(hidden, self.weights[p + "input_layernorm.weight"])
+                q, k, v = (self._linear(normed, p + "self_attn." + name) for name in ("q_proj", "k_proj", "v_proj"))
+                q = self._apply_rope(q.view(1, seq_len, c.num_attention_heads, head_dim).transpose(1, 2), positions)
+                k = self._apply_rope(k.view(1, seq_len, c.num_key_value_heads, head_dim).transpose(1, 2), positions)
+                v = v.view(1, seq_len, c.num_key_value_heads, head_dim).transpose(1, 2)
+                if past_key_values is not None:
+                    old_k, old_v = past_key_values[i]
+                    if self.memory_mode == "layer_streaming":
+                        old_k, old_v = old_k.to(device=self.device), old_v.to(device=self.device)
+                    k, v = torch.cat((old_k, k), dim=-2), torch.cat((old_v, v), dim=-2)
+                if self.memory_mode == "layer_streaming":
+                    cache_k, cache_v = k.detach().to(device="cpu"), v.detach().to(device="cpu")
+                    self.memory_stats["kv_cache_layer_offloads"] += 1
+                    self.memory_stats["kv_cache_bytes_offloaded"] += int(
+                        cache_k.numel() * cache_k.element_size() + cache_v.numel() * cache_v.element_size()
+                    )
+                    cache.append((cache_k, cache_v))
+                else:
+                    cache.append((k, v))
+                ak = k.repeat_interleave(repeat_factor, dim=1) if repeat_factor > 1 else k
+                av = v.repeat_interleave(repeat_factor, dim=1) if repeat_factor > 1 else v
+                keys = torch.arange(ak.shape[-2], device=self.device)
+                blocked = keys[None, :] > positions[:, None]
+                if c.sliding_window:
+                    blocked = blocked | (keys[None, :] <= positions[:, None] - c.sliding_window)
+                attended = self._attention(q, ak, av, blocked).transpose(1, 2).contiguous().view(1, seq_len, c.hidden_size)
+                hidden = residual + self._linear(attended, p + "self_attn.o_proj")
+                residual = hidden
+                normed = self._rms_norm(hidden, self.weights[p + "post_attention_layernorm.weight"])
+                gate, up = self._linear(normed, p + "mlp.gate_proj"), self._linear(normed, p + "mlp.up_proj")
+                hidden = residual + self._linear(torch.nn.functional.silu(gate) * up, p + "mlp.down_proj")
         hidden = self._rms_norm(hidden, self.weights["model.norm.weight"])
         return self._linear(hidden[:, -1:, :], "lm_head")[:, -1, :], tuple(cache)
 
@@ -694,6 +763,13 @@ class NativeLlamaRuntime:
             except (RuntimeError, TypeError, AttributeError):
                 raise NativeEngineError("Seeded sampling is not supported by the selected tensor device.") from None
         eos = set(self.config.eos_token_ids if eos_token_ids is None else eos_token_ids)
+        self.memory_stats = {
+            "layer_weight_tensors_staged": 0,
+            "layer_weight_bytes_staged": 0,
+            "layer_weight_bytes_returned_to_cpu": 0,
+            "kv_cache_layer_offloads": 0,
+            "kv_cache_bytes_offloaded": 0,
+        }
         tokens = torch.tensor([prompt_token_ids], device=self.device, dtype=torch.long)
         generated: list[int] = []
         cache: tuple[Any, ...] = ()
@@ -814,14 +890,25 @@ class NativeLlamaRuntime:
         ))
 
 
-def load_native_runtime(model_dir: Path, torch_module: Any, device: Any, *, adapter_dir: Path | None = None, trusted_roots: tuple[Path, ...] | None = None) -> tuple[NativeLlamaRuntime, Any, dict[str, Any]]:
+def load_native_runtime(
+    model_dir: Path,
+    torch_module: Any,
+    device: Any,
+    *,
+    adapter_dir: Path | None = None,
+    trusted_roots: tuple[Path, ...] | None = None,
+    memory_mode: str = "full",
+) -> tuple[NativeLlamaRuntime, Any, dict[str, Any]]:
     """Load a supported local checkpoint/tokenizer without Transformers."""
     try:
         from tokenizers import Tokenizer
     except (ImportError, OSError):
         raise NativeDependencyError("AXIOM Native Engine requires tokenizers. Install the native-inference extra.") from None
     roots = trusted_roots or (model_dir.resolve(),)
-    model = NativeLlamaRuntime.from_directory(model_dir, torch_module, device, adapter_dir=adapter_dir, trusted_roots=roots)
+    model = NativeLlamaRuntime.from_directory(
+        model_dir, torch_module, device, adapter_dir=adapter_dir,
+        trusted_roots=roots, memory_mode=memory_mode,
+    )
     try:
         tokenizer = Tokenizer.from_file(str(_resolve_trusted_file(model_dir / "tokenizer.json", roots, "Tokenizer file")))
     except Exception:
@@ -834,7 +921,11 @@ def load_native_runtime(model_dir: Path, torch_module: Any, device: Any, *, adap
         add_bos = _read_json_object(tokenizer_config, _MAX_CONFIG_BYTES, "Tokenizer config", roots).get("add_bos_token") is not False and add_bos
     details = {
         "model_type": model.config.model_type,
-        "architecture": "LlamaForCausalLM" if model.config.model_type == "llama" else "MistralForCausalLM",
+        "architecture": {
+            "llama": "LlamaForCausalLM",
+            "mistral": "MistralForCausalLM",
+            "qwen2": "Qwen2ForCausalLM",
+        }[model.config.model_type],
         "model_directory_name": model_dir.name,
         "adapter_directory_name": adapter_dir.name if adapter_dir else None,
         "add_bos_token": add_bos,
@@ -844,5 +935,6 @@ def load_native_runtime(model_dir: Path, torch_module: Any, device: Any, *, adap
         "ollama_used": False,
         "dtype": str(model.dtype),
         "device": str(device),
+        "memory_mode": model.memory_mode,
     }
     return model, tokenizer, details
