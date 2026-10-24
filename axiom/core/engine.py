@@ -753,8 +753,8 @@ def _load_local_model(
             "AXIOM Native Engine requires PyTorch. Install with: python -m pip install -e '.[native-inference]'"
         ) from None
 
-    if memory_mode not in {"full", "layer_streaming"}:
-        raise ValueError("Memory mode must be full or layer_streaming.")
+    if memory_mode not in {"full", "layer_streaming", "disk_streaming"}:
+        raise ValueError("Memory mode must be full, layer_streaming, or disk_streaming.")
     base_dir = _resolve_model_directory(model_path, "Base model")
     inspected = _inspect_model_config(base_dir)
     resolved_adapter: Path | None = None
