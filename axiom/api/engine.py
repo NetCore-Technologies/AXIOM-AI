@@ -413,8 +413,8 @@ def engine_backends(profile: str = "balanced") -> dict[str, Any]:
     """Inventory local execution backends and recommend one using an explicit workload profile."""
     try:
         return discover_engine_backends(profile)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="The workload profile is invalid or unsupported.") from None
 
 
 @router.post("/backends/chat")
@@ -434,8 +434,8 @@ def engine_backend_chat(request: EngineFabricChatRequest) -> dict[str, Any]:
             seed=request.seed,
             stop_sequences=request.stop_sequences,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="The selected backend request is invalid or unsupported.") from None
     except EngineFabricError:
         raise HTTPException(status_code=503, detail="The selected local backend could not complete this request.") from None
 
@@ -457,8 +457,8 @@ def engine_backend_auto_chat(request: EngineFabricAutoChatRequest) -> dict[str, 
             seed=request.seed,
             stop_sequences=request.stop_sequences,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="The routing request is invalid or unsupported.") from None
     except EngineFabricError:
         raise HTTPException(status_code=503, detail="No matching local backend could complete this request.") from None
 
@@ -512,7 +512,7 @@ def engine_backend_benchmark(request: EngineFabricBenchmarkRequest) -> dict[str,
             seed=request.seed,
             stop_sequences=request.stop_sequences,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="The benchmark request is invalid or unsupported.") from None
     except EngineFabricError:
         raise HTTPException(status_code=503, detail="The selected local backend could not complete the benchmark.") from None
