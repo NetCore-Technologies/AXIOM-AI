@@ -1079,7 +1079,12 @@ def load_native_runtime(
         "transformers_generation_used": False,
         "ollama_used": False,
         "dtype": str(model.dtype),
-        "precision": precision,
+        "precision": {
+            str(getattr(torch_module, "float32", "float32")): "fp32",
+            str(getattr(torch_module, "float16", "float16")): "fp16",
+            str(getattr(torch_module, "bfloat16", "bfloat16")): "bf16",
+        }.get(str(model.dtype), str(model.dtype)),
+        "precision_requested": precision,
         "device": str(device),
         "memory_mode": model.memory_mode,
     }
