@@ -42,6 +42,17 @@ export type OllamaPullJob = {
   error: string | null;
   cancel_requested: boolean;
 };
+export type OllamaModelDetails = {
+  schema_version: 1; model: string; installed: boolean; size_bytes: number | null;
+  modified_at: string | null; format: string | null; family: string | null; families: string[];
+  parameter_size: string | null; parameter_count: number | null; quantization_level: string | null;
+  context_length: number | null; capabilities: string[]; template_configured: boolean;
+  license_present: boolean; system_prompt_configured: boolean; scope_note: string;
+};
+export type OllamaModelUnload = {
+  schema_version: 1; model: string; unloaded: boolean; model_files_deleted: false; scope_note: string;
+};
+
 export type LocalInferenceResult = {
   request_id?: string;
   model: string;
@@ -1367,6 +1378,8 @@ export const axiomApi = {
   inferenceStatus: () => requestJson<LocalInferenceStatus>("/api/inference/status"),
   startLocalOllama: () => requestJson<{ started: boolean; already_running: boolean; service: LocalInferenceStatus }>("/api/inference/service/start", { method: "POST", body: JSON.stringify({}) }),
   stopLocalOllama: () => requestJson<{ stopped: boolean; service: LocalInferenceStatus }>("/api/inference/service/stop", { method: "POST", body: JSON.stringify({}) }),
+  inspectOllamaModel: (model: string) => requestJson<OllamaModelDetails>("/api/inference/models/inspect", { method: "POST", body: JSON.stringify({ model }) }),
+  unloadOllamaModel: (model: string) => requestJson<OllamaModelUnload>("/api/inference/models/unload", { method: "POST", body: JSON.stringify({ model }) }),
   startOllamaModelPull: (model: string) => requestJson<OllamaPullJob>("/api/inference/models/pull", { method: "POST", body: JSON.stringify({ model }) }),
   ollamaModelPullStatus: (jobId: string) => requestJson<OllamaPullJob>(`/api/inference/models/pull/${encodeURIComponent(jobId)}`),
   cancelOllamaModelPull: (jobId: string) => requestJson<OllamaPullJob>(`/api/inference/models/pull/${encodeURIComponent(jobId)}/cancel`, { method: "POST", body: JSON.stringify({}) }),
