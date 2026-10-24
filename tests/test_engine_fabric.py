@@ -64,14 +64,53 @@ def test_dispatch_to_ollama_uses_native_chat_options(monkeypatch):
     assert result["execution"] == "local_loopback"
 
 
-def test_native_engine_cannot_be_accidentally_dispatched_to_external_adapter(monkeypatch):
-    monkeypatch.setattr(engine_fabric, "_request_json", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not dispatch")))
-    try:
-        engine_fabric.run_engine_backend_chat("axiom-native", "local-model", [{"role": "user", "content": "Hi"}])
-    except ValueError as exc:
-        assert "trusted model-path" in str(exc)
-    else:
-        raise AssertionError("native engine must use its own trusted model path")
+def test_native_engine_dispatches_via_trusted_alias_and_never_external_http(monkeypatch):
+    from axiom.core import llm_client
+
+    captured = {}
+    monkeypatch.setattr(
+        engine_fabric, "_request_json",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("native dispatch must not use HTTP")),
+    )
+
+    def fake_chat(provider, model, messages, **kwargs):
+        captured.update(provider=provider, model=model, messages=messages, **kwargs)
+        return {
+            "response": "native response", "prompt_tokens": 4, "completion_tokens": 3,
+            "device": "cpu", "precision": "fp32", "generated_at": "2026-10-24T00:00:00+00:00",
+        }
+
+    monkeypatch.setattr(llm_client, "chat", fake_chat)
+    result = engine_fabric.run_engine_backend_chat(
+        "axiom-native", "local-model", [{"role": "user", "content": "Hi"}],
+        max_new_tokens=32, top_p=0.8, top_k=12, repetition_penalty=1.1,
+        seed=10, stop_sequences=["END"],
+    )
+    assert captured["provider"] == "axiom-local"
+    assert captured["model"] == "local-model"
+    assert captured["top_p"] == 0.8 and captured["top_k"] == 12
+    assert captured["repetition_penalty"] == 1.1 and captured["seed"] == 10
+    assert captured["stop_sequences"] == ("END",)
+    assert result["backend_id"] == "axiom-native"
+    assert result["execution"] == "in_process_native"
+    assert result["response"] == "native response"
+    assert result["eval_count"] == 3
+    assert result["privacy"]["cloud_provider_used"] is False
+
+
+def test_native_backend_advertises_supported_model_aliases(monkeypatch):
+    from axiom.core import engine, llm_client
+
+    monkeypatch.setattr(engine, "runtime_status", lambda: {"ready": True, "setup_note": None})
+    monkeypatch.setattr(llm_client, "_native_models", lambda: [
+        {"name": "qwen-tiny", "path": "/trusted/qwen-tiny", "model_type": "qwen2"},
+        {"name": "qwen-tiny", "path": "/trusted/qwen-tiny-copy", "model_type": "qwen2"},
+    ])
+    backend = engine_fabric._native_backend()
+    assert backend["status"] == "setup_required"
+    assert backend["supports_chat"] is False
+    assert backend["models"] == []
+    assert backend["model_count"] == 0
 
 
 def test_chat_validates_before_any_local_request(monkeypatch):
@@ -134,7 +173,7 @@ def test_auto_router_fails_over_only_between_ready_exact_model_matches(monkeypat
     report = {
         "profile": "balanced",
         "backends": [
-            {"id": "axiom-native", "name": "AXIOM Native Engine", "status": "ready", "supports_chat": True, "models": ["tiny-local"]},
+            {"id": "axiom-native", "name": "AXIOM Native Engine", "status": "ready", "supports_chat": True, "models": []},
             {"id": "llama-cpp", "name": "llama.cpp server", "status": "ready", "supports_chat": True, "models": ["tiny-local"]},
             {"id": "ollama", "name": "Ollama", "status": "ready", "supports_chat": True, "models": ["tiny-local"]},
             {"id": "vllm", "name": "vLLM", "status": "ready", "supports_chat": True, "models": ["other-model"]},
@@ -254,3 +293,55 @@ def test_benchmark_forwards_sampling_options_without_disclosing_stop_text(monkey
     assert result["configuration"]["stop_sequence_count"] == 1
     assert "SECRET_STOP" not in str(result)
     assert "private representative prompt" not in str(result)
+
+
+def test_auto_router_can_select_native_engine_before_external_services(monkeypatch):
+    report = {
+        "profile": "balanced",
+        "backends": [
+            {"id": "axiom-native", "name": "AXIOM Native Engine", "status": "ready", "supports_chat": True, "models": ["qwen-tiny"]},
+            {"id": "llama-cpp", "name": "llama.cpp server", "status": "ready", "supports_chat": True, "models": ["qwen-tiny"]},
+        ],
+    }
+    monkeypatch.setattr(engine_fabric, "discover_engine_backends", lambda profile: report)
+    calls = []
+
+    def fake_chat(backend_id, model, messages, **kwargs):
+        calls.append((backend_id, kwargs))
+        return {
+            "schema_version": 1, "backend_id": backend_id,
+            "backend_name": "AXIOM Native Engine" if backend_id == "axiom-native" else "llama.cpp server",
+            "model": model, "response": "native wins by profile", "done": True,
+            "prompt_eval_count": 2, "eval_count": 4, "total_duration_ms": 9.5,
+            "generated_at": "2026-10-24T00:00:00+00:00",
+            "execution": "in_process_native" if backend_id == "axiom-native" else "local_loopback",
+            "privacy": {"prompt_returned": False, "response_persisted": False, "cloud_provider_used": False},
+        }
+
+    monkeypatch.setattr(engine_fabric, "run_engine_backend_chat", fake_chat)
+    result = engine_fabric.run_engine_fabric_chat(
+        "balanced", "qwen-tiny", [{"role": "user", "content": "Hello"}],
+    )
+    assert [item[0] for item in calls] == ["axiom-native"]
+    assert "request_timeout" not in calls[0][1]
+    assert result["backend_id"] == "axiom-native"
+    assert result["routing"]["attempts"][0]["outcome"] == "selected"
+
+
+def test_native_benchmark_uses_the_common_bounded_benchmark_contract(monkeypatch):
+    calls = []
+
+    def fake_chat(backend_id, model, messages, **kwargs):
+        calls.append((backend_id, kwargs))
+        return {"response": "do not return", "eval_count": 5, "total_duration_ms": 2}
+
+    monkeypatch.setattr(engine_fabric, "run_engine_backend_chat", fake_chat)
+    result = engine_fabric.run_engine_backend_benchmark(
+        "axiom-native", "qwen-tiny", "representative prompt",
+        warmup_runs=0, iterations=2, max_new_tokens=8,
+    )
+    assert len(calls) == 2 and all(item[0] == "axiom-native" for item in calls)
+    assert result["backend_name"] == "AXIOM Native Engine"
+    assert result["measurements"]["completion_tokens_known"] == 2
+    assert "do not return" not in str(result)
+    assert "representative prompt" not in str(result)

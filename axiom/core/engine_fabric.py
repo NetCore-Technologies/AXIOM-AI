@@ -194,27 +194,42 @@ def _probe_backend(definition: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
 def _native_backend() -> dict[str, Any]:
     try:
-        from axiom.core.engine import discover_local_engine_assets, runtime_status
+        from axiom.core.engine import runtime_status
+        from axiom.core.llm_client import _native_models
+
         runtime = runtime_status()
-        assets = discover_local_engine_assets()
-        count = len(assets.get("models", [])) if isinstance(assets, dict) else 0
+        native_models = _native_models()
+        names: dict[str, int] = {}
+        for item in native_models:
+            name = item.get("name")
+            if isinstance(name, str):
+                names[name] = names.get(name, 0) + 1
+        models = sorted(name for name, count in names.items() if count == 1)
+        count = len(models)
         ready = bool(runtime.get("ready")) and count > 0
         status = "ready" if ready else "setup_required"
         error = None if ready else (
             runtime.get("setup_note") if not runtime.get("ready")
-            else "Install or add a compatible local safetensors checkpoint under a trusted model root."
+            else "Add a uniquely named compatible Llama, Mistral, Qwen2 or Qwen3 safetensors checkpoint under a trusted model root."
         )
         installed = bool(runtime.get("ready"))
     except Exception:
-        status, error, installed, count = "setup_required", "Install AXIOM's native-inference extra and add a supported local checkpoint.", False, 0
+        status, error, installed, models, count = (
+            "setup_required",
+            "Install AXIOM's native-inference extra and add a supported local checkpoint.",
+            False,
+            [],
+            0,
+        )
     return {
         "id": "axiom-native",
         "name": "AXIOM Native Engine",
         "kind": "native",
         "endpoint": None,
-        "supports_chat": False,
+        "supports_chat": status == "ready",
         "formats": ["Floating-point safetensors"],
         "strengths": [
             "AXIOM-owned transformer forward pass and autoregressive KV-cache decode",
@@ -230,7 +245,7 @@ def _native_backend() -> dict[str, Any]:
         "status": status,
         "installed": installed,
         "reachable": True,
-        "models": [],
+        "models": models,
         "model_count": count,
         "error": error,
         "scope": "in_process_native_engine",
@@ -385,14 +400,50 @@ def run_engine_backend_chat(
     request_timeout: float | None = None,
 ) -> dict[str, Any]:
     """Run a bounded conversation through a chosen, fixed loopback-only backend."""
-    if backend_id == "axiom-native":
-        raise ValueError("Use AXIOM Native Engine's trusted model-path generation route for axiom-native.")
-    if backend_id not in _BACKEND_BY_ID:
-        raise ValueError("Choose a supported external local backend from the engine inventory.")
+    if backend_id not in _BACKEND_BY_ID and backend_id != "axiom-native":
+        raise ValueError("Choose a supported local backend from the engine inventory.")
     model, normalized = _validate_engine_chat_inputs(model, messages, max_new_tokens, temperature)
     top_p, top_k, repetition_penalty, seed, stops = _validate_sampling_options(
         top_p, top_k, repetition_penalty, seed, stop_sequences
     )
+    if backend_id == "axiom-native":
+        if request_timeout is not None:
+            raise ValueError("AXIOM Native Engine runs in-process and does not accept an external HTTP request timeout.")
+        from axiom.core import llm_client
+
+        started = time.perf_counter()
+        try:
+            native_result = llm_client.chat(
+                "axiom-local",
+                model,
+                normalized,
+                max_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                repetition_penalty=repetition_penalty,
+                seed=seed,
+                stop_sequences=stops,
+            )
+        except (ValueError, llm_client.LLMClientError) as exc:
+            raise EngineFabricError(str(exc)) from None
+        elapsed_ms = max(0.0, (time.perf_counter() - started) * 1000.0)
+        return {
+            "schema_version": _SCHEMA_VERSION,
+            "backend_id": "axiom-native",
+            "backend_name": "AXIOM Native Engine",
+            "model": model,
+            "response": str(native_result.get("response", ""))[:100_000],
+            "done": True,
+            "prompt_eval_count": native_result.get("prompt_tokens"),
+            "eval_count": native_result.get("completion_tokens"),
+            "total_duration_ms": round(elapsed_ms, 2),
+            "generated_at": native_result.get("generated_at") or datetime.now(UTC).isoformat(),
+            "execution": "in_process_native",
+            "device": native_result.get("device"),
+            "precision": native_result.get("precision"),
+            "privacy": {"prompt_returned": False, "response_persisted": False, "cloud_provider_used": False},
+        }
     if request_timeout is not None and (
         isinstance(request_timeout, bool)
         or not isinstance(request_timeout, (int, float))
@@ -509,9 +560,6 @@ def run_engine_fabric_chat(
     inventory = {backend.get("id"): backend for backend in report.get("backends", []) if isinstance(backend, dict)}
     candidates: list[dict[str, Any]] = []
     for backend_id in _PROFILES[profile]:
-        if backend_id == "axiom-native":
-            # Native generation takes a trusted filesystem path, not a service model ID.
-            continue
         backend = inventory.get(backend_id)
         if (
             isinstance(backend, dict)
@@ -533,19 +581,18 @@ def run_engine_fabric_chat(
         backend_id = str(backend["id"])
         backend_name = str(backend["name"])
         try:
-            result = run_engine_backend_chat(
-                backend_id,
-                model,
-                normalized,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
-                repetition_penalty=repetition_penalty,
-                seed=seed,
-                stop_sequences=stops,
-                request_timeout=_AUTO_ROUTE_TIMEOUT_SECONDS,
-            )
+            dispatch_options: dict[str, Any] = {
+                "max_new_tokens": max_new_tokens,
+                "temperature": temperature,
+                "top_p": top_p,
+                "top_k": top_k,
+                "repetition_penalty": repetition_penalty,
+                "seed": seed,
+                "stop_sequences": stops,
+            }
+            if backend_id != "axiom-native":
+                dispatch_options["request_timeout"] = _AUTO_ROUTE_TIMEOUT_SECONDS
+            result = run_engine_backend_chat(backend_id, model, normalized, **dispatch_options)
         except EngineFabricError as exc:
             attempts.append({
                 "backend_id": backend_id,
@@ -601,8 +648,8 @@ def run_engine_backend_benchmark(
         raise ValueError("Benchmark iterations must be between 1 and 5.")
     if isinstance(temperature, bool) or not isinstance(temperature, (int, float)) or not 0 <= float(temperature) <= 2:
         raise ValueError("Benchmark temperature must be between 0 and 2.")
-    if backend_id not in _BACKEND_BY_ID:
-        raise ValueError("Choose a supported external local backend.")
+    if backend_id not in _BACKEND_BY_ID and backend_id != "axiom-native":
+        raise ValueError("Choose a supported local backend.")
     top_p, top_k, repetition_penalty, seed, stops = _validate_sampling_options(
         top_p, top_k, repetition_penalty, seed, stop_sequences
     )
@@ -643,7 +690,7 @@ def run_engine_backend_benchmark(
     return {
         "schema_version": _SCHEMA_VERSION,
         "backend_id": backend_id,
-        "backend_name": _BACKEND_BY_ID[backend_id]["name"],
+        "backend_name": "AXIOM Native Engine" if backend_id == "axiom-native" else _BACKEND_BY_ID[backend_id]["name"],
         "model": model,
         "configuration": {
             "prompt_characters": len(prompt),
