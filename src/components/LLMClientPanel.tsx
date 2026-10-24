@@ -42,7 +42,7 @@ export default function LLMClientPanel() {
     try {
       const next = await axiomApi.llmModels({
         provider: targetProvider,
-        api_key: targetProvider === "axiom-local" ? undefined : apiKey,
+        api_key: targetProvider === "axiom-local" || targetProvider === "ollama-local" ? undefined : apiKey,
         base_url: targetProvider === "openai-compatible" ? baseUrl : undefined,
       });
       setModels(next.models);
