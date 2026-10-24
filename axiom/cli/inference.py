@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from axiom.core.inference import InferenceRuntimeError, inspect_local_model, run_local_inference, unload_local_model
+from axiom.core.inference import InferenceRuntimeError, inspect_local_model, list_running_local_models, run_local_inference, unload_local_model
 from axiom.core.ollama_service import (
     OllamaServiceError, cancel_model_pull, get_model_pull, service_status,
     start_model_pull, start_service, stop_service,
@@ -124,6 +124,30 @@ def infer_pull(
     else:
         pull_status = job["status"]
         _fail(job.get("error") or f"Model pull {pull_status}.")
+
+
+@infer_app.command("ps")
+def infer_ps(json_output: bool = typer.Option(False, "--json", help="Print the loaded-model inventory as JSON.")) -> None:
+    """List models currently loaded by Ollama and memory sizes reported by the runtime."""
+    try:
+        report = list_running_local_models()
+    except InferenceRuntimeError as exc:
+        _fail(str(exc))
+    if json_output:
+        console.print_json(json.dumps(report, ensure_ascii=False))
+        return
+    table = Table(title="Ollama loaded models · point-in-time")
+    table.add_column("Model", style="cyan")
+    table.add_column("Placement")
+    table.add_column("Loaded size")
+    table.add_column("VRAM")
+    table.add_column("Family / quantization")
+    for item in report["models"]:
+        def gib(value: int | None) -> str:
+            return "unknown" if value is None else f"{value / (1024**3):.2f} GiB"
+        table.add_row(item["name"], item["memory_placement"], gib(item["size_bytes"]), gib(item["size_vram_bytes"]), " · ".join(value for value in (item["family"], item["quantization_level"]) if value) or "unknown")
+    console.print(table)
+    console.print(report["scope_note"])
 
 
 @infer_app.command("inspect")
