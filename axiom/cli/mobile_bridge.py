@@ -52,3 +52,6 @@ def register_mobile_bridge(app: typer.Typer) -> None:
             uvicorn.run(bridge, host=host, port=port, access_log=False, log_level="warning")
         except KeyboardInterrupt:
             console.print("Mobile bridge stopped.")
+        finally:
+            if os.environ.get("AXIOM_OPENAI_API_TOKEN") == token:
+                os.environ.pop("AXIOM_OPENAI_API_TOKEN", None)
