@@ -132,7 +132,7 @@ Open `http://127.0.0.1:8765/ui/` for the Control Center. For native inference, t
 | **AXIOM Engine** | Direct local inference on PyTorch. No Ollama and no `model.generate` | `axiom engine status` |
 | **Unified LLM client** | One local/cloud client for AXIOM Native Engine, Ollama (including GGUF via Ollama), OpenAI, Anthropic, Gemini, DeepSeek, Moonshot/Kimi, OpenRouter, and public OpenAI-compatible HTTPS endpoints | `axiom llm providers` |
 | **Mobile-agent bridge** | Token-protected OpenAI-compatible endpoint for native AXIOM and local Ollama models in compatible mobile clients | `axiom mobile-bridge` |
-| **Local Ollama operations** | Managed loopback service lifecycle, cancellable model pulls with progress, model metadata inspection, and RAM/VRAM unload without deleting downloaded weights | `axiom infer service start`; `axiom infer pull`; `axiom infer inspect`; `axiom infer unload` |
+| **Local Ollama operations** | Managed loopback service lifecycle, cancellable model pulls with progress, loaded-model RAM/VRAM inventory, model metadata inspection, and memory unload without deleting weights | `axiom infer service start`; `axiom infer pull`; `axiom infer ps`; `axiom infer inspect`; `axiom infer unload` |
 | **Model Studio** | Search GGUF models, install them, convert local models to GGUF | `axiom model studio wizard` |
 | **Agent Optimizer** | Eight workload profiles that pick quantization and build a runtime bundle | `axiom optimize profiles` |
 | **Evaluation** | Score precomputed predictions offline and gate regressions against a baseline | `axiom evaluation run` |
