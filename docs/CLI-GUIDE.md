@@ -62,6 +62,7 @@ List the available adapters and load a model inventory:
 axiom llm providers
 axiom llm providers --json
 axiom llm models --provider axiom-local
+axiom llm models --provider ollama-local
 axiom llm models --provider deepseek
 axiom llm chat deepseek-chat "Explain KV caching briefly." --provider deepseek --send-to-provider
 ```
