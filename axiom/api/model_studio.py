@@ -8,7 +8,7 @@ from axiom.core import model_studio as studio
 router = APIRouter(prefix="/api/models/studio", tags=["model-studio"])
 
 class ModelJobRequest(BaseModel):
-    operation: Literal["pull", "install_gguf", "convert_gguf"]
+    operation: Literal["pull", "pull_native", "install_gguf", "convert_gguf"]
     model_name: str = Field(default="", max_length=120)
     repo_id: str = Field(default="", max_length=192)
     filename: str = Field(default="", max_length=255)
