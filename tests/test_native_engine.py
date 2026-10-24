@@ -533,6 +533,7 @@ def test_tiny_safetensors_checkpoint_generates_through_axiom_native_loop(
         "temperature": 0,
         "top_p": 0.9,
         "top_k": 0,
+        "min_p": 0.0,
         "repetition_penalty": 1.0,
         "seed": None,
     }
