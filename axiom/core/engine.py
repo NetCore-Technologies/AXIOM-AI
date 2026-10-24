@@ -1162,6 +1162,89 @@ def unload_local_model() -> dict[str, Any]:
         }
 
 
+
+def _format_prompt_for_native_model(
+    prompt: str,
+    model_dir: Path,
+    model_type: str,
+    tokenizer: Any,
+) -> tuple[str, str]:
+    """Apply a checkpoint's safe chat template when present; keep raw completion for base models.
+
+    Qwen2 text-instruct models have a ChatML fallback because the standard native
+    decoder has no Transformers dependency and many repositories omit template metadata.
+    Model-provided templates run only inside Jinja's sandbox with a small, explicit context.
+    """
+    tokenizer_config: dict[str, Any] = {}
+    config_path = model_dir / "tokenizer_config.json"
+    if config_path.is_file():
+        try:
+            if config_path.stat().st_size > _MAX_CONFIG_BYTES:
+                raise AxiomEngineError("tokenizer_config.json exceeds AXIOM's 1 MiB chat-template limit.")
+            value = json.loads(config_path.read_text(encoding="utf-8"))
+            if not isinstance(value, dict):
+                raise AxiomEngineError("tokenizer_config.json must be a JSON object.")
+            tokenizer_config = value
+        except AxiomEngineError:
+            raise
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            raise AxiomEngineError("tokenizer_config.json could not be read while resolving the model's chat template.") from None
+
+    template = tokenizer_config.get("chat_template")
+    if isinstance(template, list):
+        named = [entry for entry in template if isinstance(entry, dict) and isinstance(entry.get("template"), str)]
+        preferred = next((entry for entry in named if entry.get("name") in {"default", "chat"}), named[0] if named else None)
+        template = preferred["template"] if preferred else None
+    if isinstance(template, str) and template.strip():
+        try:
+            from jinja2.sandbox import SandboxedEnvironment
+        except ImportError:
+            if model_type == "qwen2":
+                return f"<|im_start|>user\\n{prompt}<|im_end|>\\n<|im_start|>assistant\\n", "qwen2-chatml-fallback"
+            raise AxiomEngineError(
+                "This checkpoint supplies a chat template, but Jinja2 is unavailable. Install the template runtime dependency or use a raw/completion checkpoint."
+            ) from None
+        def special_token(key: str) -> str:
+            raw = tokenizer_config.get(key)
+            if isinstance(raw, dict):
+                raw = raw.get("content")
+            if not isinstance(raw, str):
+                return ""
+            return raw if tokenizer.token_to_id(raw) is not None else ""
+        environment = SandboxedEnvironment(autoescape=False, keep_trailing_newline=True)
+        environment.globals.clear()
+        environment.globals.update({
+            "raise_exception": lambda message: (_ for _ in ()).throw(ValueError(str(message))),
+            "strftime_now": lambda fmt: datetime.now(UTC).strftime(fmt),
+        })
+        environment.filters["tojson"] = lambda value: json.dumps(value, ensure_ascii=False)
+        messages = [{"role": "user", "content": prompt}]
+        context = {
+            "messages": messages,
+            "add_generation_prompt": True,
+            "bos_token": special_token("bos_token"),
+            "eos_token": special_token("eos_token"),
+            "tools": None,
+            "documents": None,
+        }
+        try:
+            rendered = environment.from_string(template).render(**context)
+        except Exception as exc:
+            raise AxiomEngineError(
+                f"AXIOM could not safely render this checkpoint's chat template: {type(exc).__name__}. "
+                "Use a compatible tokenizer_config.json or a base/completion checkpoint."
+            ) from None
+        if not isinstance(rendered, str) or not rendered.strip():
+            raise AxiomEngineError("The checkpoint's chat template produced an empty prompt.")
+        return rendered, "tokenizer-config-template"
+
+    if model_type == "qwen2":
+        # Standard Qwen2 text-instruct checkpoints use ChatML markers even when
+        # older/custom releases omit an exported chat_template.
+        return f"<|im_start|>user\\n{prompt}<|im_end|>\\n<|im_start|>assistant\\n", "qwen2-chatml-fallback"
+    return prompt, "raw-completion"
+
+
 def generate_local_stream(
     model_path: str,
     prompt: str,
@@ -1196,8 +1279,11 @@ def generate_local_stream(
         context_cap = max(2, min(model.config.max_position_embeddings, _MAX_INPUT_TOKENS + max_new_tokens))
         effective_max_new_tokens = min(max_new_tokens, context_cap - 1)
         input_limit = max(1, min(_MAX_INPUT_TOKENS, context_cap - effective_max_new_tokens))
+        formatted_prompt, prompt_format = _format_prompt_for_native_model(
+            prompt, _resolve_model_directory(model_path, "Base model"), model.config.model_type, tokenizer
+        )
         try:
-            encoded = tokenizer.encode(prompt, add_special_tokens=False)
+            encoded = tokenizer.encode(formatted_prompt, add_special_tokens=False)
             prompt_ids = list(encoded.ids)
         except Exception:
             raise ValueError("Prompt could not be tokenized by the local tokenizer.json.") from None
@@ -1313,6 +1399,7 @@ def generate_local_stream(
                 "model": details["model_directory_name"] or "local-model",
                 "architecture": details["architecture"],
                 "model_type": details["model_type"],
+                "prompt_format": prompt_format,
                 "adapter": details["adapter_directory_name"],
                 "device": str(device),
                 "device_selection": details.get("device_selection"),
