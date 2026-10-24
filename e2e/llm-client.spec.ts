@@ -90,7 +90,7 @@ test("unified LLM client runs local chats and requires consent for cloud chats",
   expect(chatRequests[0]["provider"]).toBe("axiom-local");
   expect(chatRequests[0]["consent"]).toBe(true);
 
-  await panel.getByLabel("Provider").selectOption("deepseek");
+  await panel.locator("select").selectOption("deepseek");
   await panel.getByLabel("Provider API key").fill("never-return-this");
   await panel.getByRole("button", { name: "Load models" }).click();
   await expect(panel.getByLabel("Model ID")).toHaveValue("deepseek-chat");
