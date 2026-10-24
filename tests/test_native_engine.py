@@ -620,3 +620,41 @@ def test_layer_streaming_mode_matches_full_cpu_forward_and_offloads_kv_cache() -
     assert streamed.memory_stats["kv_cache_layer_offloads"] == config.num_hidden_layers
     assert streamed.memory_stats["kv_cache_bytes_offloaded"] > 0
     assert streamed.memory_stats["layer_weight_bytes_staged"] == 0
+
+
+def test_disk_streaming_reads_layer_weights_on_demand_and_matches_full_forward(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    safetensors_torch = pytest.importorskip("safetensors.torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    root = tmp_path / "trusted"
+    model_dir = root / "tiny-llama"
+    model_dir.mkdir(parents=True)
+    config = _config()
+    (model_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    (model_dir / "tokenizer.json").write_text("{}", encoding="utf-8")
+    safetensors_torch.save_file(
+        {name: tensor.detach().cpu().contiguous() for name, tensor in _tiny_weights(torch).items()},
+        str(model_dir / "model.safetensors"),
+    )
+
+    full = NativeLlamaRuntime.from_directory(
+        model_dir, torch, torch.device("cpu"), trusted_roots=(root.resolve(),), memory_mode="full",
+    )
+    streamed = NativeLlamaRuntime.from_directory(
+        model_dir, torch, torch.device("cpu"), trusted_roots=(root.resolve(),), memory_mode="disk_streaming",
+    )
+    tokens = torch.tensor([[1, 2, 3]], dtype=torch.long)
+
+    expected, _ = full.forward(tokens)
+    actual, cache = streamed.forward(tokens)
+
+    assert torch.allclose(actual, expected, atol=1e-6, rtol=1e-5)
+    assert streamed.memory_mode == "disk_streaming"
+    assert streamed.layer_weight_sources
+    assert not any(name.startswith("model.layers.") for name in streamed.weights)
+    assert streamed.memory_stats["disk_layer_weight_loads"] > 0
+    assert streamed.memory_stats["disk_layer_weight_bytes_read"] > 0
+    assert streamed.memory_stats["layer_weight_bytes_released"] > 0
+    assert all(key.device.type == "cpu" and value.device.type == "cpu" for key, value in cache)
+    assert streamed.memory_stats["kv_cache_layer_offloads"] == config["num_hidden_layers"]
