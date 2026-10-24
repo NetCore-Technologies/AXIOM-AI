@@ -119,7 +119,7 @@ Package downloads and checksums are on [GitHub Releases](https://github.com/mani
 | **Hardware** | Detect CPU, RAM, GPU, and VRAM, and estimate which model sizes fit | `axiom system info` |
 | **Training** | Hardware-aware plans, saved experiment history, optional local LoRA fine-tuning | `axiom train plan 7 --method qlora` |
 | **AXIOM Engine** | Direct local inference on PyTorch. No Ollama and no `model.generate` | `axiom engine status` |
-| **Unified LLM client** | One local/cloud client for AXIOM Native Engine, OpenAI, Anthropic, Gemini, DeepSeek, Moonshot/Kimi, and public OpenAI-compatible HTTPS endpoints | `axiom llm providers` |
+| **Unified LLM client** | One local/cloud client for AXIOM Native Engine, OpenAI, Anthropic, Gemini, DeepSeek, Moonshot/Kimi, OpenRouter, and public OpenAI-compatible HTTPS endpoints | `axiom llm providers` |
 | **Mobile-agent bridge** | Token-protected OpenAI-compatible native-model endpoint for compatible mobile clients | `axiom mobile-bridge` |
 | **Inference** | Local text generation through Ollama, plus request history | `axiom infer status` |
 | **Model Studio** | Search GGUF models, install them, convert local models to GGUF | `axiom model studio wizard` |
