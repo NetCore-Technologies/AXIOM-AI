@@ -110,7 +110,7 @@ export type AxiomQuantizationCandidate = {
 export type AxiomQuantizationEstimate = {
   schema_version: number;
   model: {
-    name: string; model_type: "llama" | "mistral" | "qwen2"; architecture: string;
+    name: string; model_type: "llama" | "mistral" | "qwen2" | "qwen3"; architecture: string;
     estimated_parameter_count: number; parameter_count_method: string;
   };
   request: {
@@ -128,7 +128,7 @@ export type AxiomQuantizationEstimate = {
 };
 
 export type AxiomEngineModel = {
-  path: string; name: string; model_type: "llama" | "mistral" | "qwen2";
+  path: string; name: string; model_type: "llama" | "mistral" | "qwen2" | "qwen3";
   architecture: string; weight_format: string; ready_for_native_attempt: boolean;
 };
 export type AxiomEngineAdapter = {
@@ -146,7 +146,7 @@ export type AxiomEngineAdapterDevice = {
 };
 export type AxiomEngineAdapterCompatibility = {
   schema_version: number;
-  base_model: { name: string; model_type: "llama" | "mistral" | "qwen2" | null; architecture: string | null };
+  base_model: { name: string; model_type: "llama" | "mistral" | "qwen2" | "qwen3" | null; architecture: string | null };
   adapter: { name: string; rank: number | null; alpha: number | null; target_modules: string[] };
   structurally_compatible: boolean;
   compatible_on_any_device: boolean;
@@ -199,7 +199,7 @@ export type AxiomEngineLiveTelemetry = {
 export type AxiomEngineResult = {
   engine: "axiom-native-engine"; execution_backend: "pytorch-native-axiom";
   transformers_generation_used: false; ollama_used: false;
-  model: string; architecture: string; model_type: "llama" | "mistral" | "qwen2"; prompt_format?: string;
+  model: string; architecture: string; model_type: "llama" | "mistral" | "qwen2" | "qwen3"; prompt_format?: string;
   adapter: string | null; device: string; device_selection?: { requested: string; selected: string; reason: string }; memory_selection?: { requested: string; selected: "full" | "layer_streaming" | "disk_streaming"; reason: string; estimated_checkpoint_weight_bytes?: number; estimated_kv_cache_bytes?: number; estimated_context_tokens?: number; available_system_ram_bytes?: number | null; available_device_memory_bytes?: number | null; estimates_are_advisory?: boolean }; memory_mode?: "full" | "layer_streaming" | "disk_streaming"; memory_stats?: AxiomEngineMemoryStats; device_memory?: AxiomEngineDeviceMemory; checkpoint_format: "safetensors";
   decoder: "axiom-autoregressive-kv-cache"; attention_backend: string;
   prefill_ms: number; decode_ms: number; time_to_first_token_ms: number; generation_tokens_per_second: number;
