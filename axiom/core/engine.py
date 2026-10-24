@@ -1319,7 +1319,7 @@ def generate_local_stream(
         effective_max_new_tokens = min(max_new_tokens, context_cap - 1)
         input_limit = max(1, min(_MAX_INPUT_TOKENS, context_cap - effective_max_new_tokens))
         formatted_prompt, prompt_format = _format_prompt_for_native_model(
-            prompt, Path(details.get("model_directory_path", ".")), model.config.model_type, tokenizer,
+            prompt, Path(details.get("model_directory_path", ".")), details["model_type"], tokenizer,
             chat_messages=chat_messages,
         )
         try:
