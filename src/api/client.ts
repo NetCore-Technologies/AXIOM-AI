@@ -171,11 +171,35 @@ export type AxiomEngineSampling = {
   temperature: number; top_p: number; top_k: number;
   repetition_penalty: number; seed: number | null;
 };
+export type AxiomEngineMemoryStats = {
+  layer_weight_tensors_staged: number; layer_weight_bytes_staged: number;
+  layer_weight_bytes_returned_to_cpu: number; layer_weight_bytes_released: number;
+  disk_layer_weight_loads: number; disk_layer_weight_bytes_read: number;
+  kv_cache_layer_offloads: number; kv_cache_bytes_offloaded: number;
+};
+export type AxiomEngineDeviceMemory = {
+  backend: string; current_allocated_bytes: number | null; current_reserved_bytes: number | null;
+  peak_allocated_bytes: number | null; peak_reserved_bytes: number | null; peak_increment_bytes: number | null;
+  process_rss_bytes: number | null; process_rss_delta_bytes: number | null;
+  peak_reset_supported: boolean; device_allocator_metrics_supported: boolean;
+};
+export type AxiomEngineLiveTelemetry = {
+  type: "telemetry";
+  metrics: {
+    stage: "prefill" | "decode" | "complete" | string;
+    prompt_tokens: number; completion_tokens: number; prefill_ms: number; decode_ms: number;
+    time_to_first_token_ms: number; generation_tokens_per_second: number; elapsed_ms: number;
+    stop_reason?: string;
+  };
+  memory_mode: "full" | "layer_streaming" | "disk_streaming";
+  memory_stats: AxiomEngineMemoryStats;
+  device_memory: AxiomEngineDeviceMemory;
+};
 export type AxiomEngineResult = {
   engine: "axiom-native-engine"; execution_backend: "pytorch-native-axiom";
   transformers_generation_used: false; ollama_used: false;
   model: string; architecture: string; model_type: "llama" | "mistral" | "qwen2";
-  adapter: string | null; device: string; device_selection?: { requested: string; selected: string; reason: string }; memory_mode?: "full" | "layer_streaming" | "disk_streaming"; memory_stats?: { layer_weight_tensors_staged: number; layer_weight_bytes_staged: number; layer_weight_bytes_returned_to_cpu: number; layer_weight_bytes_released: number; disk_layer_weight_loads: number; disk_layer_weight_bytes_read: number; kv_cache_layer_offloads: number; kv_cache_bytes_offloaded: number }; checkpoint_format: "safetensors";
+  adapter: string | null; device: string; device_selection?: { requested: string; selected: string; reason: string }; memory_mode?: "full" | "layer_streaming" | "disk_streaming"; memory_stats?: AxiomEngineMemoryStats; device_memory?: AxiomEngineDeviceMemory; checkpoint_format: "safetensors";
   decoder: "axiom-autoregressive-kv-cache"; attention_backend: string;
   prefill_ms: number; decode_ms: number; time_to_first_token_ms: number; generation_tokens_per_second: number;
   sampling: AxiomEngineSampling; stop_sequences: string[];
@@ -187,6 +211,7 @@ export type AxiomEngineResult = {
 export type AxiomEngineStreamEvent =
   | { type: "token"; response: string; completion_tokens: number }
   | { type: "complete"; result: AxiomEngineResult }
+  | AxiomEngineLiveTelemetry
   | { type: "error"; code: string; message: string };
 
 
