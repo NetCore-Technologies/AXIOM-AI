@@ -43,6 +43,15 @@ test("Runtime can start Ollama, pull a model with progress, and stop only the ma
       progress: "Queued", percent: null, logs: [], error: null, cancel_requested: false,
     } });
   });
+  await page.route("**/api/inference/models/running", async (route) => {
+    await route.fulfill({ json: {
+      schema_version: 1, backend: "ollama", endpoint: "http://127.0.0.1:11434", count: 1,
+      models: [{ name: "qwen2.5:0.5b", size_bytes: 800000000, size_vram_bytes: 300000000,
+        size_ram_bytes: 500000000, memory_placement: "mixed", expires_at: "2026-10-24T10:00:00Z",
+        digest_prefix: "abcdef123456", format: "gguf", family: "qwen2", parameter_size: "0.5B", quantization_level: "Q4_K_M" }],
+      scope_note: "Point-in-time memory view. Runtime-reported estimates.",
+    } });
+  });
   await page.route("**/api/inference/models/inspect", async (route) => {
     await route.fulfill({ json: {
       schema_version: 1, model: "qwen2.5:0.5b", installed: true, size_bytes: 401000000,
@@ -78,6 +87,11 @@ test("Runtime can start Ollama, pull a model with progress, and stop only the ma
   await page.getByRole("button", { name: "Pull model" }).click();
   await expect(page.getByText("COMPLETED", { exact: true })).toBeVisible({ timeout: 5000 });
   await expect(page.getByText("Model downloaded and registered locally")).toBeVisible();
+
+  await page.getByRole("button", { name: "Show loaded models" }).click();
+  await expect(page.getByRole("heading", { name: "Loaded models · 1" })).toBeVisible();
+  await expect(page.getByText("CPU + GPU", { exact: true })).toBeVisible();
+  await expect(page.getByText("0.28 GiB", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Inspect model" }).click();
   await expect(page.getByText("Q4_K_M", { exact: true })).toBeVisible();
