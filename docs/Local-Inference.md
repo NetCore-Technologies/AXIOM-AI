@@ -64,8 +64,13 @@ axiom --no-banner infer service status --json
 axiom --no-banner infer service start
 axiom --no-banner infer service stop
 axiom --no-banner infer pull qwen2.5:0.5b
+axiom --no-banner infer ps --json
 axiom --no-banner infer inspect qwen2.5:0.5b --json
 axiom --no-banner infer unload qwen2.5:0.5b
 ```
 
 A model pull has a job ID, status, sanitized progress lines, and a best-effort percentage when Ollama reports one. Job state is in-memory only, bounded to the latest 20 jobs, permits two concurrent pulls, and expires from the process history when newer jobs need room. A pull is terminated after 30 minutes or when explicitly cancelled from the GUI. The model download itself contacts the Ollama library; inference prompts are still sent only to the local loopback API.
+
+## Loaded-model memory inventory
+
+Use `axiom infer ps --json` or the **Show loaded models** control in the Runtime panel to inspect the point-in-time `/api/ps` inventory. AXIOM reports only models Ollama says are loaded, the size totals reported by Ollama, its `size_vram` value, and a derived non-VRAM remainder when both sizes are available. These values are runtime-reported estimates, not direct OS/GPU allocator measurements. The query does not request prompts, generated text, model templates, or license text.
