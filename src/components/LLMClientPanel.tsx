@@ -10,6 +10,7 @@ const providerFallback: LLMProviderInfo[] = [
   { id: "gemini", label: "Google Gemini", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Credentials are request-only." },
   { id: "deepseek", label: "DeepSeek", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Credentials are request-only." },
   { id: "moonshot", label: "Moonshot AI (Kimi)", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Credentials are request-only." },
+  { id: "openrouter", label: "OpenRouter", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Routes supported models through OpenRouter; credentials are request-only." },
   { id: "openai-compatible", label: "Custom OpenAI-compatible", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Public HTTPS /v1 endpoints only." },
 ];
 
