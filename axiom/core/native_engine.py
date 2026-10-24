@@ -423,6 +423,7 @@ class NativeLlamaRuntime:
         self.dtype = weights["model.embed_tokens.weight"].dtype
         self.name = "axiom-native-pytorch-llama"
         self.last_generation: dict[str, Any] = {}
+        self.live_generation: dict[str, Any] = {}
         self.last_attention_backend = "pytorch-scaled-dot-product-attention"
         self.memory_stats: dict[str, int] = {
             "layer_weight_tensors_staged": 0,
@@ -836,7 +837,18 @@ class NativeLlamaRuntime:
         cache: tuple[Any, ...] = ()
         prefill_ms = 0.0
         decode_ms = 0.0
+        total_started = time.perf_counter()
         stop_reason = "max_new_tokens"
+        self.live_generation = {
+            "stage": "prefill",
+            "prompt_tokens": len(prompt_token_ids),
+            "completion_tokens": 0,
+            "prefill_ms": 0.0,
+            "decode_ms": 0.0,
+            "time_to_first_token_ms": 0.0,
+            "generation_tokens_per_second": 0.0,
+            "elapsed_ms": 0.0,
+        }
         try:
             with torch.inference_mode():
                 if cancel_event is not None and cancel_event.is_set():
@@ -846,6 +858,12 @@ class NativeLlamaRuntime:
                 try:
                     logits, cache = self.forward(tokens, cancel_event=cancel_event)
                     prefill_ms = (time.perf_counter() - prefill_started) * 1000
+                    self.live_generation.update({
+                        "stage": "decode",
+                        "prefill_ms": round(prefill_ms, 3),
+                        "time_to_first_token_ms": round(prefill_ms, 3),
+                        "elapsed_ms": round((time.perf_counter() - total_started) * 1000, 3),
+                    })
                 except NativeGenerationCancelled:
                     prefill_ms = (time.perf_counter() - prefill_started) * 1000
                     stop_reason = "cancelled"
@@ -891,6 +909,19 @@ class NativeLlamaRuntime:
                         stop_reason = "eos_token"
                         break
                     generated.append(token_id)
+                    live_elapsed = (time.perf_counter() - total_started) * 1000
+                    live_compute_ms = prefill_ms + decode_ms
+                    self.live_generation.update({
+                        "stage": "decode",
+                        "completion_tokens": len(generated),
+                        "prefill_ms": round(prefill_ms, 3),
+                        "decode_ms": round(decode_ms, 3),
+                        "time_to_first_token_ms": round(prefill_ms, 3),
+                        "generation_tokens_per_second": round(
+                            len(generated) * 1000 / live_compute_ms, 3
+                        ) if live_compute_ms > 0 else 0.0,
+                        "elapsed_ms": round(live_elapsed, 3),
+                    })
                     yield token_id
                     # Cancellation must not start another decode step.
                     if cancel_event is not None and cancel_event.is_set():
@@ -907,6 +938,13 @@ class NativeLlamaRuntime:
                             stop_reason = "cancelled"
                             break
                         decode_ms += (time.perf_counter() - decode_started) * 1000
+                        self.live_generation.update({
+                            "decode_ms": round(decode_ms, 3),
+                            "elapsed_ms": round((time.perf_counter() - total_started) * 1000, 3),
+                            "generation_tokens_per_second": round(
+                                len(generated) * 1000 / (prefill_ms + decode_ms), 3
+                            ) if prefill_ms + decode_ms > 0 and generated else 0.0,
+                        })
         finally:
             self.last_generation = {
                 "prompt_tokens": len(prompt_token_ids),
@@ -923,8 +961,18 @@ class NativeLlamaRuntime:
                 "time_to_first_token_ms": round(prefill_ms, 3),
                 "generation_tokens_per_second": round(
                     len(generated) * 1000 / (prefill_ms + decode_ms), 3
-                ) if prefill_ms + decode_ms > 0 and generated else 0.0,
+) if prefill_ms + decode_ms > 0 and generated else 0.0,
             }
+            self.live_generation.update({
+                "stage": "complete",
+                "completion_tokens": len(generated),
+                "prefill_ms": round(prefill_ms, 3),
+                "decode_ms": round(decode_ms, 3),
+                "time_to_first_token_ms": round(prefill_ms, 3),
+                "generation_tokens_per_second": self.last_generation["generation_tokens_per_second"],
+                "elapsed_ms": round((time.perf_counter() - total_started) * 1000, 3),
+                "stop_reason": stop_reason,
+            })
 
     def generate(
         self,
