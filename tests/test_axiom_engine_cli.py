@@ -134,9 +134,11 @@ def test_engine_run_passes_explicit_device_to_native_stream(tmp_path: Path, monk
     monkeypatch.setattr(engine_cli, "generate_local_stream", fake_stream)
     result = runner.invoke(engine_app, [
         "run", "--model-path", str(model_path), "--prompt", "Say hello.",
-        "--stream", "--device", "cpu",
+        "--stream", "--device", "cpu", "--memory-mode", "layer_streaming",
     ])
 
     assert result.exit_code == 0, result.output
     assert observed["device_preference"] == "cpu"
+    assert observed["memory_mode"] == "layer_streaming"
+    assert "Memory mode: layer_streaming" in result.output
     assert "CPU-selected response" in result.output
