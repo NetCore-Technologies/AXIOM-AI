@@ -532,9 +532,12 @@ class NativeLlamaRuntime:
         adapter_dir: Path | None = None,
         trusted_roots: tuple[Path, ...] | None = None,
         memory_mode: str = "full",
+        precision: str = "auto",
     ) -> "NativeLlamaRuntime":
         if memory_mode not in {"full", "layer_streaming", "disk_streaming"}:
             raise NativeEngineError("Native memory mode must be full, layer_streaming, or disk_streaming.")
+        if precision not in {"auto", "fp32", "fp16", "bf16"}:
+            raise NativeEngineError("Precision must be auto, fp32, fp16, or bf16.")
         roots = trusted_roots or (model_dir.resolve(),)
         config = NativeLlamaConfig.from_mapping(_read_json_object(model_dir / "config.json", _MAX_CONFIG_BYTES, "Model config.json", roots))
         tokenizer_path = _resolve_trusted_file(model_dir / "tokenizer.json", roots, "Tokenizer file")
@@ -561,7 +564,17 @@ class NativeLlamaRuntime:
             with ExitStack() as stack:
                 handles = {name: stack.enter_context(safe_open(str(path), framework="pt", device="cpu")) for name, path in file_paths.items()}
                 embedding = handles[weight_map["model.embed_tokens.weight"]].get_tensor("model.embed_tokens.weight")
-                dtype = embedding.dtype
+                checkpoint_dtype = embedding.dtype
+                dtype_map = {
+                    "fp32": getattr(torch_module, "float32", None),
+                    "fp16": getattr(torch_module, "float16", None),
+                    "bf16": getattr(torch_module, "bfloat16", None),
+                }
+                dtype = checkpoint_dtype if precision == "auto" else dtype_map[precision]
+                if dtype is None:
+                    raise NativeEngineError(f"Precision {precision!r} is not available in the installed PyTorch runtime.")
+                if precision != "auto" and precision == "bf16" and str(getattr(device, "type", device)).split(":", 1)[0] == "mps":
+                    raise NativeEngineError("BF16 compute precision is not supported by the AXIOM MPS backend contract; choose auto, fp16, or fp32.")
                 weight_shapes["model.embed_tokens.weight"] = tuple(int(dimension) for dimension in embedding.shape)
                 weights["model.embed_tokens.weight"] = embedding.to(device=device, dtype=dtype)
                 load_names = [name for name in required if name != "model.embed_tokens.weight"]
@@ -1027,6 +1040,7 @@ def load_native_runtime(
     adapter_dir: Path | None = None,
     trusted_roots: tuple[Path, ...] | None = None,
     memory_mode: str = "full",
+    precision: str = "auto",
 ) -> tuple[NativeLlamaRuntime, Any, dict[str, Any]]:
     """Load a supported local checkpoint/tokenizer without Transformers."""
     try:
@@ -1036,7 +1050,7 @@ def load_native_runtime(
     roots = trusted_roots or (model_dir.resolve(),)
     model = NativeLlamaRuntime.from_directory(
         model_dir, torch_module, device, adapter_dir=adapter_dir,
-        trusted_roots=roots, memory_mode=memory_mode,
+        trusted_roots=roots, memory_mode=memory_mode, precision=precision,
     )
     try:
         tokenizer = Tokenizer.from_file(str(_resolve_trusted_file(model_dir / "tokenizer.json", roots, "Tokenizer file")))
@@ -1065,6 +1079,7 @@ def load_native_runtime(
         "transformers_generation_used": False,
         "ollama_used": False,
         "dtype": str(model.dtype),
+        "precision": precision,
         "device": str(device),
         "memory_mode": model.memory_mode,
     }
