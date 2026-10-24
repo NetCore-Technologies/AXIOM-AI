@@ -961,7 +961,7 @@ class NativeLlamaRuntime:
                 "time_to_first_token_ms": round(prefill_ms, 3),
                 "generation_tokens_per_second": round(
                     len(generated) * 1000 / (prefill_ms + decode_ms), 3
-) if prefill_ms + decode_ms > 0 and generated else 0.0,
+                ) if prefill_ms + decode_ms > 0 and generated else 0.0,
             }
             self.live_generation.update({
                 "stage": "complete",
