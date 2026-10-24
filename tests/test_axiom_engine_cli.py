@@ -53,6 +53,28 @@ def test_engine_discover_json_lists_local_model_and_adapter_metadata(tmp_path: P
     assert "not loaded or fully validated" in payload["scope_note"]
 
 
+def test_engine_telemetry_json_is_machine_readable_and_path_private(monkeypatch) -> None:
+    monkeypatch.setattr(engine_cli, "runtime_telemetry", lambda: {
+        "schema_version": 1,
+        "sampled_at": "2026-10-24T04:00:00+00:00",
+        "sample_type": "point_in_time",
+        "cpu": {"logical_cores": 8, "system_percent": None, "process_percent": None},
+        "memory": {"total_bytes": None, "available_bytes": None, "used_bytes": None, "percent": None},
+        "process": {"pid": 1, "rss_bytes": None, "threads": None},
+        "devices": [],
+        "loaded_runtime": {"loaded": False},
+        "disks": [{"label": "trusted_model_root_1", "total_bytes": 1000, "free_bytes": 500, "used_bytes": 500}],
+        "privacy_scope": {"model_paths_included": False},
+        "scope_note": "Paths omitted.",
+    })
+    result = runner.invoke(engine_app, ["telemetry", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["sample_type"] == "point_in_time"
+    assert payload["disks"][0]["label"] == "trusted_model_root_1"
+    assert "path" not in json.dumps(payload).lower()
+
+
 def test_engine_discover_json_returns_empty_inventory_cleanly(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path / "trusted-models"
     root.mkdir()
