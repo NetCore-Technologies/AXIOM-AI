@@ -464,7 +464,11 @@ def test_tiny_safetensors_checkpoint_generates_through_axiom_native_loop(
     events = list(generate_local_stream(str(model_dir), "hello world", max_new_tokens=2, temperature=0))
     assert events[-1]["type"] == "complete"
     assert events[-1]["result"]["response"] == result["response"]
-    assert all(event["type"] == "token" for event in events[:-1])
+    assert all(event["type"] in {"token", "telemetry"} for event in events[:-1])
+    telemetry_events = [event for event in events if event["type"] == "telemetry"]
+    assert telemetry_events
+    assert telemetry_events[-1]["metrics"]["completion_tokens"] >= 1
+    assert telemetry_events[-1]["metrics"]["prefill_ms"] >= 0
     assert len(events[:-1]) == events[-1]["result"]["completion_tokens"]
     assert isinstance(result["response"], str)
 
