@@ -11,7 +11,7 @@ def test_provider_catalog_lists_local_and_cloud_adapters_without_credentials() -
     result = llm_client.provider_catalog()
     providers = {item["id"]: item for item in result["providers"]}
 
-    assert {"axiom-local", "openai", "anthropic", "gemini", "deepseek", "moonshot", "openai-compatible"} <= providers.keys()
+    assert {"axiom-local", "openai", "anthropic", "gemini", "deepseek", "moonshot", "openrouter", "openai-compatible"} <= providers.keys()
     assert providers["axiom-local"]["privacy"] == "local-only"
     assert providers["deepseek"]["requires_api_key"] is True
     assert result["credentials_persisted"] is False
@@ -171,6 +171,10 @@ def test_chat_rejects_combined_message_budget_overflow() -> None:
     messages = [{"role": "user", "content": "x" * 12_000}, {"role": "assistant", "content": "y" * 12_000}, {"role": "user", "content": "z"}]
     with pytest.raises(ValueError, match="Combined chat content"):
         llm_client._validate_messages(messages)
+
+
+def test_openrouter_uses_the_fixed_public_api_host() -> None:
+    assert llm_client._base_url("openrouter", None) == "https://openrouter.ai/api/v1"
 
 
 def test_custom_provider_requires_public_https_v1_base(monkeypatch: pytest.MonkeyPatch) -> None:
