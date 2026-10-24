@@ -142,7 +142,7 @@ export default function LocalInferencePanel() {
     const contextText = contextWindow.trim();
     const seedNumber = seedText ? Number(seedText) : null;
     const contextNumber = contextText ? Number(contextText) : null;
-    const stops = stopSequences.split(/\\r?\\n/).map((value) => value.trim()).filter(Boolean);
+    const stops = stopSequences.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
     if (!Number.isFinite(topPValue) || topPValue <= 0 || topPValue > 1) { setError("Top-p must be greater than 0 and at most 1."); return; }
     if (!Number.isInteger(topKValue) || topKValue < 0 || topKValue > 100000) { setError("Top-k must be between 0 and 100000."); return; }
     if (!Number.isFinite(repetitionPenaltyValue) || repetitionPenaltyValue < 0.1 || repetitionPenaltyValue > 5) { setError("Repetition penalty must be between 0.1 and 5."); return; }
@@ -326,7 +326,7 @@ export default function LocalInferencePanel() {
           <label className="field"><span className="field-label-row"><span>Random seed (optional)</span></span><input type="number" min={0} step={1} value={seedValue} onChange={(event) => setSeedValue(event.target.value)} placeholder="Use runtime default" /></label>
           <label className="field"><span className="field-label-row"><span>Context window (optional)</span></span><input type="number" min={512} max={131072} step={256} value={contextWindow} onChange={(event) => setContextWindow(event.target.value)} placeholder="Use model default" /></label>
         </div>
-        <label className="field"><span className="field-label-row"><span>Stop sequences (one per line, optional)</span><span>{stopSequences.split(/\\r?\\n/).filter((value) => value.trim()).length} / 16</span></span><textarea value={stopSequences} onChange={(event) => setStopSequences(event.target.value)} rows={3} placeholder="Example: END_OF_RESPONSE\n<|end|>" /></label>
+        <label className="field"><span className="field-label-row"><span>Stop sequences (one per line, optional)</span><span>{stopSequences.split(/\r?\n/).filter((value) => value.trim()).length} / 16</span></span><textarea value={stopSequences} onChange={(event) => setStopSequences(event.target.value)} rows={3} placeholder="Example: END_OF_RESPONSE\n<|end|>" /></label>
       </details>
       <div className="integration-form-actions">
         <button type="submit" className="button primary-button" disabled={!online || loading || running || !model.trim() || !prompt.trim()}><Play size={15} /> {running ? "Generating locally…" : "Run locally"}</button>
