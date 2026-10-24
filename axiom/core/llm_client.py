@@ -14,7 +14,7 @@ import ssl
 from datetime import UTC, datetime
 from typing import Any, Mapping
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, generate_local_stream
