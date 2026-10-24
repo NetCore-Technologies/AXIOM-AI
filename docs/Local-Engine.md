@@ -20,7 +20,7 @@ A supported base model directory must contain:
 - model.safetensors, or model.safetensors.index.json plus the indexed safetensors shards.
 - Standard floating-point model tensors in float16, bfloat16, or float32 with expected Llama/Mistral/Qwen2 tensor names and shapes.
 
-The current native engine explicitly rejects GGUF, EXL2, GPTQ/AWQ and other quantized weights, pickle-based pytorch_model.bin weights, custom remote model code, unsupported architectures, and RoPE scaling modes it does not implement. Qwen2 support is limited to the standard Qwen2 causal decoder layout; Qwen3, multimodal Qwen-VL, and Qwen models with additional attention normalization are not implied. It does not silently route generation through another engine. PyTorch remains the tensor-kernel dependency, while the supported model forward pass and decode loop are AXIOM-owned.
+Model Studio can pull compatible public Llama/Mistral/Qwen2 safetensors checkpoints directly into AXIOM's trusted native-model directory. It validates the architecture and Hub file inventory before downloading weights, fetches only allowlisted config/tokenizer/safetensors assets (never model-provided Python), stages downloads before publishing the directory, reports byte progress, checks free disk, enforces per-file/total limits, and refuses to overwrite an existing install. Gated/private repositories are not supported by this pull path. The native engine still rejects GGUF, EXL2, GPTQ/AWQ and other quantized weights, pickle-based pytorch_model.bin weights, custom remote model code, unsupported architectures, and RoPE scaling modes it does not implement. Qwen2 support is limited to the standard text decoder; Qwen3 and multimodal Qwen variants are not implied. It does not silently route generation through another engine. PyTorch remains the tensor-kernel dependency, while the supported model forward pass and decode loop are AXIOM-owned.
 
 ## Trusted model roots
 
@@ -48,7 +48,7 @@ axiom engine run --model-path /absolute/path/to/model --prompt "Hello" --max-new
 # Other explicit choices, when detected by the installed PyTorch build: cuda, rocm, mps, xpu
 ```
 
-Discovery inspects metadata and file presence only. It does not load tensors, download weights, or run inference. A listed model is a candidate for an actual local load, not a guarantee that its checkpoint tensors are compatible. The optional `--stream` mode displays cumulative decoded output as tokens arrive; `--json` remains a single final machine-readable response and cannot be combined with `--stream`.
+Discovery inspects metadata and file presence only; it does not run inference. Public native safetensors acquisition is available through Model Studio, while the `axiom engine discover` command itself remains metadata-only. A listed model is a candidate for an actual local load, not a guarantee that its checkpoint tensors are compatible. The optional `--stream` mode displays cumulative decoded output as tokens arrive; `--json` remains a single final machine-readable response and cannot be combined with `--stream`.
 
 ## Control Center
 
