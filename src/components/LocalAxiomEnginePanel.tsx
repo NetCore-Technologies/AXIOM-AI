@@ -17,6 +17,7 @@ export default function LocalAxiomEnginePanel() {
   const [checkingAdapter, setCheckingAdapter] = useState(false);
   const [modelPath, setModelPath] = useState("");
   const [devicePreference, setDevicePreference] = useState<"auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu">("auto");
+  const [memoryMode, setMemoryMode] = useState<"full" | "layer_streaming">("full");
   const [selectedModelPath, setSelectedModelPath] = useState("");
   const [adapterPath, setAdapterPath] = useState("");
   const [selectedAdapterPath, setSelectedAdapterPath] = useState("");
@@ -193,6 +194,7 @@ export default function LocalAxiomEnginePanel() {
         model_path: modelPath.trim(),
         adapter_path: adapterPath.trim() || undefined,
         device: devicePreference,
+        memory_mode: memoryMode,
         prompt,
         max_new_tokens: tokenLimit,
         temperature: temp,
@@ -234,7 +236,7 @@ export default function LocalAxiomEnginePanel() {
         {status?.loaded && <button type="button" className="button secondary-button" onClick={() => void unload()} disabled={loading || running || unloading}><Unplug size={14} /> {unloading ? "Unloading…" : "Unload model"}</button>}
       </div>
     </div>
-    <p>AXIOM Native Engine implements its own PyTorch Llama/Mistral/Qwen2 forward pass, KV-cache decode, attention path, sampling and LoRA application. PyTorch supplies device tensor kernels; AXIOM does not delegate generation to Transformers or Ollama. This native path accepts local floating-point safetensors and tokenizer.json for Llama, Mistral, and Qwen2-family checkpoints. GGUF/EXL2 loading, native model acquisition, and low-VRAM layer streaming are separate pending capabilities.</p>
+    <p>AXIOM Native Engine implements its own PyTorch Llama/Mistral/Qwen2 forward pass, KV-cache decode, attention path, sampling and LoRA application, with full-weight and low-VRAM layer-streaming modes. PyTorch supplies device tensor kernels; AXIOM does not delegate generation to Transformers or Ollama. This native path accepts local floating-point safetensors and tokenizer.json for Llama, Mistral, and Qwen2-family checkpoints. GGUF/EXL2 loading, native model acquisition, and low-VRAM layer streaming are separate pending capabilities.</p>
     <div className="status-strip" aria-label="AXIOM Engine status">
       <div className="status-strip-item">
         <span className={`status-pill ${status?.ready ? "success" : "warning"}`}><i />{loading ? "CHECKING" : status?.ready ? "ENGINE READY" : "SETUP REQUIRED"}</span>
@@ -307,6 +309,14 @@ export default function LocalAxiomEnginePanel() {
           {(status?.devices ?? []).map((device) => <option key={device.id} value={device.id} disabled={!device.available}>{device.name}{device.available ? " · available" : " · unavailable"}</option>)}
         </select>
         <small>Auto prefers CUDA/ROCm, then Apple Metal or Intel XPU, and finally CPU. An explicit unavailable device fails with a diagnostic instead of silently changing the selected backend.</small>
+      </label>
+      <label className="field">
+        <span className="field-label-row"><span>Memory strategy</span></span>
+        <select aria-label="Memory strategy" value={memoryMode} onChange={(event) => setMemoryMode(event.target.value as typeof memoryMode)}>
+          <option value="full">Full weights on execution device · faster, higher VRAM</option>
+          <option value="layer_streaming">Layer streaming + CPU KV cache · lower VRAM, slower</option>
+        </select>
+        <small>Layer streaming keeps transformer block weights in system RAM and stages one block on the selected device at a time. The KV cache also stays in system RAM, trading transfer overhead for accelerator memory. Embeddings, output projection, LoRA adapter tensors, activations, and the active layer still need memory.</small>
       </label>
       <label className="field">
         <span className="field-label-row"><span>AXIOM Native Engine prompt</span><span>{prompt.length.toLocaleString()} / 12,000 characters</span></span>
@@ -396,6 +406,7 @@ export default function LocalAxiomEnginePanel() {
         <p className="surface-eyebrow">{result ? `GENERATED ON THIS MACHINE · ${result.architecture}` : running ? "STREAMING TOKEN OUTPUT · LOCAL ONLY" : "PARTIAL LOCAL OUTPUT"}</p>
         <h3>{result ? `${result.model}${result.adapter ? ` + ${result.adapter}` : ""}` : (assets?.models.find((model) => model.path === modelPath)?.name || "AXIOM Native Engine")}</h3>
         {result?.device_selection && <p className="quiet-note">Execution device: {result.device_selection.selected}. {result.device_selection.reason}</p>}
+        {result?.memory_mode && <p className="quiet-note">Memory strategy: {result.memory_mode.replaceAll("_", " ")}{result.memory_stats ? " · Layer weight bytes staged: " + (result.memory_stats.layer_weight_bytes_staged / (1024 ** 2)).toFixed(1) + " MiB · Returned to CPU: " + (result.memory_stats.layer_weight_bytes_returned_to_cpu / (1024 ** 2)).toFixed(1) + " MiB · KV-cache bytes offloaded: " + (result.memory_stats.kv_cache_bytes_offloaded / (1024 ** 2)).toFixed(1) + " MiB" : ""}</p>}
         {result && <p className="quiet-note">Finish: {result.stop_reason.replaceAll("_", " ")} · Stop sequences: {result.stop_sequences.length ? result.stop_sequences.length : "off"} · Attention: {result.attention_backend} · Sampling: temperature {result.sampling.temperature} · top-p {result.sampling.top_p} · top-k {result.sampling.top_k || "off"} · repetition penalty {result.sampling.repetition_penalty} · seed {result.sampling.seed ?? "random"}</p>}
       </div><span className={`status-pill ${result ? "success" : running ? "warning" : "neutral"}`}><i />{result ? "COMPLETED" : running ? "GENERATING" : "CANCELLED"}</span></div>
       <pre data-testid={result ? "axiom-engine-output" : "axiom-engine-live-output"} className="local-inference-output">{(result ? result.response : streamResponse) || "(The model has not emitted printable text yet.)"}</pre>
