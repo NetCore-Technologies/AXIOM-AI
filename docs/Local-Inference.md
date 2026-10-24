@@ -1,6 +1,6 @@
 # Local inference
 
-AXIOM's first executable inference adapter uses an Ollama service bound to the local machine. The adapter does not download models, start Ollama, or use a cloud inference endpoint. Runtime status and model names are read from `http://127.0.0.1:11434/api/tags`; generation is sent to `http://127.0.0.1:11434/api/generate` with streaming disabled.
+AXIOM's local inference panel uses Ollama's API at `http://127.0.0.1:11434`. AXIOM can now start an Ollama service, stop only a process it started and can positively identify, and explicitly pull a model with bounded concurrency and progress reporting. Generation stays local; downloading a model is a separate, user-triggered network action.
 
 ## Requirements
 
@@ -46,5 +46,24 @@ Start AXIOM's local API and open **Runtime** in Control Center. The **Local mode
 - This is real text generation when the local Ollama API and chosen model are available; it is not a simulated output or a planning report.
 - Runtime discovery remains a separate passive inventory and is not treated as proof of an active connection.
 - AXIOM connects only to the constant IPv4 loopback endpoint `127.0.0.1:11434` and explicitly disables proxy use for these requests.
-- This first adapter does not execute training/fine-tuning, download models, or automatically start/stop external runtime services. Those remain separate capabilities.
+- AXIOM-managed service start forces `OLLAMA_HOST=127.0.0.1:11434`. A pre-existing service is not adopted or stopped; AXIOM refuses to stop processes it did not start and verify.
+- Model pulls use an argument list rather than a shell, allow at most two concurrent jobs, cap each job at 30 minutes, sanitize progress output, and retain only a bounded in-memory job history. Downloading a model requires an explicit Pull model action or `axiom infer pull`.
+- Process and model-pull management APIs are limited to local clients by default. Only set `AXIOM_ALLOW_REMOTE_RUNTIME_MANAGEMENT=1` on a trusted network when remote management is intentionally required.
+- Ollama and AXIOM Native Engine have different model-format support. Ollama can serve Ollama-supported formats (including GGUF); the native AXIOM engine continues to support only its documented safetensors subset.
 - If the service is offline or the model name is unknown, AXIOM reports the failure instead of substituting a fake response.
+
+
+## Managed Ollama service and model pulls
+
+The **Runtime → Local model inference** panel includes **Start Ollama**, **Stop AXIOM service**, and **Pull model** controls. Starting the service sets `OLLAMA_HOST=127.0.0.1:11434`; the service ownership record is stored locally with restrictive file permissions and contains no prompts, credentials, or model content. Stop is available only while AXIOM can verify the PID, executable, start identity, and `serve` command it launched. An independently running OS-managed Ollama service must be stopped with its own service manager.
+
+Use the CLI equivalents:
+
+```bash
+axiom --no-banner infer service status --json
+axiom --no-banner infer service start
+axiom --no-banner infer service stop
+axiom --no-banner infer pull qwen2.5:0.5b
+```
+
+A model pull has a job ID, status, sanitized progress lines, and a best-effort percentage when Ollama reports one. Job state is in-memory only, bounded to the latest 20 jobs, permits two concurrent pulls, and expires from the process history when newer jobs need room. A pull is terminated after 30 minutes or when explicitly cancelled from the GUI. The model download itself contacts the Ollama library; inference prompts are still sent only to the local loopback API.
