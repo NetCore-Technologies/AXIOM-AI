@@ -309,4 +309,5 @@ def test_engine_estimate_cli_requires_at_least_one_memory_budget(tmp_path: Path)
     model.mkdir()
     result = runner.invoke(engine_app, ["estimate", "--model-path", str(model)])
     assert result.exit_code == 1
-    assert "--ram-budget-gib" in result.output\n    assert "--vram-budget-gib" in result.output
+    assert "--ram-budget-gib" in result.output
+    assert "--vram-budget-gib" in result.output
