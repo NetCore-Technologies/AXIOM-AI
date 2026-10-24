@@ -21,6 +21,30 @@ class FakeResponse:
         return self.raw
 
 
+
+
+class FakeStreamResponse:
+    def __init__(self, records: list[dict]):
+        self.lines = [json.dumps(record).encode("utf-8") + b"\n" for record in records]
+        self.closed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        self.closed = True
+        return False
+
+    def readline(self, limit=-1):
+        if not self.lines:
+            return b""
+        line = self.lines.pop(0)
+        return line if limit < 0 else line[:limit]
+
+    def close(self):
+        self.closed = True
+
+
 def test_model_inspection_returns_metadata_without_model_templates(monkeypatch):
     replies = iter([
         FakeResponse({
@@ -134,3 +158,65 @@ def test_inspect_missing_model_returns_actionable_local_pull_error(monkeypatch):
 
     with pytest.raises(inference.InferenceRuntimeError, match="model not found"):
         inference.inspect_local_model("qwen2.5:0.5b")
+
+
+def test_stream_local_inference_yields_token_events_and_bounded_completion(monkeypatch):
+    response = FakeStreamResponse([
+        {"response": "Hello ", "done": False},
+        {"response": "local", "done": False},
+        {
+            "response": "", "done": True, "done_reason": "stop",
+            "prompt_eval_count": 4, "eval_count": 2, "total_duration": 5_000_000,
+        },
+    ])
+    observed = {}
+
+    def fake_open(request, timeout):
+        observed["url"] = request.full_url
+        observed["payload"] = json.loads(request.data.decode("utf-8"))
+        observed["timeout"] = timeout
+        return response
+
+    registered = []
+    monkeypatch.setattr(inference, "_open_loopback", fake_open)
+    events = list(inference.stream_local_inference(
+        "qwen2.5:0.5b", "Say hello", num_predict=32, temperature=0.2,
+        on_response=registered.append,
+    ))
+
+    assert observed["url"] == "http://127.0.0.1:11434/api/generate"
+    assert observed["payload"]["stream"] is True
+    assert observed["payload"]["options"] == {"num_predict": 32, "temperature": 0.2}
+    assert observed["timeout"] == inference._GENERATION_TIMEOUT_SECONDS
+    assert [event for event in events if event["type"] == "token"] == [
+        {"type": "token", "token": "Hello "},
+        {"type": "token", "token": "local"},
+    ]
+    completed = events[-1]
+    assert completed["type"] == "complete"
+    assert completed["result"]["response"] == "Hello local"
+    assert completed["result"]["eval_count"] == 2
+    assert completed["result"]["prompt_eval_count"] == 4
+    assert completed["result"]["done_reason"] == "stop"
+    assert registered == [response]
+    assert response.closed is True
+
+
+def test_stream_local_inference_rejects_malformed_events(monkeypatch):
+    class MalformedResponse(FakeStreamResponse):
+        def __init__(self):
+            self.lines = [b"not-json\n"]
+            self.closed = False
+
+    monkeypatch.setattr(inference, "_open_loopback", lambda *_args, **_kwargs: MalformedResponse())
+    with pytest.raises(inference.InferenceRuntimeError, match="invalid streaming event"):
+        list(inference.stream_local_inference("qwen2.5:0.5b", "Hello"))
+
+
+def test_stream_local_inference_stops_when_cancel_is_already_requested(monkeypatch):
+    from threading import Event
+
+    event = Event()
+    event.set()
+    monkeypatch.setattr(inference, "_open_loopback", lambda *_args, **_kwargs: pytest.fail("cancelled stream must not open Ollama"))
+    assert list(inference.stream_local_inference("qwen2.5:0.5b", "Hello", cancel_event=event)) == []
