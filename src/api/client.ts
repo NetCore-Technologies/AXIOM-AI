@@ -253,7 +253,8 @@ export type LLMChatRequest = LLMModelRequest & {
 export type LLMChatResult = {
   provider: LLMProvider; model: string; response: string; prompt_tokens: number | null;
   completion_tokens: number | null; credential_storage: "not_saved" | "not_applicable";
-  execution: "local" | "remote"; device?: string | null; generated_at: string;
+  execution: "local" | "remote"; device?: string | null; generated_at: string; precision?: string | null;
+  precision_selection?: { requested: string; selected: string } | null;
   context_management?: { chat_history_supplied: boolean; original_message_count: number; original_message_characters: number; messages_dropped_to_fit_context: number; prompt_tokens_before_token_truncation: number; prompt_tokens_used: number; token_truncation_applied: boolean; system_prompt_may_be_truncated: boolean };
 };
 
