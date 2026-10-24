@@ -50,7 +50,8 @@ test("unified LLM client runs local chats and requires consent for cloud chats",
     } else if (path === "/api/llm/models" && request.method() === "POST") {
       modelCatalogueCalls += 1;
       const body = request.postDataJSON() as { provider: string; api_key?: string };
-      expect(body.api_key).not.toBe("never-return-this");
+      if (body.provider === "deepseek") expect(body.api_key).toBe("never-return-this");
+      else expect(body.api_key).toBeUndefined();
       await route.fulfill({ json: {
         provider: body.provider,
         models: body.provider === "axiom-local" ? ["tiny-llama"] : ["deepseek-chat"],
