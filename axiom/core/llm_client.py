@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import re
-import time
 from datetime import UTC, datetime
 from typing import Any, Mapping
 from urllib.error import HTTPError, URLError
@@ -56,7 +55,7 @@ def provider_catalog() -> dict[str, Any]:
         "requires_api_key": False,
         "supports_model_listing": True,
         "privacy": "local-only",
-        "note": "Runs supported local Llama, Mistral, Qwen2, and Qwen3 safetensors checkpoints.",
+        "note": "Runs supported local Llama, Mistral, and Qwen2 safetensors checkpoints.",
     }]
     for provider_id, config in _PROVIDER_CONFIG.items():
         providers.append({
@@ -81,7 +80,7 @@ def _validate_key(api_key: str | None) -> str:
 def _native_models() -> list[dict[str, Any]]:
     try:
         report = discover_local_engine_assets()
-    except Exception as exc:
+    except Exception:
         raise LLMClientError("AXIOM could not inspect the trusted local model inventory.") from None
     models = report.get("models", []) if isinstance(report, dict) else []
     return [
@@ -89,7 +88,7 @@ def _native_models() -> list[dict[str, Any]]:
         if isinstance(item, dict)
         and isinstance(item.get("name"), str)
         and isinstance(item.get("path"), str)
-        and item.get("model_type") in {"llama", "mistral", "qwen2", "qwen3"}
+        and item.get("model_type") in {"llama", "mistral", "qwen2"}
     ]
 
 
@@ -225,7 +224,7 @@ def _validate_messages(messages: list[Mapping[str, Any]]) -> list[dict[str, str]
         if not isinstance(message, Mapping):
             raise ValueError("Each message must be an object with role and content.")
         role, content = message.get("role"), message.get("content")
-        if role not in {"system", "user", "assistant"} or not isinstance(content, str) or not content.strip():
+        if not isinstance(role, str) or role not in {"system", "user", "assistant"} or not isinstance(content, str) or not content.strip():
             raise ValueError("Messages must use system, user, or assistant roles and non-empty text.")
         if len(content) > _MAX_MESSAGE_CHARS:
             raise ValueError("Each message must be 12,000 characters or fewer.")
