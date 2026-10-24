@@ -979,7 +979,7 @@ def _load_local_model(
     model_path: str,
     adapter_path: str | None,
     device_preference: str = "auto",
-    memory_mode: str = "full",
+    memory_mode: str = "auto",
 ):
     global _LOADED_RUNTIME, _LOADED_ARCHITECTURE
     try:
@@ -1152,7 +1152,7 @@ def generate_local_stream(
     include_token_events: bool = True,
     cancel_event: threading.Event | None = None,
     device_preference: str = "auto",
-    memory_mode: str = "full",
+    memory_mode: str = "auto",
 ) -> Iterator[dict[str, Any]]:
     """Yield cumulative decoded text updates and one final metrics event.
 
@@ -1237,7 +1237,7 @@ def generate_local_stream(
                                 "type": "telemetry",
                                 "metrics": dict(live_metrics),
                                 "memory_mode": getattr(model, "memory_mode", memory_mode),
-                                "memory_selection": details.get("memory_selection"),
+                "memory_selection": details.get("memory_selection"),
                                 "memory_stats": dict(getattr(model, "memory_stats", {})),
                                 "device_memory": _device_memory_snapshot(
                                     torch, device, selected_backend=selected_backend, baseline=device_memory_before
@@ -1348,7 +1348,7 @@ def generate_local(
     seed: int | None = None,
     stop_sequences: list[str] | tuple[str, ...] = (),
     device_preference: str = "auto",
-    memory_mode: str = "full",
+    memory_mode: str = "auto",
 ) -> dict[str, Any]:
     """Generate a complete local response through the streaming decoder."""
     completed: dict[str, Any] | None = None
