@@ -94,6 +94,7 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
     expect(requestBody.repetition_penalty).toBe(1.1);
     expect(requestBody.seed).toBe(42);
     expect(requestBody.stop_sequences).toEqual(["<END>", "###"]);
+    expect(requestBody.memory_mode).toBe("full");
     const completed = {
       engine: "axiom-native-engine", execution_backend: "pytorch-native-axiom", transformers_generation_used: false, ollama_used: false,
       model: "llama-test", architecture: "LlamaForCausalLM", model_type: "llama", device: "cpu", checkpoint_format: "safetensors", decoder: "axiom-autoregressive-kv-cache", attention_backend: "pytorch-scaled-dot-product-attention",
