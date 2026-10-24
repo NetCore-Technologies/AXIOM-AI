@@ -227,6 +227,7 @@ axiom --no-banner engine run --model-path "$HOME/models/my-llama-model" --prompt
 
 - Needs a local `tokenizer.json` and floating-point safetensors weights. GGUF, quantized weights, pickle `.bin` files, and unsupported architectures are rejected with a clear message.
 - Pick a device with `--device`. AXIOM reports detected CPU, CUDA, ROCm, Metal, and XPU options.
+- Pick `--precision auto|fp32|fp16|bf16`. Auto preserves the checkpoint dtype; FP16/BF16 may reduce memory for FP32 checkpoints where the backend supports them. This is floating-point precision, not INT8/INT4 quantization.
 - Choose `--memory-mode layer_streaming` when accelerator memory is constrained. This is not quantization; native GGUF/EXL2/GPTQ/AWQ support remains pending.
 - Choose `--memory-mode disk_streaming` when the entire model's layer weights also do not fit in CPU RAM. Expect extra disk I/O on every prompt/decode forward pass.
 - Model Studio can pull compatible public Hugging Face safetensors checkpoints directly into AXIOM's trusted native-model directory; the runtime also accepts compatible local checkpoints.
