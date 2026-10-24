@@ -173,7 +173,7 @@ def run_local_chat(
         if not isinstance(item, dict):
             raise ValueError("Every chat message must be an object.")
         role, content = item.get("role"), item.get("content")
-        if role not in {"system", "user", "assistant"} or not isinstance(content, str) or not content.strip():
+        if not isinstance(role, str) or role not in {"system", "user", "assistant"} or not isinstance(content, str) or not content.strip():
             raise ValueError("Chat messages require system, user, or assistant roles with non-empty text.")
         if len(content) > _MAX_PROMPT_CHARS:
             raise ValueError(f"Each chat message must be at most {_MAX_PROMPT_CHARS:,} characters.")
