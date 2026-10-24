@@ -1018,6 +1018,9 @@ def generate_local_stream(
     stop_sequences = validate_stop_sequences(stop_sequences)
     with _ENGINE_LOCK:
         model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path, device_preference, memory_mode)
+        selected_backend = details.get("device_selection", {}).get("selected")
+        device_memory_before = _device_memory_snapshot(torch, device, selected_backend=selected_backend)
+        device_memory_before["peak_reset_supported"] = _reset_device_peak_memory(torch, device)
         context_cap = max(2, min(model.config.max_position_embeddings, _MAX_INPUT_TOKENS + max_new_tokens))
         effective_max_new_tokens = min(max_new_tokens, context_cap - 1)
         input_limit = max(1, min(_MAX_INPUT_TOKENS, context_cap - effective_max_new_tokens))
@@ -1119,6 +1122,9 @@ def generate_local_stream(
                 "device_selection": details.get("device_selection"),
                 "memory_mode": getattr(model, "memory_mode", memory_mode),
                 "memory_stats": dict(getattr(model, "memory_stats", {})),
+                "device_memory": _device_memory_snapshot(
+                    torch, device, selected_backend=selected_backend, baseline=device_memory_before
+                ),
                 "checkpoint_format": "safetensors",
                 "decoder": model.last_generation.get("decoder", "axiom-autoregressive-kv-cache"),
                 "attention_backend": model.last_attention_backend,
