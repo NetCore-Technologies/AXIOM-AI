@@ -199,7 +199,7 @@ export type AxiomEngineResult = {
   engine: "axiom-native-engine"; execution_backend: "pytorch-native-axiom";
   transformers_generation_used: false; ollama_used: false;
   model: string; architecture: string; model_type: "llama" | "mistral" | "qwen2";
-  adapter: string | null; device: string; device_selection?: { requested: string; selected: string; reason: string }; memory_mode?: "full" | "layer_streaming" | "disk_streaming"; memory_stats?: AxiomEngineMemoryStats; device_memory?: AxiomEngineDeviceMemory; checkpoint_format: "safetensors";
+  adapter: string | null; device: string; device_selection?: { requested: string; selected: string; reason: string }; memory_selection?: { requested: string; selected: "full" | "layer_streaming" | "disk_streaming"; reason: string; estimated_checkpoint_weight_bytes?: number; estimated_kv_cache_bytes?: number; estimated_context_tokens?: number; available_system_ram_bytes?: number | null; available_device_memory_bytes?: number | null; estimates_are_advisory?: boolean }; memory_mode?: "full" | "layer_streaming" | "disk_streaming"; memory_stats?: AxiomEngineMemoryStats; device_memory?: AxiomEngineDeviceMemory; checkpoint_format: "safetensors";
   decoder: "axiom-autoregressive-kv-cache"; attention_backend: string;
   prefill_ms: number; decode_ms: number; time_to_first_token_ms: number; generation_tokens_per_second: number;
   sampling: AxiomEngineSampling; stop_sequences: string[];
@@ -878,7 +878,7 @@ async function requestJson<T>(path: string, init: RequestInit = {}, timeoutMs = 
 }
 
 async function streamAxiomEngineRequest(
-  input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "full" | "layer_streaming" | "disk_streaming" },
+  input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "auto" | "full" | "layer_streaming" | "disk_streaming" },
   onEvent: (event: AxiomEngineStreamEvent) => void,
   signal: AbortSignal,
 ): Promise<AxiomEngineResult> {
@@ -1333,7 +1333,7 @@ export const axiomApi = {
     requestJson<AxiomEngineAdapterCompatibility>("/api/engine/adapters/compatibility", {
       method: "POST", body: JSON.stringify(input),
     }),
-  runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode?: "full" | "layer_streaming" | "disk_streaming" }) =>
+  runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode?: "auto" | "full" | "layer_streaming" | "disk_streaming" }) =>
     requestJson<AxiomEngineResult>("/api/engine/generate", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
