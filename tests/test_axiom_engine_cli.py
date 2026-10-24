@@ -101,6 +101,7 @@ def test_engine_run_stream_shows_live_output_and_final_metrics(tmp_path: Path, m
     assert "Generated tokens: 4" in result.output
     assert "Finish reason: stop_sequence" in result.output
     assert observed["stop_sequences"] == ["<END>", "###"]
+    assert observed["memory_mode"] == "auto"
 
 
 def test_engine_run_rejects_stream_with_json_mode(tmp_path: Path) -> None:
