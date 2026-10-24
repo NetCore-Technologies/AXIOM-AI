@@ -5,7 +5,7 @@ import json
 import re
 import shutil
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Callable, Iterator
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
@@ -257,6 +257,122 @@ def unload_local_model(model: str) -> dict[str, Any]:
         "model_files_deleted": False,
         "scope_note": "Ollama was asked to release this model from memory. Downloaded model files remain installed.",
     }
+
+
+
+def stream_local_inference(
+    model: str,
+    prompt: str,
+    *,
+    num_predict: int = 256,
+    temperature: float = 0.7,
+    cancel_event: Any = None,
+    on_response: Callable[[Any], None] | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Stream Ollama NDJSON token events from the fixed loopback service.
+
+    The iterator does not persist prompts or output. The on_response callback
+    lets the API layer close the upstream socket when its caller disconnects.
+    """
+    model = validate_model_name(model)
+    prompt, num_predict, temperature = validate_generation(prompt, num_predict, temperature)
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": True,
+        "options": {"num_predict": num_predict, "temperature": temperature},
+    }
+    request = Request(
+        f"{OLLAMA_ENDPOINT}/api/generate",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        method="POST",
+        headers={"Accept": "application/x-ndjson, application/json", "Content-Type": "application/json"},
+    )
+    chars_returned = 0
+    prompt_eval_count: int | None = None
+    eval_count: int | None = None
+    total_duration_ms: float | None = None
+    done_reason: str | None = None
+    completed = False
+    started_at = datetime.now(UTC).isoformat()
+
+    try:
+        with _open_loopback(request, timeout=_GENERATION_TIMEOUT_SECONDS) as response:
+            if on_response is not None:
+                on_response(response)
+            while True:
+                if cancel_event is not None and cancel_event.is_set():
+                    return
+                raw_line = response.readline(2_000_000)
+                if not raw_line:
+                    break
+                if len(raw_line) >= 2_000_000 and not raw_line.endswith(b"\n"):
+                    raise InferenceRuntimeError("Ollama returned an oversized streaming event.")
+                try:
+                    item = json.loads(raw_line.decode("utf-8"))
+                except (ValueError, UnicodeError):
+                    raise InferenceRuntimeError("Ollama returned an invalid streaming event.") from None
+                if not isinstance(item, dict):
+                    raise InferenceRuntimeError("Ollama returned an unexpected streaming event shape.")
+                error = item.get("error")
+                if isinstance(error, str) and error.strip():
+                    raise InferenceRuntimeError(error.replace("\n", " ")[:240])
+                token = item.get("response")
+                if isinstance(token, str) and token:
+                    remaining = max(0, 100_000 - chars_returned)
+                    token = token[:remaining]
+                    if token:
+                        chars_returned += len(token)
+                        yield {"type": "token", "token": token}
+                if isinstance(item.get("prompt_eval_count"), int) and not isinstance(item.get("prompt_eval_count"), bool):
+                    if item["prompt_eval_count"] >= 0:
+                        prompt_eval_count = item["prompt_eval_count"]
+                if isinstance(item.get("eval_count"), int) and not isinstance(item.get("eval_count"), bool):
+                    if item["eval_count"] >= 0:
+                        eval_count = item["eval_count"]
+                duration = item.get("total_duration")
+                if isinstance(duration, (int, float)) and not isinstance(duration, bool) and duration >= 0:
+                    total_duration_ms = round(float(duration) / 1_000_000, 2)
+                if isinstance(item.get("done_reason"), str):
+                    done_reason = item["done_reason"][:80]
+                if item.get("done") is True:
+                    completed = True
+                    break
+    except HTTPError as exc:
+        try:
+            body = exc.read(8192).decode("utf-8", errors="replace")
+            parsed = json.loads(body) if body else {}
+            detail = parsed.get("error", "") if isinstance(parsed, dict) else ""
+        except (ValueError, UnicodeError):
+            detail = ""
+        detail = str(detail).replace("\n", " ").strip()[:240]
+        if exc.code == 404:
+            raise InferenceRuntimeError(detail or "Ollama could not find that model or endpoint. Check the local model name and Ollama version.") from None
+        raise InferenceRuntimeError(f"Local Ollama stream failed (HTTP {exc.code}). {detail}".strip()) from None
+    except (URLError, TimeoutError, OSError):
+        if cancel_event is not None and cancel_event.is_set():
+            return
+        raise InferenceRuntimeError("Ollama stopped responding while streaming. Check the local service and retry.") from None
+
+    if cancel_event is not None and cancel_event.is_set():
+        return
+    if not completed:
+        raise InferenceRuntimeError("Ollama closed the generation stream before reporting completion.")
+    yield {
+        "type": "complete",
+        "result": {
+            "model": model,
+            "response": "",
+            "done": True,
+            "done_reason": done_reason,
+            "prompt_eval_count": prompt_eval_count,
+            "eval_count": eval_count,
+            "total_duration_ms": total_duration_ms,
+            "generated_at": started_at,
+            "execution": "local",
+        },
+    }
+
 
 
 def run_local_inference(
