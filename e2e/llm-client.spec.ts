@@ -44,6 +44,7 @@ test("unified LLM client runs local chats and requires consent for cloud chats",
         schema_version: 1, credentials_persisted: false,
         providers: [
           { id: "axiom-local", label: "AXIOM Native Engine", kind: "local", requires_api_key: false, supports_model_listing: true, privacy: "local-only", note: "Local test model." },
+          { id: "ollama-local", label: "Ollama (local)", kind: "local", requires_api_key: false, supports_model_listing: true, privacy: "local-only", note: "Local Ollama test model." },
           { id: "deepseek", label: "DeepSeek", kind: "cloud", requires_api_key: true, supports_model_listing: true, privacy: "remote-consent-required", note: "Cloud test provider." },
         ],
       } });
@@ -54,9 +55,9 @@ test("unified LLM client runs local chats and requires consent for cloud chats",
       else expect(body.api_key).toBeUndefined();
       await route.fulfill({ json: {
         provider: body.provider,
-        models: body.provider === "axiom-local" ? ["tiny-llama"] : ["deepseek-chat"],
-        count: 1, credential_storage: body.provider === "axiom-local" ? "not_applicable" : "not_saved",
-        execution: body.provider === "axiom-local" ? "local" : "remote",
+        models: body.provider === "axiom-local" ? ["tiny-llama"] : body.provider === "ollama-local" ? ["qwen2.5:0.5b"] : ["deepseek-chat"],
+        count: 1, credential_storage: body.provider === "deepseek" ? "not_saved" : "not_applicable",
+        execution: body.provider === "deepseek" ? "remote" : "local",
         note: "Test fixture.",
       } });
     } else if (path === "/api/llm/chat" && request.method() === "POST") {
@@ -65,11 +66,11 @@ test("unified LLM client runs local chats and requires consent for cloud chats",
       await route.fulfill({ json: {
         provider: body.provider,
         model: body.model,
-        response: body.provider === "axiom-local" ? "local-only answer" : "cloud answer",
+        response: body.provider === "axiom-local" ? "local-only answer" : body.provider === "ollama-local" ? "ollama local answer" : "cloud answer",
         prompt_tokens: 4, completion_tokens: 3,
-        credential_storage: body.provider === "axiom-local" ? "not_applicable" : "not_saved",
-        execution: body.provider === "axiom-local" ? "local" : "remote",
-        device: body.provider === "axiom-local" ? "cpu" : undefined,
+        credential_storage: body.provider === "deepseek" ? "not_saved" : "not_applicable",
+        execution: body.provider === "deepseek" ? "remote" : "local",
+        device: body.provider === "axiom-local" ? "cpu" : body.provider === "ollama-local" ? "ollama" : undefined,
         generated_at: "2026-10-24T00:00:00Z",
       } });
     } else {
@@ -100,6 +101,18 @@ test("unified LLM client runs local chats and requires consent for cloud chats",
   expect(continuedMessages.some((message) => message.role === "assistant" && message.content === "local-only answer")).toBe(true);
   expect(continuedMessages.some((message) => message.role === "user" && message.content === "Continue our previous answer")).toBe(true);
 
+  await panel.locator("select").selectOption("ollama-local");
+  await panel.getByRole("button", { name: "Load models" }).click();
+  await expect(panel.getByLabel("Model ID")).toHaveValue("qwen2.5:0.5b");
+  await panel.getByLabel("Prompt").fill("Hello Ollama local model");
+  await panel.getByRole("button", { name: "Generate locally" }).click();
+  await expect(panel.locator(".llm-message.assistant-message").last()).toContainText("ollama local answer");
+  expect(chatRequests).toHaveLength(3);
+  expect(chatRequests[2]["provider"]).toBe("ollama-local");
+  expect(chatRequests[2]["consent"]).toBe(true);
+  expect(chatRequests[2]["api_key"]).toBeUndefined();
+  expect((chatRequests[2]["messages"] as Array<{ role: string; content: string }>).some((message) => message.content === "Hello Ollama local model")).toBe(true);
+
   await panel.locator("select").selectOption("deepseek");
   await panel.getByLabel("Provider API key").fill("never-return-this");
   await panel.getByRole("button", { name: "Load models" }).click();
@@ -113,11 +126,11 @@ test("unified LLM client runs local chats and requires consent for cloud chats",
   await panel.getByRole("button", { name: "Send and generate" }).click();
   await expect(panel.getByText("cloud answer", { exact: true })).toBeVisible();
 
-  expect(chatRequests).toHaveLength(3);
-  expect(chatRequests[2]["provider"]).toBe("deepseek");
-  expect(chatRequests[2]["consent"]).toBe(true);
-  expect(chatRequests[2]["api_key"]).toBe("never-return-this");
-  const messages = chatRequests[2]["messages"] as Array<{ role: string; content: string }>;
+  expect(chatRequests).toHaveLength(4);
+  expect(chatRequests[3]["provider"]).toBe("deepseek");
+  expect(chatRequests[3]["consent"]).toBe(true);
+  expect(chatRequests[3]["api_key"]).toBe("never-return-this");
+  const messages = chatRequests[3]["messages"] as Array<{ role: string; content: string }>;
   expect(messages.some((message) => message.role === "user" && message.content === "Hello cloud model")).toBe(true);
   await expect(panel).not.toContainText("never-return-this");
 });
