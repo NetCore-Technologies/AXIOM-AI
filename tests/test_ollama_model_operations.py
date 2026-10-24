@@ -122,3 +122,15 @@ def test_running_model_inventory_rejects_invalid_runtime_shape(monkeypatch):
     monkeypatch.setattr(inference, "_open_loopback", lambda *_args, **_kwargs: FakeResponse({"models": {}}))
     with pytest.raises(inference.InferenceRuntimeError, match="invalid loaded-model inventory"):
         inference.list_running_local_models()
+
+
+def test_inspect_missing_model_returns_actionable_local_pull_error(monkeypatch):
+    from io import BytesIO
+    from urllib.error import HTTPError
+
+    def fake_open(request, _timeout):
+        raise HTTPError(request.full_url, 404, "Not Found", {}, BytesIO(b'{"error":"model not found"}'))
+    monkeypatch.setattr(inference, "_open_loopback", fake_open)
+
+    with pytest.raises(inference.InferenceRuntimeError, match="model not found"):
+        inference.inspect_local_model("qwen2.5:0.5b")
