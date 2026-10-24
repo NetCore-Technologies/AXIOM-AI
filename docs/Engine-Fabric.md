@@ -47,3 +47,8 @@ axiom --no-banner engine route-chat --backend llama-cpp --model local-model --pr
 External backends are selected by a stable ID, not by a user-supplied URL. Each adapter uses its documented local default endpoint on IPv4 loopback, bypasses environment proxies, limits request and response sizes, validates message roles and prompt/token bounds, and sends no provider credentials. AXIOM does not launch processes, pull models, contact cloud endpoints, or persist prompt/response content as part of engine discovery. Authentication-required endpoints are reported as such rather than receiving guessed credentials. If your local service uses another port or requires a key, configure it outside this feature and do not expose an unauthenticated local model API to an untrusted network.
 
 Benchmark claims must be backed by measured runs on the target hardware. Hardware fit estimates, service presence, or model catalogue metadata are not substitutes for measured quality, memory and throughput.
+
+
+## Evidence-based local benchmarking
+
+The Engine Fabric includes an optional measured shootout for the selected external local runtime. It permits one warm-up, one to five measured requests, and up to 256 output tokens per request. The API discards each generation response and returns only per-request wall latency, median/P95 latency, end-to-end completion throughput when token counts are reported, run settings, and privacy flags. Results are kept in the current Control Center screen only; refreshing or closing the page clears the comparison. Different models and quantization levels are not apples-to-apples, so this is a tool for repeatable local observation, not a global leaderboard.

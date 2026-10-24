@@ -754,3 +754,31 @@ def test_engine_fabric_chat_rejects_external_and_unknown_targets() -> None:
         "messages": [{"role": "user", "content": "Do not route externally."}],
     })
     assert invalid.status_code == 422
+
+
+def test_engine_fabric_benchmark_endpoint_returns_metadata_only_result(monkeypatch) -> None:
+    expected = {
+        "schema_version": 1,
+        "backend_id": "llama-cpp",
+        "backend_name": "llama.cpp server",
+        "model": "tiny-local",
+        "configuration": {"iterations": 2, "measured_requests": 2},
+        "measurements": {"latency_ms": {"median": 15.0, "p95": 19.0}, "requests": []},
+        "privacy": {"prompt_returned": False, "responses_returned": False, "results_persisted": False},
+        "scope_note": "Measured local calls only.",
+    }
+    monkeypatch.setattr(engine_api, "run_engine_backend_benchmark", lambda *args, **kwargs: expected)
+    response = _client().post("/api/engine/backends/benchmark", json={
+        "backend_id": "llama-cpp", "model": "tiny-local", "prompt": "Measure this.",
+        "max_new_tokens": 32, "warmup_runs": 0, "iterations": 2, "temperature": 0.2,
+    })
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
+def test_engine_fabric_benchmark_endpoint_rejects_large_run_budget() -> None:
+    response = _client().post("/api/engine/backends/benchmark", json={
+        "backend_id": "llama-cpp", "model": "tiny-local", "prompt": "Measure this.",
+        "max_new_tokens": 2048, "warmup_runs": 1, "iterations": 10,
+    })
+    assert response.status_code == 422

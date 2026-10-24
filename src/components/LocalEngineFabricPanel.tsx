@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Activity, Gauge, RefreshCcw, Rocket } from "lucide-react";
-import { axiomApi, type EngineFabricProfile, type EngineFabricReport, type EngineFabricChatResult } from "../api/client";
+import { Activity, BarChart3, Gauge, RefreshCcw, Rocket, Trash2 } from "lucide-react";
+import { axiomApi, type EngineFabricProfile, type EngineFabricReport, type EngineFabricChatResult, type EngineFabricBenchmarkResult } from "../api/client";
 
 const formatStatus = (status: string) => status.replaceAll("_", " ").toUpperCase();
 
@@ -16,6 +16,11 @@ export default function LocalEngineFabricPanel() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
+  const [benchmarking, setBenchmarking] = useState(false);
+  const [benchmarkWarmups, setBenchmarkWarmups] = useState("1");
+  const [benchmarkIterations, setBenchmarkIterations] = useState("3");
+  const [benchmarkTokens, setBenchmarkTokens] = useState("64");
+  const [benchmarkResults, setBenchmarkResults] = useState<EngineFabricBenchmarkResult[]>([]);
 
   const refresh = async (nextProfile = profile) => {
     setLoading(true);
@@ -26,14 +31,15 @@ export default function LocalEngineFabricPanel() {
       setSelectedBackend((current) => {
         const existing = next.backends.find((item) => item.id === current && item.supports_chat && item.status === "ready");
         if (existing) return current;
-        const recommended = next.backends.find((item) => item.id === next.recommendation.backend_id && item.supports_chat);
+        const recommended = next.backends.find((item) => item.id === next.recommendation.backend_id && item.supports_chat && item.status === "ready");
         const firstReady = next.backends.find((item) => item.supports_chat && item.status === "ready");
         return recommended?.id || firstReady?.id || "ollama";
       });
-      const backend = next.backends.find((item) => item.id === selectedBackend);
-      const preferred = next.backends.find((item) => item.id === next.recommendation.backend_id);
-      const active = backend?.supports_chat ? backend : preferred;
-      if (active && active.supports_chat && active.models.length > 0) {
+      const backend = next.backends.find((item) => item.id === selectedBackend && item.supports_chat && item.status === "ready");
+      const preferred = next.backends.find((item) => item.id === next.recommendation.backend_id && item.supports_chat && item.status === "ready");
+      const firstReady = next.backends.find((item) => item.supports_chat && item.status === "ready");
+      const active = backend || preferred || firstReady;
+      if (active && active.models.length > 0) {
         setModel((current) => active.models.includes(current) ? current : active.models[0]);
       }
     } catch (cause) {
@@ -89,6 +95,46 @@ export default function LocalEngineFabricPanel() {
       setError(cause instanceof Error ? cause.message : "Local backend generation failed.");
     } finally {
       setRunning(false);
+    }
+  };
+
+
+  const benchmarkSelected = async () => {
+    setError("");
+    if (!selected || selected.status !== "ready") {
+      setError("Select a local backend whose API is ready before benchmarking.");
+      return;
+    }
+    if (!model.trim() || !prompt.trim()) {
+      setError("Choose a model and enter a representative prompt before benchmarking.");
+      return;
+    }
+    const iterations = Number(benchmarkIterations);
+    const warmups = Number(benchmarkWarmups);
+    const tokens = Number(benchmarkTokens);
+    if (!Number.isInteger(iterations) || iterations < 1 || iterations > 5 || !Number.isInteger(warmups) || warmups < 0 || warmups > 1 || !Number.isInteger(tokens) || tokens < 1 || tokens > 256) {
+      setError("Benchmark limits are 1–5 measured requests, 0–1 warm-up and 1–256 output tokens.");
+      return;
+    }
+    setBenchmarking(true);
+    try {
+      const measured = await axiomApi.engineBackendBenchmark({
+        backend_id: selected.id as EngineFabricChatResult["backend_id"],
+        model: model.trim(),
+        prompt,
+        max_new_tokens: tokens,
+        warmup_runs: warmups,
+        iterations,
+        temperature: 0.2,
+      });
+      setBenchmarkResults((current) => [
+        measured,
+        ...current.filter((item) => !(item.backend_id === measured.backend_id && item.model === measured.model)),
+      ].slice(0, 8));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The local engine benchmark failed.");
+    } finally {
+      setBenchmarking(false);
     }
   };
 
@@ -163,6 +209,29 @@ export default function LocalEngineFabricPanel() {
         </div>
       </form>
       {result && <section className="local-inference-result" aria-label="Engine Fabric response"><div className="surface-head"><div><p className="surface-eyebrow">GENERATED LOCALLY</p><h3>{result.model}</h3><small className="quiet-note">{result.backend_name} · {result.generated_at}</small></div><span className="status-pill success"><i />COMPLETED</span></div><pre className="local-inference-output">{result.response || "(The model returned an empty response.)"}</pre></section>}
+    </section>
+
+    <section className="surface" aria-labelledby="fabric-benchmark-title" style={{ marginTop: 18, padding: 18, border: "1px solid var(--line-strong)", borderRadius: 2, background: "var(--surface)" }}>
+      <div className="surface-head">
+        <div><p className="surface-eyebrow">MEASURED ON THIS MACHINE · SESSION-ONLY</p><h3 id="fabric-benchmark-title"><BarChart3 size={17} style={{ verticalAlign: "middle", marginRight: 8 }} />Local engine shootout</h3></div>
+        <button type="button" className="button primary-button" onClick={() => void benchmarkSelected()} disabled={loading || benchmarking || running || !selected || selected.status !== "ready" || !model.trim() || !prompt.trim()}>
+          <Activity size={15} /> {benchmarking ? "Measuring…" : "Benchmark selected engine"}
+        </button>
+      </div>
+      <p className="quiet-note">Runs the same representative prompt and settings on the selected local service. Warm-up is excluded; each measured request is real. Generated text is discarded by the API; only latency and reported token counts are returned. No samples are saved to disk.</p>
+      <div className="two-column-grid">
+        <label className="field"><span className="field-label-row"><span>Warm-up requests</span></span><select value={benchmarkWarmups} onChange={(event) => setBenchmarkWarmups(event.target.value)} disabled={benchmarking}><option value="0">0</option><option value="1">1</option></select></label>
+        <label className="field"><span className="field-label-row"><span>Measured requests</span></span><select value={benchmarkIterations} onChange={(event) => setBenchmarkIterations(event.target.value)} disabled={benchmarking}>{[1,2,3,4,5].map((count) => <option key={count} value={String(count)}>{count}</option>)}</select></label>
+        <label className="field"><span className="field-label-row"><span>Output token cap</span></span><select value={benchmarkTokens} onChange={(event) => setBenchmarkTokens(event.target.value)} disabled={benchmarking}>{[16,32,64,128,256].map((count) => <option key={count} value={String(count)}>{count}</option>)}</select></label>
+      </div>
+      {benchmarkResults.length > 0 && <div style={{ overflowX: "auto", marginTop: 14 }}>
+        <div className="surface-head"><div><p className="surface-eyebrow">CURRENT SCREEN SESSION</p><h4>Measured backend comparison</h4></div><button type="button" className="button secondary-button" onClick={() => setBenchmarkResults([])} disabled={benchmarking}><Trash2 size={14} /> Clear comparison</button></div>
+        <table className="data-table" aria-label="Measured local engine comparison">
+          <thead><tr><th>Backend / model</th><th>Median</th><th>P95</th><th>Completion throughput</th><th>Samples</th></tr></thead>
+          <tbody>{benchmarkResults.map((item) => <tr key={item.backend_id + ":" + item.model}><td>{item.backend_name}<br /><span className="quiet-note">{item.model}</span></td><td>{item.measurements.latency_ms.median} ms</td><td>{item.measurements.latency_ms.p95} ms</td><td>{item.measurements.completion_tokens_per_second === null ? "Not reported" : item.measurements.completion_tokens_per_second + " tokens/s"}</td><td>{item.measurements.completion_tokens_known}/{item.configuration.measured_requests} token counts</td></tr>)}</tbody>
+        </table>
+        <p className="quiet-note">Compare results carefully: model IDs, quantization, context, hardware, cache state and runtime settings can differ. These measurements are observational, not a universal ranking.</p>
+      </div>}
     </section>
     {report?.scope_note && <p className="quiet-note" style={{ marginTop: 12 }}>{report.scope_note}</p>}
   </section>;

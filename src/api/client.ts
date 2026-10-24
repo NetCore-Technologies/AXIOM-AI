@@ -40,6 +40,18 @@ export type EngineFabricChatResult = {
   privacy: { prompt_returned: false; response_persisted: false; cloud_provider_used: false };
 };
 
+
+export type EngineFabricBenchmarkResult = {
+  schema_version: number; backend_id: EngineFabricChatResult["backend_id"]; backend_name: string; model: string;
+  configuration: { prompt_characters: number; max_new_tokens: number; temperature: number; warmup_runs: number; iterations: number; measured_requests: number };
+  measurements: {
+    wall_time_ms: number; requests_per_second: number; completion_tokens_known: number; total_completion_tokens: number | null;
+    completion_tokens_per_second: number | null; latency_ms: { min: number; median: number; p95: number; max: number };
+    requests: Array<{ latency_ms: number; completion_tokens: number | null }>;
+  };
+  privacy: { prompt_returned: false; responses_returned: false; results_persisted: false }; scope_note: string;
+};
+
 export type LocalInferenceStatus = {
   backend: "ollama";
   endpoint: string;
@@ -1530,6 +1542,8 @@ export const axiomApi = {
   engineBackends: (profile: EngineFabricProfile = "balanced") => requestJson<EngineFabricReport>("/api/engine/backends?" + new URLSearchParams({ profile })),
   engineBackendChat: (input: { backend_id: EngineFabricChatResult["backend_id"]; model: string; messages: Array<{ role: "system" | "user" | "assistant"; content: string }>; max_new_tokens: number; temperature: number }) =>
     requestJson<EngineFabricChatResult>("/api/engine/backends/chat", { method: "POST", body: JSON.stringify(input) }, 300_000),
+  engineBackendBenchmark: (input: { backend_id: EngineFabricChatResult["backend_id"]; model: string; prompt: string; max_new_tokens: number; warmup_runs: number; iterations: number; temperature: number }) =>
+    requestJson<EngineFabricBenchmarkResult>("/api/engine/backends/benchmark", { method: "POST", body: JSON.stringify(input) }, 300_000),
   axiomEngineTelemetry: () => requestJson<AxiomEngineSystemTelemetry>("/api/engine/telemetry"),
   axiomEngineModels: () => requestJson<AxiomEngineAssets>("/api/engine/models"),
   checkAxiomEngineAdapterCompatibility: (input: { model_path: string; adapter_path: string }) =>

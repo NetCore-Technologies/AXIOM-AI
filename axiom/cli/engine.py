@@ -13,7 +13,7 @@ from rich.text import Text
 
 from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, generate_local, generate_local_stream, runtime_status, runtime_telemetry
 from axiom.core import model_studio
-from axiom.core.engine_fabric import EngineFabricError, discover_engine_backends, run_engine_backend_chat
+from axiom.core.engine_fabric import EngineFabricError, discover_engine_backends, run_engine_backend_benchmark, run_engine_backend_chat
 
 engine_app = typer.Typer(help="Run causal language models directly through AXIOM's local engine.", no_args_is_help=True)
 console = Console()
@@ -317,3 +317,40 @@ def engine_route_chat(
         return
     console.print(Panel(result["response"] or "(The model returned an empty response.)", title=f"{result['backend_name']} · {result['model']}"))
     console.print(f"{result['eval_count'] if result['eval_count'] is not None else 'Unknown'} output tokens · {result['total_duration_ms']} ms · local only")
+
+
+@engine_app.command("route-benchmark")
+def engine_route_benchmark(
+    backend: str = typer.Option(..., "--backend", help="ollama, llama-cpp, lm-studio, vllm, llama-cpp-python"),
+    model: str = typer.Option(..., "--model", help="Exact model ID reported by the selected local service."),
+    prompt: str = typer.Option(..., "--prompt", help="Short representative prompt, at most 12,000 characters."),
+    max_new_tokens: int = typer.Option(64, "--max-new-tokens", min=1, max=256),
+    warmup_runs: int = typer.Option(1, "--warmup-runs", min=0, max=1),
+    iterations: int = typer.Option(3, "--iterations", min=1, max=5),
+    temperature: float = typer.Option(0.2, min=0, max=2),
+    json_output: bool = typer.Option(False, "--json", help="Print measurements without generated text."),
+) -> None:
+    """Measure a few real local requests without retaining prompt or response text."""
+    try:
+        result = run_engine_backend_benchmark(
+            backend, model, prompt, max_new_tokens=max_new_tokens,
+            warmup_runs=warmup_runs, iterations=iterations, temperature=temperature,
+        )
+    except (ValueError, EngineFabricError) as exc:
+        _fail(str(exc))
+    if json_output:
+        typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    measurements = result["measurements"]
+    table = Table(title=f"Engine Fabric benchmark · {result['backend_name']}")
+    table.add_column("Measurement", style="cyan")
+    table.add_column("Value")
+    table.add_row("Model", result["model"])
+    table.add_row("Measured requests", str(result["configuration"]["measured_requests"]))
+    table.add_row("Median latency", f"{measurements['latency_ms']['median']} ms")
+    table.add_row("P95 latency", f"{measurements['latency_ms']['p95']} ms")
+    table.add_row("Wall time", f"{measurements['wall_time_ms']} ms")
+    throughput = measurements["completion_tokens_per_second"]
+    table.add_row("Completion throughput", f"{throughput} tokens/s" if throughput is not None else "not reported by backend")
+    console.print(table)
+    console.print(result["scope_note"])

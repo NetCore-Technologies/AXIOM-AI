@@ -317,10 +317,10 @@ def run_engine_backend_chat(
     temperature: float = 0.7,
 ) -> dict[str, Any]:
     """Run a bounded conversation through a chosen, fixed loopback-only backend."""
-    if backend_id not in _BACKEND_BY_ID:
-        raise ValueError("Choose a supported external local backend from the engine inventory.")
     if backend_id == "axiom-native":
         raise ValueError("Use AXIOM Native Engine's trusted model-path generation route for axiom-native.")
+    if backend_id not in _BACKEND_BY_ID:
+        raise ValueError("Choose a supported external local backend from the engine inventory.")
     model = validate_model_name(model)
     if not isinstance(messages, list) or not 1 <= len(messages) <= _MAX_MESSAGES:
         raise ValueError("Provide between 1 and 64 conversation messages.")
@@ -398,4 +398,98 @@ def run_engine_backend_chat(
     }
 
 
-__all__ = ["EngineFabricError", "discover_engine_backends", "run_engine_backend_chat"]
+def run_engine_backend_benchmark(
+    backend_id: str,
+    model: str,
+    prompt: str,
+    *,
+    max_new_tokens: int = 64,
+    warmup_runs: int = 1,
+    iterations: int = 3,
+    temperature: float = 0.2,
+) -> dict[str, Any]:
+    """Measure bounded local end-to-end latency without returning or saving generated text."""
+    import statistics
+
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ValueError("Benchmark prompt must contain non-whitespace text.")
+    if len(prompt) > _MAX_MESSAGE_CHARS:
+        raise ValueError("Benchmark prompt is limited to 12,000 characters.")
+    if isinstance(max_new_tokens, bool) or not isinstance(max_new_tokens, int) or not 1 <= max_new_tokens <= 256:
+        raise ValueError("Benchmark output-token limit must be between 1 and 256.")
+    if isinstance(warmup_runs, bool) or not isinstance(warmup_runs, int) or not 0 <= warmup_runs <= 1:
+        raise ValueError("Benchmark warm-up count must be 0 or 1.")
+    if isinstance(iterations, bool) or not isinstance(iterations, int) or not 1 <= iterations <= 5:
+        raise ValueError("Benchmark iterations must be between 1 and 5.")
+    if isinstance(temperature, bool) or not isinstance(temperature, (int, float)) or not 0 <= float(temperature) <= 2:
+        raise ValueError("Benchmark temperature must be between 0 and 2.")
+    if backend_id not in _BACKEND_BY_ID:
+        raise ValueError("Choose a supported external local backend.")
+
+    messages = [{"role": "user", "content": prompt}]
+    for _ in range(warmup_runs):
+        warmup = run_engine_backend_chat(
+            backend_id, model, messages, max_new_tokens=max_new_tokens, temperature=temperature
+        )
+        del warmup
+
+    latencies: list[float] = []
+    completion_counts: list[int | None] = []
+    token_counted_durations_ms: list[float] = []
+    started = time.perf_counter()
+    for _ in range(iterations):
+        request_started = time.perf_counter()
+        measured = run_engine_backend_chat(
+            backend_id, model, messages, max_new_tokens=max_new_tokens, temperature=temperature
+        )
+        latency_ms = max(0.0, (time.perf_counter() - request_started) * 1000.0)
+        latencies.append(round(latency_ms, 2))
+        count = measured.get("eval_count")
+        completion_count = count if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else None
+        completion_counts.append(completion_count)
+        if completion_count is not None:
+            token_counted_durations_ms.append(latency_ms)
+        del measured
+    wall_time_ms = round(max(0.0, (time.perf_counter() - started) * 1000.0), 2)
+    ordered = sorted(latencies)
+    median = round(statistics.median(ordered), 2)
+    p95_index = max(0, min(len(ordered) - 1, int((0.95 * len(ordered) + 0.999999)) - 1))
+    known_counts = [value for value in completion_counts if value is not None]
+    total_tokens = sum(known_counts) if known_counts else None
+    known_duration_ms = sum(token_counted_durations_ms)
+    return {
+        "schema_version": _SCHEMA_VERSION,
+        "backend_id": backend_id,
+        "backend_name": _BACKEND_BY_ID[backend_id]["name"],
+        "model": model,
+        "configuration": {
+            "prompt_characters": len(prompt),
+            "max_new_tokens": max_new_tokens,
+            "temperature": float(temperature),
+            "warmup_runs": warmup_runs,
+            "iterations": iterations,
+            "measured_requests": iterations,
+        },
+        "measurements": {
+            "wall_time_ms": wall_time_ms,
+            "requests_per_second": round(iterations * 1000 / wall_time_ms, 3) if wall_time_ms > 0 else 0.0,
+            "completion_tokens_known": len(known_counts),
+            "total_completion_tokens": total_tokens,
+            "completion_tokens_per_second": round(total_tokens * 1000 / known_duration_ms, 3) if total_tokens is not None and known_duration_ms > 0 else None,
+            "latency_ms": {
+                "min": min(ordered),
+                "median": median,
+                "p95": ordered[p95_index],
+                "max": max(ordered),
+            },
+            "requests": [
+                {"latency_ms": latency, "completion_tokens": count}
+                for latency, count in zip(latencies, completion_counts, strict=True)
+            ],
+        },
+        "privacy": {"prompt_returned": False, "responses_returned": False, "results_persisted": False},
+        "scope_note": "Measured end-to-end calls on this machine. Token throughput is available only when the backend reports token counts; warm-ups are excluded, and benchmark results are not persisted.",
+    }
+
+
+__all__ = ["EngineFabricError", "discover_engine_backends", "run_engine_backend_chat", "run_engine_backend_benchmark"]

@@ -238,3 +238,19 @@ def test_engine_route_chat_cli_uses_selected_local_backend(monkeypatch) -> None:
     assert result.exit_code == 0, result.output
     assert "local response" in result.output
     assert "llama.cpp server" in result.output
+
+
+def test_engine_route_benchmark_cli_outputs_measurements_without_response_text(monkeypatch) -> None:
+    monkeypatch.setattr(engine_cli, "run_engine_backend_benchmark", lambda backend, model, prompt, **kwargs: {
+        "backend_name": "llama.cpp server", "model": model,
+        "configuration": {"measured_requests": 2},
+        "measurements": {"latency_ms": {"median": 15.0, "p95": 19.0}, "wall_time_ms": 30.0, "completion_tokens_per_second": 42.0},
+        "scope_note": "Session-only timings.",
+    })
+    result = runner.invoke(engine_app, [
+        "route-benchmark", "--backend", "llama-cpp", "--model", "tiny-local",
+        "--prompt", "Representative benchmark input.", "--iterations", "2", "--json",
+    ])
+    assert result.exit_code == 0, result.output
+    assert '"median": 15.0' in result.output
+    assert "Representative benchmark input." not in result.output

@@ -78,3 +78,43 @@ def test_chat_validates_before_any_local_request(monkeypatch):
             pass
         else:
             raise AssertionError("invalid route, model, or conversation must be rejected")
+
+
+def test_benchmark_returns_measured_metadata_without_model_text(monkeypatch):
+    calls = []
+
+    def fake_chat(backend_id, model, messages, **kwargs):
+        calls.append((backend_id, model, messages, kwargs))
+        return {
+            "response": "DO_NOT_RETURN_THIS_MODEL_TEXT",
+            "eval_count": 8,
+            "total_duration_ms": 12.0,
+            "done": True,
+        }
+
+    monkeypatch.setattr(engine_fabric, "run_engine_backend_chat", fake_chat)
+    result = engine_fabric.run_engine_backend_benchmark(
+        "llama-cpp", "tiny-local", "A representative prompt.",
+        warmup_runs=1, iterations=3, max_new_tokens=16,
+    )
+    assert len(calls) == 4
+    assert result["configuration"]["measured_requests"] == 3
+    assert result["measurements"]["completion_tokens_known"] == 3
+    assert result["measurements"]["total_completion_tokens"] == 24
+    assert result["measurements"]["latency_ms"]["median"] >= 0
+    assert "DO_NOT_RETURN_THIS_MODEL_TEXT" not in str(result)
+    assert "A representative prompt." not in str(result)
+    assert result["privacy"]["responses_returned"] is False
+    assert result["privacy"]["results_persisted"] is False
+
+
+def test_benchmark_rejects_unbounded_iterations_before_dispatch(monkeypatch):
+    monkeypatch.setattr(engine_fabric, "run_engine_backend_chat", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not run")))
+    try:
+        engine_fabric.run_engine_backend_benchmark(
+            "llama-cpp", "tiny-local", "Prompt", warmup_runs=1, iterations=6,
+        )
+    except ValueError as exc:
+        assert "between 1 and 5" in str(exc)
+    else:
+        raise AssertionError("benchmark must enforce iteration cap")
