@@ -419,9 +419,6 @@ def inspect(root: Path) -> dict[str, Any]:
     for token in ("def list_running_local_models(", "def inspect_local_model(", "def unload_local_model(", '"keep_alive": 0', '"template_configured": bool'):
         if token not in inference_core:
             failures.append("Ollama model operations are missing: " + token)
-    for token in ("def inspect_local_model(", "def unload_local_model(", '"keep_alive": 0', '"template_configured": bool'):
-        if token not in inference_core:
-            failures.append("Ollama model operations are missing: " + token)
     for token in ("runningOllamaModels:", "startLocalOllama:", "stopLocalOllama:", "startOllamaModelPull:", "cancelOllamaModelPull:", "inspectOllamaModel:", "unloadOllamaModel:", "export type OllamaModelDetails"):
         if token not in client:
             failures.append("Typed Ollama client is missing a local model operation: " + token)
