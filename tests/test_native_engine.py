@@ -952,3 +952,27 @@ def test_native_context_trims_old_history_before_token_truncation(monkeypatch, t
     assert context["prompt_tokens_used"] <= 62
     assert context["original_message_count"] == 4
     assert result["prompt_tokens"] == context["prompt_tokens_used"]
+
+
+def test_engine_admission_wait_is_bounded(monkeypatch) -> None:
+    from axiom.core import engine as engine_module
+
+    monkeypatch.setattr(engine_module, "_MAX_ENGINE_QUEUE_WAIT_SECONDS", 0.01)
+    assert engine_module._ENGINE_LOCK.acquire(blocking=False)
+    try:
+        with pytest.raises(engine_module.AxiomEngineError, match="busy with another request"):
+            with engine_module._engine_request_lock():
+                pytest.fail("Should not enter while another request owns the engine")
+    finally:
+        engine_module._ENGINE_LOCK.release()
+
+
+def test_engine_admission_wait_honors_cancellation(monkeypatch) -> None:
+    from threading import Event
+    from axiom.core import engine as engine_module
+
+    cancelled = Event()
+    cancelled.set()
+    with pytest.raises(engine_module.AxiomEngineError, match="cancelled while waiting"):
+        with engine_module._engine_request_lock(cancelled):
+            pytest.fail("Cancelled request must not acquire the engine lock")
