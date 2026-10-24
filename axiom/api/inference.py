@@ -1,13 +1,18 @@
 """Local inference API. Requests are served only through the loopback Ollama adapter."""
 from __future__ import annotations
 
+import asyncio
+import json
 import uuid
 from datetime import UTC, datetime
 from time import perf_counter
-from typing import Any
+from queue import Empty, Full, Queue
+from threading import Event, Lock, Thread
+from typing import Any, AsyncIterator
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator
+from starlette.responses import StreamingResponse
 
 from axiom.core.inference import (
     InferenceRuntimeError,
@@ -15,6 +20,7 @@ from axiom.core.inference import (
     list_running_local_models,
     unload_local_model,
     run_local_inference,
+    stream_local_inference,
     run_local_inference_benchmark,
     runtime_status,
     validate_model_name,
@@ -260,6 +266,238 @@ def inference_benchmark(request: BenchmarkRequest, response: Response) -> dict[s
             error_code="runtime_unavailable",
         )
         raise HTTPException(status_code=503, detail="Local inference benchmark failed because the runtime did not complete the request.", headers={"X-Request-ID": request_id}) from None
+
+
+
+
+_STREAM_QUEUE_SIZE = 32
+_STREAM_END = object()
+
+
+def _enqueue_stream_event(output: Queue, item: Any, cancel_event: Event) -> bool:
+    while not cancel_event.is_set():
+        try:
+            output.put(item, timeout=0.1)
+            return True
+        except Full:
+            continue
+    return False
+
+
+def _safe_stream_error(exc: Exception) -> str:
+    message = str(exc).replace("\n", " ").strip()
+    if "not found" in message.lower() and "model" in message.lower():
+        return "Ollama could not find that model. Pull it locally first."
+    if "prompt" in message.lower() or "token" in message.lower() or "temperature" in message.lower():
+        return message[:240]
+    return "Local Ollama generation failed. Check the local service and model, then retry."
+
+
+def _produce_ollama_stream(
+    payload: GenerateRequest,
+    request_id: str,
+    started_at: str,
+    started: float,
+    output: Queue,
+    cancel_event: Event,
+    upstream_state: dict[str, Any],
+    upstream_lock: Lock,
+) -> None:
+    trace_recorded = False
+    completed = False
+
+    def register_upstream(response: Any) -> None:
+        with upstream_lock:
+            upstream_state["response"] = response
+            should_close = cancel_event.is_set()
+        if should_close:
+            try:
+                response.close()
+            except OSError:
+                pass
+
+    iterator = stream_local_inference(
+        payload.model,
+        payload.prompt,
+        num_predict=payload.num_predict,
+        temperature=payload.temperature,
+        cancel_event=cancel_event,
+        on_response=register_upstream,
+    )
+    try:
+        for item in iterator:
+            if cancel_event.is_set():
+                break
+            if item.get("type") == "complete":
+                result = item.get("result", {})
+                measurements = result if isinstance(result, dict) else {}
+                record_runtime_trace(
+                    request_id=request_id,
+                    operation="inference.generate",
+                    model=payload.model,
+                    status="success",
+                    started_at=started_at,
+                    duration_ms=(perf_counter() - started) * 1000.0,
+                    prompt_characters=len(payload.prompt),
+                    requested_output_tokens=payload.num_predict,
+                    temperature=payload.temperature,
+                    prompt_tokens=measurements.get("prompt_eval_count"),
+                    completion_tokens=measurements.get("eval_count"),
+                )
+                trace_recorded = True
+                completed = True
+                # Tokens were already streamed in prior events; don't duplicate
+                # the entire answer in the terminal metadata event.
+                public_result = {
+                    **measurements,
+                    "response": "",
+                    "request_id": request_id,
+                }
+                item = {"type": "complete", "result": public_result}
+            if not _enqueue_stream_event(output, item, cancel_event):
+                break
+    except (ValueError, InferenceRuntimeError) as exc:
+        message = _safe_stream_error(exc)
+        if not cancel_event.is_set():
+            _enqueue_stream_event(output, {"type": "error", "message": message, "request_id": request_id}, cancel_event)
+        record_runtime_trace(
+            request_id=request_id,
+            operation="inference.generate",
+            model=payload.model,
+            status="error",
+            started_at=started_at,
+            duration_ms=(perf_counter() - started) * 1000.0,
+            prompt_characters=len(payload.prompt),
+            requested_output_tokens=payload.num_predict,
+            temperature=payload.temperature,
+            error_code="invalid_generation_request" if isinstance(exc, ValueError) else "runtime_unavailable",
+        )
+        trace_recorded = True
+    except Exception:
+        # Avoid forwarding provider error strings or response headers to clients.
+        if not cancel_event.is_set():
+            _enqueue_stream_event(
+                output,
+                {"type": "error", "message": "Local Ollama stream failed unexpectedly.", "request_id": request_id},
+                cancel_event,
+            )
+        record_runtime_trace(
+            request_id=request_id,
+            operation="inference.generate",
+            model=payload.model,
+            status="error",
+            started_at=started_at,
+            duration_ms=(perf_counter() - started) * 1000.0,
+            prompt_characters=len(payload.prompt),
+            requested_output_tokens=payload.num_predict,
+            temperature=payload.temperature,
+            error_code="stream_failed",
+        )
+        trace_recorded = True
+    finally:
+        close = getattr(iterator, "close", None)
+        if callable(close):
+            try:
+                close()
+            except (RuntimeError, ValueError):
+                pass
+        if not trace_recorded:
+            record_runtime_trace(
+                request_id=request_id,
+                operation="inference.generate",
+                model=payload.model,
+                status="error",
+                started_at=started_at,
+                duration_ms=(perf_counter() - started) * 1000.0,
+                prompt_characters=len(payload.prompt),
+                requested_output_tokens=payload.num_predict,
+                temperature=payload.temperature,
+                error_code="cancelled" if cancel_event.is_set() else "stream_incomplete",
+            )
+        if not cancel_event.is_set():
+            while not cancel_event.is_set():
+                try:
+                    output.put(_STREAM_END, timeout=0.1)
+                    break
+                except Full:
+                    continue
+
+
+@router.post("/generate/stream")
+async def inference_generate_stream(
+    request: GenerateRequest,
+    http_request: Request,
+) -> StreamingResponse:
+    """Stream Ollama token deltas and cooperatively stop on client disconnect."""
+    request_id = uuid.uuid4().hex
+    started_at = datetime.now(UTC).isoformat()
+    started = perf_counter()
+    cancel_event = Event()
+    output: Queue = Queue(maxsize=_STREAM_QUEUE_SIZE)
+    upstream_state: dict[str, Any] = {"response": None}
+    upstream_lock = Lock()
+    producer = Thread(
+        target=_produce_ollama_stream,
+        args=(request, request_id, started_at, started, output, cancel_event, upstream_state, upstream_lock),
+        name="axiom-ollama-inference-stream",
+        daemon=True,
+    )
+
+    async def events() -> AsyncIterator[str]:
+        async def watch_disconnect() -> None:
+            while not cancel_event.is_set():
+                if await http_request.is_disconnected():
+                    cancel_event.set()
+                    with upstream_lock:
+                        upstream = upstream_state.get("response")
+                    if upstream is not None:
+                        try:
+                            upstream.close()
+                        except OSError:
+                            pass
+                    return
+                await asyncio.sleep(0.1)
+
+        monitor = asyncio.create_task(watch_disconnect())
+        producer.start()
+        try:
+            while not cancel_event.is_set():
+                try:
+                    item = await asyncio.to_thread(output.get, True, 0.2)
+                except Empty:
+                    if not producer.is_alive() and output.empty():
+                        break
+                    continue
+                if item is _STREAM_END:
+                    break
+                if cancel_event.is_set():
+                    break
+                yield json.dumps(item, ensure_ascii=False, separators=(",", ":")) + "\n"
+        finally:
+            cancel_event.set()
+            with upstream_lock:
+                upstream = upstream_state.get("response")
+            if upstream is not None:
+                try:
+                    upstream.close()
+                except OSError:
+                    pass
+            monitor.cancel()
+            try:
+                await monitor
+            except asyncio.CancelledError:
+                pass
+            await asyncio.to_thread(producer.join, 2.0)
+
+    return StreamingResponse(
+        events(),
+        media_type="application/x-ndjson",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "X-Request-ID": request_id,
+        },
+    )
 
 
 @router.post("/generate")
