@@ -92,3 +92,20 @@ select an available port for that launch.
 
 See [API environment configuration](API.md) and [data retention](DATA-RETENTION.md)
 for the associated network and local-storage boundaries.
+
+
+## Local Ollama lifecycle
+
+```bash
+# Inspect the live loopback API and service ownership
+axiom --no-banner infer service status --json
+
+# Start or stop only a service managed by AXIOM
+axiom --no-banner infer service start
+axiom --no-banner infer service stop
+
+# Explicitly download an Ollama library model (network and disk space required)
+axiom --no-banner infer pull qwen2.5:0.5b
+```
+
+Control Center exposes the same service actions in **Runtime → Local model inference**, including bounded progress reporting and cancellation for model pulls. AXIOM-managed service startup binds to `127.0.0.1:11434`. AXIOM will not stop an independently managed service.
