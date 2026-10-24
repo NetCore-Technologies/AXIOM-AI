@@ -44,6 +44,23 @@ class GenerateRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=12_000)
     num_predict: int = Field(default=256, ge=1, le=2_048)
     temperature: float = Field(default=0.7, ge=0, le=2)
+    top_p: float | None = Field(default=None, gt=0, le=1)
+    top_k: int | None = Field(default=None, ge=0, le=100_000)
+    repetition_penalty: float | None = Field(default=None, ge=0.1, le=5)
+    seed: int | None = Field(default=None, ge=0, le=9_223_372_036_854_775_807)
+    num_ctx: int | None = Field(default=None, ge=512, le=131_072)
+    stop_sequences: list[str] = Field(default_factory=list, max_length=16)
+
+    @field_validator("stop_sequences")
+    @classmethod
+    def stop_sequences_must_be_bounded(cls, values: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for value in values:
+            if not value.strip() or len(value) > 256:
+                raise ValueError("Each stop sequence must contain 1–256 non-whitespace characters.")
+            if value not in cleaned:
+                cleaned.append(value)
+        return cleaned
 
     @field_validator("model")
     @classmethod
@@ -56,6 +73,17 @@ class GenerateRequest(BaseModel):
         if not value.strip():
             raise ValueError("Prompt must contain at least one non-whitespace character.")
         return value
+
+
+def _sampling_kwargs(request: GenerateRequest) -> dict[str, Any]:
+    values: dict[str, Any] = {}
+    for source, target in (("top_p", "top_p"), ("top_k", "top_k"), ("repetition_penalty", "repetition_penalty"), ("seed", "seed"), ("num_ctx", "num_ctx")):
+        value = getattr(request, source)
+        if value is not None:
+            values[target] = value
+    if request.stop_sequences:
+        values["stop_sequences"] = request.stop_sequences
+    return values
 
 
 class PullModelRequest(BaseModel):
@@ -321,6 +349,7 @@ def _produce_ollama_stream(
         payload.prompt,
         num_predict=payload.num_predict,
         temperature=payload.temperature,
+        **_sampling_kwargs(payload),
         cancel_event=cancel_event,
         on_response=register_upstream,
     )
@@ -512,6 +541,7 @@ def inference_generate(request: GenerateRequest, response: Response) -> dict[str
             request.prompt,
             num_predict=request.num_predict,
             temperature=request.temperature,
+            **_sampling_kwargs(request),
         )
         record_runtime_trace(
             request_id=request_id, operation="inference.generate", model=request.model,
