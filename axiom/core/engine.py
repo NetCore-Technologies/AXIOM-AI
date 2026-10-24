@@ -164,6 +164,107 @@ def _clear_device_cache(torch_module: Any | None, device: Any | None) -> None:
         _LOG.debug("Device allocator cache cleanup was unavailable for %s.", device_type, exc_info=True)
 
 
+
+def _reset_device_peak_memory(torch_module: Any | None, device: Any | None) -> bool:
+    """Reset device allocator peak counters when the selected backend exposes them."""
+    if torch_module is None or device is None:
+        return False
+    device_type = str(getattr(device, "type", device)).split(":", 1)[0]
+    backend = getattr(torch_module, "cuda", None) if device_type == "cuda" else getattr(torch_module, "xpu", None) if device_type == "xpu" else None
+    reset = getattr(backend, "reset_peak_memory_stats", None)
+    if not callable(reset):
+        return False
+    try:
+        reset(device)
+        return True
+    except TypeError:
+        try:
+            reset()
+            return True
+        except Exception:
+            return False
+    except Exception:
+        _LOG.debug("Peak memory counters could not be reset for %s.", device_type, exc_info=True)
+        return False
+
+
+def _device_memory_snapshot(
+    torch_module: Any | None,
+    device: Any | None,
+    *,
+    selected_backend: str | None = None,
+    baseline: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Read allocator counters where supported; unavailable metrics remain null, never guessed."""
+    device_type = str(getattr(device, "type", device)).split(":", 1)[0] if device is not None else "unknown"
+    result: dict[str, Any] = {
+        "backend": selected_backend or device_type,
+        "current_allocated_bytes": None,
+        "current_reserved_bytes": None,
+        "peak_allocated_bytes": None,
+        "peak_reserved_bytes": None,
+        "peak_increment_bytes": None,
+        "process_rss_bytes": None,
+        "process_rss_delta_bytes": None,
+        "peak_reset_supported": False,
+        "device_allocator_metrics_supported": False,
+    }
+    if torch_module is not None and device is not None:
+        try:
+            if device_type in {"cuda", "xpu"}:
+                backend = getattr(torch_module, device_type, None)
+                methods = {
+                    "current_allocated_bytes": "memory_allocated",
+                    "current_reserved_bytes": "memory_reserved",
+                    "peak_allocated_bytes": "max_memory_allocated",
+                    "peak_reserved_bytes": "max_memory_reserved",
+                }
+                for target, name in methods.items():
+                    function = getattr(backend, name, None)
+                    if not callable(function):
+                        continue
+                    try:
+                        value = function(device)
+                    except TypeError:
+                        value = function()
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        result[target] = max(0, int(value))
+                result["device_allocator_metrics_supported"] = any(
+                    result[key] is not None for key in methods
+                )
+            elif device_type == "mps":
+                backend = getattr(torch_module, "mps", None)
+                current = getattr(backend, "current_allocated_memory", None)
+                reserved = getattr(backend, "driver_allocated_memory", None)
+                if callable(current):
+                    value = current()
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        result["current_allocated_bytes"] = max(0, int(value))
+                if callable(reserved):
+                    value = reserved()
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        result["current_reserved_bytes"] = max(0, int(value))
+                result["device_allocator_metrics_supported"] = (
+                    result["current_allocated_bytes"] is not None
+                    or result["current_reserved_bytes"] is not None
+                )
+        except Exception:
+            _LOG.debug("Live allocator memory telemetry unavailable for %s.", device_type, exc_info=True)
+    try:
+        import psutil
+        rss = psutil.Process().memory_info().rss
+        result["process_rss_bytes"] = max(0, int(rss))
+        if baseline and isinstance(baseline.get("process_rss_bytes"), int):
+            result["process_rss_delta_bytes"] = int(rss) - baseline["process_rss_bytes"]
+    except (ImportError, OSError, RuntimeError, AttributeError):
+        pass
+    if baseline and isinstance(baseline.get("current_allocated_bytes"), int) and isinstance(result.get("peak_allocated_bytes"), int):
+        result["peak_increment_bytes"] = max(0, result["peak_allocated_bytes"] - baseline["current_allocated_bytes"])
+    if baseline:
+        result["peak_reset_supported"] = bool(baseline.get("peak_reset_supported"))
+    return result
+
+
 def runtime_status() -> dict[str, Any]:
     packages: dict[str, bool] = {}
     versions: dict[str, str | None] = {}
