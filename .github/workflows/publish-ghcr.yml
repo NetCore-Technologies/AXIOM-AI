@@ -91,6 +91,9 @@ jobs:
           - image: axiom-ai-training
             extras: training
             platforms: linux/amd64
+          - image: axiom-ai-full
+            extras: native-inference,training
+            platforms: linux/amd64
 
     steps:
       - name: Check out source

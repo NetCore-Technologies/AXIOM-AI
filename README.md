@@ -112,14 +112,14 @@ Package downloads and checksums are on [GitHub Releases](https://github.com/mani
 
 ## Container images
 
-AXIOM publishes verified OCI images through [GitHub Container Registry](https://github.com/manit6752025?tab=packages). The core image is multi-platform (Linux AMD64 and ARM64); separate inference and training images include their optional Python dependencies.
+AXIOM publishes verified OCI images through [GitHub Container Registry](https://github.com/manit6752025?tab=packages). The core image is multi-platform (Linux AMD64 and ARM64); separate inference, training, and combined full-extras images cover different dependency profiles.
 
 ```bash
 docker pull ghcr.io/manit6752025/axiom-ai:latest
 docker run --rm -p 127.0.0.1:8765:8765 ghcr.io/manit6752025/axiom-ai:latest
 ```
 
-Open `http://127.0.0.1:8765/ui/` for the Control Center. For native inference or training dependencies, use `ghcr.io/manit6752025/axiom-ai-inference` or `ghcr.io/manit6752025/axiom-ai-training`. See the [container image guide](docs/Container-Image.md) for exact tags, Compose setup, architectures, and security guidance.
+Open `http://127.0.0.1:8765/ui/` for the Control Center. For native inference, training, or both together, use `ghcr.io/manit6752025/axiom-ai-inference`, `ghcr.io/manit6752025/axiom-ai-training`, or `ghcr.io/manit6752025/axiom-ai-full`. See the [container image guide](docs/Container-Image.md) for exact tags, Compose setup, architectures, and security guidance.
 
 ## Feature map
 
