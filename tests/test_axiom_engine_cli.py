@@ -117,7 +117,8 @@ def test_engine_run_stream_shows_live_output_and_final_metrics(tmp_path: Path, m
     result = runner.invoke(engine_app, [
         "run", "--model-path", str(model_path), "--prompt", "Say hello.",
         "--stream", "--max-new-tokens", "4", "--temperature", "0", "--precision", "fp16",
-        "--top-p", "0.82", "--top-k", "32", "--repeat-penalty", "1.15", "--seed", "17",
+        "--top-p", "0.82", "--top-k", "32", "--min-p", "0.2",
+        "--repeat-penalty", "1.15", "--seed", "17",
         "--stop-sequence", "<END>", "--stop-sequence", "###",
     ])
 
@@ -131,6 +132,7 @@ def test_engine_run_stream_shows_live_output_and_final_metrics(tmp_path: Path, m
     assert observed["precision"] == "fp16"
     assert observed["top_p"] == 0.82
     assert observed["top_k"] == 32
+    assert observed["min_p"] == 0.2
     assert observed["repetition_penalty"] == 1.15
     assert observed["seed"] == 17
 
@@ -147,14 +149,15 @@ def test_engine_run_forwards_sampling_controls_for_complete_generation(tmp_path:
     monkeypatch.setattr(engine_cli, "generate_local", fake_generate)
     result = runner.invoke(engine_app, [
         "run", "--model-path", str(model_path), "--prompt", "Say hello.",
-        "--top-p", "0.82", "--top-k", "32", "--repeat-penalty", "1.15",
-        "--seed", "17", "--json",
+        "--top-p", "0.82", "--top-k", "32", "--min-p", "0.2",
+        "--repeat-penalty", "1.15", "--seed", "17", "--json",
     ])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["response"] == "sampled output"
     assert observed["top_p"] == 0.82
     assert observed["top_k"] == 32
+    assert observed["min_p"] == 0.2
     assert observed["repetition_penalty"] == 1.15
     assert observed["seed"] == 17
 
