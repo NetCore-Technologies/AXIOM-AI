@@ -157,6 +157,17 @@ export type AxiomEngineAdapterCompatibility = {
   scope_note: string;
 };
 
+export type AxiomEngineSystemTelemetry = {
+  schema_version: 1; sampled_at: string; sample_type: "point_in_time";
+  cpu: { logical_cores: number | null; system_percent: number | null; process_percent: number | null };
+  memory: { total_bytes: number | null; available_bytes: number | null; used_bytes: number | null; percent: number | null };
+  process: { pid: number; rss_bytes: number | null; threads: number | null };
+  devices: Array<{ id: string | null; name: string | null; available: boolean; memory_free_gib: number | null; memory_total_gib: number | null }>;
+  loaded_runtime: { loaded: boolean; model: string | null; architecture: string | null; device: string | null; memory_mode: "full" | "layer_streaming" | "disk_streaming" | null; last_generation: Record<string, string | number> | null; device_allocator: AxiomEngineDeviceMemory | null };
+  disks: Array<{ label: string; total_bytes: number; free_bytes: number; used_bytes: number }>;
+  privacy_scope: { prompt_content_included: false; generated_content_included: false; model_paths_included: false; environment_values_included: false; credentials_included: false; network_access_performed: false };
+  scope_note: string;
+};
 export type AxiomEngineStatus = {
   engine: string; ready: boolean; packages: Record<string, boolean>; versions: Record<string, string | null>;
   minimum_versions?: Record<string, string>; problems?: string[];
@@ -1353,6 +1364,7 @@ export const axiomApi = {
     method: "POST", body: JSON.stringify(input),
   }),
   axiomEngineStatus: () => requestJson<AxiomEngineStatus>("/api/engine/status"),
+  axiomEngineTelemetry: () => requestJson<AxiomEngineSystemTelemetry>("/api/engine/telemetry"),
   axiomEngineModels: () => requestJson<AxiomEngineAssets>("/api/engine/models"),
   checkAxiomEngineAdapterCompatibility: (input: { model_path: string; adapter_path: string }) =>
     requestJson<AxiomEngineAdapterCompatibility>("/api/engine/adapters/compatibility", {
