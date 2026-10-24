@@ -356,6 +356,59 @@ def test_native_decoder_stops_before_emitting_eos_and_does_not_step_past_output_
     assert runtime.last_generation["completion_tokens"] == 1
 
 
+def test_complete_native_generate_forwards_min_p_to_shared_decoder() -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    runtime = NativeLlamaRuntime(
+        NativeLlamaConfig.from_mapping(_config()),
+        _tiny_weights(torch),
+        torch,
+        torch.device("cpu"),
+    )
+    runtime.generate(
+        [1, 3],
+        max_new_tokens=1,
+        temperature=0.7,
+        top_p=0.9,
+        min_p=0.2,
+        eos_token_ids=(),
+    )
+    assert runtime.last_generation["min_p"] == 0.2
+
+
+@pytest.mark.parametrize(
+    ("parameter", "value"),
+    [
+        ("temperature", True),
+        ("temperature", float("nan")),
+        ("top_p", True),
+        ("top_p", float("inf")),
+        ("repetition_penalty", True),
+        ("repetition_penalty", float("nan")),
+    ],
+)
+def test_native_runtime_rejects_boolean_or_nonfinite_sampling_values(parameter, value) -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    runtime = NativeLlamaRuntime(
+        NativeLlamaConfig.from_mapping(_config()),
+        _tiny_weights(torch),
+        torch,
+        torch.device("cpu"),
+    )
+    options = {"temperature": 0.7, "top_p": 0.9, "repetition_penalty": 1.0}
+    options[parameter] = value
+    with pytest.raises(NativeEngineError, match="finite number"):
+        list(runtime.iter_generate(
+            [1, 3],
+            max_new_tokens=1,
+            eos_token_ids=(),
+            **options,
+        ))
+
+
 def test_native_iterator_honors_cancellation_before_prompt_prefill(monkeypatch) -> None:
     from threading import Event
 
