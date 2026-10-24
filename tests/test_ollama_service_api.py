@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -153,7 +155,7 @@ def test_streaming_inference_emits_ndjson_token_deltas_and_request_id(monkeypatc
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/x-ndjson")
     assert response.headers.get("x-request-id")
-    payloads = [__import__("json").loads(line) for line in response.text.splitlines() if line.strip()]
+    payloads = [json.loads(line) for line in response.text.splitlines() if line.strip()]
     assert [payload["type"] for payload in payloads] == ["token", "token", "complete"]
     assert [payload["token"] for payload in payloads[:2]] == ["Hello ", "from Ollama"]
     assert payloads[-1]["result"]["response"] == ""
