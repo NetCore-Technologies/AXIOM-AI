@@ -96,6 +96,20 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Build Control Center into the Docker build context
+        run: |
+          npm ci
+          npm run build
+
+      - name: Verify bundled Control Center is present
+        run: test -f axiom/webui/index.html
+
       - name: Set up QEMU
         if: contains(matrix.platforms, 'arm64')
         uses: docker/setup-qemu-action@v3
