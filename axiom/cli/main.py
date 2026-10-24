@@ -207,10 +207,10 @@ def _powershell_completion_script(command: click.Command) -> str:
 
     schema = json.dumps(describe(command), ensure_ascii=False, separators=(",", ":"))
     return (
-        "# AXIOM PowerShell completion. Add this script to your PowerShell profile.\\n"
-        "$script:AXIOMCompletion = ConvertFrom-Json -InputObject @'\\n"
+        "# AXIOM PowerShell completion. Add this script to your PowerShell profile.\n"
+        "$script:AXIOMCompletion = ConvertFrom-Json -InputObject @'\n"
         + schema
-        + "\\n'@\\n"
+        + "\n'@\n"
         + r'''Register-ArgumentCompleter -Native -CommandName axiom -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
 
@@ -242,7 +242,7 @@ def _powershell_completion_script(command: click.Command) -> str:
             )
         }
 }'''
-        + "\\n"
+        + "\n"
     )
 
 
