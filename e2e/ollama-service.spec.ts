@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { ensureAuthenticated } from "./helpers/auth";
 
 test("Runtime can start Ollama, pull a model with progress, and stop only the managed service", async ({ page }) => {
+  // Model cards provide an "Unload from memory" action for each loaded model.
   // Endpoint acceptance: "/api/inference/models/running", "/api/inference/models/inspect", and "/api/inference/models/unload".
   await ensureAuthenticated(page);
   let online = false;
