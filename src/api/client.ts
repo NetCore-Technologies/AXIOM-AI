@@ -16,6 +16,30 @@ export const playgroundEndpoints = [
 export type PlaygroundEndpoint = (typeof playgroundEndpoints)[number]["path"];
 const playgroundEndpointPaths = new Set<string>(playgroundEndpoints.map((endpoint) => endpoint.path));
 
+
+export type EngineFabricProfile = "balanced" | "low-memory" | "throughput" | "easy-setup" | "portable" | "minimal-daemons";
+export type EngineFabricBackend = {
+  id: string; name: string; kind: string; endpoint: string | null; supports_chat: boolean;
+  formats: string[]; strengths: string[]; tradeoffs: string[]; best_for: string[];
+  status: "ready" | "offline" | "auth_required" | "incompatible" | "setup_required";
+  installed: boolean; reachable: boolean; models: string[]; model_count: number; error: string | null; scope: string;
+};
+export type EngineFabricReport = {
+  schema_version: number; checked_at: string; host: { os: string; architecture: string };
+  profile: EngineFabricProfile; profiles: Array<{ id: EngineFabricProfile; label: string }>;
+  backends: EngineFabricBackend[];
+  recommendation: { profile: EngineFabricProfile; backend_id: string; name: string; status: "ready" | "setup_required"; reason: string };
+  security: { network_scope: string; environment_proxies_used: false; remote_endpoints_configurable: false; credentials_sent: false; model_downloads_started: false; processes_launched: false };
+  scope_note: string;
+};
+export type EngineFabricChatResult = {
+  schema_version: number; backend_id: "ollama" | "llama-cpp" | "lm-studio" | "vllm" | "llama-cpp-python";
+  backend_name: string; model: string; response: string; done: boolean;
+  prompt_eval_count: number | null; eval_count: number | null; total_duration_ms: number;
+  generated_at: string; execution: "local_loopback";
+  privacy: { prompt_returned: false; response_persisted: false; cloud_provider_used: false };
+};
+
 export type LocalInferenceStatus = {
   backend: "ollama";
   endpoint: string;
@@ -1503,6 +1527,9 @@ export const axiomApi = {
     method: "POST", body: JSON.stringify(input),
   }),
   axiomEngineStatus: () => requestJson<AxiomEngineStatus>("/api/engine/status"),
+  engineBackends: (profile: EngineFabricProfile = "balanced") => requestJson<EngineFabricReport>("/api/engine/backends?" + new URLSearchParams({ profile })),
+  engineBackendChat: (input: { backend_id: EngineFabricChatResult["backend_id"]; model: string; messages: Array<{ role: "system" | "user" | "assistant"; content: string }>; max_new_tokens: number; temperature: number }) =>
+    requestJson<EngineFabricChatResult>("/api/engine/backends/chat", { method: "POST", body: JSON.stringify(input) }, 300_000),
   axiomEngineTelemetry: () => requestJson<AxiomEngineSystemTelemetry>("/api/engine/telemetry"),
   axiomEngineModels: () => requestJson<AxiomEngineAssets>("/api/engine/models"),
   checkAxiomEngineAdapterCompatibility: (input: { model_path: string; adapter_path: string }) =>

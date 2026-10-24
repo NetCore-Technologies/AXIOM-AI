@@ -92,3 +92,8 @@ axiom --no-banner infer run qwen2.5:0.5b --prompt "Explain AXIOM" --top-p 0.83 -
 ```
 
 Top-p must be greater than 0 and at most 1; top-k is 0–100,000; repetition penalty is 0.1–5; context size is 512–131,072 tokens; seed is a non-negative signed 64-bit integer; and each of at most 16 stop strings is limited to 256 characters. These are runtime options, not measured hardware-fit claims.
+
+
+## AXIOM Engine Fabric
+
+Engine Fabric now compares AXIOM Native Engine with optional local runtime APIs and can send bounded chat requests to Ollama, llama.cpp server, LM Studio, vLLM, and llama-cpp-python. It is a router and evidence-labelled capability catalogue, not a claim that AXIOM has implemented or embedded those runtimes internally. The AXIOM Native Engine retains its own implementation and strict trusted safetensors model paths. See [Engine Fabric](Engine-Fabric.md) for backend strengths, trade-offs, profiles, loopback boundaries, and CLI/API usage.

@@ -13,6 +13,7 @@ from rich.text import Text
 
 from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, generate_local, generate_local_stream, runtime_status, runtime_telemetry
 from axiom.core import model_studio
+from axiom.core.engine_fabric import EngineFabricError, discover_engine_backends, run_engine_backend_chat
 
 engine_app = typer.Typer(help="Run causal language models directly through AXIOM's local engine.", no_args_is_help=True)
 console = Console()
@@ -258,3 +259,61 @@ def engine_run(
 
 
 __all__ = ["engine_app"]
+
+
+@engine_app.command("backends")
+def engine_backends_cli(
+    profile: str = typer.Option("balanced", help="balanced, low-memory, throughput, easy-setup, portable, minimal-daemons"),
+    json_output: bool = typer.Option(False, "--json", help="Print the complete backend matrix as JSON."),
+) -> None:
+    """Compare the native AXIOM engine with installed local inference runtimes."""
+    try:
+        report = discover_engine_backends(profile)
+    except ValueError as exc:
+        _fail(str(exc))
+    if json_output:
+        typer.echo(json.dumps(report, indent=2, ensure_ascii=False))
+        return
+    table = Table(title="AXIOM Engine Fabric")
+    table.add_column("Engine", style="cyan")
+    table.add_column("Status")
+    table.add_column("Models")
+    table.add_column("Best fit")
+    for backend in report["backends"]:
+        table.add_row(
+            backend["name"],
+            backend["status"],
+            str(backend["model_count"]),
+            ", ".join(backend["best_for"]),
+        )
+    console.print(table)
+    recommendation = report["recommendation"]
+    console.print(Panel(
+        f"{recommendation['name']} ({recommendation['status']})\n{recommendation['reason']}",
+        title=f"Recommended profile: {profile}",
+    ))
+    console.print(report["scope_note"])
+
+
+@engine_app.command("route-chat")
+def engine_route_chat(
+    backend: str = typer.Option(..., "--backend", help="ollama, llama-cpp, lm-studio, vllm, llama-cpp-python"),
+    model: str = typer.Option(..., "--model", help="Exact model ID reported by the selected local service."),
+    prompt: str = typer.Option(..., "--prompt", help="Prompt text, at most 12,000 characters."),
+    max_new_tokens: int = typer.Option(256, "--max-new-tokens", min=1, max=2048),
+    temperature: float = typer.Option(0.7, min=0, max=2),
+    json_output: bool = typer.Option(False, "--json", help="Print the response and runtime metadata as JSON."),
+) -> None:
+    """Run one bounded prompt through a selected local compatible backend."""
+    try:
+        result = run_engine_backend_chat(
+            backend, model, [{"role": "user", "content": prompt}],
+            max_new_tokens=max_new_tokens, temperature=temperature,
+        )
+    except (ValueError, EngineFabricError) as exc:
+        _fail(str(exc))
+    if json_output:
+        typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    console.print(Panel(result["response"] or "(The model returned an empty response.)", title=f"{result['backend_name']} · {result['model']}"))
+    console.print(f"{result['eval_count'] if result['eval_count'] is not None else 'Unknown'} output tokens · {result['total_duration_ms']} ms · local only")
