@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 from axiom.core import llm_client
 
 router = APIRouter(prefix="/api/llm", tags=["llm-client"])
-ProviderName = Literal["axiom-local", "openai", "anthropic", "gemini", "deepseek", "moonshot", "openai-compatible"]
+ProviderName = Literal["axiom-local", "openai", "anthropic", "gemini", "deepseek", "moonshot", "openrouter", "openai-compatible"]
 
 
 class ProviderRequest(BaseModel):
