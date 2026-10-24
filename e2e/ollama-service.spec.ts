@@ -95,7 +95,7 @@ test("Runtime can start Ollama, pull a model with progress, and stop only the ma
 
   await page.getByRole("button", { name: "Inspect model" }).click();
   await expect(page.getByText("Q4_K_M", { exact: true })).toBeVisible();
-  await expect(page.getByText("32768", { exact: true })).toBeVisible();
+  await expect(page.getByText("32,768", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Unload from memory" }).click();
   await expect(page.getByText("Downloaded model files remain installed.", { exact: false })).toBeVisible();
 
