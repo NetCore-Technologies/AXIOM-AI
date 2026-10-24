@@ -59,6 +59,10 @@ export type OllamaModelDetails = {
   context_length: number | null; capabilities: string[]; template_configured: boolean;
   license_present: boolean; system_prompt_configured: boolean; scope_note: string;
 };
+export type OllamaModelRemoval = {
+  schema_version: 1; model: string; removed: boolean; model_files_deleted: boolean;
+  remaining_models: string[]; scope_note: string;
+};
 export type OllamaModelUnload = {
   schema_version: 1; model: string; unloaded: boolean; model_files_deleted: false; scope_note: string;
 };
@@ -1477,6 +1481,7 @@ export const axiomApi = {
   runningOllamaModels: () => requestJson<OllamaRunningModels>("/api/inference/models/running"),
   inspectOllamaModel: (model: string) => requestJson<OllamaModelDetails>("/api/inference/models/inspect", { method: "POST", body: JSON.stringify({ model }) }),
   unloadOllamaModel: (model: string) => requestJson<OllamaModelUnload>("/api/inference/models/unload", { method: "POST", body: JSON.stringify({ model }) }),
+  removeOllamaModel: (model: string) => requestJson<OllamaModelRemoval>("/api/inference/models/remove", { method: "POST", body: JSON.stringify({ model }) }),
   startOllamaModelPull: (model: string) => requestJson<OllamaPullJob>("/api/inference/models/pull", { method: "POST", body: JSON.stringify({ model }) }),
   ollamaModelPullStatus: (jobId: string) => requestJson<OllamaPullJob>(`/api/inference/models/pull/${encodeURIComponent(jobId)}`),
   cancelOllamaModelPull: (jobId: string) => requestJson<OllamaPullJob>(`/api/inference/models/pull/${encodeURIComponent(jobId)}/cancel`, { method: "POST", body: JSON.stringify({}) }),
