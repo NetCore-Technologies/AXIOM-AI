@@ -130,3 +130,50 @@ def test_running_model_endpoint_returns_point_in_time_memory_report(monkeypatch)
     response = _client().get("/api/inference/models/running")
     assert response.status_code == 200
     assert response.json() == expected
+
+
+def test_streaming_inference_emits_ndjson_token_deltas_and_request_id(monkeypatch):
+    events = [
+        {"type": "token", "token": "Hello "},
+        {"type": "token", "token": "from Ollama"},
+        {"type": "complete", "result": {
+            "model": "qwen2.5:0.5b", "response": "Hello from Ollama", "done": True,
+            "done_reason": "stop", "prompt_eval_count": 4, "eval_count": 3,
+            "total_duration_ms": 8.0, "generated_at": "2026-10-24T00:00:00+00:00",
+            "execution": "local",
+        }},
+    ]
+    monkeypatch.setattr(inference, "stream_local_inference", lambda *_args, **_kwargs: iter(events))
+    monkeypatch.setattr(inference, "record_runtime_trace", lambda **_kwargs: None)
+
+    response = _client().post("/api/inference/generate/stream", json={
+        "model": "qwen2.5:0.5b", "prompt": "Say hello", "num_predict": 32, "temperature": 0.2,
+    })
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    assert response.headers.get("x-request-id")
+    payloads = [__import__("json").loads(line) for line in response.text.splitlines() if line.strip()]
+    assert [payload["type"] for payload in payloads] == ["token", "token", "complete"]
+    assert [payload["token"] for payload in payloads[:2]] == ["Hello ", "from Ollama"]
+    assert payloads[-1]["result"]["response"] == ""
+    assert payloads[-1]["result"]["request_id"] == response.headers["x-request-id"]
+
+
+def test_streaming_inference_sanitizes_runtime_failures(monkeypatch):
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("sensitive /home/test/private traceback")
+        yield {}
+    monkeypatch.setattr(inference, "stream_local_inference", broken)
+    monkeypatch.setattr(inference, "record_runtime_trace", lambda **_kwargs: None)
+
+    response = _client().post("/api/inference/generate/stream", json={
+        "model": "qwen2.5:0.5b", "prompt": "Say hello",
+    })
+
+    assert response.status_code == 200
+    assert "sensitive" not in response.text
+    assert "/home/test/private" not in response.text
+    payloads = [__import__("json").loads(line) for line in response.text.splitlines() if line.strip()]
+    assert payloads[-1]["type"] == "error"
+    assert payloads[-1]["message"] == "Local Ollama stream failed unexpectedly."
