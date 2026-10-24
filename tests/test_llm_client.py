@@ -11,7 +11,7 @@ def test_provider_catalog_lists_local_and_cloud_adapters_without_credentials() -
     result = llm_client.provider_catalog()
     providers = {item["id"]: item for item in result["providers"]}
 
-    assert {"axiom-local", "openai", "anthropic", "gemini", "deepseek", "moonshot", "openrouter", "openai-compatible"} <= providers.keys()
+    assert {"axiom-local", "ollama-local", "openai", "anthropic", "gemini", "deepseek", "moonshot", "openrouter", "openai-compatible"} <= providers.keys()
     assert providers["axiom-local"]["privacy"] == "local-only"
     assert providers["deepseek"]["requires_api_key"] is True
     assert result["credentials_persisted"] is False
