@@ -733,7 +733,7 @@ def test_engine_fabric_endpoint_rejects_unknown_profile() -> None:
 def test_engine_fabric_chat_endpoint_dispatches_validated_local_request(monkeypatch) -> None:
     observed = {}
     expected = {
-        "schema_version": 1, "backend_id": "llama-cpp", "backend_name": "llama.cpp server",
+        "schema_version": 1, "backend_id": "ollama", "backend_name": "Ollama",
         "model": "tiny-local", "response": "Hello from a local backend.", "done": True,
         "prompt_eval_count": 5, "eval_count": 4, "total_duration_ms": 12.0,
         "generated_at": "2026-10-24T00:00:00+00:00", "execution": "local_loopback",
@@ -747,14 +747,14 @@ def test_engine_fabric_chat_endpoint_dispatches_validated_local_request(monkeypa
 
     monkeypatch.setattr(engine_api, "run_engine_backend_chat", fake_dispatch)
     response = _client().post("/api/engine/backends/chat", json={
-        "backend_id": "llama-cpp", "model": "tiny-local",
+        "backend_id": "ollama", "model": "tiny-local",
         "messages": [{"role": "user", "content": "Say hello."}],
         "max_new_tokens": 64, "temperature": 0.2, "top_p": 0.8,
         "top_k": 40, "min_p": 0.15, "repetition_penalty": 1.15, "seed": 123, "stop_sequences": ["<END>"],
     })
     assert response.status_code == 200
     assert response.json() == expected
-    assert observed["backend_id"] == "llama-cpp"
+    assert observed["backend_id"] == "ollama"
     assert observed["max_new_tokens"] == 64
     assert observed["messages"] == [{"role": "user", "content": "Say hello."}]
     assert observed["top_p"] == 0.8 and observed["top_k"] == 40
@@ -774,8 +774,8 @@ def test_engine_fabric_chat_rejects_external_and_unknown_targets() -> None:
 def test_engine_fabric_benchmark_endpoint_returns_metadata_only_result(monkeypatch) -> None:
     expected = {
         "schema_version": 1,
-        "backend_id": "llama-cpp",
-        "backend_name": "llama.cpp server",
+        "backend_id": "ollama",
+        "backend_name": "Ollama",
         "model": "tiny-local",
         "configuration": {"iterations": 2, "measured_requests": 2},
         "measurements": {"latency_ms": {"median": 15.0, "p95": 19.0}, "requests": []},
