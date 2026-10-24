@@ -1200,7 +1200,7 @@ def _format_prompt_for_native_model(
             from jinja2.sandbox import SandboxedEnvironment
         except ImportError:
             if model_type == "qwen2":
-                return f"<|im_start|>user\\n{prompt}<|im_end|>\\n<|im_start|>assistant\\n", "qwen2-chatml-fallback"
+                return f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n", "qwen2-chatml-fallback"
             raise AxiomEngineError(
                 "This checkpoint supplies a chat template, but Jinja2 is unavailable. Install the template runtime dependency or use a raw/completion checkpoint."
             ) from None
@@ -1241,7 +1241,7 @@ def _format_prompt_for_native_model(
     if model_type == "qwen2":
         # Standard Qwen2 text-instruct checkpoints use ChatML markers even when
         # older/custom releases omit an exported chat_template.
-        return f"<|im_start|>user\\n{prompt}<|im_end|>\\n<|im_start|>assistant\\n", "qwen2-chatml-fallback"
+        return f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n", "qwen2-chatml-fallback"
     return prompt, "raw-completion"
 
 
