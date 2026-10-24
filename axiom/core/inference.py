@@ -43,6 +43,51 @@ def validate_generation(prompt: str, num_predict: int, temperature: float) -> tu
     return prompt, num_predict, float(temperature)
 
 
+def validate_sampling_options(
+    *,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    repetition_penalty: float | None = None,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] | None = None,
+    num_ctx: int | None = None,
+) -> dict[str, Any]:
+    """Validate optional Ollama generation settings and return Ollama option names."""
+    options: dict[str, Any] = {}
+    if top_p is not None:
+        if isinstance(top_p, bool) or not isinstance(top_p, (int, float)) or not 0 < float(top_p) <= 1:
+            raise ValueError("top_p must be greater than 0 and at most 1.")
+        options["top_p"] = float(top_p)
+    if top_k is not None:
+        if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
+            raise ValueError("top_k must be between 0 and 100,000.")
+        options["top_k"] = top_k
+    if repetition_penalty is not None:
+        if isinstance(repetition_penalty, bool) or not isinstance(repetition_penalty, (int, float)) or not 0.1 <= float(repetition_penalty) <= 5:
+            raise ValueError("repetition_penalty must be between 0.1 and 5.")
+        options["repeat_penalty"] = float(repetition_penalty)
+    if seed is not None:
+        if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 9_223_372_036_854_775_807:
+            raise ValueError("seed must be a non-negative signed 64-bit integer.")
+        options["seed"] = seed
+    if num_ctx is not None:
+        if isinstance(num_ctx, bool) or not isinstance(num_ctx, int) or not 512 <= num_ctx <= 131_072:
+            raise ValueError("num_ctx must be between 512 and 131,072 tokens.")
+        options["num_ctx"] = num_ctx
+    if stop_sequences is not None:
+        if not isinstance(stop_sequences, (list, tuple)) or len(stop_sequences) > 16:
+            raise ValueError("At most 16 stop sequences may be supplied.")
+        stops: list[str] = []
+        for value in stop_sequences:
+            if not isinstance(value, str) or not value.strip() or len(value) > 256:
+                raise ValueError("Each stop sequence must contain 1–256 non-whitespace characters.")
+            if value not in stops:
+                stops.append(value)
+        if stops:
+            options["stop"] = stops
+    return options
+
+
 def _open_loopback(request: Request, timeout: float):
     # Explicitly disable environment-configured proxies. The request destination
     # is a constant IPv4 loopback URL; callers cannot provide a hostname or URL.
@@ -266,6 +311,12 @@ def stream_local_inference(
     *,
     num_predict: int = 256,
     temperature: float = 0.7,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    repetition_penalty: float | None = None,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] | None = None,
+    num_ctx: int | None = None,
     cancel_event: Any = None,
     on_response: Callable[[Any], None] | None = None,
 ) -> Iterator[dict[str, Any]]:
@@ -276,13 +327,14 @@ def stream_local_inference(
     """
     model = validate_model_name(model)
     prompt, num_predict, temperature = validate_generation(prompt, num_predict, temperature)
+    sampling_options = validate_sampling_options(top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stop_sequences, num_ctx=num_ctx)
     if cancel_event is not None and cancel_event.is_set():
         return
     payload = {
         "model": model,
         "prompt": prompt,
         "stream": True,
-        "options": {"num_predict": num_predict, "temperature": temperature},
+        "options": {"num_predict": num_predict, "temperature": temperature, **sampling_options},
     }
     request = Request(
         f"{OLLAMA_ENDPOINT}/api/generate",
@@ -384,17 +436,25 @@ def run_local_inference(
     prompt: str,
     num_predict: int = 256,
     temperature: float = 0.7,
+    *,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    repetition_penalty: float | None = None,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] | None = None,
+    num_ctx: int | None = None,
 ) -> dict[str, Any]:
     """Generate text through a local Ollama service with bounded input/output."""
     model = validate_model_name(model)
     prompt, num_predict, temperature = validate_generation(prompt, num_predict, temperature)
+    sampling_options = validate_sampling_options(top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stop_sequences, num_ctx=num_ctx)
     result = _request_json(
         "/api/generate",
         payload={
             "model": model,
             "prompt": prompt,
             "stream": False,
-            "options": {"num_predict": num_predict, "temperature": temperature},
+            "options": {"num_predict": num_predict, "temperature": temperature, **sampling_options},
         },
         timeout=_GENERATION_TIMEOUT_SECONDS,
     )
