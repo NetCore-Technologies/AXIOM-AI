@@ -228,6 +228,9 @@ export default function LocalEngineFabricPanel() {
         <ul>{backend.strengths.slice(0, 3).map((strength) => <li key={strength}>{strength}</li>)}</ul>
         <p><strong>Trade-offs</strong></p>
         <ul>{backend.tradeoffs.slice(0, 2).map((tradeoff) => <li key={tradeoff}>{tradeoff}</li>)}</ul>
+        <p><strong>Generation contract</strong></p>
+        <p className="quiet-note">{backend.generation.note}</p>
+        {backend.generation.extension_sampling_controls.length > 0 && <p className="quiet-note">Compatibility extensions: {backend.generation.extension_sampling_controls.join(", ")}. Acceptance can vary by runtime version.</p>}
         {backend.error && <p className="quiet-note">{backend.error}</p>}
         {backend.id === report?.recommendation.backend_id && <p className="quiet-note"><Rocket size={13} style={{ verticalAlign: "middle", marginRight: 5 }} />Recommended for this profile</p>}
       </article>)}

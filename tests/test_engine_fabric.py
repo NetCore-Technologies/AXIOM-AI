@@ -346,3 +346,46 @@ def test_native_benchmark_uses_the_common_bounded_benchmark_contract(monkeypatch
     assert result["measurements"]["completion_tokens_known"] == 2
     assert "do not return" not in str(result)
     assert "representative prompt" not in str(result)
+
+
+def test_generation_capabilities_describe_runtime_dialects_without_overclaiming():
+    native = engine_fabric._generation_capabilities("axiom-native")
+    assert native["transport"] == "in_process"
+    assert native["extension_sampling_controls"] == []
+    assert native["parameter_mapping"]["repetition_penalty"] == "repetition_penalty"
+
+    ollama = engine_fabric._generation_capabilities("ollama")
+    assert ollama["transport"] == "ollama_options"
+    assert ollama["parameter_mapping"]["max_new_tokens"] == "options.num_predict"
+    assert ollama["parameter_mapping"]["repetition_penalty"] == "options.repeat_penalty"
+    assert ollama["extension_sampling_controls"] == []
+
+    vllm = engine_fabric._generation_capabilities("vllm")
+    llama_cpp = engine_fabric._generation_capabilities("llama-cpp")
+    assert vllm["parameter_mapping"]["repetition_penalty"] == "repetition_penalty"
+    assert llama_cpp["parameter_mapping"]["repetition_penalty"] == "repeat_penalty"
+    assert "top_k" in vllm["extension_sampling_controls"]
+    assert "API-version support" in vllm["note"]
+
+
+def test_discovered_backends_publish_sampling_contract(monkeypatch):
+    def fake_probe(definition):
+        return {
+            "id": definition["id"], "name": definition["name"], "kind": definition["kind"],
+            "endpoint": definition["endpoint"], "supports_chat": True, "formats": definition["formats"],
+            "strengths": definition["strengths"], "tradeoffs": definition["tradeoffs"], "best_for": definition["best_for"],
+            "status": "ready", "installed": True, "reachable": True, "models": ["tiny"], "model_count": 1,
+            "error": None, "scope": "fixed_loopback_only",
+            "generation": engine_fabric._generation_capabilities(definition["id"]),
+        }
+    monkeypatch.setattr(engine_fabric, "_probe_backend", fake_probe)
+    monkeypatch.setattr(engine_fabric, "_native_backend", lambda: {
+        "id": "axiom-native", "name": "AXIOM Native Engine", "kind": "native", "endpoint": None,
+        "supports_chat": True, "formats": ["safetensors"], "strengths": [], "tradeoffs": [],
+        "best_for": ["balanced"], "status": "ready", "installed": True, "reachable": True,
+        "models": ["tiny"], "model_count": 1, "error": None, "scope": "in_process_native_engine",
+        "generation": engine_fabric._generation_capabilities("axiom-native"),
+    })
+    report = engine_fabric.discover_engine_backends()
+    assert all("generation" in backend for backend in report["backends"])
+    assert report["backends"][0]["generation"]["transport"] == "in_process"

@@ -23,6 +23,13 @@ export type EngineFabricBackend = {
   formats: string[]; strengths: string[]; tradeoffs: string[]; best_for: string[];
   status: "ready" | "offline" | "auth_required" | "incompatible" | "setup_required";
   installed: boolean; reachable: boolean; models: string[]; model_count: number; error: string | null; scope: string;
+  generation: {
+    transport: "in_process" | "ollama_options" | "openai_compatible";
+    parameter_mapping: Record<string, string>;
+    native_sampling_controls: string[];
+    extension_sampling_controls: string[];
+    note: string;
+  };
 };
 export type EngineFabricReport = {
   schema_version: number; checked_at: string; host: { os: string; architecture: string };

@@ -161,6 +161,70 @@ def _model_ids(backend_id: str, payload: dict[str, Any]) -> list[str]:
     return output
 
 
+def _generation_capabilities(backend_id: str) -> dict[str, Any]:
+    """Describe the request dialect and separate extensions from common controls."""
+    if backend_id == "axiom-native":
+        return {
+            "transport": "in_process",
+            "parameter_mapping": {
+                "max_new_tokens": "max_new_tokens",
+                "temperature": "temperature",
+                "top_p": "top_p",
+                "top_k": "top_k",
+                "repetition_penalty": "repetition_penalty",
+                "seed": "seed",
+                "stop_sequences": "stop_sequences",
+            },
+            "native_sampling_controls": [
+                "temperature", "top_p", "top_k", "repetition_penalty", "seed", "stop_sequences",
+            ],
+            "extension_sampling_controls": [],
+            "note": "Controls are passed into AXIOM's own sampler; reproducibility still depends on device and kernel behavior.",
+        }
+    if backend_id == "ollama":
+        return {
+            "transport": "ollama_options",
+            "parameter_mapping": {
+                "max_new_tokens": "options.num_predict",
+                "temperature": "options.temperature",
+                "top_p": "options.top_p",
+                "top_k": "options.top_k",
+                "repetition_penalty": "options.repeat_penalty",
+                "seed": "options.seed",
+                "stop_sequences": "options.stop",
+            },
+            "native_sampling_controls": [
+                "temperature", "top_p", "top_k", "repetition_penalty", "seed", "stop_sequences",
+            ],
+            "extension_sampling_controls": [],
+            "note": "Uses Ollama's /api/chat options dialect; exact output behavior depends on model and installed runtime version.",
+        }
+    if backend_id not in _BACKEND_BY_ID:
+        raise ValueError("Unknown engine backend for generation capability lookup.")
+    penalty_field = "repetition_penalty" if backend_id == "vllm" else "repeat_penalty"
+    notes = {
+        "llama-cpp": "Uses llama.cpp's OpenAI-compatible endpoint and server-specific top-k and repeat-penalty fields.",
+        "lm-studio": "Advanced sampler extensions depend on the installed server and model backend.",
+        "vllm": "Uses vLLM's repetition_penalty extension; API-version support can differ.",
+        "llama-cpp-python": "Advanced sampler extensions depend on package version and server configuration.",
+    }
+    return {
+        "transport": "openai_compatible",
+        "parameter_mapping": {
+            "max_new_tokens": "max_tokens",
+            "temperature": "temperature",
+            "top_p": "top_p",
+            "top_k": "top_k (extension)",
+            "repetition_penalty": penalty_field,
+            "seed": "seed",
+            "stop_sequences": "stop",
+        },
+        "native_sampling_controls": ["temperature", "top_p", "seed", "stop_sequences"],
+        "extension_sampling_controls": ["top_k", "repetition_penalty"],
+        "note": notes[backend_id],
+    }
+
+
 def _probe_backend(definition: dict[str, Any]) -> dict[str, Any]:
     backend_id = definition["id"]
     executable = definition["executable"]
@@ -191,6 +255,7 @@ def _probe_backend(definition: dict[str, Any]) -> dict[str, Any]:
         "model_count": len(models),
         "error": error,
         "scope": "fixed_loopback_only",
+        "generation": _generation_capabilities(backend_id),
     }
 
 
@@ -249,6 +314,7 @@ def _native_backend() -> dict[str, Any]:
         "model_count": count,
         "error": error,
         "scope": "in_process_native_engine",
+        "generation": _generation_capabilities("axiom-native"),
     }
 
 
