@@ -11,8 +11,21 @@ def test_infer_status_json_is_a_registered_cli_command(monkeypatch):
         "status": "online", "models": ["qwen2.5:0.5b"], "error": None,
         "checked_at": "2026-10-21T00:00:00+00:00",
     }
-    monkeypatch.setattr("axiom.cli.inference.runtime_status", lambda: fake)
+    monkeypatch.setattr("axiom.cli.inference.service_status", lambda: fake)
     result = CliRunner().invoke(app, ["--no-banner", "infer", "status", "--json"])
     assert result.exit_code == 0, result.output
     assert '"status": "online"' in result.output
     assert "qwen2.5:0.5b" in result.output
+
+
+def test_infer_service_commands_are_registered():
+    runner = CliRunner()
+    result = runner.invoke(app, ["--no-banner", "infer", "service", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "start" in result.output and "stop" in result.output and "status" in result.output
+
+
+def test_infer_pull_command_is_registered():
+    result = CliRunner().invoke(app, ["--no-banner", "infer", "pull", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "Ollama model tag" in result.output
