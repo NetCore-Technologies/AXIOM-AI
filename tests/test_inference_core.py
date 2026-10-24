@@ -128,7 +128,7 @@ def test_chat_uses_loopback_ollama_api_with_bounded_conversation(monkeypatch):
     assert observed["payload"]["stream"] is False
     assert observed["payload"]["model"] == "qwen2.5:0.5b"
     assert observed["payload"]["messages"] == messages
-    assert observed["payload"]["options"] == {"num_predict": 24, "temperature": 0.1}
+    assert observed["payload"]["options"] == {"num_predict": 24, "temperature": 0.1, "top_p": 0.9, "repeat_penalty": 1.0}
     assert observed["timeout"] == inference._GENERATION_TIMEOUT_SECONDS
     assert result["response"] == "Ollama chat answer"
     assert result["prompt_eval_count"] == 8
