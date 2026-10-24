@@ -97,3 +97,51 @@ def test_missing_model_error_is_actionable(monkeypatch):
     monkeypatch.setattr(inference, "_open_loopback", fake_open)
     with pytest.raises(inference.InferenceRuntimeError, match="model not found"):
         inference.run_local_inference("qwen2.5:0.5b", "Hello")
+
+
+def test_chat_uses_loopback_ollama_api_with_bounded_conversation(monkeypatch):
+    observed = {}
+
+    def fake_open(request, timeout):
+        observed["url"] = request.full_url
+        observed["timeout"] = timeout
+        observed["payload"] = json.loads(request.data.decode("utf-8"))
+        return FakeResponse({
+            "message": {"role": "assistant", "content": "Ollama chat answer"},
+            "done": True,
+            "prompt_eval_count": 8,
+            "eval_count": 5,
+            "total_duration": 2_500_000,
+        })
+
+    monkeypatch.setattr(inference, "_open_loopback", fake_open)
+    messages = [
+        {"role": "system", "content": "Be precise."},
+        {"role": "user", "content": "First question"},
+        {"role": "assistant", "content": "Previous answer"},
+        {"role": "user", "content": "Follow up"},
+    ]
+    result = inference.run_local_chat("qwen2.5:0.5b", messages, num_predict=24, temperature=0.1)
+
+    assert observed["url"] == "http://127.0.0.1:11434/api/chat"
+    assert observed["payload"]["stream"] is False
+    assert observed["payload"]["model"] == "qwen2.5:0.5b"
+    assert observed["payload"]["messages"] == messages
+    assert observed["payload"]["options"] == {"num_predict": 24, "temperature": 0.1}
+    assert observed["timeout"] == inference._GENERATION_TIMEOUT_SECONDS
+    assert result["response"] == "Ollama chat answer"
+    assert result["prompt_eval_count"] == 8
+    assert result["eval_count"] == 5
+    assert result["execution"] == "local"
+
+
+def test_chat_rejects_invalid_messages_before_loopback(monkeypatch):
+    monkeypatch.setattr(inference, "_open_loopback", lambda *_args, **_kwargs: pytest.fail("network request must not run"))
+    with pytest.raises(ValueError, match="At least one user message"):
+        inference.run_local_chat("qwen2.5:0.5b", [{"role": "assistant", "content": "answer"}])
+    with pytest.raises(ValueError, match="Combined chat content"):
+        inference.run_local_chat("qwen2.5:0.5b", [
+            {"role": "user", "content": "x" * 12_000},
+            {"role": "assistant", "content": "y" * 12_000},
+            {"role": "user", "content": "z"},
+        ])
