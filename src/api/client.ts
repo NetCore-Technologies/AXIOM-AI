@@ -68,11 +68,17 @@ export type LocalInferenceResult = {
   model: string;
   response: string;
   done: boolean;
+  done_reason?: string | null;
+  execution?: "local";
   prompt_eval_count: number | null;
   eval_count: number | null;
   total_duration_ms: number | null;
   generated_at: string;
 };
+export type LocalInferenceStreamEvent =
+  | { type: "token"; token: string; request_id?: string }
+  | { type: "complete"; result: LocalInferenceResult }
+  | { type: "error"; message: string; request_id?: string };
 
 export type LocalInferenceBenchmark = {
   request_id: string;
@@ -953,6 +959,79 @@ async function requestJson<T>(path: string, init: RequestInit = {}, timeoutMs = 
   }
 }
 
+async function streamLocalInferenceRequest(
+  input: { model: string; prompt: string; num_predict: number; temperature: number },
+  onEvent: (event: LocalInferenceStreamEvent) => void,
+  signal: AbortSignal,
+): Promise<LocalInferenceResult> {
+  const requestId = globalThis.crypto?.randomUUID?.()
+    ?? ("ui-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 12));
+  const response = await fetch(API_BASE + "/api/inference/generate/stream", {
+    method: "POST",
+    headers: {
+      Accept: "application/x-ndjson",
+      "Content-Type": "application/json",
+      "X-Request-ID": requestId,
+    },
+    body: JSON.stringify(input),
+    signal,
+  });
+  if (!response.ok) {
+    const raw = await response.text();
+    let payload: unknown = raw;
+    try { payload = raw ? JSON.parse(raw) as unknown : null; } catch { /* retain a safe fallback */ }
+    const rid = response.headers.get("X-Request-ID") || requestId;
+    throw new Error(messageFromPayload(payload, "AXIOM stream request failed (" + response.status + ")") + " (request ID " + rid + ")");
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("AXIOM streaming response did not expose a readable body.");
+
+  const decoder = new TextDecoder();
+  let pending = "";
+  let responseText = "";
+  let completed: LocalInferenceResult | null = null;
+  const consumeLine = (line: string): void => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    let event: LocalInferenceStreamEvent;
+    try { event = JSON.parse(trimmed) as LocalInferenceStreamEvent; }
+    catch { throw new Error("AXIOM returned an invalid newline-delimited inference event."); }
+    if (event.type === "error") throw new Error(event.message || "Local Ollama generation failed.");
+    if (event.type === "token") {
+      if (typeof event.token !== "string") throw new Error("AXIOM returned an invalid token delta.");
+      responseText += event.token;
+      onEvent(event);
+      return;
+    }
+    if (event.type !== "complete" || !event.result || typeof event.result !== "object") {
+      throw new Error("AXIOM returned an unknown local inference stream event.");
+    }
+    completed = { ...event.result, response: responseText, request_id: event.result.request_id || requestId };
+    onEvent(event);
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (value) pending += decoder.decode(value, { stream: !done });
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      for (const line of lines) consumeLine(line);
+      if (done) break;
+    }
+    if (pending.trim()) consumeLine(pending);
+  } finally {
+    if (!signal.aborted) {
+      try { await reader.cancel(); } catch { /* upstream may already have closed */ }
+    }
+    reader.releaseLock();
+  }
+  if (signal.aborted) throw new DOMException("Local inference was stopped.", "AbortError");
+  if (!completed) throw new Error("Ollama stream ended without a completion event.");
+  return completed;
+}
+
+
 async function streamAxiomEngineRequest(
   input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "auto" | "full" | "layer_streaming" | "disk_streaming"; precision?: "auto" | "fp32" | "fp16" | "bf16" },
   onEvent: (event: AxiomEngineStreamEvent) => void,
@@ -1386,6 +1465,7 @@ export const axiomApi = {
   },
 
   inferenceStatus: () => requestJson<LocalInferenceStatus>("/api/inference/status"),
+  streamLocalInference: (input: { model: string; prompt: string; num_predict: number; temperature: number }, onEvent: (event: LocalInferenceStreamEvent) => void, signal: AbortSignal) => streamLocalInferenceRequest(input, onEvent, signal),
   startLocalOllama: () => requestJson<{ started: boolean; already_running: boolean; service: LocalInferenceStatus }>("/api/inference/service/start", { method: "POST", body: JSON.stringify({}) }),
   stopLocalOllama: () => requestJson<{ stopped: boolean; service: LocalInferenceStatus }>("/api/inference/service/stop", { method: "POST", body: JSON.stringify({}) }),
   runningOllamaModels: () => requestJson<OllamaRunningModels>("/api/inference/models/running"),
