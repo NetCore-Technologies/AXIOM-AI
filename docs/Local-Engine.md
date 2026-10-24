@@ -7,20 +7,20 @@ AXIOM Native Engine executes Llama, Mistral, Qwen2, and Qwen3-family causal lang
 ## Install the native runtime
 
 ```bash
-python -m pip install -e '.[native-inference]' (includes Jinja2 for checkpoint chat templates).
+python -m pip install -e '.[native-inference]'
 ```
 
-This extra installs PyTorch, tokenizers, and safetensors. The separate training extra retains Transformers/PEFT tooling for the existing training workflow; the native inference loop does not delegate generation to Transformers.
+This extra installs PyTorch, tokenizers, safetensors, and Jinja2 for sandboxed checkpoint chat templates. The separate training extra retains Transformers/PEFT tooling for the existing training workflow; the native inference loop does not delegate generation to Transformers.
 
 ## Supported checkpoint format
 
 A supported base model directory must contain:
-- config.json declaring model_type llama, mistral, or qwen2, with RoPE settings implemented by the native decoder.
+- config.json declaring model_type llama, mistral, qwen2, or qwen3, with RoPE settings implemented by the native decoder.
 - tokenizer.json, used locally for encoding and decoding.
 - model.safetensors, or model.safetensors.index.json plus the indexed safetensors shards.
 - Standard floating-point model tensors in float16, bfloat16, or float32 with expected Llama/Mistral/Qwen2/Qwen3 tensor names and shapes.
 
-Model Studio can pull compatible public Llama/Mistral/Qwen2/Qwen3 safetensors checkpoints directly into AXIOM's trusted native-model directory. It validates the architecture and Hub file inventory before downloading weights, fetches only allowlisted config/tokenizer/safetensors assets (never model-provided Python), stages downloads before publishing the directory, reports byte progress, checks free disk, enforces per-file/total limits, and refuses to overwrite an existing install. Gated/private repositories are not supported by this pull path. The native engine still rejects GGUF, EXL2, GPTQ/AWQ and other quantized weights, pickle-based pytorch_model.bin weights, custom remote model code, unsupported architectures, and RoPE scaling modes it does not implement. Qwen2 support is limited to the standard text decoder; Qwen3 and multimodal Qwen variants are not implied. It does not silently route generation through another engine. PyTorch remains the tensor-kernel dependency, while the supported model forward pass and decode loop are AXIOM-owned.
+Model Studio can pull compatible public Llama/Mistral/Qwen2/Qwen3 safetensors checkpoints directly into AXIOM's trusted native-model directory. It validates the architecture and Hub file inventory before downloading weights, fetches only allowlisted config/tokenizer/safetensors assets (never model-provided Python), stages downloads before publishing the directory, reports byte progress, checks free disk, enforces per-file/total limits, and refuses to overwrite an existing install. Gated/private repositories are not supported by this pull path. The native engine still rejects GGUF, EXL2, GPTQ/AWQ and other quantized weights, pickle-based pytorch_model.bin weights, custom remote model code, unsupported architectures, and RoPE scaling modes it does not implement. Qwen2 and Qwen3 support is limited to the standard text decoder and the RoPE/query-key normalization settings implemented by AXIOM; multimodal Qwen variants and non-default RoPE scaling are not implied. It does not silently route generation through another engine. PyTorch remains the tensor-kernel dependency, while the supported model forward pass and decode loop are AXIOM-owned.
 
 ## Trusted model roots
 
