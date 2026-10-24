@@ -130,7 +130,7 @@ def test_start_terminates_process_if_ownership_state_cannot_be_saved(monkeypatch
     monkeypatch.setattr(service.shutil, "which", lambda _name: "/usr/bin/ollama")
     monkeypatch.setattr(service.subprocess, "Popen", lambda *_args, **_kwargs: process)
     monkeypatch.setattr(service, "_process_info", lambda _pid: {
-        "executable": "/usr/bin/ollama", "command": "/usr/bin/ollama\\0serve", "identity": "linux:1",
+        "executable": "/usr/bin/ollama", "command": "/usr/bin/ollama\0serve", "identity": "linux:1",
     })
     monkeypatch.setattr(service, "_write_state", lambda _record: (_ for _ in ()).throw(OSError("disk unavailable")))
 
