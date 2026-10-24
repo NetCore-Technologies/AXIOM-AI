@@ -115,3 +115,18 @@ def test_model_unload_endpoint_reports_downloads_are_preserved(monkeypatch):
     response = _client().post("/api/inference/models/unload", json={"model": "qwen2.5:0.5b"})
     assert response.status_code == 200
     assert response.json()["model_files_deleted"] is False
+
+
+def test_running_model_endpoint_returns_point_in_time_memory_report(monkeypatch):
+    expected = {
+        "schema_version": 1, "backend": "ollama", "endpoint": "http://127.0.0.1:11434",
+        "models": [{"name": "qwen2.5:0.5b", "size_bytes": 800, "size_vram_bytes": 300,
+                    "size_ram_bytes": 500, "memory_placement": "mixed", "expires_at": None,
+                    "digest_prefix": None, "format": "gguf", "family": "qwen2",
+                    "parameter_size": "0.5B", "quantization_level": "Q4_K_M"}],
+        "count": 1, "scope_note": "Runtime-reported memory",
+    }
+    monkeypatch.setattr(inference, "list_running_local_models", lambda: expected)
+    response = _client().get("/api/inference/models/running")
+    assert response.status_code == 200
+    assert response.json() == expected
