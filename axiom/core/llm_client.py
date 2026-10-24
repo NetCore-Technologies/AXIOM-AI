@@ -100,13 +100,19 @@ def _native_models() -> list[dict[str, Any]]:
     except Exception:
         raise LLMClientError("AXIOM could not inspect the trusted local model inventory.") from None
     models = report.get("models", []) if isinstance(report, dict) else []
-    return [
+    compatible = [
         item for item in models
         if isinstance(item, dict)
         and isinstance(item.get("name"), str)
         and isinstance(item.get("path"), str)
         and item.get("model_type") in {"llama", "mistral", "qwen2", "qwen3"}
     ]
+    # Model aliases are public CLI/API identifiers. Never silently choose one
+    # checkpoint when several trusted directories share the same alias.
+    name_counts: dict[str, int] = {}
+    for item in compatible:
+        name_counts[item["name"]] = name_counts.get(item["name"], 0) + 1
+    return [item for item in compatible if name_counts[item["name"]] == 1]
 
 
 def _base_url(provider: str, base_url: str | None) -> str:

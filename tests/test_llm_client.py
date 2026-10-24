@@ -344,3 +344,15 @@ def test_cloud_provider_rejects_unsupported_local_only_sampling(monkeypatch: pyt
             "deepseek", "deepseek-chat", [{"role": "user", "content": "private"}],
             api_key="sentinel-secret", consent=True, top_k=25,
         )
+
+
+def test_native_model_inventory_excludes_ambiguous_aliases(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(llm_client, "discover_local_engine_assets", lambda: {
+        "models": [
+            {"name": "qwen-duplicate", "path": "/trusted/one", "model_type": "qwen2"},
+            {"name": "qwen-duplicate", "path": "/trusted/two", "model_type": "qwen2"},
+            {"name": "llama-unique", "path": "/trusted/three", "model_type": "llama"},
+            {"name": "unsupported-architecture", "path": "/trusted/four", "model_type": "other"},
+        ],
+    })
+    assert [item["name"] for item in llm_client._native_models()] == ["llama-unique"]
