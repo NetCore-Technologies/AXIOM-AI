@@ -63,6 +63,11 @@ def test_local_chat_uses_axiom_native_stream_without_network(monkeypatch: pytest
         [{"role": "user", "content": "Hello"}],
         max_tokens=7,
         temperature=0,
+        top_p=0.82,
+        top_k=40,
+        repetition_penalty=1.15,
+        seed=123,
+        stop_sequences=["END", "END"],
         precision="fp16",
     )
 
@@ -75,6 +80,11 @@ def test_local_chat_uses_axiom_native_stream_without_network(monkeypatch: pytest
     assert captured["model_path"] == "/trusted/tiny-llama"
     assert captured["chat_messages"] == [{"role": "user", "content": "Hello"}]
     assert captured["max_new_tokens"] == 7
+    assert captured["top_p"] == 0.82
+    assert captured["top_k"] == 40
+    assert captured["repetition_penalty"] == 1.15
+    assert captured["seed"] == 123
+    assert captured["stop_sequences"] == ("END",)
 
 
 def test_cloud_chat_requires_explicit_consent_before_any_request(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -270,15 +280,26 @@ def test_ollama_local_provider_sends_structured_turns_to_loopback_adapter(monkey
         {"role": "user", "content": "Follow up"},
     ]
 
-    def fake_chat(model: str, messages: list[dict[str, str]], *, num_predict: int, temperature: float):
-        captured.update({"model": model, "messages": messages, "num_predict": num_predict, "temperature": temperature})
+    def fake_chat(
+        model: str, messages: list[dict[str, str]], *, num_predict: int, temperature: float,
+        top_p: float, top_k: int, repetition_penalty: float, seed: int | None, stop_sequences,
+    ):
+        captured.update({
+            "model": model, "messages": messages, "num_predict": num_predict, "temperature": temperature,
+            "top_p": top_p, "top_k": top_k, "repetition_penalty": repetition_penalty,
+            "seed": seed, "stop_sequences": stop_sequences,
+        })
         return {
             "model": model, "response": "Ollama answer", "prompt_eval_count": 7,
             "eval_count": 3, "generated_at": "2026-01-01T00:00:00+00:00",
         }
 
     monkeypatch.setattr(llm_client, "run_local_chat", fake_chat)
-    result = llm_client.chat("ollama-local", "qwen2.5:0.5b", expected_messages, max_tokens=18, temperature=0.2, consent=False)
+    result = llm_client.chat(
+        "ollama-local", "qwen2.5:0.5b", expected_messages,
+        max_tokens=18, temperature=0.2, top_p=0.85, top_k=32,
+        repetition_penalty=1.2, seed=7, stop_sequences=["DONE"], consent=False,
+    )
 
     assert result["provider"] == "ollama-local"
     assert result["response"] == "Ollama answer"
@@ -290,4 +311,36 @@ def test_ollama_local_provider_sends_structured_turns_to_loopback_adapter(monkey
         "messages": expected_messages,
         "num_predict": 18,
         "temperature": 0.2,
+        "top_p": 0.85,
+        "top_k": 32,
+        "repetition_penalty": 1.2,
+        "seed": 7,
+        "stop_sequences": ("DONE",),
     }
+
+
+@pytest.mark.parametrize("options", [
+    {"top_p": 0},
+    {"top_p": float("nan")},
+    {"top_k": -1},
+    {"top_k": True},
+    {"repetition_penalty": 0},
+    {"seed": -1},
+    {"seed": True},
+    {"stop_sequences": [""]},
+    {"stop_sequences": ["x" * 257]},
+    {"stop_sequences": ["STOP"] * 17},
+])
+def test_local_sampling_options_are_validated_before_dispatch(monkeypatch: pytest.MonkeyPatch, options: dict[str, Any]) -> None:
+    monkeypatch.setattr(llm_client, "run_local_chat", lambda *_args, **_kwargs: pytest.fail("invalid input must not dispatch"))
+    with pytest.raises(ValueError):
+        llm_client.chat("ollama-local", "qwen2.5:0.5b", [{"role": "user", "content": "test"}], **options)
+
+
+def test_cloud_provider_rejects_unsupported_local_only_sampling(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(llm_client, "_provider_request", lambda *_args, **_kwargs: pytest.fail("unsupported parameters must not be sent"))
+    with pytest.raises(ValueError, match="local AXIOM Native Engine and Ollama"):
+        llm_client.chat(
+            "deepseek", "deepseek-chat", [{"role": "user", "content": "private"}],
+            api_key="sentinel-secret", consent=True, top_k=25,
+        )
