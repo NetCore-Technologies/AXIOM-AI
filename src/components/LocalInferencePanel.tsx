@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Activity, BarChart3, Download, Play, Power, RefreshCcw, Square } from "lucide-react";
-import { axiomApi, type LocalInferenceBenchmark, type LocalInferenceResult, type LocalInferenceStatus, type OllamaPullJob } from "../api/client";
+import { Activity, BarChart3, Download, Info, Play, Power, RefreshCcw, Square } from "lucide-react";
+import { axiomApi, type LocalInferenceBenchmark, type LocalInferenceResult, type LocalInferenceStatus, type OllamaPullJob, type OllamaModelDetails } from "../api/client";
 import LocalAxiomEnginePanel from "./LocalAxiomEnginePanel";
 
 export default function LocalInferencePanel() {
@@ -26,6 +26,11 @@ export default function LocalInferencePanel() {
   const [pullJob, setPullJob] = useState<OllamaPullJob | null>(null);
   const [pullBusy, setPullBusy] = useState(false);
   const [pullError, setPullError] = useState("");
+  const [modelDetails, setModelDetails] = useState<OllamaModelDetails | null>(null);
+  const [inspectBusy, setInspectBusy] = useState(false);
+  const [inspectError, setInspectError] = useState("");
+  const [unloadBusy, setUnloadBusy] = useState(false);
+  const [unloadMessage, setUnloadMessage] = useState("");
 
   const refresh = async () => {
     setLoading(true);
@@ -73,6 +78,26 @@ export default function LocalInferencePanel() {
     if (!pullJob || !["queued", "running"].includes(pullJob.status)) return;
     try { setPullJob(await axiomApi.cancelOllamaModelPull(pullJob.id)); }
     catch (cause) { setPullError(cause instanceof Error ? cause.message : "Could not cancel the model download."); }
+  };
+
+  const inspectModel = async () => {
+    setInspectError(""); setModelDetails(null);
+    if (!online || !model.trim()) { setInspectError("Choose an installed local model while Ollama is online."); return; }
+    setInspectBusy(true);
+    try { setModelDetails(await axiomApi.inspectOllamaModel(model.trim())); }
+    catch (cause) { setInspectError(cause instanceof Error ? cause.message : "Could not inspect the selected model."); }
+    finally { setInspectBusy(false); }
+  };
+
+  const unloadModel = async () => {
+    setUnloadMessage("");
+    if (!online || !model.trim()) { setUnloadMessage("Choose an installed local model while Ollama is online."); return; }
+    setUnloadBusy(true);
+    try {
+      const result = await axiomApi.unloadOllamaModel(model.trim());
+      setUnloadMessage(result.scope_note);
+    } catch (cause) { setUnloadMessage(cause instanceof Error ? cause.message : "Could not unload this model."); }
+    finally { setUnloadBusy(false); }
   };
 
   const run = async (event: FormEvent<HTMLFormElement>) => {
@@ -188,6 +213,27 @@ export default function LocalInferencePanel() {
         <datalist id="axiom-local-model-options">{(status?.models || []).map((name) => <option key={name} value={name} />)}</datalist>
         <small>{status?.models.length ? "Suggestions come from the local model inventory." : "Enter an exact model name that has already been pulled locally."}</small>
       </label>
+      <div className="integration-form-actions">
+        <button type="button" className="button secondary-button" onClick={() => void inspectModel()} disabled={!online || loading || inspectBusy || running || !model.trim()}><Info size={14} /> {inspectBusy ? "Inspecting…" : "Inspect model"}</button>
+        <button type="button" className="button secondary-button" onClick={() => void unloadModel()} disabled={!online || loading || unloadBusy || running || !model.trim()}><Square size={12} /> {unloadBusy ? "Unloading…" : "Unload from memory"}</button>
+      </div>
+      {inspectError && <div className="inline-alert warning" role="alert">{inspectError}</div>}
+      {unloadMessage && <div className="inline-alert" role="status">{unloadMessage}</div>}
+      {modelDetails && <section className="panel-surface" aria-label="Local model metadata" style={{ marginTop: 12, padding: 16 }}>
+        <div className="surface-head"><div><p className="surface-eyebrow">LOCAL MODEL METADATA</p><h3>{modelDetails.model}</h3></div><span className="status-pill success"><i />INSPECTED</span></div>
+        <div className="info-grid">
+          {[
+            { label: "Format", value: modelDetails.format || "Unknown" },
+            { label: "Family", value: modelDetails.family || modelDetails.families.join(", ") || "Unknown" },
+            { label: "Parameter size", value: modelDetails.parameter_size || (modelDetails.parameter_count ? modelDetails.parameter_count.toLocaleString() : "Unknown") },
+            { label: "Quantization", value: modelDetails.quantization_level || "Not reported" },
+            { label: "Context length", value: modelDetails.context_length?.toLocaleString() || "Not reported" },
+            { label: "Disk size", value: modelDetails.size_bytes === null ? "Unknown" : `${(modelDetails.size_bytes / 1_073_741_824).toFixed(2)} GiB` },
+          ].map((item) => <div className="panel-surface" key={item.label} style={{ padding: 12, minWidth: 0 }}><p className="surface-eyebrow">{item.label}</p><strong style={{ display: "block", marginTop: 6, overflowWrap: "anywhere" }}>{item.value}</strong></div>)}
+        </div>
+        <p className="quiet-note" style={{ marginTop: 12 }}>Capabilities: {modelDetails.capabilities.length ? modelDetails.capabilities.join(", ") : "Not reported"}. {modelDetails.template_configured ? "A model template is configured." : "No template was reported."} {modelDetails.license_present ? "License metadata is present." : "License metadata was not reported."}</p>
+        <p className="quiet-note">{modelDetails.scope_note}</p>
+      </section>
       <label className="field">
         <span className="field-label-row"><span>Prompt</span><span>{prompt.length.toLocaleString()} / 12,000 characters</span></span>
         <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={12000} rows={6} required placeholder="Ask your local model to do something…" />
