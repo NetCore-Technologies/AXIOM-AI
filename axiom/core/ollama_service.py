@@ -286,7 +286,18 @@ def start_service() -> dict[str, Any]:
                     "identity": info["identity"],
                     "started_at": datetime.now(UTC).isoformat(),
                 }
-                _write_state(record)
+                try:
+                    _write_state(record)
+                except OSError:
+                    try:
+                        process.terminate()
+                        process.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=3)
+                    except OSError:
+                        pass
+                    raise OllamaServiceError("AXIOM could not safely record ownership of the Ollama service; the started process was terminated.") from None
                 break
             time.sleep(0.1)
         if record is None:
@@ -309,6 +320,19 @@ def start_service() -> dict[str, Any]:
                 os.kill(process.pid, signal.SIGTERM)
             except OSError:
                 pass
+            cleanup_deadline = time.monotonic() + 2.0
+            while time.monotonic() < cleanup_deadline and _matches_state(record):
+                time.sleep(0.1)
+            if _matches_state(record):
+                try:
+                    os.kill(process.pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+                except OSError:
+                    pass
+                cleanup_deadline = time.monotonic() + 2.0
+                while time.monotonic() < cleanup_deadline and _matches_state(record):
+                    time.sleep(0.1)
+            if _matches_state(record):
+                raise OllamaServiceError("Ollama did not become ready and its process is still running; AXIOM retained its ownership record so it can be stopped safely.")
         _clear_state()
         raise OllamaServiceError("Ollama did not become ready within 12 seconds. Check the local service and retry.")
 
