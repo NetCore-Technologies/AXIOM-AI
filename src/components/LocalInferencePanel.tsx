@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Activity, BarChart3, Download, Info, Play, Power, RefreshCcw, Square } from "lucide-react";
-import { axiomApi, type LocalInferenceBenchmark, type LocalInferenceResult, type LocalInferenceStatus, type OllamaPullJob, type OllamaModelDetails } from "../api/client";
+import { axiomApi, type LocalInferenceBenchmark, type LocalInferenceResult, type LocalInferenceStatus, type OllamaPullJob, type OllamaModelDetails, type OllamaRunningModels } from "../api/client";
 import LocalAxiomEnginePanel from "./LocalAxiomEnginePanel";
 
 export default function LocalInferencePanel() {
@@ -31,6 +31,9 @@ export default function LocalInferencePanel() {
   const [inspectError, setInspectError] = useState("");
   const [unloadBusy, setUnloadBusy] = useState(false);
   const [unloadMessage, setUnloadMessage] = useState("");
+  const [runningModels, setRunningModels] = useState<OllamaRunningModels | null>(null);
+  const [runningBusy, setRunningBusy] = useState(false);
+  const [runningError, setRunningError] = useState("");
 
   const refresh = async () => {
     setLoading(true);
@@ -78,6 +81,13 @@ export default function LocalInferencePanel() {
     if (!pullJob || !["queued", "running"].includes(pullJob.status)) return;
     try { setPullJob(await axiomApi.cancelOllamaModelPull(pullJob.id)); }
     catch (cause) { setPullError(cause instanceof Error ? cause.message : "Could not cancel the model download."); }
+  };
+
+  const refreshRunningModels = async () => {
+    setRunningError(""); setRunningBusy(true);
+    try { setRunningModels(await axiomApi.runningOllamaModels()); }
+    catch (cause) { setRunningError(cause instanceof Error ? cause.message : "Loaded model inventory is unavailable."); }
+    finally { setRunningBusy(false); }
   };
 
   const inspectModel = async () => {
@@ -214,11 +224,28 @@ export default function LocalInferencePanel() {
         <small>{status?.models.length ? "Suggestions come from the local model inventory." : "Enter an exact model name that has already been pulled locally."}</small>
       </label>
       <div className="integration-form-actions">
+        <button type="button" className="button secondary-button" onClick={() => void refreshRunningModels()} disabled={!online || loading || runningBusy}><Activity size={14} /> {runningBusy ? "Checking memory…" : "Show loaded models"}</button>
         <button type="button" className="button secondary-button" onClick={() => void inspectModel()} disabled={!online || loading || inspectBusy || running || !model.trim()}><Info size={14} /> {inspectBusy ? "Inspecting…" : "Inspect model"}</button>
         <button type="button" className="button secondary-button" onClick={() => void unloadModel()} disabled={!online || loading || unloadBusy || running || !model.trim()}><Square size={12} /> {unloadBusy ? "Unloading…" : "Unload from memory"}</button>
       </div>
       {inspectError && <div className="inline-alert warning" role="alert">{inspectError}</div>}
       {unloadMessage && <div className="inline-alert" role="status">{unloadMessage}</div>}
+      {runningError && <div className="inline-alert warning" role="alert">{runningError}</div>}
+      {runningModels && <section className="panel-surface" aria-label="Loaded Ollama models" style={{ marginTop: 12, padding: 16 }}>
+        <div className="surface-head"><div><p className="surface-eyebrow">LIVE PROCESS INVENTORY</p><h3>Loaded models · {runningModels.count}</h3></div><button type="button" className="button secondary-button" onClick={() => void refreshRunningModels()} disabled={runningBusy}><RefreshCcw size={13} /> Refresh</button></div>
+        {runningModels.models.length === 0 ? <p className="quiet-note">No models are currently loaded in Ollama memory. Installed model files are unaffected.</p> : <div className="info-grid">
+          {runningModels.models.map((item) => <div className="panel-surface" key={item.name} style={{ padding: 14, minWidth: 0 }}>
+            <strong style={{ display: "block", overflowWrap: "anywhere" }}>{item.name}</strong>
+            <span className="status-pill success" style={{ marginTop: 8, display: "inline-flex" }}><i />{item.memory_placement === "gpu" ? "GPU/VRAM" : item.memory_placement === "mixed" ? "CPU + GPU" : "CPU/RAM or unreported"}</span>
+            <p className="quiet-note" style={{ marginTop: 10 }}>Total loaded size: {item.size_bytes === null ? "unknown" : `${(item.size_bytes / 1_073_741_824).toFixed(2)} GiB`}</p>
+            <p className="quiet-note">GPU memory: {item.size_vram_bytes === null ? "not reported" : `${(item.size_vram_bytes / 1_073_741_824).toFixed(2)} GiB`}</p>
+            {item.size_ram_bytes !== null && <p className="quiet-note">Approx. non-VRAM size: {(item.size_ram_bytes / 1_073_741_824).toFixed(2)} GiB</p>}
+            <p className="quiet-note">{[item.family, item.parameter_size, item.quantization_level].filter(Boolean).join(" · ") || "Model details not reported"}</p>
+            {item.expires_at && <p className="quiet-note">Runtime expiry: {item.expires_at}</p>}
+          </div>)}
+        </div>}
+        <p className="quiet-note">{runningModels.scope_note}</p>
+      </section>}
       {modelDetails && <section className="panel-surface" aria-label="Local model metadata" style={{ marginTop: 12, padding: 16 }}>
         <div className="surface-head"><div><p className="surface-eyebrow">LOCAL MODEL METADATA</p><h3>{modelDetails.model}</h3></div><span className="status-pill success"><i />INSPECTED</span></div>
         <div className="info-grid">
