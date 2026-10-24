@@ -7,7 +7,7 @@ AXIOM Native Engine executes Llama, Mistral, and Qwen2-family causal language mo
 ## Install the native runtime
 
 ```bash
-python -m pip install -e '.[native-inference]'
+python -m pip install -e '.[native-inference]' (includes Jinja2 for checkpoint chat templates).
 ```
 
 This extra installs PyTorch, tokenizers, and safetensors. The separate training extra retains Transformers/PEFT tooling for the existing training workflow; the native inference loop does not delegate generation to Transformers.
