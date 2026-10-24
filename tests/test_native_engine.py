@@ -750,3 +750,52 @@ def test_auto_memory_planner_does_not_choose_streaming_without_memory_measuremen
         module._choose_memory_mode(
             model_dir, inspected, object(), SimpleNamespace(type="cuda"), {"selected": "cuda"}
         )
+
+
+def test_qwen2_prompt_uses_chatml_when_template_metadata_is_missing(tmp_path: Path) -> None:
+    from axiom.core.engine import _format_prompt_for_native_model
+
+    class TinyTokenizer:
+        def token_to_id(self, token: str):
+            return None
+
+    formatted, source = _format_prompt_for_native_model(
+        "What is 2+2?", tmp_path, "qwen2", TinyTokenizer()
+    )
+    assert formatted == "<|im_start|>user\\nWhat is 2+2?<|im_end|>\\n<|im_start|>assistant\\n"
+    assert source == "qwen2-chatml-fallback"
+
+
+def test_native_prompt_renders_checkpoint_chat_template_in_sandbox(tmp_path: Path) -> None:
+    pytest.importorskip("jinja2")
+    from axiom.core.engine import _format_prompt_for_native_model
+
+    template = "{% for message in messages %}{{ '<|im_start|>' + message['role'] + '\\n' + message['content'] + '<|im_end|>\\n' }}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\\n' }}{% endif %}"
+    (tmp_path / "tokenizer_config.json").write_text(json.dumps({
+        "chat_template": template,
+        "bos_token": "<|bos|>",
+        "eos_token": "<|eos|>",
+    }), encoding="utf-8")
+
+    class TinyTokenizer:
+        def token_to_id(self, token: str):
+            return 1 if token in {"<|bos|>", "<|eos|>"} else None
+
+    formatted, source = _format_prompt_for_native_model(
+        "Hello", tmp_path, "llama", TinyTokenizer()
+    )
+    assert formatted == "<|im_start|>user\\nHello<|im_end|>\\n<|im_start|>assistant\\n"
+    assert source == "tokenizer-config-template"
+
+
+def test_native_prompt_rejects_invalid_chat_template_json(tmp_path: Path) -> None:
+    from axiom.core.engine import _format_prompt_for_native_model, AxiomEngineError
+
+    (tmp_path / "tokenizer_config.json").write_text("{bad", encoding="utf-8")
+
+    class TinyTokenizer:
+        def token_to_id(self, token: str):
+            return None
+
+    with pytest.raises(AxiomEngineError, match="chat template"):
+        _format_prompt_for_native_model("Hello", tmp_path, "llama", TinyTokenizer())
