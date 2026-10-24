@@ -15,6 +15,7 @@ export default function LocalEngineFabricPanel() {
   const [temperature, setTemperature] = useState("0.7");
   const [topP, setTopP] = useState("0.9");
   const [topK, setTopK] = useState("0");
+  const [minP, setMinP] = useState("0");
   const [repetitionPenalty, setRepetitionPenalty] = useState("1.0");
   const [seed, setSeed] = useState("");
   const [stopSequencesText, setStopSequencesText] = useState("");
@@ -84,6 +85,7 @@ export default function LocalEngineFabricPanel() {
     const temperatureValue = Number(temperature);
     const topPValue = Number(topP);
     const topKValue = Number(topK);
+    const minPValue = Number(minP);
     const repetitionPenaltyValue = Number(repetitionPenalty);
     const seedValue = seed.trim() === "" ? null : Number(seed);
     const stopSequences = stopSequencesText.split(/\r?\n/).filter((value) => value.trim().length > 0);
@@ -103,6 +105,10 @@ export default function LocalEngineFabricPanel() {
       setError("Top-k must be an integer from 0 to 100,000; 0 disables the limit.");
       return;
     }
+    if (!Number.isFinite(minPValue) || minPValue < 0 || minPValue > 1) {
+      setError("Min-p must be between 0 and 1; 0 disables the cutoff.");
+      return;
+    }
     if (!Number.isFinite(repetitionPenaltyValue) || repetitionPenaltyValue < 0.1 || repetitionPenaltyValue > 5) {
       setError("Repetition penalty must be between 0.1 and 5.");
       return;
@@ -118,6 +124,7 @@ export default function LocalEngineFabricPanel() {
     const sampling = {
       top_p: topPValue,
       top_k: topKValue,
+      min_p: minPValue,
       repetition_penalty: repetitionPenaltyValue,
       seed: seedValue,
       stop_sequences: stopSequences,
@@ -175,6 +182,7 @@ export default function LocalEngineFabricPanel() {
         temperature: 0.2,
         top_p: Number(topP),
         top_k: Number(topK),
+        min_p: Number(minP),
         repetition_penalty: Number(repetitionPenalty),
         seed: seed.trim() === "" ? null : Number(seed),
         stop_sequences: stopSequencesText.split(/\r?\n/).filter((value) => value.trim().length > 0),
@@ -269,6 +277,7 @@ export default function LocalEngineFabricPanel() {
         <div className="two-column-grid">
           <label className="field"><span className="field-label-row"><span>Top-p</span></span><input type="number" value={topP} onChange={(event) => setTopP(event.target.value)} min={0.000001} max={1} step="any" required /><small>Cumulative probability threshold.</small></label>
           <label className="field"><span className="field-label-row"><span>Top-k</span></span><input type="number" value={topK} onChange={(event) => setTopK(event.target.value)} min={0} max={100000} step={1} required /><small>0 disables the top-k cutoff.</small></label>
+          <label className="field"><span className="field-label-row"><span>Min-p relative probability</span></span><input aria-label="Min-p" type="number" value={minP} onChange={(event) => setMinP(event.target.value)} min={0} max={1} step={0.01} required /><small>0 disables min-p. Nonzero values require AXIOM Native Engine or Ollama; auto-routing filters to those compatible backends.</small></label>
           <label className="field"><span className="field-label-row"><span>Repetition penalty</span></span><input type="number" value={repetitionPenalty} onChange={(event) => setRepetitionPenalty(event.target.value)} min={0.1} max={5} step={0.05} required /><small>1.0 leaves repetition unpenalized.</small></label>
           <label className="field"><span className="field-label-row"><span>Seed (optional)</span></span><input type="number" value={seed} onChange={(event) => setSeed(event.target.value)} min={0} step={1} placeholder="Random / runtime default" /><small>Fixed seeds improve repeatability but cannot guarantee identical output across different runtimes.</small></label>
         </div>
