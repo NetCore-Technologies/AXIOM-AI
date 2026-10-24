@@ -815,17 +815,26 @@ class NativeLlamaRuntime:
         input_ids: Any,
         past_key_values: Any = None,
         *,
+        past_sequence_length: int | None = None,
         cancel_event: threading.Event | None = None,
     ) -> tuple[Any, tuple[Any, ...]]:
         torch, c = self.torch, self.config
         if input_ids.ndim != 2 or input_ids.shape[0] != 1:
             raise NativeEngineError("AXIOM Native Engine currently accepts one prompt sequence per request.")
         seq_len = input_ids.shape[1]
-        past_len = 0 if past_key_values is None else int(past_key_values[0][0].shape[-2])
+        stored_past_len = 0 if past_key_values is None else int(past_key_values[0][0].shape[-2])
+        past_len = stored_past_len if past_sequence_length is None else past_sequence_length
+        if (
+            isinstance(past_len, bool)
+            or not isinstance(past_len, int)
+            or past_len < stored_past_len
+        ):
+            raise NativeEngineError("Native KV cache position is inconsistent with the cached sequence.")
         if past_len + seq_len > self.config.max_position_embeddings:
             raise NativeEngineError("Generation would exceed the checkpoint's configured maximum context length.")
         hidden = torch.nn.functional.embedding(input_ids, self.weights["model.embed_tokens.weight"])
         positions = torch.arange(past_len, past_len + seq_len, device=self.device)
+        key_start_position = past_len - stored_past_len
         cache, head_dim = [], c.hidden_size // c.num_attention_heads
         repeat_factor = c.num_attention_heads // c.num_key_value_heads
         for i in range(c.num_hidden_layers):
@@ -849,18 +858,25 @@ class NativeLlamaRuntime:
                     if self.memory_mode in {"layer_streaming", "disk_streaming"}:
                         old_k, old_v = old_k.to(device=self.device), old_v.to(device=self.device)
                     k, v = torch.cat((old_k, k), dim=-2), torch.cat((old_v, v), dim=-2)
+                # Keep only the useful KV suffix for sliding-window models. RoPE and
+                # causal masks below still use absolute positions, even when this
+                # bounded cache is shorter than the full token history.
+                cache_k, cache_v = k, v
+                if c.sliding_window and cache_k.shape[-2] > c.sliding_window:
+                    cache_k = cache_k[..., -c.sliding_window:, :]
+                    cache_v = cache_v[..., -c.sliding_window:, :]
                 if self.memory_mode in {"layer_streaming", "disk_streaming"}:
-                    cache_k, cache_v = k.detach().to(device="cpu"), v.detach().to(device="cpu")
+                    cache_k, cache_v = cache_k.detach().to(device="cpu"), cache_v.detach().to(device="cpu")
                     self.memory_stats["kv_cache_layer_offloads"] += 1
                     self.memory_stats["kv_cache_bytes_offloaded"] += int(
                         cache_k.numel() * cache_k.element_size() + cache_v.numel() * cache_v.element_size()
                     )
                     cache.append((cache_k, cache_v))
                 else:
-                    cache.append((k, v))
+                    cache.append((cache_k, cache_v))
                 ak = k.repeat_interleave(repeat_factor, dim=1) if repeat_factor > 1 else k
                 av = v.repeat_interleave(repeat_factor, dim=1) if repeat_factor > 1 else v
-                keys = torch.arange(ak.shape[-2], device=self.device)
+                keys = torch.arange(key_start_position, past_len + seq_len, device=self.device)
                 blocked = keys[None, :] > positions[:, None]
                 if c.sliding_window:
                     blocked = blocked | (keys[None, :] <= positions[:, None] - c.sliding_window)
@@ -950,6 +966,7 @@ class NativeLlamaRuntime:
                 prefill_started = time.perf_counter()
                 try:
                     logits, cache = self.forward(tokens, cancel_event=cancel_event)
+                    absolute_sequence_length = len(prompt_token_ids)
                     prefill_ms = (time.perf_counter() - prefill_started) * 1000
                     self.live_generation.update({
                         "stage": "decode",
@@ -1028,8 +1045,12 @@ class NativeLlamaRuntime:
                         decode_started = time.perf_counter()
                         try:
                             logits, cache = self.forward(
-                                next_token.view(1, 1), cache, cancel_event=cancel_event
+                                next_token.view(1, 1),
+                                cache,
+                                past_sequence_length=absolute_sequence_length,
+                                cancel_event=cancel_event,
                             )
+                            absolute_sequence_length += 1
                         except NativeGenerationCancelled:
                             decode_ms += (time.perf_counter() - decode_started) * 1000
                             stop_reason = "cancelled"
