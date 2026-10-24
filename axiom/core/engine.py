@@ -517,7 +517,7 @@ def check_local_adapter_compatibility(model_path: str, adapter_path: str) -> dic
     return inspect_native_adapter_compatibility(
         model_dir,
         adapter_dir,
-        trusted_roots=_allowed_model_roots(), memory_mode=memory_mode,
+        trusted_roots=_allowed_model_roots(),
     )
 
 
