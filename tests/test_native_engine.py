@@ -339,6 +339,50 @@ def test_native_forward_and_incremental_kv_cache_run_without_transformers() -> N
     assert tuple(full_cache[0][0].shape) == (1, config.num_key_value_heads, 4, 4)
 
 
+def test_mistral_sliding_window_bounds_cache_and_preserves_absolute_rope_positions(monkeypatch) -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    config = NativeLlamaConfig.from_mapping(_config(
+        model_type="mistral",
+        architectures=["MistralForCausalLM"],
+        sliding_window=3,
+    ))
+    runtime = NativeLlamaRuntime(config, _tiny_weights(torch), torch, torch.device("cpu"))
+    observed_positions = []
+    original_rope = runtime._apply_rope
+
+    def capture_rope(values, positions):
+        observed_positions.append(positions.detach().cpu().tolist())
+        return original_rope(values, positions)
+
+    monkeypatch.setattr(runtime, "_apply_rope", capture_rope)
+    prompt = torch.tensor([[1, 2, 3, 4, 5, 6, 7]], dtype=torch.long)
+    with torch.inference_mode():
+        logits, cache = runtime.forward(prompt)
+        assert tuple(logits.shape) == (1, config.vocab_size)
+        assert tuple(cache[0][0].shape) == (1, config.num_key_value_heads, 3, 4)
+        assert tuple(cache[0][1].shape) == (1, config.num_key_value_heads, 3, 4)
+
+        next_logits, next_cache = runtime.forward(
+            torch.tensor([[2]], dtype=torch.long),
+            cache,
+            past_sequence_length=7,
+        )
+        assert tuple(next_logits.shape) == (1, config.vocab_size)
+        assert tuple(next_cache[0][0].shape) == (1, config.num_key_value_heads, 3, 4)
+
+    # The one-token decode must use absolute position 7, not the cache's
+    # truncated length (3). _apply_rope is called once for Q and once for K.
+    assert observed_positions[-2:] == [[7], [7]]
+    with pytest.raises(NativeEngineError, match="maximum context length"):
+        runtime.forward(
+            torch.tensor([[3]], dtype=torch.long),
+            next_cache,
+            past_sequence_length=config.max_position_embeddings,
+        )
+
+
 def test_native_decoder_stops_before_emitting_eos_and_does_not_step_past_output_limit() -> None:
     torch = pytest.importorskip("torch")
     from axiom.core.native_engine import NativeLlamaRuntime
@@ -420,7 +464,7 @@ def test_native_iterator_honors_cancellation_before_prompt_prefill(monkeypatch) 
     cancel_event = Event()
     cancel_event.set()
 
-    def unexpected_forward(input_ids, past_key_values=None, *, cancel_event=None):
+    def unexpected_forward(input_ids, past_key_values=None, *, past_sequence_length=None, cancel_event=None):
         pytest.fail("A pre-cancelled request must not start model forward execution.")
 
     monkeypatch.setattr(runtime, "forward", unexpected_forward)
@@ -442,10 +486,13 @@ def test_native_iterator_stops_before_next_token_forward_when_cancelled(monkeypa
     original_forward = runtime.forward
     forward_calls = 0
 
-    def counted_forward(input_ids, past_key_values=None, *, cancel_event=None):
+    def counted_forward(input_ids, past_key_values=None, *, past_sequence_length=None, cancel_event=None):
         nonlocal forward_calls
         forward_calls += 1
-        return original_forward(input_ids, past_key_values, cancel_event=cancel_event)
+        return original_forward(
+            input_ids, past_key_values, past_sequence_length=past_sequence_length,
+            cancel_event=cancel_event,
+        )
 
     monkeypatch.setattr(runtime, "forward", counted_forward)
     iterator = runtime.iter_generate(
