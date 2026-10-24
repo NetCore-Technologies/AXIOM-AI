@@ -732,6 +732,7 @@ def _planner_fixture(tmp_path: Path, monkeypatch, *, system_memory: int | None):
         lambda *_args, **_kwargs: ([shard], {"model.embed_tokens.weight": "model.safetensors"}),
     )
     monkeypatch.setattr(engine_module, "_available_system_memory_bytes", lambda: system_memory)
+    monkeypatch.setattr(engine_module, "_allowed_model_roots", lambda: (tmp_path.resolve(),))
     monkeypatch.setattr(
         engine_module,
         "_device_capability_rows",
@@ -755,6 +756,23 @@ def test_auto_memory_planner_selects_full_mode_when_cpu_ram_is_sufficient(tmp_pa
     assert selection["selected"] == "full"
     assert selection["available_system_ram_bytes"] == memory
     assert selection["estimates_are_advisory"] is True
+
+
+def test_auto_memory_planner_counts_adapter_weights(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from axiom.core import engine as engine_module
+
+    module, model_dir, inspected = _planner_fixture(tmp_path, monkeypatch, system_memory=8 * 1024**3)
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir()
+    (adapter_dir / "adapter_model.safetensors").write_bytes(b"x" * 1024)
+    mode, selection = module._choose_memory_mode(
+        model_dir, inspected, object(), SimpleNamespace(type="cpu"), {"selected": "cpu"}, adapter_dir,
+    )
+    assert mode == "full"
+    assert selection["estimated_adapter_weight_bytes"] == 1024
+    assert selection["estimated_total_weight_bytes"] == selection["estimated_checkpoint_weight_bytes"] + 1024
 
 
 def test_auto_memory_planner_fails_closed_when_cpu_ram_is_unknown(tmp_path: Path, monkeypatch) -> None:
