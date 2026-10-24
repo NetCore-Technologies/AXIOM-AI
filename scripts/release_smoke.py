@@ -428,7 +428,7 @@ def inspect(root: Path) -> dict[str, Any]:
     for token in ('@infer_app.command("ps")', '@service_app.command("start")', '@service_app.command("stop")', '@infer_app.command("pull")', '@infer_app.command("inspect")', '@infer_app.command("unload")'):
         if token not in ollama_cli:
             failures.append("Ollama CLI is missing a lifecycle/model command: " + token)
-    for token in ("test_service_status_exposes_control_capabilities", "test_stop_refuses_to_signal_a_process_not_owned_by_axiom", "test_progress_output_removes_terminal_controls"):
+    for token in ("test_service_status_exposes_control_capabilities", "test_stop_refuses_to_signal_a_process_not_owned_by_axiom", "test_start_terminates_process_if_ownership_state_cannot_be_saved", "test_start_reaps_process_if_process_identity_cannot_be_verified", "test_progress_output_removes_terminal_controls"):
         if token not in ollama_tests:
             failures.append("Ollama process-safety tests are missing: " + token)
     for token in ("test_running_model_inventory_reports_loaded_memory_without_raw_content", "test_model_inspection_returns_metadata_without_model_templates", "test_unload_releases_memory_without_deleting_downloaded_model"):
