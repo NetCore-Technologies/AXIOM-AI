@@ -1348,8 +1348,8 @@ def generate_local_stream(
                                 "type": "telemetry",
                                 "metrics": dict(live_metrics),
                                 "memory_mode": getattr(model, "memory_mode", memory_mode),
-                            "memory_selection": details.get("memory_selection"),
-                            "memory_stats": dict(getattr(model, "memory_stats", {})),
+                                "memory_selection": details.get("memory_selection"),
+                                "memory_stats": dict(getattr(model, "memory_stats", {})),
                                 "device_memory": _device_memory_snapshot(
                                     torch, device, selected_backend=selected_backend, baseline=device_memory_before
                                 ),
