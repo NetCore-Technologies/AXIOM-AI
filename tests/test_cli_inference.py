@@ -29,3 +29,13 @@ def test_infer_pull_command_is_registered():
     result = CliRunner().invoke(app, ["--no-banner", "infer", "pull", "--help"])
     assert result.exit_code == 0, result.output
     assert "Ollama model tag" in result.output
+
+
+def test_infer_model_operation_commands_are_registered():
+    runner = CliRunner()
+    inspect = runner.invoke(app, ["--no-banner", "infer", "inspect", "--help"])
+    unload = runner.invoke(app, ["--no-banner", "infer", "unload", "--help"])
+    assert inspect.exit_code == 0, inspect.output
+    assert unload.exit_code == 0, unload.output
+    assert "metadata" in inspect.output.lower()
+    assert "without deleting" in unload.output.lower()
