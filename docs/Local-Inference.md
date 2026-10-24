@@ -74,3 +74,10 @@ A model pull has a job ID, status, sanitized progress lines, and a best-effort p
 ## Loaded-model memory inventory
 
 Use `axiom infer ps --json` or the **Show loaded models** control in the Runtime panel to inspect the point-in-time `/api/ps` inventory. AXIOM reports only models Ollama says are loaded, the size totals reported by Ollama, its `size_vram` value, and a derived non-VRAM remainder when both sizes are available. These values are runtime-reported estimates, not direct OS/GPU allocator measurements. The query does not request prompts, generated text, model templates, or license text.
+
+
+## Streaming generation and cancellation
+
+The Runtime inference form now uses `POST /api/inference/generate/stream` and newline-delimited JSON events: token deltas, a completion record with timings/token counts, or a safe error record. Text appears incrementally in the existing response area. **Stop generation** aborts the browser request; the daemon watches for disconnects and closes the upstream loopback response so Ollama can stop work promptly. Request traces retain only bounded metadata—not prompts or generated text.
+
+This stream uses the same `127.0.0.1:11434` Ollama endpoint as non-streaming API calls. It does not convert Ollama model formats into AXIOM Native Engine formats.
