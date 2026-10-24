@@ -402,6 +402,7 @@ def chat(
     consent: bool = False,
     device: str = "auto",
     memory_mode: str = "auto",
+    precision: str = "auto",
 ) -> dict[str, Any]:
     """Run one local or explicitly consented remote chat completion."""
     normalized = _validate_messages(messages)
@@ -417,6 +418,8 @@ def chat(
             raise ValueError("Choose auto, cpu, cuda, rocm, mps, or xpu for the local execution device.")
         if memory_mode not in {"auto", "full", "layer_streaming", "disk_streaming"}:
             raise ValueError("Choose auto, full, layer_streaming, or disk_streaming for local model memory mode.")
+        if precision not in {"auto", "fp32", "fp16", "bf16"}:
+            raise ValueError("Choose auto, fp32, fp16, or bf16 for local compute precision.")
         last_user = next(message["content"] for message in reversed(normalized) if message["role"] == "user")
         final: dict[str, Any] | None = None
         try:
@@ -429,6 +432,7 @@ def chat(
                 include_token_events=False,
                 device_preference=device,
                 memory_mode=memory_mode,
+                precision=precision,
             ):
                 if event.get("type") == "complete" and isinstance(event.get("result"), dict):
                     final = event["result"]
