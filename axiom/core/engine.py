@@ -329,6 +329,148 @@ def runtime_status() -> dict[str, Any]:
         "checked_at": datetime.now(UTC).isoformat(),
     }
 
+def runtime_telemetry() -> dict[str, Any]:
+    """Return a privacy-bounded, point-in-time view of local runtime resources."""
+    sampled_at = datetime.now(UTC).isoformat()
+    cpu: dict[str, Any] = {
+        "logical_cores": os.cpu_count(),
+        "system_percent": None,
+        "process_percent": None,
+    }
+    memory: dict[str, Any] = {
+        "total_bytes": None,
+        "available_bytes": None,
+        "used_bytes": None,
+        "percent": None,
+    }
+    process: dict[str, Any] = {
+        "pid": os.getpid(),
+        "rss_bytes": None,
+        "threads": None,
+    }
+    try:
+        import psutil
+        cpu["system_percent"] = float(psutil.cpu_percent(interval=None))
+        process_handle = psutil.Process()
+        process["rss_bytes"] = int(process_handle.memory_info().rss)
+        process["threads"] = int(process_handle.num_threads())
+        cpu["process_percent"] = float(process_handle.cpu_percent(interval=None))
+        virtual = psutil.virtual_memory()
+        memory.update({
+            "total_bytes": int(virtual.total),
+            "available_bytes": int(virtual.available),
+            "used_bytes": int(virtual.used),
+            "percent": float(virtual.percent),
+        })
+    except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
+        _LOG.debug("psutil telemetry unavailable; trying basic operating-system memory counters.", exc_info=True)
+
+    if memory["total_bytes"] is None and os.name == "posix":
+        try:
+            page_size = int(os.sysconf("SC_PAGE_SIZE"))
+            total_pages = int(os.sysconf("SC_PHYS_PAGES"))
+            available_pages = int(os.sysconf("SC_AVPHYS_PAGES"))
+            total_bytes = total_pages * page_size
+            available_bytes = available_pages * page_size
+            if total_bytes > 0 and available_bytes >= 0:
+                memory.update({
+                    "total_bytes": total_bytes,
+                    "available_bytes": available_bytes,
+                    "used_bytes": max(0, total_bytes - available_bytes),
+                    "percent": round((total_bytes - available_bytes) * 100 / total_bytes, 2),
+                })
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+
+    loaded = _LOADED_RUNTIME
+    loaded_details = loaded.get("details", {}) if isinstance(loaded, dict) else {}
+    loaded_model = loaded.get("model") if isinstance(loaded, dict) else None
+    loaded_device = loaded.get("device") if isinstance(loaded, dict) else None
+    loaded_torch = loaded.get("torch") if isinstance(loaded, dict) else None
+    selected_backend = loaded_details.get("device_selection", {}).get("selected") if isinstance(loaded_details, dict) else None
+    try:
+        device_rows = [
+            {
+                "id": item.get("id"),
+                "name": item.get("name"),
+                "available": bool(item.get("available")),
+                "memory_free_gib": item.get("memory_free_gib"),
+                "memory_total_gib": item.get("memory_total_gib"),
+            }
+            for item in _device_capability_rows(loaded_torch)
+        ]
+    except Exception:
+        _LOG.debug("Device capability telemetry could not be collected.", exc_info=True)
+        device_rows = []
+
+    allocator = None
+    if loaded_torch is not None and loaded_device is not None:
+        allocator = _device_memory_snapshot(loaded_torch, loaded_device, selected_backend=selected_backend)
+
+    generation = None
+    if loaded_model is not None:
+        last = getattr(loaded_model, "last_generation", {})
+        if isinstance(last, dict):
+            allowed = {
+                "prompt_tokens", "completion_tokens", "prefill_ms", "decode_ms",
+                "time_to_first_token_ms", "generation_tokens_per_second",
+                "stop_reason", "cache_layers",
+            }
+            generation = {
+                key: value for key, value in last.items()
+                if key in allowed and isinstance(value, (str, int, float))
+            }
+
+    disks: list[dict[str, Any]] = []
+    try:
+        roots = _allowed_model_roots()
+    except (OSError, ValueError):
+        roots = ()
+    for index, root in enumerate(roots[:12], start=1):
+        try:
+            usage = shutil.disk_usage(root)
+            disks.append({
+                "label": f"trusted_model_root_{index}",
+                "total_bytes": int(usage.total),
+                "free_bytes": int(usage.free),
+                "used_bytes": int(usage.used),
+            })
+        except OSError:
+            continue
+
+    return {
+        "schema_version": 1,
+        "sampled_at": sampled_at,
+        "sample_type": "point_in_time",
+        "cpu": cpu,
+        "memory": memory,
+        "process": process,
+        "devices": device_rows,
+        "loaded_runtime": {
+            "loaded": loaded_model is not None,
+            "model": loaded_details.get("model_directory_name") if isinstance(loaded_details, dict) else None,
+            "architecture": loaded_details.get("architecture") if isinstance(loaded_details, dict) else None,
+            "device": str(loaded_device) if loaded_device is not None else None,
+            "memory_mode": getattr(loaded_model, "memory_mode", None) if loaded_model is not None else None,
+            "last_generation": generation,
+            "device_allocator": allocator,
+        },
+        "disks": disks,
+        "privacy_scope": {
+            "prompt_content_included": False,
+            "generated_content_included": False,
+            "model_paths_included": False,
+            "environment_values_included": False,
+            "credentials_included": False,
+            "network_access_performed": False,
+        },
+        "scope_note": (
+            "This is a local point-in-time resource snapshot, not a persisted time series. "
+            "Poll this endpoint for samples; unsupported driver metrics remain null."
+        ),
+    }
+
+
 def _allowed_model_roots() -> tuple[Path, ...]:
     """Return canonical roots from trusted defaults and AXIOM_MODEL_ROOTS.
 
