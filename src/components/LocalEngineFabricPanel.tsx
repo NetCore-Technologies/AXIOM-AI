@@ -166,6 +166,11 @@ export default function LocalEngineFabricPanel() {
     const iterations = Number(benchmarkIterations);
     const warmups = Number(benchmarkWarmups);
     const tokens = Number(benchmarkTokens);
+    const minPValue = Number(minP);
+    if (!Number.isFinite(minPValue) || minPValue < 0 || minPValue > 1) {
+      setError("Min-p must be between 0 and 1; 0 disables the cutoff.");
+      return;
+    }
     if (!Number.isInteger(iterations) || iterations < 1 || iterations > 5 || !Number.isInteger(warmups) || warmups < 0 || warmups > 1 || !Number.isInteger(tokens) || tokens < 1 || tokens > 256) {
       setError("Benchmark limits are 1–5 measured requests, 0–1 warm-up and 1–256 output tokens.");
       return;
@@ -182,7 +187,7 @@ export default function LocalEngineFabricPanel() {
         temperature: 0.2,
         top_p: Number(topP),
         top_k: Number(topK),
-        min_p: Number(minP),
+        min_p: minPValue,
         repetition_penalty: Number(repetitionPenalty),
         seed: seed.trim() === "" ? null : Number(seed),
         stop_sequences: stopSequencesText.split(/\r?\n/).filter((value) => value.trim().length > 0),
