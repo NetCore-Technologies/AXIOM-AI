@@ -126,7 +126,7 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
 
   const engine = page.locator(".axiom-engine-panel");
   await expect(engine.getByRole("heading", { name: "AXIOM Local Engine" })).toBeVisible();
-  await expect(engine).toContainText("own PyTorch Llama/Mistral forward pass");
+  await expect(engine).toContainText("own PyTorch Llama/Mistral/Qwen2 forward pass");
   await expect(engine).toContainText("safetensors");
   await expect(engine.getByText("ENGINE READY")).toBeVisible();
 
