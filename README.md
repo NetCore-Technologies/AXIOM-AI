@@ -2,8 +2,8 @@
 
 ![AXIOM. Know what fits before you train.](docs/assets/banner.svg)
 
-[![Status](https://img.shields.io/badge/status-beta-f59e0b?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI)
-[![Version](https://img.shields.io/badge/version-v0.3.0--beta.5-f59e0b?style=flat-square&labelColor=0f172a)](https://github.com/NetCore-Technologies/AXIOM-AI/releases)
+[![Status](https://img.shields.io/badge/status-beta-f59e0b?style=flat-square&labelColor=0f172a)](https://github.com/manit6752025/AXIOM-AI)
+[![Version](https://img.shields.io/badge/version-v0.3.0--beta.5-f59e0b?style=flat-square&labelColor=0f172a)](https://github.com/manit6752025/AXIOM-AI/releases)
 [![License](https://img.shields.io/badge/license-MIT-7c3aed?style=flat-square&labelColor=0f172a)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&labelColor=0f172a&logo=python&logoColor=white)](https://www.python.org/)
 [![Local first](https://img.shields.io/badge/local--first-yes-22c55e?style=flat-square&labelColor=0f172a)](#privacy-and-safety)
@@ -14,7 +14,7 @@
 **Check your model, data, and computer before you start.**
 Inspect models, clean datasets, read your hardware, plan training, run local inference, and let AI agents use all of it safely. From a terminal, a browser window, or an MCP client.
 
-[Quick start](#quick-start) · [Features](#feature-map) · [Control Center](#control-center) · [MCP](#mcp-server-for-ai-agents) · [Docs](#documentation) · [Report an issue](https://github.com/NetCore-Technologies/AXIOM-AI/issues)
+[Quick start](#quick-start) · [Features](#feature-map) · [Control Center](#control-center) · [MCP](#mcp-server-for-ai-agents) · [Docs](#documentation) · [Report an issue](https://github.com/manit6752025/AXIOM-AI/issues)
 
 ![AXIOM workflow: inspect, validate, plan, run](docs/assets/axiom-flow.svg)
 
@@ -75,9 +75,9 @@ axiom version
 The APT package is for 64-bit Intel and AMD systems:
 
 ```bash
-curl -fsSLo /tmp/axiom-archive-keyring.gpg https://netcore-technologies.github.io/AXIOM-AI/apt/axiom-archive-keyring.gpg
+curl -fsSLo /tmp/axiom-archive-keyring.gpg https://manit6752025.github.io/AXIOM-AI/apt/axiom-archive-keyring.gpg
 sudo install -Dm0644 /tmp/axiom-archive-keyring.gpg /usr/share/keyrings/axiom-archive-keyring.gpg
-echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/axiom-archive-keyring.gpg] https://netcore-technologies.github.io/AXIOM-AI/apt stable main' | sudo tee /etc/apt/sources.list.d/axiom.list
+echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/axiom-archive-keyring.gpg] https://manit6752025.github.io/AXIOM-AI/apt stable main' | sudo tee /etc/apt/sources.list.d/axiom.list
 sudo apt update
 sudo apt install axiom-ai
 ```
@@ -88,7 +88,7 @@ sudo apt install axiom-ai
 <summary><b>macOS or Linux installer</b></summary>
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/manit6752025/AXIOM-AI/main/installers/install.sh | bash
 axiom version
 ```
 
@@ -100,7 +100,7 @@ The installer puts `axiom` in `~/.local/bin`. If the command is not found, add t
 <summary><b>Windows (PowerShell)</b></summary>
 
 ```powershell
-irm https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.ps1 | iex
+irm https://raw.githubusercontent.com/manit6752025/AXIOM-AI/main/installers/install.ps1 | iex
 axiom version
 ```
 
@@ -108,7 +108,7 @@ If PowerShell cannot find `axiom`, close and reopen it so the updated `PATH` tak
 
 </details>
 
-Package downloads and checksums are on [GitHub Releases](https://github.com/NetCore-Technologies/AXIOM-AI/releases). Packaging recipes for APT, AUR, Homebrew, npm, Scoop, and WinGet live in [`packaging/`](packaging). More options: [installers/README.md](installers/README.md).
+Package downloads and checksums are on [GitHub Releases](https://github.com/manit6752025/AXIOM-AI/releases). Packaging recipes for APT, AUR, Homebrew, npm, Scoop, and WinGet live in [`packaging/`](packaging). More options: [installers/README.md](installers/README.md).
 
 ## Feature map
 
@@ -540,12 +540,12 @@ Tab completion also works for `zsh`, `fish`, and `powershell`.
 | Control Center will not start | Run `axiom doctor`. If you are working from source, run `npm run build` first. |
 | Port already in use | Run `axiom gui --port 0`, or set `AXIOM_GUI_PORT`. |
 | Training or Engine commands fail | Install the optional tools with `python -m pip install -e '.[training]'`. |
-| Need help | Run `axiom support-bundle`, review the ZIP, and attach it to an [issue](https://github.com/NetCore-Technologies/AXIOM-AI/issues). |
+| Need help | Run `axiom support-bundle`, review the ZIP, and attach it to an [issue](https://github.com/manit6752025/AXIOM-AI/issues). |
 
 ## Documentation
 
 **Getting started**
-- [Install and troubleshooting](https://github.com/NetCore-Technologies/AXIOM-AI/wiki)
+- [Install and troubleshooting](https://github.com/manit6752025/AXIOM-AI/wiki)
 - [My First AI starter project](examples/my-first-ai/README.md)
 - [Installer options](installers/README.md)
 - [CLI guide and shell completion](docs/CLI-GUIDE.md)
@@ -573,7 +573,7 @@ Good bug reports include your OS, Python version, AXIOM version, and the exact c
 Set up a local copy:
 
 ```bash
-git clone https://github.com/NetCore-Technologies/AXIOM-AI.git
+git clone https://github.com/manit6752025/AXIOM-AI.git
 cd AXIOM-AI
 python -m pip install -e '.[test]'
 npm install
