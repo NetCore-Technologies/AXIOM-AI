@@ -31,6 +31,7 @@ export default function ModelStudioPanel() {
   const [modelName, setModelName] = useState("axiom-local-model");
   const [registerOllama, setRegisterOllama] = useState(true);
   const [ollamaTag, setOllamaTag] = useState("");
+  const [nativeRepo, setNativeRepo] = useState("Qwen/Qwen2.5-0.5B-Instruct");
   const [sourceDir, setSourceDir] = useState("");
   const [llamaCppDir, setLlamaCppDir] = useState("");
   const [outputPath, setOutputPath] = useState("");
@@ -130,11 +131,11 @@ export default function ModelStudioPanel() {
 
   return <section className="surface model-studio-panel" aria-label="Model Studio">
     <div className="surface-head"><div><p className="surface-eyebrow">MODEL CATALOGUE · LOCAL INSTALLATION</p><h2>Model Studio</h2></div><button type="button" className="button secondary-button" onClick={() => void refreshStatus()}><Sparkles size={14} /> Refresh status</button></div>
-    <p>Answer a few questions, search the public Hugging Face GGUF catalogue, download a selected quantization, and optionally register it with your local Ollama runtime. You can also pull an Ollama library tag or convert a local Transformers model into GGUF.</p>
+    <p>Search and install GGUF models, pull compatible public Hugging Face safetensors checkpoints directly into AXIOM Native Engine, pull an Ollama library tag, or convert local Transformers weights into GGUF. Native pulls validate the architecture and file inventory before downloading weights.</p>
     <div className="model-studio-status-grid">
       <div><span><Cpu size={15} /> Runtime</span><b>{status?.ollama_installed ? "Ollama found" : "Ollama not found"}</b><small>{status?.ollama_endpoint || "Checking local runtime"}</small></div>
       <div><span><HardDrive size={15} /> Download limit</span><b>20 GiB per file</b><small>Free-space checked before download when size metadata is available.</small></div>
-      <div><span><Globe size={15} /> Catalogue</span><b>Hugging Face GGUF</b><small>Search only runs when you press the search button.</small></div>
+      <div><span><Globe size={15} /> Model sources</span><b>Hugging Face + Ollama</b><small>GGUF search and native safetensors pulls are explicit actions.</small></div>
     </div>
     <div className="two-column-grid model-studio-layout">
       <div className="model-studio-column">
@@ -156,10 +157,14 @@ export default function ModelStudioPanel() {
         <div className="model-studio-section-head"><span className="model-studio-step">03</span><div><h3>Pull from Ollama Library</h3><p>Use a model tag from the <a href="https://ollama.com/search" target="_blank" rel="noreferrer">official Ollama model library <ExternalLink size={12} /></a>.</p></div></div>
         <label className="field"><span className="field-label-row"><span>Ollama model tag</span></span><input aria-label="Ollama model tag" value={ollamaTag} onChange={(event) => setOllamaTag(event.target.value)} placeholder="e.g. qwen3.5:0.8b" maxLength={120} /></label>
         <button type="button" className="button secondary-button" disabled={busy || activeJob || !ollamaTag.trim()} onClick={() => void startJob({operation:"pull",model_name:ollamaTag.trim()})}><ArrowDownToLine size={15} /> Pull Ollama model</button>
+        <div className="model-studio-divider" />
+        <div className="model-studio-section-head"><span className="model-studio-step">04</span><div><h3>Pull a model for AXIOM Native Engine</h3><p>Downloads compatible Llama, Mistral, or Qwen2 text checkpoints in safetensors format. AXIOM validates config.json and the Hub file inventory before downloading weights; model Python code is never fetched or executed.</p></div></div>
+        <label className="field"><span className="field-label-row"><span>Public Hugging Face repository ID</span></span><input aria-label="Native Hugging Face repository ID" value={nativeRepo} onChange={(event) => setNativeRepo(event.target.value)} maxLength={192} placeholder="Qwen/Qwen2.5-0.5B-Instruct" /><small>Example: Qwen/Qwen2.5-0.5B-Instruct. Gated/private repos and quantized GGUF/EXL2/GPTQ/AWQ files are not accepted by this native path.</small></label>
+        <button type="button" className="button primary-button" disabled={busy || activeJob || !nativeRepo.trim()} onClick={() => void startJob({operation:"pull_native",repo_id:nativeRepo.trim()})}><ArrowDownToLine size={15} /> Pull native checkpoint</button>
       </div>
     </div>
     <div className="model-studio-converter">
-      <div className="model-studio-section-head"><span className="model-studio-step">04</span><div><h3>Create a GGUF from local weights</h3><p>Conversion requires an existing Transformers model directory and a local llama.cpp checkout. This does not download source weights.</p></div></div>
+      <div className="model-studio-section-head"><span className="model-studio-step">05</span><div><h3>Create a GGUF from local weights</h3><p>Conversion requires an existing Transformers model directory and a local llama.cpp checkout. This does not download source weights.</p></div></div>
       <div className="two-column-grid"><label className="field"><span className="field-label-row"><span>Local Transformers model directory</span></span><input aria-label="Source Transformers model directory" value={sourceDir} onChange={(event) => setSourceDir(event.target.value)} placeholder="/home/user/models/base-model" /></label><label className="field"><span className="field-label-row"><span>Local llama.cpp directory</span></span><input aria-label="llama.cpp directory" value={llamaCppDir} onChange={(event) => setLlamaCppDir(event.target.value)} placeholder="/home/user/src/llama.cpp" /></label><label className="field"><span className="field-label-row"><span>New output .gguf path</span></span><input aria-label="GGUF output path" value={outputPath} onChange={(event) => setOutputPath(event.target.value)} placeholder="/home/user/models/model-Q4_K_M.gguf" /></label><label className="field"><span className="field-label-row"><span>Quantization</span></span><select aria-label="GGUF quantization" value={quantization} onChange={(event) => setQuantization(event.target.value)}><option value="Q4_K_M">Q4_K_M · balanced size/quality</option><option value="Q5_K_M">Q5_K_M · higher quality, larger</option><option value="Q6_K">Q6_K · larger, higher fidelity</option><option value="Q8_0">Q8_0 · near high precision, large</option><option value="Q3_K_M">Q3_K_M · smaller, lower fidelity</option><option value="Q2_K">Q2_K · smallest, quality trade-off</option><option value="none">No quantization · F16 GGUF</option></select></label></div>
       <button type="button" className="button secondary-button" disabled={busy || activeJob || !sourceDir.trim() || !llamaCppDir.trim() || !outputPath.trim()} onClick={() => void startJob({operation:"convert_gguf",source_dir:sourceDir.trim(),llama_cpp_dir:llamaCppDir.trim(),output_path:outputPath.trim(),outtype:"f16",quantization})}><FileCog size={15} /> Convert and quantize GGUF</button>
     </div>
@@ -170,7 +175,7 @@ export default function ModelStudioPanel() {
       <pre className="model-studio-log" data-testid="model-studio-log">{job.logs.join("\n")}</pre>
     </section>}
     <div className="model-studio-remote">
-      <div className="model-studio-section-head"><span className="model-studio-step">05</span><div><h3>Connect to an online model provider</h3><p>For OpenAI-compatible public HTTPS endpoints (for example a hosted provider or gateway). This is separate from local inference.</p></div></div>
+      <div className="model-studio-section-head"><span className="model-studio-step">06</span><div><h3>Connect to an online model provider</h3><p>For OpenAI-compatible public HTTPS endpoints (for example a hosted provider or gateway). This is separate from local inference.</p></div></div>
       <div className="two-column-grid"><label className="field"><span className="field-label-row"><span>Provider API base URL</span></span><input type="url" aria-label="Remote provider base URL" value={remoteBaseUrl} onChange={(event) => { setRemoteBaseUrl(event.target.value); setRemoteModels([]); }} placeholder="https://provider.example/api/v1" /><small>Use the provider's documented HTTPS base URL ending in /v1.</small></label><label className="field"><span className="field-label-row"><span>Provider API key</span></span><input type="password" aria-label="Remote provider API key" value={remoteApiKey} onChange={(event) => { setRemoteApiKey(event.target.value); setRemoteModels([]); }} autoComplete="off" placeholder="Paste key for this session only" /><small>Held in this page's memory only. AXIOM does not save it in the workspace or local storage.</small></label></div>
       <div className="integration-form-actions"><button type="button" className="button secondary-button" disabled={remoteBusy || !remoteBaseUrl.trim() || !remoteApiKey.trim()} onClick={() => void testRemoteConnection()}><Globe size={15} /> {remoteBusy ? "Connecting…" : "Test connection and list models"}</button></div>
       {remoteModels.length > 0 && <><label className="field"><span className="field-label-row"><span>Remote model ID</span></span><select aria-label="Remote model ID" value={remoteModel} onChange={(event) => setRemoteModel(event.target.value)}>{remoteModels.map((id) => <option key={id} value={id}>{id}</option>)}</select></label></>}
@@ -181,6 +186,6 @@ export default function ModelStudioPanel() {
       {remoteError && <div className="inline-alert warning" role="alert">{remoteError}</div>}
       {remoteResponse && <div className="model-studio-remote-response"><b>Remote response</b><pre>{remoteResponse}</pre><small>Response was returned to this page; AXIOM did not save it as a local model or add it to training history.</small></div>}
     </div>
-    <p className="quiet-note">External access is used only after explicit search/download or remote-model actions. Local inference remains loopback-only. Remote prompts are sent only after the explicit consent checkbox and are not persisted by this feature. GGUF downloads are limited to 20 GiB per file; always review a repository's license and model card.</p>
+    <p className="quiet-note">External access is used only after explicit search/download or remote-model actions. Local inference remains loopback-only. Remote prompts are sent only after the explicit consent checkbox and are not persisted by this feature. GGUF downloads are limited to 20 GiB per file. Native safetensors pulls are limited to 20 GiB per file and 160 GiB per checkpoint; always review repository licenses and model cards.</p>
   </section>;
 }
