@@ -29,6 +29,27 @@ class NativeGenerationCancelled(RuntimeError):
 class NativeDependencyError(RuntimeError):
     """A required runtime dependency for the native engine is unavailable."""
 
+
+def _sanitize_sampling_scores(scores: Any, torch_module: Any) -> Any:
+    """Make decoder logits safe for argmax/softmax without inventing a fallback token."""
+    positive_infinity = torch_module.isposinf(scores)
+    if bool(positive_infinity.any().item()):
+        # An overflowed +inf logit dominates all ordinary finite logits. Keep
+        # only those tokens and assign equal finite scores among them.
+        return torch_module.where(
+            positive_infinity,
+            torch_module.zeros_like(scores),
+            torch_module.full_like(scores, float("-inf")),
+        )
+
+    finite = torch_module.isfinite(scores)
+    if not bool(finite.any().item()):
+        raise NativeEngineError(
+            "Native decoder produced no usable token logits; check checkpoint weights, device, and precision."
+        )
+    # NaN logits are unusable; -inf is the standard mask value for samplers.
+    return scores.masked_fill(torch_module.isnan(scores), float("-inf"))
+
 @dataclass(frozen=True)
 class NativeLlamaConfig:
     model_type: str
@@ -920,7 +941,7 @@ class NativeLlamaRuntime:
                     if cancel_event is not None and cancel_event.is_set():
                         stop_reason = "cancelled"
                         break
-                    scores = logits.float()
+                    scores = _sanitize_sampling_scores(logits.float(), torch)
                     if repetition_penalty != 1.0:
                         history = sorted(set(prompt_token_ids + generated))
                         if history:
@@ -935,7 +956,7 @@ class NativeLlamaRuntime:
                     if temperature == 0:
                         next_token = torch.argmax(scores, dim=-1)
                     else:
-                        scores = scores / float(temperature)
+                        scores = _sanitize_sampling_scores(scores / float(temperature), torch)
                         if top_k > 0 and top_k < self.config.vocab_size:
                             threshold = torch.topk(scores, top_k, dim=-1).values[:, -1].unsqueeze(-1)
                             scores = scores.masked_fill(scores < threshold, float("-inf"))
@@ -947,8 +968,14 @@ class NativeLlamaRuntime:
                             remove[..., 0] = False
                             sorted_scores = sorted_scores.masked_fill(remove, float("-inf"))
                             scores = torch.full_like(scores, float("-inf")).scatter(dim=-1, index=sorted_ids, src=sorted_scores)
+                        scores = _sanitize_sampling_scores(scores, torch)
+                        probabilities = torch.softmax(scores, dim=-1)
+                        if not bool(torch.isfinite(probabilities).all().item()):
+                            raise NativeEngineError(
+                                "Native sampler could not form a finite token probability distribution."
+                            )
                         next_token = torch.multinomial(
-                            torch.softmax(scores, dim=-1), num_samples=1, generator=sampling_generator
+                            probabilities, num_samples=1, generator=sampling_generator
                         ).squeeze(-1)
                     token_id = int(next_token.item())
                     if token_id < 0 or token_id >= self.config.vocab_size:
