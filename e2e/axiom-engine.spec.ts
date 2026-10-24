@@ -91,6 +91,7 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
     const requestBody = route.request().postDataJSON() as Record<string, unknown>;
     expect(requestBody.top_p).toBe(0.8);
     expect(requestBody.top_k).toBe(4);
+    expect(requestBody.min_p).toBe(0.05);
     expect(requestBody.repetition_penalty).toBe(1.1);
     expect(requestBody.seed).toBe(42);
     expect(requestBody.stop_sequences).toEqual(["<END>", "###"]);
@@ -151,6 +152,7 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
   await engine.getByLabel("AXIOM Native Engine prompt").fill("Say hello.");
   await engine.getByLabel("Top-p").fill("0.8");
   await engine.getByLabel("Top-k").fill("4");
+  await engine.getByLabel("Min-p").fill("0.05");
   await engine.getByLabel("Repetition penalty").fill("1.1");
   await engine.getByLabel("Sampling seed").fill("42");
   await engine.getByLabel("Stop sequences").fill("<END>\n###");
