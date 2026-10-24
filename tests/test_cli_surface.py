@@ -156,7 +156,7 @@ def test_engine_fabric_cli_advertises_native_backend_and_sampler_contract():
             for parameter in command.params
             for option in (*getattr(parameter, "opts", ()), *getattr(parameter, "secondary_opts", ()))
         }
-        for option in ("--top-p", "--top-k", "--repeat-penalty", "--seed", "--stop-sequence"):
+        for option in ("--top-p", "--top-k", "--min-p", "--repeat-penalty", "--seed", "--stop-sequence"):
             assert option in flags
     benchmark_backend = next(parameter for parameter in benchmark.params if "--backend" in getattr(parameter, "opts", ()))
     assert "axiom-native" in (benchmark_backend.help or "")
