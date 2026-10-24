@@ -81,3 +81,14 @@ Use `axiom infer ps --json` or the **Show loaded models** control in the Runtime
 The Runtime inference form now uses `POST /api/inference/generate/stream` and newline-delimited JSON events: token deltas, a completion record with timings/token counts, or a safe error record. Text appears incrementally in the existing response area. **Stop generation** aborts the browser request; the daemon watches for disconnects and closes the upstream loopback response so Ollama can stop work promptly. Request traces retain only bounded metadata—not prompts or generated text.
 
 This stream uses the same `127.0.0.1:11434` Ollama endpoint as non-streaming API calls. It does not convert Ollama model formats into AXIOM Native Engine formats.
+
+
+## Advanced sampling options
+
+The Runtime panel's **Advanced sampling options** section exposes Ollama's top-p, top-k, repetition penalty, optional seed, optional context window, and up to 16 newline-separated stop sequences. Values pass through request bounds and core validation before reaching the fixed loopback request. Seed and context size are omitted when blank so Ollama can use the model/runtime defaults. The CLI supports the same settings:
+
+```bash
+axiom --no-banner infer run qwen2.5:0.5b --prompt "Explain AXIOM" --top-p 0.83 --top-k 36 --repeat-penalty 1.2 --seed 123 --num-ctx 8192 --stop DONE --stop END
+```
+
+Top-p must be greater than 0 and at most 1; top-k is 0–100,000; repetition penalty is 0.1–5; context size is 512–131,072 tokens; seed is a non-negative signed 64-bit integer; and each of at most 16 stop strings is limited to 256 characters. These are runtime options, not measured hardware-fit claims.
