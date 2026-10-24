@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from axiom.core.inference import (
     InferenceRuntimeError,
+    inspect_local_model,
+    unload_local_model,
     run_local_inference,
     run_local_inference_benchmark,
     runtime_status,
@@ -120,6 +122,28 @@ def inference_service_stop(request: Request) -> dict[str, Any]:
         return stop_service()
     except OllamaServiceError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@router.post("/models/inspect")
+def inference_model_inspect(request: Request, payload: PullModelRequest) -> dict[str, Any]:
+    _require_local_runtime_management(request)
+    try:
+        return inspect_local_model(payload.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except InferenceRuntimeError:
+        raise HTTPException(status_code=503, detail="The local Ollama API could not inspect this model.") from None
+
+
+@router.post("/models/unload")
+def inference_model_unload(request: Request, payload: PullModelRequest) -> dict[str, Any]:
+    _require_local_runtime_management(request)
+    try:
+        return unload_local_model(payload.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except InferenceRuntimeError:
+        raise HTTPException(status_code=503, detail="Ollama could not unload this model from memory.") from None
 
 
 @router.post("/models/pull")
