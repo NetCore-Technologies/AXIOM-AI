@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from axiom.core.inference import InferenceRuntimeError, inspect_local_model, list_running_local_models, run_local_inference, unload_local_model
+from axiom.core.inference import InferenceRuntimeError, inspect_local_model, list_running_local_models, remove_local_model, run_local_inference, unload_local_model
 from axiom.core.ollama_service import (
     OllamaServiceError, cancel_model_pull, get_model_pull, service_status,
     start_model_pull, start_service, stop_service,
@@ -172,6 +172,28 @@ def infer_inspect(
         table.add_row(label, str(value) if value not in (None, []) else "Not reported")
     console.print(table)
     console.print(report["scope_note"])
+
+
+@infer_app.command("remove")
+def infer_remove(
+    model: str = typer.Argument(..., help="Exact installed Ollama model tag to remove from local storage."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Confirm permanent removal without prompting."),
+    json_output: bool = typer.Option(False, "--json", help="Print the removal report as JSON."),
+) -> None:
+    """Remove an installed Ollama model tag. This deletes local model weights for that tag."""
+    if not yes and not typer.confirm(f"Permanently remove the downloaded Ollama model tag {model!r}?", default=False):
+        console.print("Model removal cancelled.")
+        raise typer.Exit(code=0)
+    try:
+        report = remove_local_model(model)
+    except (ValueError, InferenceRuntimeError) as exc:
+        _fail(str(exc))
+    if json_output:
+        console.print_json(json.dumps(report, ensure_ascii=False))
+        return
+    console.print(report["scope_note"] if report["removed"] else "Ollama did not confirm model removal.")
+    if not report["removed"]:
+        raise typer.Exit(code=1)
 
 
 @infer_app.command("unload")
