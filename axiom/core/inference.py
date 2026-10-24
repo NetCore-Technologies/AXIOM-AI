@@ -165,6 +165,56 @@ def runtime_status() -> dict[str, Any]:
 
 
 
+
+def remove_local_model(model: str) -> dict[str, Any]:
+    """Remove one installed Ollama model tag after explicit caller confirmation."""
+    import os
+    import subprocess
+
+    model = validate_model_name(model)
+    before = runtime_status()
+    if before.get("status") != "online":
+        raise InferenceRuntimeError("Ollama must be online before removing a local model.")
+    if model not in before.get("models", []):
+        raise ValueError("That exact model tag is not installed in the local Ollama inventory.")
+    executable = shutil.which("ollama")
+    if not executable:
+        raise InferenceRuntimeError("Ollama's command-line executable was not found on PATH.")
+    environment = os.environ.copy()
+    environment["OLLAMA_HOST"] = "127.0.0.1:11434"
+    try:
+        result = subprocess.run(
+            [executable, "rm", model],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            env=environment,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise InferenceRuntimeError("Ollama model removal exceeded the 120-second time limit.") from None
+    except OSError:
+        raise InferenceRuntimeError("AXIOM could not run the local Ollama removal command.") from None
+    if result.returncode != 0:
+        raise InferenceRuntimeError(f"Ollama could not remove this model tag (exit status {result.returncode}).")
+    after = runtime_status()
+    still_installed = model in after.get("models", [])
+    if after.get("status") == "online" and still_installed:
+        raise InferenceRuntimeError("Ollama returned success, but the selected model tag is still in the inventory.")
+    return {
+        "schema_version": 1,
+        "model": model,
+        "removed": not still_installed,
+        "model_files_deleted": not still_installed,
+        "remaining_models": after.get("models", []) if after.get("status") == "online" else [],
+        "scope_note": "The requested Ollama model tag was passed to the local removal command. Shared model blobs may remain when other installed tags reference them.",
+    }
+
+
+
 def list_running_local_models() -> dict[str, Any]:
     """List loaded Ollama models and their reported CPU/GPU memory footprint."""
     result = _request_json("/api/ps", timeout=_STATUS_TIMEOUT_SECONDS)
