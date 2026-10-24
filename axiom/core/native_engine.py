@@ -339,6 +339,7 @@ def inspect_native_adapter_compatibility(
     cuda_available = False
     rocm_available = False
     mps_available = False
+    xpu_available = False
     if torch is not None:
         try:
             cuda_available = bool(torch.cuda.is_available())
@@ -352,6 +353,11 @@ def inspect_native_adapter_compatibility(
             mps_available = bool(mps and mps.is_available())
         except (RuntimeError, AttributeError):
             mps_available = False
+        try:
+            xpu_backend = getattr(torch, "xpu", None)
+            xpu_available = bool(xpu_backend and xpu_backend.is_available())
+        except (RuntimeError, AttributeError):
+            xpu_available = False
 
     structurally_compatible = not issues
     devices = []
@@ -360,6 +366,7 @@ def inspect_native_adapter_compatibility(
         ("CUDA", cuda_available),
         ("ROCm", rocm_available),
         ("Metal/MPS", mps_available),
+        ("Intel XPU", xpu_available),
     ):
         compatible = structurally_compatible and available
         if not available:
@@ -458,7 +465,10 @@ class NativeLlamaRuntime:
                     weights[name] = tensor.to(device=device, dtype=dtype)
         except NativeEngineError:
             raise
-        except Exception:
+        except Exception as exc:
+            message = str(exc).lower()
+            if "out of memory" in message or "cannot allocate memory" in message or "alloc_failed" in message:
+                raise NativeEngineError("Checkpoint loading ran out of memory on the selected device.") from None
             raise NativeEngineError("Checkpoint weights could not be loaded from local safetensors files.") from None
         hdim = config.hidden_size // config.num_attention_heads
         expected = {"model.embed_tokens.weight": (config.vocab_size, config.hidden_size), "model.norm.weight": (config.hidden_size,)}
@@ -533,7 +543,10 @@ class NativeLlamaRuntime:
                     adapters.setdefault(module_path, {})[side] = handle.get_tensor(key).to(device=device, dtype=dtype)
         except NativeEngineError:
             raise
-        except Exception:
+        except Exception as exc:
+            message = str(exc).lower()
+            if "out of memory" in message or "cannot allocate memory" in message or "alloc_failed" in message:
+                raise NativeEngineError("Loading LoRA adapter ran out of memory on the selected device.") from None
             raise NativeEngineError("LoRA weights could not be read from local safetensors.") from None
         scaling: dict[str, float] = {}
         for module_path, pair in adapters.items():

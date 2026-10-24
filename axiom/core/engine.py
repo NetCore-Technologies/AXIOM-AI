@@ -43,6 +43,127 @@ def _version_key(value: str) -> tuple[int, int, int]:
     return tuple((parts + [0, 0, 0])[:3])
 
 
+def _device_capability_rows(torch_module: Any | None = None) -> list[dict[str, Any]]:
+    """Return observed PyTorch devices without assuming a GPU exists."""
+    try:
+        if torch_module is None:
+            import torch as torch_module
+    except Exception:
+        reason = "PyTorch could not be imported; install the native-inference extra for device execution."
+        return [
+            {"id": "cpu", "name": "CPU", "available": False, "reason": reason, "memory_free_gib": None, "memory_total_gib": None},
+            {"id": "cuda", "name": "NVIDIA CUDA", "available": False, "reason": reason, "memory_free_gib": None, "memory_total_gib": None},
+            {"id": "rocm", "name": "AMD ROCm", "available": False, "reason": reason, "memory_free_gib": None, "memory_total_gib": None},
+            {"id": "mps", "name": "Apple Metal (MPS)", "available": False, "reason": reason, "memory_free_gib": None, "memory_total_gib": None},
+            {"id": "xpu", "name": "Intel XPU", "available": False, "reason": reason, "memory_free_gib": None, "memory_total_gib": None},
+        ]
+    gib = 1024 ** 3
+    try:
+        cuda_available = bool(torch_module.cuda.is_available())
+    except Exception:
+        cuda_available = False
+    is_rocm = bool(getattr(getattr(torch_module, "version", None), "hip", None))
+    free_gib = total_gib = None
+    accelerator_name = "AMD ROCm" if is_rocm else "NVIDIA CUDA"
+    if cuda_available:
+        try:
+            accelerator_name = str(torch_module.cuda.get_device_name(0)) or accelerator_name
+        except Exception:
+            pass
+        try:
+            free_bytes, total_bytes = torch_module.cuda.mem_get_info()
+            free_gib, total_gib = round(float(free_bytes) / gib, 3), round(float(total_bytes) / gib, 3)
+        except Exception:
+            # Some drivers do not expose memory telemetry; availability is still useful.
+            pass
+    rows: list[dict[str, Any]] = [
+        {"id": "cuda", "name": accelerator_name if cuda_available and not is_rocm else "NVIDIA CUDA", "available": cuda_available and not is_rocm,
+         "reason": "CUDA is available in this PyTorch environment." if cuda_available and not is_rocm else
+            ("This PyTorch build targets AMD ROCm; select ROCm instead." if is_rocm else "CUDA is not available in this PyTorch environment."),
+         "memory_free_gib": free_gib if cuda_available and not is_rocm else None,
+         "memory_total_gib": total_gib if cuda_available and not is_rocm else None},
+        {"id": "rocm", "name": accelerator_name if cuda_available and is_rocm else "AMD ROCm", "available": cuda_available and is_rocm,
+         "reason": "ROCm is available through PyTorch's CUDA-compatible device API." if cuda_available and is_rocm else "ROCm is not available in this PyTorch environment.",
+         "memory_free_gib": free_gib if cuda_available and is_rocm else None,
+         "memory_total_gib": total_gib if cuda_available and is_rocm else None},
+    ]
+    try:
+        mps_backend = getattr(getattr(torch_module, "backends", None), "mps", None)
+        mps_available = bool(mps_backend and mps_backend.is_available())
+    except Exception:
+        mps_available = False
+    rows.append({"id": "mps", "name": "Apple Metal (MPS)", "available": mps_available,
+        "reason": "PyTorch MPS is available; portable free-memory telemetry is not exposed here." if mps_available else "Apple Metal/MPS is not available in this PyTorch environment.",
+        "memory_free_gib": None, "memory_total_gib": None})
+    try:
+        xpu_backend = getattr(torch_module, "xpu", None)
+        xpu_available = bool(xpu_backend and xpu_backend.is_available())
+    except Exception:
+        xpu_available, xpu_backend = False, None
+    xpu_name = "Intel XPU"
+    xpu_free_gib = xpu_total_gib = None
+    if xpu_available:
+        try:
+            xpu_name = str(xpu_backend.get_device_name(0)) or xpu_name
+        except Exception:
+            pass
+        try:
+            free_bytes, total_bytes = xpu_backend.mem_get_info()
+            xpu_free_gib, xpu_total_gib = round(float(free_bytes) / gib, 3), round(float(total_bytes) / gib, 3)
+        except Exception:
+            pass
+    rows.append({"id": "xpu", "name": xpu_name, "available": xpu_available,
+        "reason": "PyTorch XPU is available; validate model/operator support on this driver." if xpu_available else "Intel XPU is not available in this PyTorch environment.",
+        "memory_free_gib": xpu_free_gib, "memory_total_gib": xpu_total_gib})
+    rows.append({"id": "cpu", "name": "CPU", "available": True,
+        "reason": "PyTorch CPU tensor execution is available.", "memory_free_gib": None, "memory_total_gib": None})
+    return rows
+
+
+def _resolve_execution_device(torch_module: Any, preference: str = "auto") -> tuple[Any, dict[str, str]]:
+    """Resolve an explicit backend or select the highest-priority available one."""
+    choices = {"auto", "cpu", "cuda", "rocm", "mps", "xpu"}
+    if not isinstance(preference, str) or preference.strip().lower() not in choices:
+        raise ValueError("Execution device must be one of: auto, cpu, cuda, rocm, mps, or xpu.")
+    requested = preference.strip().lower()
+    rows = _device_capability_rows(torch_module)
+    by_id = {item["id"]: item for item in rows}
+    if requested == "auto":
+        selected = next((by_id[item] for item in ("cuda", "rocm", "mps", "xpu", "cpu") if by_id.get(item, {}).get("available")), None)
+        if selected is None:
+            raise AxiomEngineError("PyTorch could not initialize a supported execution device.")
+        reason = f"Auto-selected {selected['name']} because it is the highest-priority available backend."
+    else:
+        selected = by_id.get(requested)
+        if selected is None or not selected.get("available"):
+            explanation = selected.get("reason") if selected else "This device is not supported by AXIOM."
+            raise AxiomEngineError(f"Requested execution device {requested!r} is unavailable. {explanation}")
+        reason = f"Using explicitly selected device: {selected['name']}."
+    # PyTorch uses device='cuda' for both CUDA and ROCm builds.
+    torch_name = "cuda" if selected["id"] == "rocm" else selected["id"]
+    return torch_module.device(torch_name), {"requested": requested, "selected": selected["id"], "reason": reason}
+
+
+def _clear_device_cache(torch_module: Any | None, device: Any | None) -> None:
+    """Best-effort release of the inactive allocator cache for the model's device."""
+    if torch_module is None or device is None:
+        return
+    device_type = str(getattr(device, "type", device)).split(":", 1)[0]
+    try:
+        if device_type == "cuda":
+            torch_module.cuda.empty_cache()
+        elif device_type == "mps":
+            mps_backend = getattr(torch_module, "mps", None)
+            if mps_backend is not None and callable(getattr(mps_backend, "empty_cache", None)):
+                mps_backend.empty_cache()
+        elif device_type == "xpu":
+            xpu_backend = getattr(torch_module, "xpu", None)
+            if xpu_backend is not None and callable(getattr(xpu_backend, "empty_cache", None)):
+                xpu_backend.empty_cache()
+    except Exception:
+        _LOG.debug("Device allocator cache cleanup was unavailable for %s.", device_type, exc_info=True)
+
+
 def runtime_status() -> dict[str, Any]:
     packages: dict[str, bool] = {}
     versions: dict[str, str | None] = {}
@@ -61,7 +182,14 @@ def runtime_status() -> dict[str, Any]:
             problems.append(f"{name} is not installed")
         elif versions[name] is not None and _version_key(versions[name]) < _version_key(minimum_versions[name]):
             problems.append(f"{name} {versions[name]} is too old (need >= {minimum_versions[name]})")
+    devices = _device_capability_rows()
+    if packages["torch"] and not any(item["available"] for item in devices):
+        problems.append("PyTorch is installed but no supported execution device could be initialized")
     ready = not problems
+    recommended_device = next(
+        (item["id"] for item in devices if item["available"] and item["id"] in {"cuda", "rocm", "mps", "xpu"}),
+        "cpu" if any(item["id"] == "cpu" and item["available"] for item in devices) else None,
+    )
     return {
         "engine": "axiom-native-pytorch-llama",
         "ready": ready,
@@ -71,6 +199,9 @@ def runtime_status() -> dict[str, Any]:
         "problems": problems,
         "loaded": _LOADED_RUNTIME is not None,
         "architecture": _LOADED_ARCHITECTURE,
+        "loaded_device": str(_LOADED_RUNTIME.get("device")) if _LOADED_RUNTIME is not None else None,
+        "devices": devices,
+        "recommended_device": recommended_device,
         "model_loading": "local_safetensors_only",
         "execution_backend": "pytorch-native-axiom",
         "transformers_generation_used": False,
@@ -607,7 +738,7 @@ def _pending_stop_prefix_length(text: str, stop_sequences: tuple[str, ...]) -> i
     return longest
 
 
-def _load_local_model(model_path: str, adapter_path: str | None):
+def _load_local_model(model_path: str, adapter_path: str | None, device_preference: str = "auto"):
     global _LOADED_RUNTIME, _LOADED_ARCHITECTURE
     try:
         import torch
@@ -628,7 +759,8 @@ def _load_local_model(model_path: str, adapter_path: str | None):
             )
         resolved_adapter = adapter_dir
 
-    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None)
+    device, device_selection = _resolve_execution_device(torch, device_preference)
+    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None, str(device), device_preference)
     if _LOADED_RUNTIME is not None and _LOADED_RUNTIME["key"] == key:
         return (
             _LOADED_RUNTIME["model"],
@@ -643,19 +775,10 @@ def _load_local_model(model_path: str, adapter_path: str | None):
     _LOADED_ARCHITECTURE = None
     if previous_runtime is not None:
         previous_torch = previous_runtime.get("torch")
+        previous_device = previous_runtime.get("device")
         del previous_runtime
         gc.collect()
-        try:
-            if previous_torch is not None and previous_torch.cuda.is_available():
-                previous_torch.cuda.empty_cache()
-        except (RuntimeError, AttributeError):
-            _LOG.debug("GPU cache cleanup was unavailable while replacing the loaded native model.", exc_info=True)
-
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-    else:
-        mps = getattr(getattr(torch, "backends", None), "mps", None)
-        device = torch.device("mps") if mps is not None and mps.is_available() else torch.device("cpu")
+        _clear_device_cache(previous_torch, previous_device)
 
     from axiom.core.native_engine import NativeDependencyError, NativeEngineError, load_native_runtime
     try:
@@ -665,17 +788,58 @@ def _load_local_model(model_path: str, adapter_path: str | None):
     except NativeDependencyError as exc:
         raise AxiomEngineError(str(exc)) from None
     except NativeEngineError as exc:
-        raise ValueError(str(exc)) from None
-    except (OSError, RuntimeError):
-        _LOG.debug("Native checkpoint load failed.", exc_info=True)
-        raise AxiomEngineError(
-            "AXIOM Native Engine could not allocate or load this checkpoint. "
-            "Confirm supported safetensors weights and available memory."
-        ) from None
+        # Auto mode makes one transparent CPU retry only for an accelerator OOM.
+        # Explicit backend choices never silently switch devices.
+        device_type = str(getattr(device, "type", device)).split(":", 1)[0]
+        if device_preference.strip().lower() != "auto" or device_type not in {"cuda", "mps", "xpu"} or "out of memory" not in str(exc).lower():
+            raise ValueError(str(exc)) from None
+        _LOG.warning("Native accelerator load ran out of memory; retrying this checkpoint on CPU.")
+        _clear_device_cache(torch, device)
+        gc.collect()
+        device = torch.device("cpu")
+        device_selection = {
+            "requested": "auto",
+            "selected": "cpu",
+            "reason": "The preferred accelerator ran out of memory during model loading; AXIOM retried on CPU.",
+        }
+        try:
+            model, tokenizer, native_details = load_native_runtime(
+                base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots()
+            )
+        except NativeDependencyError as retry_exc:
+            raise AxiomEngineError(str(retry_exc)) from None
+        except NativeEngineError as retry_exc:
+            raise ValueError(f"Accelerator memory was insufficient and CPU retry also failed: {retry_exc}") from None
+        except (OSError, RuntimeError):
+            _LOG.debug("CPU retry after accelerator OOM failed.", exc_info=True)
+            raise AxiomEngineError("AXIOM Native Engine could not load the checkpoint after an accelerator memory failure and CPU retry.") from None
+    except (OSError, RuntimeError) as exc:
+        # Handle native device allocation failures that aren't wrapped by the loader.
+        device_type = str(getattr(device, "type", device)).split(":", 1)[0]
+        if device_preference.strip().lower() == "auto" and device_type in {"cuda", "mps", "xpu"} and "out of memory" in str(exc).lower():
+            _LOG.warning("Native accelerator load ran out of memory; retrying this checkpoint on CPU.")
+            _clear_device_cache(torch, device)
+            gc.collect()
+            device = torch.device("cpu")
+            device_selection = {"requested": "auto", "selected": "cpu", "reason": "The preferred accelerator ran out of memory during model loading; AXIOM retried on CPU."}
+            try:
+                model, tokenizer, native_details = load_native_runtime(
+                    base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots()
+                )
+            except (NativeDependencyError, NativeEngineError, OSError, RuntimeError) as retry_exc:
+                _LOG.debug("CPU retry after accelerator OOM failed.", exc_info=True)
+                raise AxiomEngineError(f"AXIOM Native Engine could not load the checkpoint after an accelerator memory failure and CPU retry: {retry_exc}") from None
+        else:
+            _LOG.debug("Native checkpoint load failed.", exc_info=True)
+            raise AxiomEngineError(
+                "AXIOM Native Engine could not allocate or load this checkpoint. "
+                "Confirm supported safetensors weights and available memory."
+            ) from None
 
     details = {
         **inspected,
         **native_details,
+        "device_selection": device_selection,
         "config": {"max_position_embeddings": model.config.max_position_embeddings},
     }
     _LOADED_RUNTIME = {
@@ -699,13 +863,10 @@ def unload_local_model() -> dict[str, Any]:
         _LOADED_ARCHITECTURE = None
         if previous_runtime is not None:
             previous_torch = previous_runtime.get("torch")
+            previous_device = previous_runtime.get("device")
             del previous_runtime
             gc.collect()
-            try:
-                if previous_torch is not None and previous_torch.cuda.is_available():
-                    previous_torch.cuda.empty_cache()
-            except (RuntimeError, AttributeError):
-                _LOG.debug("GPU cache cleanup was unavailable while unloading the model.", exc_info=True)
+            _clear_device_cache(previous_torch, previous_device)
         else:
             gc.collect()
         return {
@@ -730,6 +891,7 @@ def generate_local_stream(
     stop_sequences: list[str] | tuple[str, ...] = (),
     include_token_events: bool = True,
     cancel_event: threading.Event | None = None,
+    device_preference: str = "auto",
 ) -> Iterator[dict[str, Any]]:
     """Yield cumulative decoded text updates and one final metrics event.
 
@@ -741,7 +903,7 @@ def generate_local_stream(
     top_p, top_k, repetition_penalty, seed = validate_sampling_parameters(top_p, top_k, repetition_penalty, seed)
     stop_sequences = validate_stop_sequences(stop_sequences)
     with _ENGINE_LOCK:
-        model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path)
+        model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path, device_preference)
         context_cap = max(2, min(model.config.max_position_embeddings, _MAX_INPUT_TOKENS + max_new_tokens))
         effective_max_new_tokens = min(max_new_tokens, context_cap - 1)
         input_limit = max(1, min(_MAX_INPUT_TOKENS, context_cap - effective_max_new_tokens))
@@ -840,6 +1002,7 @@ def generate_local_stream(
                 "model_type": details["model_type"],
                 "adapter": details["adapter_directory_name"],
                 "device": str(device),
+                "device_selection": details.get("device_selection"),
                 "checkpoint_format": "safetensors",
                 "decoder": model.last_generation.get("decoder", "axiom-autoregressive-kv-cache"),
                 "attention_backend": model.last_attention_backend,
@@ -890,6 +1053,7 @@ def generate_local(
     repetition_penalty: float = 1.0,
     seed: int | None = None,
     stop_sequences: list[str] | tuple[str, ...] = (),
+    device_preference: str = "auto",
 ) -> dict[str, Any]:
     """Generate a complete local response through the streaming decoder."""
     completed: dict[str, Any] | None = None
@@ -905,6 +1069,7 @@ def generate_local(
         seed=seed,
         stop_sequences=stop_sequences,
         include_token_events=False,
+        device_preference=device_preference,
     ):
         if event.get("type") == "complete" and isinstance(event.get("result"), dict):
             completed = event["result"]

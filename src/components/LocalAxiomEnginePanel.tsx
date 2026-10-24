@@ -16,6 +16,7 @@ export default function LocalAxiomEnginePanel() {
   const [adapterCompatibility, setAdapterCompatibility] = useState<AxiomEngineAdapterCompatibility | null>(null);
   const [checkingAdapter, setCheckingAdapter] = useState(false);
   const [modelPath, setModelPath] = useState("");
+  const [devicePreference, setDevicePreference] = useState<"auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu">("auto");
   const [selectedModelPath, setSelectedModelPath] = useState("");
   const [adapterPath, setAdapterPath] = useState("");
   const [selectedAdapterPath, setSelectedAdapterPath] = useState("");
@@ -191,6 +192,7 @@ export default function LocalAxiomEnginePanel() {
       const completed = await axiomApi.streamAxiomEngine({
         model_path: modelPath.trim(),
         adapter_path: adapterPath.trim() || undefined,
+        device: devicePreference,
         prompt,
         max_new_tokens: tokenLimit,
         temperature: temp,
@@ -232,14 +234,24 @@ export default function LocalAxiomEnginePanel() {
         {status?.loaded && <button type="button" className="button secondary-button" onClick={() => void unload()} disabled={loading || running || unloading}><Unplug size={14} /> {unloading ? "Unloading…" : "Unload model"}</button>}
       </div>
     </div>
-    <p>AXIOM Native Engine runs its own PyTorch Llama/Mistral forward pass and autoregressive KV-cache decoder, including RMSNorm, RoPE, grouped-query attention and LoRA deltas. Tokenization uses the local tokenizer.json; weights are loaded from local floating-point safetensors. This panel does not call Transformers model.generate or Ollama. Weights must already exist on this computer; model downloads and training are separate workflows.</p>
+    <p>AXIOM Native Engine owns its Llama/Mistral forward pass, KV-cache decode, attention path, sampling and LoRA application. PyTorch supplies device tensor kernels; AXIOM does not delegate generation to Transformers or Ollama. This build accepts local floating-point safetensors and tokenizer.json; GGUF/EXL2 quantized loading and model acquisition are not yet implemented by this native path.</p>
     <div className="status-strip" aria-label="AXIOM Engine status">
       <div className="status-strip-item">
         <span className={`status-pill ${status?.ready ? "success" : "warning"}`}><i />{loading ? "CHECKING" : status?.ready ? "ENGINE READY" : "SETUP REQUIRED"}</span>
-        <div><b>{status?.loaded ? `Loaded: ${status.architecture || "local model"}` : "AXIOM-native decoder ready"}</b><span>{status?.setup_note || error || "Checking local PyTorch and Transformers availability."}</span></div>
+        <div><b>{status?.loaded ? `Loaded: ${status.architecture || "local model"} · ${status.loaded_device || "device reported by runtime"}` : "AXIOM-native decoder ready"}</b><span>{status?.setup_note || error || "Checking local PyTorch and native inference dependencies."}</span></div>
       </div>
     </div>
     {status && !status.ready && <div className="inline-alert warning" role="status">{status.setup_note}</div>}
+    {status?.devices && <section className="two-column-grid" aria-label="Native execution device capabilities">
+      {status.devices.map((device) => <article className="panel-surface" key={device.id} style={{ padding: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <strong>{device.name}</strong>
+          <span className={"status-pill " + (device.available ? "success" : "neutral")}>{device.available ? "AVAILABLE" : "UNAVAILABLE"}</span>
+        </div>
+        {device.memory_total_gib !== null && <p className="quiet-note">Memory: {device.memory_free_gib ?? "n/a"} GiB free / {device.memory_total_gib} GiB total</p>}
+        <p className="quiet-note">{device.reason}</p>
+      </article>)}
+    </section>}
     {lifecycleNotice && <div className="inline-alert success" role="status">{lifecycleNotice}</div>}
     <form onSubmit={(event) => void run(event)}>
       <label className="field">
@@ -288,6 +300,14 @@ export default function LocalAxiomEnginePanel() {
         {adapterCompatibility.issues.length > 0 && <div className="inline-alert warning" role="alert"><strong>Compatibility blockers</strong><ul>{adapterCompatibility.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
         <p className="quiet-note">{adapterCompatibility.scope_note}</p>
       </section>}
+      <label className="field">
+        <span className="field-label-row"><span>Execution device</span><span>Recommended: {status?.recommended_device ?? "auto"}</span></span>
+        <select aria-label="Execution device" value={devicePreference} onChange={(event) => setDevicePreference(event.target.value as typeof devicePreference)}>
+          <option value="auto">Auto-select available backend</option>
+          {(status?.devices ?? []).map((device) => <option key={device.id} value={device.id} disabled={!device.available}>{device.name}{device.available ? " · available" : " · unavailable"}</option>)}
+        </select>
+        <small>Auto prefers CUDA/ROCm, then Apple Metal or Intel XPU, and finally CPU. An explicit unavailable device fails with a diagnostic instead of silently changing the selected backend.</small>
+      </label>
       <label className="field">
         <span className="field-label-row"><span>AXIOM Native Engine prompt</span><span>{prompt.length.toLocaleString()} / 12,000 characters</span></span>
         <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={12000} rows={5} required placeholder="Ask the local model to do something…" />
@@ -375,6 +395,7 @@ export default function LocalAxiomEnginePanel() {
       <div className="surface-head"><div>
         <p className="surface-eyebrow">{result ? `GENERATED ON THIS MACHINE · ${result.architecture}` : running ? "STREAMING TOKEN OUTPUT · LOCAL ONLY" : "PARTIAL LOCAL OUTPUT"}</p>
         <h3>{result ? `${result.model}${result.adapter ? ` + ${result.adapter}` : ""}` : (assets?.models.find((model) => model.path === modelPath)?.name || "AXIOM Native Engine")}</h3>
+        {result?.device_selection && <p className="quiet-note">Execution device: {result.device_selection.selected}. {result.device_selection.reason}</p>}
         {result && <p className="quiet-note">Finish: {result.stop_reason.replaceAll("_", " ")} · Stop sequences: {result.stop_sequences.length ? result.stop_sequences.length : "off"} · Attention: {result.attention_backend} · Sampling: temperature {result.sampling.temperature} · top-p {result.sampling.top_p} · top-k {result.sampling.top_k || "off"} · repetition penalty {result.sampling.repetition_penalty} · seed {result.sampling.seed ?? "random"}</p>}
       </div><span className={`status-pill ${result ? "success" : running ? "warning" : "neutral"}`}><i />{result ? "COMPLETED" : running ? "GENERATING" : "CANCELLED"}</span></div>
       <pre data-testid={result ? "axiom-engine-output" : "axiom-engine-live-output"} className="local-inference-output">{(result ? result.response : streamResponse) || "(The model has not emitted printable text yet.)"}</pre>

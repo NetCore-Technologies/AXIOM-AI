@@ -81,6 +81,12 @@ def engine_status(json_output: bool = typer.Option(False, "--json", help="Print 
         table.add_row("Architecture", str(report["architecture"] or "not loaded"))
         for name, installed in report["packages"].items():
             table.add_row(name, f"{'available' if installed else 'not installed'} ({report['versions'].get(name) or 'unknown version'})")
+        table.add_row("Recommended device", str(report.get("recommended_device") or "none available"))
+        for device in report.get("devices", []):
+            value = "available" if device.get("available") else "unavailable"
+            if device.get("memory_total_gib") is not None:
+                value += f" ({device.get('memory_free_gib') or 0} GiB free / {device['memory_total_gib']} GiB total)"
+            table.add_row(f"Device: {device.get('name', device.get('id', 'unknown'))}", value)
         table.add_row("Model downloads", "disabled")
         table.add_row("Remote model code", "disabled")
         console.print(table)
@@ -96,6 +102,7 @@ def engine_run(
     prompt: str | None = typer.Option(None, "--prompt", help="Prompt text; mutually exclusive with --prompt-file."),
     prompt_file: Path | None = typer.Option(None, "--prompt-file", exists=True, file_okay=True, dir_okay=False, help="Read the prompt from a local UTF-8 text file."),
     adapter_path: Path | None = typer.Option(None, "--adapter-path", exists=True, file_okay=False, dir_okay=True, help="Optional local native-compatible LoRA adapter directory."),
+    device: str = typer.Option("auto", "--device", help="Execution backend: auto, cpu, cuda, rocm, mps, or xpu."),
     max_new_tokens: int = typer.Option(256, "--max-new-tokens", min=1, max=2048, help="Maximum generated tokens (1–2048)."),
     temperature: float = typer.Option(0.7, "--temperature", min=0, max=2, help="Sampling temperature; 0 disables sampling."),
     stop_sequences: list[str] = typer.Option([], "--stop-sequence", help="Stop when this exact text is generated; repeat the option for multiple stop strings."),
@@ -128,6 +135,7 @@ def engine_run(
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
                 stop_sequences=stop_sequences,
+                device_preference=device,
             )
             try:
                 with Live(console=console, refresh_per_second=12, transient=False) as live:
@@ -153,14 +161,20 @@ def engine_run(
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
                 stop_sequences=stop_sequences,
+                device_preference=device,
             )
     except (ValueError, AxiomEngineError) as exc:
         _fail(str(exc))
     if json_output:
         typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
         return
+    device_selection = result.get("device_selection") if isinstance(result.get("device_selection"), dict) else {}
+    actual_device = device_selection.get("selected", result.get("device", "unknown"))
+    device_reason = device_selection.get("reason", "")
     console.print(Panel.fit(
         f"Engine: AXIOM Native Engine\nModel: {result['model']}\nArchitecture: {result['architecture']}\n"
+        f"Execution device: {actual_device}\n"
+        f"{device_reason + chr(10) if device_reason else ''}"
         f"Generated tokens: {result['completion_tokens']}\nFinish reason: {result.get('stop_reason', 'unknown')}\nElapsed: {result['elapsed_ms']} ms",
         title="AXIOM ENGINE",
     ))

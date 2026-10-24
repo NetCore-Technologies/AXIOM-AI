@@ -347,7 +347,7 @@ def test_native_adapter_compatibility_checks_tensor_shapes_and_device_presence(t
     assert report["adapter"]["rank"] == 1
     assert report["adapter"]["target_modules"] == ["q_proj"]
     assert report["adapter_tensor_count"] == 2
-    assert {device["name"] for device in report["devices"]} == {"CPU", "CUDA", "ROCm", "Metal/MPS"}
+    assert {device["name"] for device in report["devices"]} == {"CPU", "CUDA", "ROCm", "Metal/MPS", "Intel XPU"}
     cpu = next(device for device in report["devices"] if device["name"] == "CPU")
     assert cpu["available"] is True
     assert cpu["compatible"] is True
@@ -457,3 +457,128 @@ def test_tiny_safetensors_checkpoint_generates_through_axiom_native_loop(
     assert all(event["type"] == "token" for event in events[:-1])
     assert len(events[:-1]) == events[-1]["result"]["completion_tokens"]
     assert isinstance(result["response"], str)
+
+
+
+def test_device_selection_prefers_available_accelerator_and_reports_choice(monkeypatch) -> None:
+    from types import SimpleNamespace
+    from axiom.core import engine
+
+    rows = [
+        {"id": "cuda", "name": "NVIDIA CUDA", "available": False, "reason": "not present", "memory_free_gib": None, "memory_total_gib": None},
+        {"id": "rocm", "name": "AMD ROCm", "available": False, "reason": "not present", "memory_free_gib": None, "memory_total_gib": None},
+        {"id": "mps", "name": "Apple Metal (MPS)", "available": True, "reason": "available", "memory_free_gib": None, "memory_total_gib": None},
+        {"id": "xpu", "name": "Intel XPU", "available": True, "reason": "available", "memory_free_gib": None, "memory_total_gib": None},
+        {"id": "cpu", "name": "CPU", "available": True, "reason": "available", "memory_free_gib": None, "memory_total_gib": None},
+    ]
+    monkeypatch.setattr(engine, "_device_capability_rows", lambda _torch=None: rows)
+    fake_torch = SimpleNamespace(device=lambda name: name)
+
+    device, selection = engine._resolve_execution_device(fake_torch, "auto")
+
+    assert device == "mps"
+    assert selection["requested"] == "auto"
+    assert selection["selected"] == "mps"
+    assert "highest-priority available backend" in selection["reason"]
+
+
+def test_device_selection_rejects_unavailable_or_invalid_explicit_backend(monkeypatch) -> None:
+    from types import SimpleNamespace
+    from axiom.core.engine import AxiomEngineError, _resolve_execution_device
+
+    rows = [
+        {"id": "cuda", "name": "NVIDIA CUDA", "available": False, "reason": "CUDA is not available", "memory_free_gib": None, "memory_total_gib": None},
+        {"id": "rocm", "name": "AMD ROCm", "available": False, "reason": "ROCm is not available", "memory_free_gib": None, "memory_total_gib": None},
+        {"id": "mps", "name": "Apple Metal (MPS)", "available": False, "reason": "MPS is not available", "memory_free_gib": None, "memory_total_gib": None},
+        {"id": "xpu", "name": "Intel XPU", "available": False, "reason": "XPU is not available", "memory_free_gib": None, "memory_total_gib": None},
+        {"id": "cpu", "name": "CPU", "available": True, "reason": "available", "memory_free_gib": None, "memory_total_gib": None},
+    ]
+    monkeypatch.setattr("axiom.core.engine._device_capability_rows", lambda _torch=None: rows)
+    fake_torch = SimpleNamespace(device=lambda name: name)
+
+    with pytest.raises(AxiomEngineError, match="unavailable"):
+        _resolve_execution_device(fake_torch, "cuda")
+    with pytest.raises(ValueError, match="Execution device must be one of"):
+        _resolve_execution_device(fake_torch, "network")
+
+
+def test_auto_device_retries_cpu_after_accelerator_oom(monkeypatch, tmp_path: Path) -> None:
+    import sys
+    from types import SimpleNamespace
+    from axiom.core import engine
+    from axiom.core.native_engine import NativeEngineError
+
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    fake_torch = SimpleNamespace(device=lambda name: name)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setattr(engine, "_LOADED_RUNTIME", None)
+    monkeypatch.setattr(engine, "_LOADED_ARCHITECTURE", None)
+    monkeypatch.setattr(engine, "_resolve_model_directory", lambda *_args: model_dir)
+    monkeypatch.setattr(engine, "_inspect_model_config", lambda _path: {"model_type": "llama", "architecture": "LlamaForCausalLM"})
+    monkeypatch.setattr(engine, "_allowed_model_roots", lambda: (tmp_path.resolve(),))
+    monkeypatch.setattr(engine, "_device_capability_rows", lambda _torch=None: [
+        {"id": "cuda", "name": "NVIDIA CUDA", "available": True, "reason": "available", "memory_free_gib": 0.1, "memory_total_gib": 8.0},
+        {"id": "rocm", "name": "AMD ROCm", "available": False, "reason": "unavailable", "memory_free_gib": None, "memory_total_gib": None},
+        {"id": "mps", "name": "Apple Metal (MPS)", "available": False, "reason": "unavailable", "memory_free_gib": None, "memory_total_gib": None},
+        {"id": "xpu", "name": "Intel XPU", "available": False, "reason": "unavailable", "memory_free_gib": None, "memory_total_gib": None},
+        {"id": "cpu", "name": "CPU", "available": True, "reason": "available", "memory_free_gib": None, "memory_total_gib": None},
+    ])
+
+    class FakeModel:
+        config = SimpleNamespace(max_position_embeddings=128)
+
+    calls: list[str] = []
+
+    def fake_load(_path, _torch, device, **_kwargs):
+        calls.append(str(device))
+        if str(device) == "cuda":
+            raise NativeEngineError("Checkpoint loading ran out of memory on the selected device.")
+        return FakeModel(), object(), {
+            "architecture": "LlamaForCausalLM",
+            "model_type": "llama",
+            "adapter_directory_name": None,
+        }
+
+    monkeypatch.setattr("axiom.core.native_engine.load_native_runtime", fake_load)
+    _model, _tokenizer, _torch, device, details = engine._load_local_model(str(model_dir), None, "auto")
+
+    assert calls == ["cuda", "cpu"]
+    assert device == "cpu"
+    assert details["device_selection"]["requested"] == "auto"
+    assert details["device_selection"]["selected"] == "cpu"
+    assert "retried on CPU" in details["device_selection"]["reason"]
+
+
+def test_explicit_accelerator_does_not_silently_fall_back_after_oom(monkeypatch, tmp_path: Path) -> None:
+    import sys
+    from types import SimpleNamespace
+    from axiom.core import engine
+    from axiom.core.native_engine import NativeEngineError
+
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    fake_torch = SimpleNamespace(device=lambda name: name)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setattr(engine, "_LOADED_RUNTIME", None)
+    monkeypatch.setattr(engine, "_LOADED_ARCHITECTURE", None)
+    monkeypatch.setattr(engine, "_resolve_model_directory", lambda *_args: model_dir)
+    monkeypatch.setattr(engine, "_inspect_model_config", lambda _path: {"model_type": "llama", "architecture": "LlamaForCausalLM"})
+    monkeypatch.setattr(engine, "_allowed_model_roots", lambda: (tmp_path.resolve(),))
+    monkeypatch.setattr(engine, "_device_capability_rows", lambda _torch=None: [
+        {"id": "cuda", "name": "NVIDIA CUDA", "available": True, "reason": "available", "memory_free_gib": 0.1, "memory_total_gib": 8.0},
+        {"id": "rocm", "name": "AMD ROCm", "available": False, "reason": "unavailable", "memory_free_gib": None, "memory_total_gib": None},
+        {"id": "mps", "name": "Apple Metal (MPS)", "available": False, "reason": "unavailable", "memory_free_gib": None, "memory_total_gib": None},
+        {"id": "xpu", "name": "Intel XPU", "available": False, "reason": "unavailable", "memory_free_gib": None, "memory_total_gib": None},
+        {"id": "cpu", "name": "CPU", "available": True, "reason": "available", "memory_free_gib": None, "memory_total_gib": None},
+    ])
+    calls: list[str] = []
+
+    def fake_load(_path, _torch, device, **_kwargs):
+        calls.append(str(device))
+        raise NativeEngineError("Checkpoint loading ran out of memory on the selected device.")
+
+    monkeypatch.setattr("axiom.core.native_engine.load_native_runtime", fake_load)
+    with pytest.raises(ValueError, match="out of memory"):
+        engine._load_local_model(str(model_dir), None, "cuda")
+    assert calls == ["cuda"]

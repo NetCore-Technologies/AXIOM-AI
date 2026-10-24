@@ -78,7 +78,7 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
     def fake_stream(
         model_path, prompt, *, adapter_path=None, max_new_tokens=256, temperature=0.7,
         top_p=0.9, top_k=0, repetition_penalty=1.0, seed=None, stop_sequences=(), include_token_events=True,
-        cancel_event=None,
+        cancel_event=None, device_preference="auto",
     ):
         observed.update({
             "model_path": model_path, "prompt": prompt, "max_new_tokens": max_new_tokens,
@@ -86,6 +86,7 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
             "repetition_penalty": repetition_penalty, "seed": seed,
             "stop_sequences": list(stop_sequences),
             "include_token_events": include_token_events,
+            "device_preference": device_preference,
         })
         yield {"type": "token", "response": "hi", "completion_tokens": 1}
         yield {
@@ -112,6 +113,7 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
             "repetition_penalty": 1.1,
             "seed": 42,
             "stop_sequences": ["<END>", "###"],
+            "device": "cpu",
         },
     )
 
@@ -132,6 +134,7 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
         "seed": 42,
         "stop_sequences": ["<END>", "###"],
         "include_token_events": True,
+        "device_preference": "cpu",
     }
 
 
@@ -142,6 +145,8 @@ def test_generate_request_rejects_invalid_stop_sequence_lists(monkeypatch) -> No
 
     monkeypatch.setattr(engine_module, "resolve_local_model_directory", lambda value, label: value)
     base = {"model_path": "/trusted/models/tiny", "prompt": "hello"}
+    with pytest.raises(ValidationError, match="device"):
+        engine_api.GenerateRequest(**base, device="network")
     with pytest.raises(ValidationError, match="stop sequences|Stop sequences"):
         GenerateRequest(**base, stop_sequences=[" "])
     with pytest.raises(ValidationError, match="stop sequence|Stop sequence"):
