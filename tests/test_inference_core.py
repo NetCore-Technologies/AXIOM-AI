@@ -159,7 +159,7 @@ def test_advanced_sampling_options_are_forwarded_as_bounded_ollama_options(monke
     monkeypatch.setattr(inference, "_open_loopback", fake_open)
     inference.run_local_inference(
         "qwen2.5:0.5b", "Say hello",
-        top_p=0.82, top_k=40, repetition_penalty=1.15,
+        top_p=0.82, top_k=40, min_p=0.15, repetition_penalty=1.15,
         seed=17, stop_sequences=["END", "STOP", "END"], num_ctx=8192,
     )
 
@@ -168,6 +168,7 @@ def test_advanced_sampling_options_are_forwarded_as_bounded_ollama_options(monke
         "temperature": 0.7,
         "top_p": 0.82,
         "top_k": 40,
+        "min_p": 0.15,
         "repeat_penalty": 1.15,
         "seed": 17,
         "stop": ["END", "STOP"],
@@ -177,6 +178,7 @@ def test_advanced_sampling_options_are_forwarded_as_bounded_ollama_options(monke
 
 @pytest.mark.parametrize("options", [
     {"top_p": 0}, {"top_p": 1.1}, {"top_k": -1}, {"top_k": 100001},
+    {"min_p": -0.01}, {"min_p": 1.01}, {"min_p": float("nan")}, {"min_p": True},
     {"repetition_penalty": 0.09}, {"repetition_penalty": 5.1},
     {"seed": -1}, {"seed": True}, {"num_ctx": 511}, {"num_ctx": 131073},
     {"stop_sequences": [""]}, {"stop_sequences": ["x" * 257]},
