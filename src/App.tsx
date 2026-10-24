@@ -4,6 +4,7 @@ import ApiPlayground from "./components/ApiPlayground";
 import RuntimeConnectorPanel from "./components/RuntimeConnectorPanel";
 import RuntimeTracePanel from "./components/RuntimeTracePanel";
 import LocalInferencePanel from "./components/LocalInferencePanel";
+import LLMClientPanel from "./components/LLMClientPanel";
 import AgentProfiles from "./components/AgentProfiles";
 import ModelStudioPanel from "./components/ModelStudioPanel";
 import LocalFineTuningPanel from "./components/LocalFineTuningPanel";
@@ -3154,6 +3155,7 @@ function Runtime() {
     <div className="info-grid"><InfoCard icon={Cpu} label="Processor" value={hardware?.architecture || "—"} detail={hardware ? `${hardware.cpu_cores} CPU cores` : loading ? "Checking" : "Unavailable"} tone={hardware ? "success" : "neutral"} /><InfoCard icon={HardDrive} label="System memory" value={hardware ? `${hardware.ram_gb.toFixed(1)} GB` : "—"} detail="Detected locally" tone={hardware ? "success" : "neutral"} /><InfoCard icon={Zap} label="GPU memory" value={hardware?.vram_gb === null || hardware?.vram_gb === undefined ? "Not detected" : `${hardware.vram_gb.toFixed(1)} GB`} detail={hardware?.gpu_name || "No compatible GPU reported"} tone={hardware?.cuda_available ? "success" : "warning"} /></div>
     {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
     <LocalInferencePanel />
+    <LLMClientPanel />
     <RuntimeTracePanel />
     <RuntimeConnectorPanel />
   </FeaturePage>;
