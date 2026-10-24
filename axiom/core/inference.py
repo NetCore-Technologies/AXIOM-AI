@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import shutil
 from datetime import UTC, datetime
@@ -47,6 +48,7 @@ def validate_sampling_options(
     *,
     top_p: float | None = None,
     top_k: int | None = None,
+    min_p: float | None = None,
     repetition_penalty: float | None = None,
     seed: int | None = None,
     stop_sequences: list[str] | tuple[str, ...] | None = None,
@@ -62,8 +64,13 @@ def validate_sampling_options(
         if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
             raise ValueError("top_k must be between 0 and 100,000.")
         options["top_k"] = top_k
+    if min_p is not None:
+        if isinstance(min_p, bool) or not isinstance(min_p, (int, float)) or not math.isfinite(float(min_p)) or not 0 <= float(min_p) <= 1:
+            raise ValueError("min_p must be a finite number between 0 and 1.")
+        if float(min_p) > 0:
+            options["min_p"] = float(min_p)
     if repetition_penalty is not None:
-        if isinstance(repetition_penalty, bool) or not isinstance(repetition_penalty, (int, float)) or not 0.1 <= float(repetition_penalty) <= 5:
+        if isinstance(repetition_penalty, bool) or not isinstance(repetition_penalty, (int, float)) or not math.isfinite(float(repetition_penalty)) or not 0.1 <= float(repetition_penalty) <= 5:
             raise ValueError("repetition_penalty must be between 0.1 and 5.")
         options["repeat_penalty"] = float(repetition_penalty)
     if seed is not None:
@@ -363,6 +370,7 @@ def stream_local_inference(
     temperature: float = 0.7,
     top_p: float | None = None,
     top_k: int | None = None,
+    min_p: float | None = None,
     repetition_penalty: float | None = None,
     seed: int | None = None,
     stop_sequences: list[str] | tuple[str, ...] | None = None,
@@ -377,7 +385,7 @@ def stream_local_inference(
     """
     model = validate_model_name(model)
     prompt, num_predict, temperature = validate_generation(prompt, num_predict, temperature)
-    sampling_options = validate_sampling_options(top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stop_sequences, num_ctx=num_ctx)
+    sampling_options = validate_sampling_options(top_p=top_p, top_k=top_k, min_p=min_p, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stop_sequences, num_ctx=num_ctx)
     if cancel_event is not None and cancel_event.is_set():
         return
     payload = {
@@ -489,6 +497,7 @@ def run_local_inference(
     *,
     top_p: float | None = None,
     top_k: int | None = None,
+    min_p: float | None = None,
     repetition_penalty: float | None = None,
     seed: int | None = None,
     stop_sequences: list[str] | tuple[str, ...] | None = None,
@@ -497,7 +506,7 @@ def run_local_inference(
     """Generate text through a local Ollama service with bounded input/output."""
     model = validate_model_name(model)
     prompt, num_predict, temperature = validate_generation(prompt, num_predict, temperature)
-    sampling_options = validate_sampling_options(top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stop_sequences, num_ctx=num_ctx)
+    sampling_options = validate_sampling_options(top_p=top_p, top_k=top_k, min_p=min_p, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stop_sequences, num_ctx=num_ctx)
     result = _request_json(
         "/api/generate",
         payload={
@@ -535,6 +544,7 @@ def run_local_chat(
     temperature: float = 0.7,
     top_p: float = 0.9,
     top_k: int = 0,
+    min_p: float = 0.0,
     repetition_penalty: float = 1.0,
     seed: int | None = None,
     stop_sequences: list[str] | tuple[str, ...] = (),
@@ -565,7 +575,9 @@ def run_local_chat(
         raise ValueError("top_p must be greater than 0 and at most 1.")
     if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
         raise ValueError("top_k must be between 0 and 100,000.")
-    if isinstance(repetition_penalty, bool) or not isinstance(repetition_penalty, (int, float)) or not 0.1 <= float(repetition_penalty) <= 5:
+    if isinstance(min_p, bool) or not isinstance(min_p, (int, float)) or not math.isfinite(float(min_p)) or not 0 <= float(min_p) <= 1:
+        raise ValueError("min_p must be a finite number between 0 and 1.")
+    if isinstance(repetition_penalty, bool) or not isinstance(repetition_penalty, (int, float)) or not math.isfinite(float(repetition_penalty)) or not 0.1 <= float(repetition_penalty) <= 5:
         raise ValueError("repetition_penalty must be between 0.1 and 5.")
     if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 9_223_372_036_854_775_807):
         raise ValueError("seed must be a non-negative signed 64-bit integer.")
@@ -585,6 +597,8 @@ def run_local_chat(
     }
     if top_k > 0:
         options["top_k"] = top_k
+    if min_p > 0:
+        options["min_p"] = float(min_p)
     if seed is not None:
         options["seed"] = seed
     if stops:

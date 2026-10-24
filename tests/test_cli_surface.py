@@ -134,6 +134,12 @@ def test_gui_port_rejects_invalid_environment_configuration(monkeypatch):
         raise AssertionError("Out-of-range AXIOM_GUI_PORT must be rejected")
 
 
+def test_unified_llm_cli_exposes_min_p_for_local_generation():
+    result = runner.invoke(app, ["llm", "chat", "--help"])
+    assert result.exit_code == 0, result.stdout
+    assert "--min-p" in result.stdout
+
+
 def test_engine_fabric_cli_advertises_native_backend_and_sampler_contract():
     from typer.main import get_command
 
@@ -150,7 +156,7 @@ def test_engine_fabric_cli_advertises_native_backend_and_sampler_contract():
             for parameter in command.params
             for option in (*getattr(parameter, "opts", ()), *getattr(parameter, "secondary_opts", ()))
         }
-        for option in ("--top-p", "--top-k", "--repeat-penalty", "--seed", "--stop-sequence"):
+        for option in ("--top-p", "--top-k", "--min-p", "--repeat-penalty", "--seed", "--stop-sequence"):
             assert option in flags
     benchmark_backend = next(parameter for parameter in benchmark.params if "--backend" in getattr(parameter, "opts", ()))
     assert "axiom-native" in (benchmark_backend.help or "")

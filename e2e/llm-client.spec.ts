@@ -86,6 +86,7 @@ test("unified LLM client runs local chats and requires consent for cloud chats",
   await panel.getByLabel("Model ID").fill("tiny-llama");
   await panel.getByLabel("Prompt").fill("Hello local model");
   await panel.getByRole("button", { name: "Generate locally" }).click();
+  await expect.poll(() => chatRequests.length).toBe(1);
   await expect(panel.locator(".llm-message.assistant-message").last()).toContainText("local-only answer");
   expect(chatRequests).toHaveLength(1);
   expect(chatRequests[0]["provider"]).toBe("axiom-local");

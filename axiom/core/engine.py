@@ -982,6 +982,13 @@ def validate_sampling_parameters(
     return float(top_p), top_k, float(repetition_penalty), seed
 
 
+def validate_min_p(min_p: float) -> float:
+    """Validate the probability-relative min-p sampler threshold."""
+    if isinstance(min_p, bool) or not isinstance(min_p, (int, float)) or not math.isfinite(float(min_p)) or not 0 <= float(min_p) <= 1:
+        raise ValueError("Min-p must be between 0 and 1; 0 disables min-p.")
+    return float(min_p)
+
+
 def validate_stop_sequences(stop_sequences: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
     """Validate bounded stop strings while preserving intentional surrounding spaces."""
     if stop_sequences is None:
@@ -1465,6 +1472,7 @@ def generate_local_stream(
     temperature: float = 0.7,
     top_p: float = 0.9,
     top_k: int = 0,
+    min_p: float = 0.0,
     repetition_penalty: float = 1.0,
     seed: int | None = None,
     stop_sequences: list[str] | tuple[str, ...] = (),
@@ -1504,6 +1512,7 @@ def generate_local_stream(
         chat_messages = normalized_messages
         prompt = next(message["content"] for message in reversed(chat_messages) if message["role"] == "user")
     top_p, top_k, repetition_penalty, seed = validate_sampling_parameters(top_p, top_k, repetition_penalty, seed)
+    min_p = validate_min_p(min_p)
     stop_sequences = validate_stop_sequences(stop_sequences)
     with _engine_request_lock(cancel_event):
         model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path, device_preference, memory_mode, precision)
@@ -1589,6 +1598,7 @@ def generate_local_stream(
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
+            min_p=min_p,
             repetition_penalty=repetition_penalty,
             seed=seed,
             eos_token_ids=model.config.eos_token_ids,
@@ -1704,6 +1714,7 @@ def generate_local_stream(
                     "temperature": temperature,
                     "top_p": top_p,
                     "top_k": top_k,
+                    "min_p": min_p,
                     "repetition_penalty": repetition_penalty,
                     "seed": seed,
                 },
@@ -1740,6 +1751,7 @@ def generate_local(
     temperature: float = 0.7,
     top_p: float = 0.9,
     top_k: int = 0,
+    min_p: float = 0.0,
     repetition_penalty: float = 1.0,
     seed: int | None = None,
     stop_sequences: list[str] | tuple[str, ...] = (),
@@ -1757,6 +1769,7 @@ def generate_local(
         temperature=temperature,
         top_p=top_p,
         top_k=top_k,
+        min_p=min_p,
         repetition_penalty=repetition_penalty,
         seed=seed,
         stop_sequences=stop_sequences,

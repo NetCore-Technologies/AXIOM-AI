@@ -47,6 +47,7 @@ class GenerateRequest(BaseModel):
     temperature: float = Field(default=0.7, ge=0, le=2)
     top_p: float | None = Field(default=None, gt=0, le=1)
     top_k: int | None = Field(default=None, ge=0, le=100_000)
+    min_p: float | None = Field(default=None, ge=0, le=1)
     repetition_penalty: float | None = Field(default=None, ge=0.1, le=5)
     seed: int | None = Field(default=None, ge=0, le=9_223_372_036_854_775_807)
     num_ctx: int | None = Field(default=None, ge=512, le=131_072)
@@ -78,7 +79,7 @@ class GenerateRequest(BaseModel):
 
 def _sampling_kwargs(request: GenerateRequest) -> dict[str, Any]:
     values: dict[str, Any] = {}
-    for source, target in (("top_p", "top_p"), ("top_k", "top_k"), ("repetition_penalty", "repetition_penalty"), ("seed", "seed"), ("num_ctx", "num_ctx")):
+    for source, target in (("top_p", "top_p"), ("top_k", "top_k"), ("min_p", "min_p"), ("repetition_penalty", "repetition_penalty"), ("seed", "seed"), ("num_ctx", "num_ctx")):
         value = getattr(request, source)
         if value is not None:
             values[target] = value

@@ -28,6 +28,7 @@ export default function LLMClientPanel() {
   const [temperature, setTemperature] = useState("0.7");
   const [topP, setTopP] = useState("0.9");
   const [topK, setTopK] = useState("0");
+  const [minP, setMinP] = useState("0");
   const [repetitionPenalty, setRepetitionPenalty] = useState("1.0");
   const [seed, setSeed] = useState("");
   const [stopSequencesText, setStopSequencesText] = useState("");
@@ -91,6 +92,7 @@ export default function LLMClientPanel() {
     const temp = Number(temperature);
     const topPValue = Number(topP);
     const topKValue = Number(topK);
+    const minPValue = Number(minP);
     const repeatPenaltyValue = Number(repetitionPenalty);
     const seedValue = seed.trim() === "" ? null : Number(seed);
     const stopSequences = stopSequencesText.split(/\r?\n/).filter((value) => value.trim().length > 0);
@@ -100,6 +102,7 @@ export default function LLMClientPanel() {
     if (!Number.isFinite(temp) || temp < 0 || temp > 2) { setError("Temperature must be between 0 and 2."); return; }
     if (local && (!Number.isFinite(topPValue) || topPValue <= 0 || topPValue > 1)) { setError("Top-p must be greater than 0 and at most 1."); return; }
     if (local && (!Number.isInteger(topKValue) || topKValue < 0 || topKValue > 100000)) { setError("Top-k must be an integer from 0 to 100,000; 0 disables the limit."); return; }
+    if (local && (!Number.isFinite(minPValue) || minPValue < 0 || minPValue > 1)) { setError("Min-p must be between 0 and 1; 0 disables the cutoff."); return; }
     if (local && (!Number.isFinite(repeatPenaltyValue) || repeatPenaltyValue < 0.1 || repeatPenaltyValue > 5)) { setError("Repetition penalty must be between 0.1 and 5."); return; }
     if (local && seedValue !== null && (!Number.isSafeInteger(seedValue) || seedValue < 0)) { setError("Seed must be a non-negative safe integer, or leave it blank."); return; }
     if (local && (stopSequences.length > 16 || stopSequences.some((stop) => stop.length > 256))) { setError("Use at most 16 stop sequences, each up to 256 characters."); return; }
@@ -132,6 +135,7 @@ export default function LLMClientPanel() {
         ...(local ? {
           top_p: topPValue,
           top_k: topKValue,
+          min_p: minPValue,
           repetition_penalty: repeatPenaltyValue,
           seed: seedValue,
           stop_sequences: stopSequences,
@@ -216,8 +220,9 @@ export default function LLMClientPanel() {
       {local && <div className="panel-surface" style={{ padding: 14 }}>
         <p className="surface-eyebrow">ADVANCED LOCAL SAMPLING</p>
         <div className="two-column-grid">
-          <label className="field"><span className="field-label-row"><span>Top-p</span></span><input type="number" value={topP} onChange={(event) => setTopP(event.target.value)} min={0.000001} max={1} step={0.05} required /><small>Cumulative probability cutoff.</small></label>
+          <label className="field"><span className="field-label-row"><span>Top-p</span></span><input type="number" value={topP} onChange={(event) => setTopP(event.target.value)} min={0.000001} max={1} step="any" required /><small>Cumulative probability cutoff.</small></label>
           <label className="field"><span className="field-label-row"><span>Top-k</span></span><input type="number" value={topK} onChange={(event) => setTopK(event.target.value)} min={0} max={100000} step={1} required /><small>0 disables the top-k cutoff.</small></label>
+          <label className="field"><span className="field-label-row"><span>Min-p relative probability</span></span><input aria-label="Min-p" type="number" value={minP} onChange={(event) => setMinP(event.target.value)} min={0} max={1} step={0.01} required /><small>0 disables min-p; otherwise keep tokens close enough to the top token's probability.</small></label>
           <label className="field"><span className="field-label-row"><span>Repetition penalty</span></span><input type="number" value={repetitionPenalty} onChange={(event) => setRepetitionPenalty(event.target.value)} min={0.1} max={5} step={0.05} required /><small>1.0 disables the penalty.</small></label>
           <label className="field"><span className="field-label-row"><span>Seed (optional)</span></span><input type="number" value={seed} onChange={(event) => setSeed(event.target.value)} min={0} step={1} placeholder="Runtime default" /><small>Repeatability may differ between devices and runtimes.</small></label>
         </div>

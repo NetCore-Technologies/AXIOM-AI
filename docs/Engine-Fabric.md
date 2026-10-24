@@ -42,6 +42,8 @@ axiom --no-banner engine route-chat --backend llama-cpp --model local-model --pr
 - POST /api/engine/backends/chat dispatches a bounded chat request to Ollama, llama.cpp, LM Studio, vLLM, or llama-cpp-python.
 - AXIOM Native Engine continues to use GET /api/engine/status, GET /api/engine/models, POST /api/engine/generate, and POST /api/engine/generate/stream.
 
+Advanced sampling accepts top-p, top-k, repetition penalty, seed, and stop sequences. Min-p is also exposed as `--min-p` in route-chat, auto-chat and route-benchmark. It is supported by AXIOM Native Engine and Ollama; nonzero values are rejected for other adapters instead of being silently ignored. Auto-routing filters by sampler compatibility before its bounded candidate limit so a supported match remains eligible.
+
 ## Security boundaries
 
 External backends are selected by a stable ID, not by a user-supplied URL. Each adapter uses its documented local default endpoint on IPv4 loopback, bypasses environment proxies, limits request and response sizes, validates message roles and prompt/token bounds, and sends no provider credentials. AXIOM does not launch processes, pull models, contact cloud endpoints, or persist prompt/response content as part of engine discovery. Authentication-required endpoints are reported as such rather than receiving guessed credentials. If your local service uses another port or requires a key, configure it outside this feature and do not expose an unauthenticated local model API to an untrusted network.

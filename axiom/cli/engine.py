@@ -271,6 +271,11 @@ def engine_run(
     precision: str = typer.Option("auto", "--precision", help="Weight/compute dtype: auto (checkpoint dtype), fp32, fp16, or bf16."),
     max_new_tokens: int = typer.Option(256, "--max-new-tokens", min=1, max=2048, help="Maximum generated tokens (1–2048)."),
     temperature: float = typer.Option(0.7, "--temperature", min=0, max=2, help="Sampling temperature; 0 disables sampling."),
+    top_p: float = typer.Option(0.9, "--top-p", min=0.000001, max=1, help="Nucleus sampling threshold (0, 1]."),
+    top_k: int = typer.Option(0, "--top-k", min=0, max=100_000, help="Candidate token limit; 0 disables top-k."),
+    min_p: float = typer.Option(0.0, "--min-p", min=0, max=1, help="Relative probability cutoff; 0 disables min-p."),
+    repetition_penalty: float = typer.Option(1.0, "--repeat-penalty", min=0.1, max=5, help="Penalty for tokens already present in the prompt or completion."),
+    seed: int | None = typer.Option(None, "--seed", min=0, max=9_223_372_036_854_775_807, help="Optional non-negative seed for reproducible sampling."),
     stop_sequences: list[str] = typer.Option([], "--stop-sequence", help="Stop when this exact text is generated; repeat the option for multiple stop strings."),
     json_output: bool = typer.Option(False, "--json", help="Print response and metrics as JSON."),
     stream_output: bool = typer.Option(False, "--stream", help="Show decoded output updates while the model generates."),
@@ -300,6 +305,11 @@ def engine_run(
                 adapter_path=adapter_value,
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                min_p=min_p,
+                repetition_penalty=repetition_penalty,
+                seed=seed,
                 stop_sequences=stop_sequences,
                 device_preference=device,
                 memory_mode=memory_mode,
@@ -328,6 +338,11 @@ def engine_run(
                 adapter_path=adapter_value,
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                min_p=min_p,
+                repetition_penalty=repetition_penalty,
+                seed=seed,
                 stop_sequences=stop_sequences,
                 device_preference=device,
                 memory_mode=memory_mode,
@@ -400,6 +415,7 @@ def engine_route_chat(
 
     top_p: float = typer.Option(0.9, "--top-p", min=0.000001, max=1),
     top_k: int = typer.Option(0, "--top-k", min=0, max=100_000),
+    min_p: float = typer.Option(0.0, "--min-p", min=0, max=1, help="Relative-probability cutoff; supported by AXIOM Native Engine and Ollama."),
     repetition_penalty: float = typer.Option(1.0, "--repeat-penalty", min=0.1, max=5),
     seed: int | None = typer.Option(None, "--seed", min=0, max=9_223_372_036_854_775_807),
     stop_sequences: list[str] = typer.Option([], "--stop-sequence", help="Stop on exact text; repeat the option for multiple stops."),
@@ -410,7 +426,7 @@ def engine_route_chat(
         result = run_engine_backend_chat(
             backend, model, [{"role": "user", "content": prompt}],
             max_new_tokens=max_new_tokens, temperature=temperature,
-            top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty,
+            top_p=top_p, top_k=top_k, min_p=min_p, repetition_penalty=repetition_penalty,
             seed=seed, stop_sequences=stop_sequences,
         )
     except (ValueError, EngineFabricError) as exc:
@@ -432,6 +448,7 @@ def engine_auto_chat(
 
     top_p: float = typer.Option(0.9, "--top-p", min=0.000001, max=1),
     top_k: int = typer.Option(0, "--top-k", min=0, max=100_000),
+    min_p: float = typer.Option(0.0, "--min-p", min=0, max=1, help="Relative-probability cutoff; supported by AXIOM Native Engine and Ollama."),
     repetition_penalty: float = typer.Option(1.0, "--repeat-penalty", min=0.1, max=5),
     seed: int | None = typer.Option(None, "--seed", min=0, max=9_223_372_036_854_775_807),
     stop_sequences: list[str] = typer.Option([], "--stop-sequence", help="Stop on exact text; repeat the option for multiple stops."),
@@ -446,7 +463,7 @@ def engine_auto_chat(
         result = run_engine_fabric_chat(
             profile, model.strip(), [{"role": "user", "content": prompt}],
             max_new_tokens=max_new_tokens, temperature=temperature,
-            top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty,
+            top_p=top_p, top_k=top_k, min_p=min_p, repetition_penalty=repetition_penalty,
             seed=seed, stop_sequences=stop_sequences,
         )
     except (ValueError, EngineFabricError) as exc:
@@ -483,6 +500,7 @@ def engine_route_benchmark(
 
     top_p: float = typer.Option(0.9, "--top-p", min=0.000001, max=1),
     top_k: int = typer.Option(0, "--top-k", min=0, max=100_000),
+    min_p: float = typer.Option(0.0, "--min-p", min=0, max=1, help="Relative-probability cutoff; supported by AXIOM Native Engine and Ollama."),
     repetition_penalty: float = typer.Option(1.0, "--repeat-penalty", min=0.1, max=5),
     seed: int | None = typer.Option(None, "--seed", min=0, max=9_223_372_036_854_775_807),
     stop_sequences: list[str] = typer.Option([], "--stop-sequence", help="Stop on exact text; repeat the option for multiple stops."),
@@ -493,7 +511,7 @@ def engine_route_benchmark(
         result = run_engine_backend_benchmark(
             backend, model, prompt, max_new_tokens=max_new_tokens,
             warmup_runs=warmup_runs, iterations=iterations, temperature=temperature,
-            top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty,
+            top_p=top_p, top_k=top_k, min_p=min_p, repetition_penalty=repetition_penalty,
             seed=seed, stop_sequences=stop_sequences,
         )
     except (ValueError, EngineFabricError) as exc:

@@ -35,6 +35,7 @@ export default function LocalAxiomEnginePanel() {
   const [temperature, setTemperature] = useState("0.7");
   const [topP, setTopP] = useState("0.9");
   const [topK, setTopK] = useState("0");
+  const [minP, setMinP] = useState("0");
   const [repetitionPenalty, setRepetitionPenalty] = useState("1.0");
   const [seed, setSeed] = useState("");
   const [stopSequencesText, setStopSequencesText] = useState("");
@@ -182,6 +183,7 @@ export default function LocalAxiomEnginePanel() {
     const temp = Number(temperature);
     const p = Number(topP);
     const k = Number(topK);
+    const minPValue = Number(minP);
     const repeatPenalty = Number(repetitionPenalty);
     const seedValue = seed.trim() === "" ? null : Number(seed);
     const stopSequences = stopSequencesText.split("\n").map((value) => value.replace(/\r$/, "")).filter((value) => value.length > 0);
@@ -191,6 +193,7 @@ export default function LocalAxiomEnginePanel() {
     if (!Number.isFinite(temp) || temp < 0 || temp > 2) { setError("Temperature must be between 0 and 2."); return; }
     if (!Number.isFinite(p) || p <= 0 || p > 1) { setError("Top-p must be greater than 0 and at most 1."); return; }
     if (!Number.isInteger(k) || k < 0 || k > 100000) { setError("Top-k must be an integer from 0 through 100000; 0 disables top-k."); return; }
+    if (!Number.isFinite(minPValue) || minPValue < 0 || minPValue > 1) { setError("Min-p must be between 0 and 1; 0 disables min-p."); return; }
     if (!Number.isFinite(repeatPenalty) || repeatPenalty < 0.1 || repeatPenalty > 5) { setError("Repetition penalty must be between 0.1 and 5."); return; }
     if (seed.trim() !== "" && (!Number.isSafeInteger(seedValue) || seedValue! < 0 || seedValue! > Number.MAX_SAFE_INTEGER)) {
       setError("Seed must be a whole number from 0 through 9007199254740991, or blank for a non-fixed seed.");
@@ -217,6 +220,7 @@ export default function LocalAxiomEnginePanel() {
         temperature: temp,
         top_p: p,
         top_k: k,
+        min_p: minPValue,
         repetition_penalty: repeatPenalty,
         seed: seedValue,
         stop_sequences: stopSequences,
@@ -382,8 +386,9 @@ export default function LocalAxiomEnginePanel() {
       <div className="two-column-grid">
         <label className="field"><span className="field-label-row"><span>Maximum generated tokens</span></span><input aria-label="Maximum generated tokens" type="number" min={1} max={2048} step={1} value={maxNewTokens} onChange={(event) => setMaxNewTokens(event.target.value)} required /></label>
         <label className="field"><span className="field-label-row"><span>Temperature (0 = deterministic)</span></span><input aria-label="Temperature" type="number" min={0} max={2} step={0.1} value={temperature} onChange={(event) => setTemperature(event.target.value)} required /></label>
-        <label className="field"><span className="field-label-row"><span>Top-p nucleus sampling</span></span><input aria-label="Top-p" type="number" min={0.01} max={1} step={0.01} value={topP} onChange={(event) => setTopP(event.target.value)} required /><small>Keep the smallest high-probability token set reaching this cumulative probability (0, 1].</small></label>
+        <label className="field"><span className="field-label-row"><span>Top-p nucleus sampling</span></span><input aria-label="Top-p" type="number" min={0.000001} max={1} step="any" value={topP} onChange={(event) => setTopP(event.target.value)} required /><small>Keep the smallest high-probability token set reaching this cumulative probability (0, 1].</small></label>
         <label className="field"><span className="field-label-row"><span>Top-k sampling</span></span><input aria-label="Top-k" type="number" min={0} max={100000} step={1} value={topK} onChange={(event) => setTopK(event.target.value)} required /><small>0 disables top-k. A non-zero value must not exceed the selected model's vocabulary size.</small></label>
+        <label className="field"><span className="field-label-row"><span>Min-p relative probability</span></span><input aria-label="Min-p" type="number" min={0} max={1} step={0.01} value={minP} onChange={(event) => setMinP(event.target.value)} required /><small>0 disables min-p; otherwise discard tokens below this fraction of the top token's probability.</small></label>
         <label className="field"><span className="field-label-row"><span>Repetition penalty</span></span><input aria-label="Repetition penalty" type="number" min={0.1} max={5} step={0.05} value={repetitionPenalty} onChange={(event) => setRepetitionPenalty(event.target.value)} required /><small>1.0 disables repetition adjustment; other values penalize or boost previously seen token scores.</small></label>
         <label className="field"><span className="field-label-row"><span>Sampling seed (optional)</span></span><input aria-label="Sampling seed" type="number" min={0} max={Number.MAX_SAFE_INTEGER} step={1} value={seed} onChange={(event) => setSeed(event.target.value)} placeholder="Leave blank to vary sampling" /><small>A seed makes token sampling reproducible on the same model, device and runtime. This does not guarantee cross-device bitwise reproducibility.</small></label>
       </div>
@@ -467,7 +472,7 @@ export default function LocalAxiomEnginePanel() {
         {result?.memory_mode && <p className="quiet-note">Memory strategy: {result.memory_mode.replaceAll("_", " ")}{result.memory_stats ? (result.memory_mode === "disk_streaming" ? " · Disk layer tensors read: " + result.memory_stats.disk_layer_weight_loads + " · Bytes read: " + (result.memory_stats.disk_layer_weight_bytes_read / (1024 ** 2)).toFixed(1) + " MiB · Layer bytes released: " + (result.memory_stats.layer_weight_bytes_released / (1024 ** 2)).toFixed(1) + " MiB" : " · Layer weight bytes staged: " + (result.memory_stats.layer_weight_bytes_staged / (1024 ** 2)).toFixed(1) + " MiB · Returned to CPU: " + (result.memory_stats.layer_weight_bytes_returned_to_cpu / (1024 ** 2)).toFixed(1) + " MiB") + " · KV-cache bytes offloaded: " + (result.memory_stats.kv_cache_bytes_offloaded / (1024 ** 2)).toFixed(1) + " MiB" : ""}</p>}
         {result?.prompt_format && <p className="quiet-note">Prompt formatting: {result.prompt_format === "tokenizer-config-template" ? "checkpoint chat template" : result.prompt_format === "qwen2-chatml-fallback" ? "Qwen2 ChatML fallback" : result.prompt_format === "qwen3-chatml-fallback" ? "Qwen3 ChatML fallback" : "raw completion"}</p>}
         {result?.context_management?.chat_history_supplied && <p className="quiet-note">Context budget: {result.context_management.original_message_count} message(s) · {result.context_management.messages_dropped_to_fit_context} older turn(s) dropped to fit · {result.context_management.prompt_tokens_used.toLocaleString()} / {result.context_management.prompt_tokens_before_token_truncation.toLocaleString()} prompt token(s) used{result.context_management.token_truncation_applied ? " after token-level truncation" : ""}{result.context_management.system_prompt_may_be_truncated ? " · Warning: system instructions may have been truncated by the hard context limit." : ""}</p>}
-        {result && <p className="quiet-note">Finish: {result.stop_reason.replaceAll("_", " ")} · Stop sequences: {result.stop_sequences.length ? result.stop_sequences.length : "off"} · Attention: {result.attention_backend} · Sampling: temperature {result.sampling.temperature} · top-p {result.sampling.top_p} · top-k {result.sampling.top_k || "off"} · repetition penalty {result.sampling.repetition_penalty} · seed {result.sampling.seed ?? "random"}</p>}
+        {result && <p className="quiet-note">Finish: {result.stop_reason.replaceAll("_", " ")} · Stop sequences: {result.stop_sequences.length ? result.stop_sequences.length : "off"} · Attention: {result.attention_backend} · Sampling: temperature {result.sampling.temperature} · top-p {result.sampling.top_p} · top-k {result.sampling.top_k || "off"} · min-p {result.sampling.min_p || "off"} · repetition penalty {result.sampling.repetition_penalty} · seed {result.sampling.seed ?? "random"}</p>}
       </div><span className={`status-pill ${result ? "success" : running ? "warning" : "neutral"}`}><i />{result ? "COMPLETED" : running ? "GENERATING" : "CANCELLED"}</span></div>
       <pre data-testid={result ? "axiom-engine-output" : "axiom-engine-live-output"} className="local-inference-output">{(result ? result.response : streamResponse) || "(The model has not emitted printable text yet.)"}</pre>
       {!result && <p className="quiet-note">Cumulative text snapshots update as the native decoder emits tokens. {streamTokenCount} token(s) received.</p>}

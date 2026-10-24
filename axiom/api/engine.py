@@ -60,6 +60,7 @@ class GenerateRequest(BaseModel):
     temperature: float = Field(default=0.7, ge=0, le=2)
     top_p: float = Field(default=0.9, gt=0, le=1)
     top_k: int = Field(default=0, ge=0, le=100000)
+    min_p: float = Field(default=0.0, ge=0, le=1)
     repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
     seed: int | None = Field(default=None, ge=0, le=9223372036854775807)
     stop_sequences: list[str] = Field(default_factory=list, max_length=16)
@@ -205,6 +206,7 @@ def engine_generate(request: GenerateRequest) -> dict[str, Any]:
             temperature=request.temperature,
             top_p=request.top_p,
             top_k=request.top_k,
+            min_p=request.min_p,
             repetition_penalty=request.repetition_penalty,
             seed=request.seed,
             stop_sequences=request.stop_sequences,
@@ -298,6 +300,7 @@ async def engine_generate_stream(
         temperature=request.temperature,
         top_p=request.top_p,
         top_k=request.top_k,
+        min_p=request.min_p,
         repetition_penalty=request.repetition_penalty,
         seed=request.seed,
         stop_sequences=request.stop_sequences,
@@ -372,6 +375,7 @@ class EngineFabricChatRequest(BaseModel):
 
     top_p: float = Field(default=0.9, gt=0, le=1)
     top_k: int = Field(default=0, ge=0, le=100_000, strict=True)
+    min_p: float = Field(default=0.0, ge=0, le=1)
     repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
     seed: int | None = Field(default=None, ge=0, le=9_223_372_036_854_775_807, strict=True)
     stop_sequences: list[str] = Field(default_factory=list, max_length=16)
@@ -392,6 +396,7 @@ class EngineFabricAutoChatRequest(BaseModel):
 
     top_p: float = Field(default=0.9, gt=0, le=1)
     top_k: int = Field(default=0, ge=0, le=100_000, strict=True)
+    min_p: float = Field(default=0.0, ge=0, le=1)
     repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
     seed: int | None = Field(default=None, ge=0, le=9_223_372_036_854_775_807, strict=True)
     stop_sequences: list[str] = Field(default_factory=list, max_length=16)
@@ -408,8 +413,8 @@ def engine_backends(profile: str = "balanced") -> dict[str, Any]:
     """Inventory local execution backends and recommend one using an explicit workload profile."""
     try:
         return discover_engine_backends(profile)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="The workload profile is invalid or unsupported.") from None
 
 
 @router.post("/backends/chat")
@@ -424,12 +429,13 @@ def engine_backend_chat(request: EngineFabricChatRequest) -> dict[str, Any]:
             temperature=request.temperature,
             top_p=request.top_p,
             top_k=request.top_k,
+            min_p=request.min_p,
             repetition_penalty=request.repetition_penalty,
             seed=request.seed,
             stop_sequences=request.stop_sequences,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="The selected backend request is invalid or unsupported.") from None
     except EngineFabricError:
         raise HTTPException(status_code=503, detail="The selected local backend could not complete this request.") from None
 
@@ -446,12 +452,13 @@ def engine_backend_auto_chat(request: EngineFabricAutoChatRequest) -> dict[str, 
             temperature=request.temperature,
             top_p=request.top_p,
             top_k=request.top_k,
+            min_p=request.min_p,
             repetition_penalty=request.repetition_penalty,
             seed=request.seed,
             stop_sequences=request.stop_sequences,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="The routing request is invalid or unsupported.") from None
     except EngineFabricError:
         raise HTTPException(status_code=503, detail="No matching local backend could complete this request.") from None
 
@@ -467,6 +474,7 @@ class EngineFabricBenchmarkRequest(BaseModel):
 
     top_p: float = Field(default=0.9, gt=0, le=1)
     top_k: int = Field(default=0, ge=0, le=100_000, strict=True)
+    min_p: float = Field(default=0.0, ge=0, le=1)
     repetition_penalty: float = Field(default=1.0, ge=0.1, le=5)
     seed: int | None = Field(default=None, ge=0, le=9_223_372_036_854_775_807, strict=True)
     stop_sequences: list[str] = Field(default_factory=list, max_length=16)
@@ -499,11 +507,12 @@ def engine_backend_benchmark(request: EngineFabricBenchmarkRequest) -> dict[str,
             temperature=request.temperature,
             top_p=request.top_p,
             top_k=request.top_k,
+            min_p=request.min_p,
             repetition_penalty=request.repetition_penalty,
             seed=request.seed,
             stop_sequences=request.stop_sequences,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="The benchmark request is invalid or unsupported.") from None
     except EngineFabricError:
         raise HTTPException(status_code=503, detail="The selected local backend could not complete the benchmark.") from None

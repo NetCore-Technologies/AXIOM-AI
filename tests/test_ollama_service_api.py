@@ -145,15 +145,23 @@ def test_streaming_inference_emits_ndjson_token_deltas_and_request_id(monkeypatc
             "execution": "local",
         }},
     ]
-    monkeypatch.setattr(inference, "stream_local_inference", lambda *_args, **_kwargs: iter(events))
+    observed: dict[str, object] = {}
+
+    def fake_stream(*args, **kwargs):
+        observed.update(kwargs)
+        return iter(events)
+
+    monkeypatch.setattr(inference, "stream_local_inference", fake_stream)
     monkeypatch.setattr(inference, "record_runtime_trace", lambda **_kwargs: None)
 
     response = _client().post("/api/inference/generate/stream", json={
         "model": "qwen2.5:0.5b", "prompt": "Say hello", "num_predict": 32, "temperature": 0.2,
+        "min_p": 0.2,
     })
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/x-ndjson")
+    assert observed["min_p"] == 0.2
     assert response.headers.get("x-request-id")
     payloads = [json.loads(line) for line in response.text.splitlines() if line.strip()]
     assert [payload["type"] for payload in payloads] == ["token", "token", "complete"]
@@ -199,13 +207,13 @@ def test_streaming_api_passes_advanced_sampling_options_to_local_runtime(monkeyp
 
     response = _client().post("/api/inference/generate/stream", json={
         "model": "qwen2.5:0.5b", "prompt": "Hello", "top_p": 0.83, "top_k": 36,
-        "repetition_penalty": 1.2, "seed": 123, "num_ctx": 8192,
+        "min_p": 0.2, "repetition_penalty": 1.2, "seed": 123, "num_ctx": 8192,
         "stop_sequences": ["DONE", "END"],
     })
 
     assert response.status_code == 200
     assert captured == {
-        "num_predict": 256, "temperature": 0.7, "top_p": 0.83, "top_k": 36,
+        "num_predict": 256, "temperature": 0.7, "top_p": 0.83, "top_k": 36, "min_p": 0.2,
         "repetition_penalty": 1.2, "seed": 123, "num_ctx": 8192,
         "stop_sequences": ["DONE", "END"], "cancel_event": captured["cancel_event"],
         "on_response": captured["on_response"],
@@ -219,5 +227,13 @@ def test_generate_api_rejects_oversized_context_and_stop_sequence_lists():
     too_many_stops = _client().post("/api/inference/generate/stream", json={
         "model": "qwen2.5:0.5b", "prompt": "Hello", "stop_sequences": [str(i) for i in range(17)],
     })
+    min_p_below_range = _client().post("/api/inference/generate/stream", json={
+        "model": "qwen2.5:0.5b", "prompt": "Hello", "min_p": -0.01,
+    })
+    min_p_above_range = _client().post("/api/inference/generate/stream", json={
+        "model": "qwen2.5:0.5b", "prompt": "Hello", "min_p": 1.01,
+    })
     assert too_large_context.status_code == 422
     assert too_many_stops.status_code == 422
+    assert min_p_below_range.status_code == 422
+    assert min_p_above_range.status_code == 422

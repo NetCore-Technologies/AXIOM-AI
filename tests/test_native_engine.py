@@ -28,6 +28,86 @@ def _config(**overrides):
     return value
 
 
+def test_native_sampler_sanitizes_nonfinite_logits_and_rejects_empty_distribution() -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import _sanitize_sampling_scores
+
+    scores = _sanitize_sampling_scores(
+        torch.tensor([[2.0, float("nan"), float("-inf"), -1.0]]),
+        torch,
+    )
+    assert scores[0, 0].item() == 2.0
+    assert scores[0, 1].item() == float("-inf")
+    assert scores[0, 2].item() == float("-inf")
+    assert scores[0, 3].item() == -1.0
+
+    # Overflowed positive-infinity logits dominate normal finite logits, but
+    # are converted to a valid equal-probability candidate set before softmax.
+    overflowed = _sanitize_sampling_scores(
+        torch.tensor([[float("inf"), 5.0, float("inf")]]),
+        torch,
+    )
+    assert overflowed[0, 0].item() == 0.0
+    assert overflowed[0, 1].item() == float("-inf")
+    assert overflowed[0, 2].item() == 0.0
+    assert torch.isfinite(torch.softmax(overflowed, dim=-1)).all().item()
+
+    with pytest.raises(NativeEngineError, match="no usable token logits"):
+        _sanitize_sampling_scores(
+            torch.tensor([[float("nan"), float("-inf")]]),
+            torch,
+        )
+
+
+def test_native_top_k_keeps_exact_candidate_count_when_logits_tie() -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import _apply_top_k_filter
+
+    logits = torch.tensor([[5.0, 5.0, 3.0, 1.0, -2.0]])
+    one = _apply_top_k_filter(logits, 1, torch)
+    assert torch.isfinite(one).sum().item() == 1
+    assert one.max().item() == 5.0
+
+    two = _apply_top_k_filter(logits, 2, torch)
+    assert torch.isfinite(two).sum().item() == 2
+    assert torch.isfinite(two[0, :2]).all().item()
+    assert torch.isneginf(two[0, 2:]).all().item()
+
+    # A disabled or full-vocabulary top-k must be a no-op.
+    assert torch.equal(_apply_top_k_filter(logits, 0, torch), logits)
+    assert torch.equal(_apply_top_k_filter(logits, logits.shape[-1], torch), logits)
+
+
+def test_validate_min_p_rejects_nonfinite_and_out_of_range_values() -> None:
+    from axiom.core.engine import validate_min_p
+
+    assert validate_min_p(0) == 0.0
+    assert validate_min_p(0.05) == 0.05
+    assert validate_min_p(1) == 1.0
+    for invalid in (-0.01, 1.01, float("nan"), float("inf"), True, "0.2"):
+        with pytest.raises(ValueError, match="Min-p"):
+            validate_min_p(invalid)
+
+
+def test_native_min_p_filters_by_probability_relative_to_best_logit() -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import _apply_min_p_filter
+
+    logits = torch.tensor([[0.0, -0.5, -0.8, -2.0]])
+    filtered = _apply_min_p_filter(logits, 0.5)
+    # Softmax denominators cancel in the relative-probability comparison:
+    # exp(score - max_score) >= min_p.
+    assert torch.isfinite(filtered[0, :2]).all().item()
+    assert torch.isneginf(filtered[0, 2:]).all().item()
+
+    strict = _apply_min_p_filter(logits, 1.0)
+    assert torch.isfinite(strict).sum().item() == 1
+    assert strict[0, 0].item() == 0.0
+    assert torch.isneginf(strict[0, 1:]).all().item()
+
+    assert torch.equal(_apply_min_p_filter(logits, 0.0), logits)
+
+
 def test_stop_sequences_are_bounded_and_deduplicated() -> None:
     from axiom.core.engine import validate_stop_sequences
 
@@ -259,6 +339,55 @@ def test_native_forward_and_incremental_kv_cache_run_without_transformers() -> N
     assert tuple(full_cache[0][0].shape) == (1, config.num_key_value_heads, 4, 4)
 
 
+def test_mistral_sliding_window_bounds_cache_and_preserves_absolute_rope_positions(monkeypatch) -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    config = NativeLlamaConfig.from_mapping(_config(
+        model_type="mistral",
+        architectures=["MistralForCausalLM"],
+        sliding_window=3,
+    ))
+    runtime = NativeLlamaRuntime(config, _tiny_weights(torch), torch, torch.device("cpu"))
+    observed_positions = []
+    original_rope = runtime._apply_rope
+
+    def capture_rope(values, positions):
+        observed_positions.append(positions.detach().cpu().tolist())
+        return original_rope(values, positions)
+
+    monkeypatch.setattr(runtime, "_apply_rope", capture_rope)
+    prompt = torch.tensor([[1, 2, 3, 4, 5, 6, 7]], dtype=torch.long)
+    with torch.inference_mode():
+        logits, cache = runtime.forward(prompt)
+        assert tuple(logits.shape) == (1, config.vocab_size)
+        assert tuple(cache[0][0].shape) == (1, config.num_key_value_heads, 3, 4)
+        assert tuple(cache[0][1].shape) == (1, config.num_key_value_heads, 3, 4)
+        # Compact storage must not retain the original seven-token prefill
+        # allocation behind a three-token slice view.
+        assert cache[0][0].untyped_storage().nbytes() == cache[0][0].numel() * cache[0][0].element_size()
+        assert cache[0][1].untyped_storage().nbytes() == cache[0][1].numel() * cache[0][1].element_size()
+
+        next_logits, next_cache = runtime.forward(
+            torch.tensor([[2]], dtype=torch.long),
+            cache,
+            past_sequence_length=7,
+        )
+        assert tuple(next_logits.shape) == (1, config.vocab_size)
+        assert tuple(next_cache[0][0].shape) == (1, config.num_key_value_heads, 3, 4)
+        assert next_cache[0][0].untyped_storage().nbytes() == next_cache[0][0].numel() * next_cache[0][0].element_size()
+
+    # The one-token decode must use absolute position 7, not the cache's
+    # truncated length (3). _apply_rope is called once for Q and once for K.
+    assert observed_positions[-2:] == [[7], [7]]
+    with pytest.raises(NativeEngineError, match="maximum context length"):
+        runtime.forward(
+            torch.tensor([[3]], dtype=torch.long),
+            next_cache,
+            past_sequence_length=config.max_position_embeddings,
+        )
+
+
 def test_native_decoder_stops_before_emitting_eos_and_does_not_step_past_output_limit() -> None:
     torch = pytest.importorskip("torch")
     from axiom.core.native_engine import NativeLlamaRuntime
@@ -276,6 +405,59 @@ def test_native_decoder_stops_before_emitting_eos_and_does_not_step_past_output_
     assert runtime.last_generation["completion_tokens"] == 1
 
 
+def test_complete_native_generate_forwards_min_p_to_shared_decoder() -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    runtime = NativeLlamaRuntime(
+        NativeLlamaConfig.from_mapping(_config()),
+        _tiny_weights(torch),
+        torch,
+        torch.device("cpu"),
+    )
+    runtime.generate(
+        [1, 3],
+        max_new_tokens=1,
+        temperature=0.7,
+        top_p=0.9,
+        min_p=0.2,
+        eos_token_ids=(),
+    )
+    assert runtime.last_generation["min_p"] == 0.2
+
+
+@pytest.mark.parametrize(
+    ("parameter", "value"),
+    [
+        ("temperature", True),
+        ("temperature", float("nan")),
+        ("top_p", True),
+        ("top_p", float("inf")),
+        ("repetition_penalty", True),
+        ("repetition_penalty", float("nan")),
+    ],
+)
+def test_native_runtime_rejects_boolean_or_nonfinite_sampling_values(parameter, value) -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    runtime = NativeLlamaRuntime(
+        NativeLlamaConfig.from_mapping(_config()),
+        _tiny_weights(torch),
+        torch,
+        torch.device("cpu"),
+    )
+    options = {"temperature": 0.7, "top_p": 0.9, "repetition_penalty": 1.0}
+    options[parameter] = value
+    with pytest.raises(NativeEngineError, match="finite number"):
+        list(runtime.iter_generate(
+            [1, 3],
+            max_new_tokens=1,
+            eos_token_ids=(),
+            **options,
+        ))
+
+
 def test_native_iterator_honors_cancellation_before_prompt_prefill(monkeypatch) -> None:
     from threading import Event
 
@@ -287,7 +469,7 @@ def test_native_iterator_honors_cancellation_before_prompt_prefill(monkeypatch) 
     cancel_event = Event()
     cancel_event.set()
 
-    def unexpected_forward(input_ids, past_key_values=None, *, cancel_event=None):
+    def unexpected_forward(input_ids, past_key_values=None, *, past_sequence_length=None, cancel_event=None):
         pytest.fail("A pre-cancelled request must not start model forward execution.")
 
     monkeypatch.setattr(runtime, "forward", unexpected_forward)
@@ -309,10 +491,13 @@ def test_native_iterator_stops_before_next_token_forward_when_cancelled(monkeypa
     original_forward = runtime.forward
     forward_calls = 0
 
-    def counted_forward(input_ids, past_key_values=None, *, cancel_event=None):
+    def counted_forward(input_ids, past_key_values=None, *, past_sequence_length=None, cancel_event=None):
         nonlocal forward_calls
         forward_calls += 1
-        return original_forward(input_ids, past_key_values, cancel_event=cancel_event)
+        return original_forward(
+            input_ids, past_key_values, past_sequence_length=past_sequence_length,
+            cancel_event=cancel_event,
+        )
 
     monkeypatch.setattr(runtime, "forward", counted_forward)
     iterator = runtime.iter_generate(
@@ -464,6 +649,7 @@ def test_tiny_safetensors_checkpoint_generates_through_axiom_native_loop(
         "temperature": 0,
         "top_p": 0.9,
         "top_k": 0,
+        "min_p": 0.0,
         "repetition_penalty": 1.0,
         "seed": None,
     }

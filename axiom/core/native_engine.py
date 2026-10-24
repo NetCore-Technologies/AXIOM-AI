@@ -29,6 +29,48 @@ class NativeGenerationCancelled(RuntimeError):
 class NativeDependencyError(RuntimeError):
     """A required runtime dependency for the native engine is unavailable."""
 
+
+def _apply_top_k_filter(scores: Any, top_k: int, torch_module: Any) -> Any:
+    """Keep at most exactly k logits per row, including when boundary scores tie."""
+    if top_k <= 0 or top_k >= scores.shape[-1]:
+        return scores
+    indices = torch_module.topk(scores, top_k, dim=-1).indices
+    selected = torch_module.zeros_like(scores, dtype=torch_module.bool)
+    selected.scatter_(-1, indices, True)
+    return scores.masked_fill(~selected, float("-inf"))
+
+
+def _apply_min_p_filter(scores: Any, min_p: float) -> Any:
+    """Discard tokens whose score is too far below the highest logit."""
+    if min_p <= 0:
+        return scores
+    threshold = scores.max(dim=-1, keepdim=True).values + math.log(min_p)
+    return scores.masked_fill(scores < threshold, float("-inf"))
+
+
+def _sanitize_sampling_scores(scores: Any, torch_module: Any) -> Any:
+    """Make decoder logits safe for argmax/softmax without inventing a fallback token."""
+    if bool(torch_module.isfinite(scores).all().item()):
+        return scores
+
+    positive_infinity = torch_module.isposinf(scores)
+    if bool(positive_infinity.any().item()):
+        # An overflowed +inf logit dominates all ordinary finite logits. Keep
+        # only those tokens and assign equal finite scores among them.
+        return torch_module.where(
+            positive_infinity,
+            torch_module.zeros_like(scores),
+            torch_module.full_like(scores, float("-inf")),
+        )
+
+    finite = torch_module.isfinite(scores)
+    if not bool(finite.any().item()):
+        raise NativeEngineError(
+            "Native decoder produced no usable token logits; check checkpoint weights, device, and precision."
+        )
+    # NaN logits are unusable; -inf is the standard mask value for samplers.
+    return scores.masked_fill(torch_module.isnan(scores), float("-inf"))
+
 @dataclass(frozen=True)
 class NativeLlamaConfig:
     model_type: str
@@ -773,17 +815,26 @@ class NativeLlamaRuntime:
         input_ids: Any,
         past_key_values: Any = None,
         *,
+        past_sequence_length: int | None = None,
         cancel_event: threading.Event | None = None,
     ) -> tuple[Any, tuple[Any, ...]]:
         torch, c = self.torch, self.config
         if input_ids.ndim != 2 or input_ids.shape[0] != 1:
             raise NativeEngineError("AXIOM Native Engine currently accepts one prompt sequence per request.")
         seq_len = input_ids.shape[1]
-        past_len = 0 if past_key_values is None else int(past_key_values[0][0].shape[-2])
+        stored_past_len = 0 if past_key_values is None else int(past_key_values[0][0].shape[-2])
+        past_len = stored_past_len if past_sequence_length is None else past_sequence_length
+        if (
+            isinstance(past_len, bool)
+            or not isinstance(past_len, int)
+            or past_len < stored_past_len
+        ):
+            raise NativeEngineError("Native KV cache position is inconsistent with the cached sequence.")
         if past_len + seq_len > self.config.max_position_embeddings:
             raise NativeEngineError("Generation would exceed the checkpoint's configured maximum context length.")
         hidden = torch.nn.functional.embedding(input_ids, self.weights["model.embed_tokens.weight"])
         positions = torch.arange(past_len, past_len + seq_len, device=self.device)
+        key_start_position = past_len - stored_past_len
         cache, head_dim = [], c.hidden_size // c.num_attention_heads
         repeat_factor = c.num_attention_heads // c.num_key_value_heads
         for i in range(c.num_hidden_layers):
@@ -807,18 +858,31 @@ class NativeLlamaRuntime:
                     if self.memory_mode in {"layer_streaming", "disk_streaming"}:
                         old_k, old_v = old_k.to(device=self.device), old_v.to(device=self.device)
                     k, v = torch.cat((old_k, k), dim=-2), torch.cat((old_v, v), dim=-2)
+                # Keep only the useful KV suffix for sliding-window models. RoPE and
+                # causal masks below still use absolute positions, even when this
+                # bounded cache is shorter than the full token history.
+                cache_k, cache_v = k, v
+                if c.sliding_window and cache_k.shape[-2] > c.sliding_window:
+                    # A slice view can retain the full prefill allocation as its
+                    # backing storage; copy the suffix so old KV tensors are freed.
+                    cache_k = cache_k[..., -c.sliding_window:, :].clone(
+                        memory_format=torch.contiguous_format
+                    )
+                    cache_v = cache_v[..., -c.sliding_window:, :].clone(
+                        memory_format=torch.contiguous_format
+                    )
                 if self.memory_mode in {"layer_streaming", "disk_streaming"}:
-                    cache_k, cache_v = k.detach().to(device="cpu"), v.detach().to(device="cpu")
+                    cache_k, cache_v = cache_k.detach().to(device="cpu"), cache_v.detach().to(device="cpu")
                     self.memory_stats["kv_cache_layer_offloads"] += 1
                     self.memory_stats["kv_cache_bytes_offloaded"] += int(
                         cache_k.numel() * cache_k.element_size() + cache_v.numel() * cache_v.element_size()
                     )
                     cache.append((cache_k, cache_v))
                 else:
-                    cache.append((k, v))
+                    cache.append((cache_k, cache_v))
                 ak = k.repeat_interleave(repeat_factor, dim=1) if repeat_factor > 1 else k
                 av = v.repeat_interleave(repeat_factor, dim=1) if repeat_factor > 1 else v
-                keys = torch.arange(ak.shape[-2], device=self.device)
+                keys = torch.arange(key_start_position, past_len + seq_len, device=self.device)
                 blocked = keys[None, :] > positions[:, None]
                 if c.sliding_window:
                     blocked = blocked | (keys[None, :] <= positions[:, None] - c.sliding_window)
@@ -839,6 +903,7 @@ class NativeLlamaRuntime:
         temperature: float,
         top_p: float = 0.9,
         top_k: int = 0,
+        min_p: float = 0.0,
         repetition_penalty: float = 1.0,
         seed: int | None = None,
         eos_token_ids: tuple[int, ...] | None = None,
@@ -849,14 +914,16 @@ class NativeLlamaRuntime:
             raise NativeEngineError("Tokenizer returned no IDs for the prompt.")
         if isinstance(max_new_tokens, bool) or not isinstance(max_new_tokens, int) or not 1 <= max_new_tokens <= 2048:
             raise NativeEngineError("Native generation token limit must be between 1 and 2048.")
-        if not math.isfinite(float(temperature)) or not 0 <= float(temperature) <= 2:
-            raise NativeEngineError("Native generation temperature must be between 0 and 2.")
-        if not math.isfinite(float(top_p)) or not 0 < float(top_p) <= 1:
-            raise NativeEngineError("Native generation top_p must be greater than 0 and at most 1.")
+        if isinstance(temperature, bool) or not isinstance(temperature, (int, float)) or not math.isfinite(float(temperature)) or not 0 <= float(temperature) <= 2:
+            raise NativeEngineError("Native generation temperature must be a finite number between 0 and 2.")
+        if isinstance(top_p, bool) or not isinstance(top_p, (int, float)) or not math.isfinite(float(top_p)) or not 0 < float(top_p) <= 1:
+            raise NativeEngineError("Native generation top_p must be a finite number greater than 0 and at most 1.")
         if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
             raise NativeEngineError("Native generation top_k must be an integer from 0 through 100000 (0 disables top-k).")
-        if not math.isfinite(float(repetition_penalty)) or not 0.1 <= float(repetition_penalty) <= 5:
-            raise NativeEngineError("Native repetition_penalty must be between 0.1 and 5.")
+        if isinstance(min_p, bool) or not isinstance(min_p, (int, float)) or not math.isfinite(float(min_p)) or not 0 <= float(min_p) <= 1:
+            raise NativeEngineError("Native generation min_p must be between 0 and 1 (0 disables min-p).")
+        if isinstance(repetition_penalty, bool) or not isinstance(repetition_penalty, (int, float)) or not math.isfinite(float(repetition_penalty)) or not 0.1 <= float(repetition_penalty) <= 5:
+            raise NativeEngineError("Native repetition_penalty must be a finite number between 0.1 and 5.")
         if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= (2**63 - 1)):
             raise NativeEngineError("Native sampling seed must be an integer from 0 through 2^63-1.")
         if top_k > self.config.vocab_size:
@@ -905,6 +972,7 @@ class NativeLlamaRuntime:
                 prefill_started = time.perf_counter()
                 try:
                     logits, cache = self.forward(tokens, cancel_event=cancel_event)
+                    absolute_sequence_length = len(prompt_token_ids)
                     prefill_ms = (time.perf_counter() - prefill_started) * 1000
                     self.live_generation.update({
                         "stage": "decode",
@@ -920,7 +988,7 @@ class NativeLlamaRuntime:
                     if cancel_event is not None and cancel_event.is_set():
                         stop_reason = "cancelled"
                         break
-                    scores = logits.float()
+                    scores = _sanitize_sampling_scores(logits.float(), torch)
                     if repetition_penalty != 1.0:
                         history = sorted(set(prompt_token_ids + generated))
                         if history:
@@ -935,10 +1003,8 @@ class NativeLlamaRuntime:
                     if temperature == 0:
                         next_token = torch.argmax(scores, dim=-1)
                     else:
-                        scores = scores / float(temperature)
-                        if top_k > 0 and top_k < self.config.vocab_size:
-                            threshold = torch.topk(scores, top_k, dim=-1).values[:, -1].unsqueeze(-1)
-                            scores = scores.masked_fill(scores < threshold, float("-inf"))
+                        scores = _sanitize_sampling_scores(scores / float(temperature), torch)
+                        scores = _apply_top_k_filter(scores, top_k, torch)
                         if top_p < 1:
                             sorted_scores, sorted_ids = torch.sort(scores, descending=True, dim=-1)
                             cumulative = torch.softmax(sorted_scores, dim=-1).cumsum(dim=-1)
@@ -947,8 +1013,14 @@ class NativeLlamaRuntime:
                             remove[..., 0] = False
                             sorted_scores = sorted_scores.masked_fill(remove, float("-inf"))
                             scores = torch.full_like(scores, float("-inf")).scatter(dim=-1, index=sorted_ids, src=sorted_scores)
+                        scores = _apply_min_p_filter(scores, float(min_p))
+                        if not bool(torch.isfinite(scores).any().item()):
+                            raise NativeEngineError(
+                                "Native sampling filters removed every usable token."
+                            )
+                        probabilities = torch.softmax(scores, dim=-1)
                         next_token = torch.multinomial(
-                            torch.softmax(scores, dim=-1), num_samples=1, generator=sampling_generator
+                            probabilities, num_samples=1, generator=sampling_generator
                         ).squeeze(-1)
                     token_id = int(next_token.item())
                     if token_id < 0 or token_id >= self.config.vocab_size:
@@ -979,8 +1051,12 @@ class NativeLlamaRuntime:
                         decode_started = time.perf_counter()
                         try:
                             logits, cache = self.forward(
-                                next_token.view(1, 1), cache, cancel_event=cancel_event
+                                next_token.view(1, 1),
+                                cache,
+                                past_sequence_length=absolute_sequence_length,
+                                cancel_event=cancel_event,
                             )
+                            absolute_sequence_length += 1
                         except NativeGenerationCancelled:
                             decode_ms += (time.perf_counter() - decode_started) * 1000
                             stop_reason = "cancelled"
@@ -1001,6 +1077,7 @@ class NativeLlamaRuntime:
                 "decoder": "axiom-autoregressive-kv-cache",
                 "top_p": float(top_p),
                 "top_k": top_k,
+                "min_p": float(min_p),
                 "repetition_penalty": float(repetition_penalty),
                 "seed": seed,
                 "stop_reason": stop_reason,
@@ -1030,6 +1107,7 @@ class NativeLlamaRuntime:
         temperature: float,
         top_p: float = 0.9,
         top_k: int = 0,
+        min_p: float = 0.0,
         repetition_penalty: float = 1.0,
         seed: int | None = None,
         eos_token_ids: tuple[int, ...] | None = None,
@@ -1041,6 +1119,7 @@ class NativeLlamaRuntime:
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
+            min_p=min_p,
             repetition_penalty=repetition_penalty,
             seed=seed,
             eos_token_ids=eos_token_ids,

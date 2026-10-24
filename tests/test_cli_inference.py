@@ -64,9 +64,9 @@ def test_infer_run_help_exposes_advanced_sampling_options(plain):
         for parameter in run_command.params
         for option in (*getattr(parameter, "opts", ()), *getattr(parameter, "secondary_opts", ()))
     }
-    for option in ("--top-p", "--top-k", "--repeat-penalty", "--seed", "--num-ctx", "--stop"):
+    for option in ("--top-p", "--top-k", "--min-p", "--repeat-penalty", "--seed", "--num-ctx", "--stop"):
         assert option in option_flags
-    for option in ("--top-p", "--top-k", "--repeat-penalty", "--seed", "--num-ctx", "--stop"):
+    for option in ("--top-p", "--top-k", "--min-p", "--repeat-penalty", "--seed", "--num-ctx", "--stop"):
         assert option in plain(result.output)
 
 
@@ -80,7 +80,7 @@ def test_infer_run_forwards_advanced_sampling_options_to_local_runtime(monkeypat
     monkeypatch.setattr("axiom.cli.inference.run_local_inference", fake_run)
     result = CliRunner().invoke(app, [
         "--no-banner", "infer", "run", "qwen2.5:0.5b",
-        "--prompt", "Keep this local.", "--top-p", "0.82", "--top-k", "32",
+        "--prompt", "Keep this local.", "--top-p", "0.82", "--top-k", "32", "--min-p", "0.2",
         "--repeat-penalty", "1.15", "--seed", "17", "--num-ctx", "4096",
         "--stop", "END_OF_TEXT", "--json",
     ])
@@ -89,6 +89,7 @@ def test_infer_run_forwards_advanced_sampling_options_to_local_runtime(monkeypat
     assert observed["prompt"] == "Keep this local."
     assert observed["top_p"] == 0.82
     assert observed["top_k"] == 32
+    assert observed["min_p"] == 0.2
     assert observed["repetition_penalty"] == 1.15
     assert observed["seed"] == 17
     assert observed["num_ctx"] == 4096

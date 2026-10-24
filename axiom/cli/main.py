@@ -131,7 +131,7 @@ def cli_callback(
 
     if (
         ctx.resilient_parsing
-        or ctx.invoked_subcommand == "mcp"
+        or ctx.invoked_subcommand in {"mcp", "completion"}
         or suppress_for_arguments(sys.argv[1:])
     ):
         return
@@ -186,6 +186,66 @@ def _run_default_session(*, show_banner: bool = True) -> None:
         _cli_error(str(exc))
 
 
+def _powershell_completion_script(command: click.Command) -> str:
+    """Build a no-install PowerShell completer from AXIOM's actual Click command tree."""
+    def describe(current: click.Command) -> dict[str, object]:
+        options: set[str] = set()
+        for parameter in current.params:
+            if isinstance(parameter, click.Option):
+                options.update(
+                    flag
+                    for flag in (*parameter.opts, *parameter.secondary_opts)
+                    if flag.startswith("-")
+                )
+        commands: dict[str, object] = {}
+        if isinstance(current, click.Group):
+            commands = {
+                name: describe(subcommand)
+                for name, subcommand in sorted(current.commands.items())
+            }
+        return {"options": sorted(options), "commands": commands}
+
+    schema = json.dumps(describe(command), ensure_ascii=False, separators=(",", ":"))
+    return (
+        "# AXIOM PowerShell completion. Add this script to your PowerShell profile.\n"
+        "$script:AXIOMCompletion = ConvertFrom-Json -InputObject @'\n"
+        + schema
+        + "\n'@\n"
+        + r'''Register-ArgumentCompleter -Native -CommandName axiom -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+
+    $tokens = @($commandAst.CommandElements | Select-Object -Skip 1 | ForEach-Object { $_.ToString() })
+    if ($tokens.Count -gt 0 -and $tokens[-1] -eq $wordToComplete) {
+        if ($tokens.Count -eq 1) { $tokens = @() }
+        else { $tokens = @($tokens[0..($tokens.Count - 2)]) }
+    }
+
+    $node = $script:AXIOMCompletion
+    foreach ($token in $tokens) {
+        if ($token.StartsWith('-')) { continue }
+        if ($null -ne $node.commands -and $node.commands.PSObject.Properties.Name -contains $token) {
+            $node = $node.commands.$token
+        } else {
+            break
+        }
+    }
+
+    $candidates = @()
+    if ($null -ne $node.commands) { $candidates += @($node.commands.PSObject.Properties.Name) }
+    if ($null -ne $node.options) { $candidates += @($node.options) }
+    $candidates |
+        Where-Object { $_ -like "$wordToComplete*" } |
+        Sort-Object -Unique |
+        ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new(
+                $_, $_, 'ParameterValue', $_
+            )
+        }
+}'''
+        + "\n"
+    )
+
+
 @app.command("completion")
 def shell_completion_script(
     shell: str = typer.Argument(..., help="Shell name: bash, zsh, fish, or powershell."),
@@ -196,11 +256,14 @@ def shell_completion_script(
     if normalized not in supported:
         _cli_error("Unsupported shell. Choose bash, zsh, fish, or powershell.")
         return
+    command = get_command(app)
+    if normalized == "powershell":
+        typer.echo(_powershell_completion_script(command), nl=False)
+        return
     completion_type = get_completion_class(normalized)
     if completion_type is None:
         _cli_error(f"Shell completion for {normalized} is not supported by the installed Click version.")
         return
-    command = get_command(app)
     # Click 8.3+ uses (cli, ctx_args, prog_name, complete_var); older
     # versions expose (cli, ctx, complete_var). Select by the installed class
     # signature rather than passing a Typer/Click option as a variable name.

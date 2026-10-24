@@ -108,12 +108,12 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
 
     def fake_stream(
         model_path, prompt, *, adapter_path=None, max_new_tokens=256, temperature=0.7,
-        top_p=0.9, top_k=0, repetition_penalty=1.0, seed=None, stop_sequences=(), include_token_events=True,
+        top_p=0.9, top_k=0, min_p=0.0, repetition_penalty=1.0, seed=None, stop_sequences=(), include_token_events=True,
         cancel_event=None, device_preference="auto", memory_mode="full", precision="auto",
     ):
         observed.update({
             "model_path": model_path, "prompt": prompt, "max_new_tokens": max_new_tokens,
-            "temperature": temperature, "top_p": top_p, "top_k": top_k,
+            "temperature": temperature, "top_p": top_p, "top_k": top_k, "min_p": min_p,
             "repetition_penalty": repetition_penalty, "seed": seed,
             "stop_sequences": list(stop_sequences),
             "include_token_events": include_token_events,
@@ -143,6 +143,7 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
             "temperature": 0,
             "top_p": 0.8,
             "top_k": 4,
+            "min_p": 0.2,
             "repetition_penalty": 1.1,
             "seed": 42,
             "stop_sequences": ["<END>", "###"],
@@ -165,6 +166,7 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
         "temperature": 0,
         "top_p": 0.8,
         "top_k": 4,
+        "min_p": 0.2,
         "repetition_penalty": 1.1,
         "seed": 42,
         "stop_sequences": ["<END>", "###"],
@@ -187,6 +189,11 @@ def test_generate_request_rejects_invalid_stop_sequence_lists(monkeypatch) -> No
     assert engine_api.GenerateRequest(**base, memory_mode="disk_streaming").memory_mode == "disk_streaming"
     with pytest.raises(ValidationError, match="memory_mode"):
         engine_api.GenerateRequest(**base, memory_mode="automatic")
+    assert engine_api.GenerateRequest(**base).min_p == 0.0
+    with pytest.raises(ValidationError, match="min_p"):
+        engine_api.GenerateRequest(**base, min_p=1.1)
+    with pytest.raises(ValidationError, match="min_p"):
+        engine_api.GenerateRequest(**base, min_p=-0.01)
     with pytest.raises(ValidationError, match="stop sequences|Stop sequences"):
         GenerateRequest(**base, stop_sequences=[" "])
     with pytest.raises(ValidationError, match="stop sequence|Stop sequence"):
@@ -467,6 +474,7 @@ def test_engine_stream_endpoint_yields_token_snapshots_and_final_metrics(tmp_pat
             "temperature": 0.7,
             "top_p": 0.9,
             "top_k": 0,
+            "min_p": 0.0,
             "repetition_penalty": 1.0,
             "seed": None,
         },
@@ -499,6 +507,7 @@ def test_engine_stream_endpoint_yields_token_snapshots_and_final_metrics(tmp_pat
         "temperature": 0.7,
         "top_p": 0.9,
         "top_k": 0,
+        "min_p": 0.0,
         "repetition_penalty": 1.0,
         "seed": None,
     }
@@ -724,31 +733,32 @@ def test_engine_fabric_endpoint_rejects_unknown_profile() -> None:
 def test_engine_fabric_chat_endpoint_dispatches_validated_local_request(monkeypatch) -> None:
     observed = {}
     expected = {
-        "schema_version": 1, "backend_id": "llama-cpp", "backend_name": "llama.cpp server",
+        "schema_version": 1, "backend_id": "ollama", "backend_name": "Ollama",
         "model": "tiny-local", "response": "Hello from a local backend.", "done": True,
         "prompt_eval_count": 5, "eval_count": 4, "total_duration_ms": 12.0,
         "generated_at": "2026-10-24T00:00:00+00:00", "execution": "local_loopback",
         "privacy": {"prompt_returned": False, "response_persisted": False, "cloud_provider_used": False},
     }
 
-    def fake_dispatch(backend_id, model, messages, *, max_new_tokens, temperature, top_p, top_k, repetition_penalty, seed, stop_sequences):
+    def fake_dispatch(backend_id, model, messages, *, max_new_tokens, temperature, top_p, top_k, min_p, repetition_penalty, seed, stop_sequences):
         observed.update(backend_id=backend_id, model=model, messages=messages, max_new_tokens=max_new_tokens, temperature=temperature,
-                        top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stop_sequences)
+                        top_p=top_p, top_k=top_k, min_p=min_p, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stop_sequences)
         return expected
 
     monkeypatch.setattr(engine_api, "run_engine_backend_chat", fake_dispatch)
     response = _client().post("/api/engine/backends/chat", json={
-        "backend_id": "llama-cpp", "model": "tiny-local",
+        "backend_id": "ollama", "model": "tiny-local",
         "messages": [{"role": "user", "content": "Say hello."}],
         "max_new_tokens": 64, "temperature": 0.2, "top_p": 0.8,
-        "top_k": 40, "repetition_penalty": 1.15, "seed": 123, "stop_sequences": ["<END>"],
+        "top_k": 40, "min_p": 0.15, "repetition_penalty": 1.15, "seed": 123, "stop_sequences": ["<END>"],
     })
     assert response.status_code == 200
     assert response.json() == expected
-    assert observed["backend_id"] == "llama-cpp"
+    assert observed["backend_id"] == "ollama"
     assert observed["max_new_tokens"] == 64
     assert observed["messages"] == [{"role": "user", "content": "Say hello."}]
     assert observed["top_p"] == 0.8 and observed["top_k"] == 40
+    assert observed["min_p"] == 0.15
     assert observed["repetition_penalty"] == 1.15 and observed["seed"] == 123
     assert observed["stop_sequences"] == ["<END>"]
 
@@ -764,8 +774,8 @@ def test_engine_fabric_chat_rejects_external_and_unknown_targets() -> None:
 def test_engine_fabric_benchmark_endpoint_returns_metadata_only_result(monkeypatch) -> None:
     expected = {
         "schema_version": 1,
-        "backend_id": "llama-cpp",
-        "backend_name": "llama.cpp server",
+        "backend_id": "ollama",
+        "backend_name": "Ollama",
         "model": "tiny-local",
         "configuration": {"iterations": 2, "measured_requests": 2},
         "measurements": {"latency_ms": {"median": 15.0, "p95": 19.0}, "requests": []},
@@ -780,11 +790,12 @@ def test_engine_fabric_benchmark_endpoint_returns_metadata_only_result(monkeypat
     response = _client().post("/api/engine/backends/benchmark", json={
         "backend_id": "llama-cpp", "model": "tiny-local", "prompt": "Measure this.",
         "max_new_tokens": 32, "warmup_runs": 0, "iterations": 2, "temperature": 0.2,
-        "top_p": 0.7, "top_k": 32, "repetition_penalty": 1.2, "seed": 41, "stop_sequences": ["HALT"],
+        "top_p": 0.7, "top_k": 32, "min_p": 0.12, "repetition_penalty": 1.2, "seed": 41, "stop_sequences": ["HALT"],
     })
     assert response.status_code == 200
     assert response.json() == expected
     assert captured["top_p"] == 0.7 and captured["top_k"] == 32
+    assert captured["min_p"] == 0.12
     assert captured["repetition_penalty"] == 1.2 and captured["seed"] == 41
     assert captured["stop_sequences"] == ["HALT"]
 
@@ -812,9 +823,9 @@ def test_engine_fabric_auto_chat_endpoint_routes_with_requested_profile(monkeypa
             "max_attempts": 3, "scope_note": "Fixed loopback only.",
         },
     }
-    def fake_route(profile, model, messages, *, max_new_tokens, temperature, top_p, top_k, repetition_penalty, seed, stop_sequences):
+    def fake_route(profile, model, messages, *, max_new_tokens, temperature, top_p, top_k, min_p, repetition_penalty, seed, stop_sequences):
         captured.update(profile=profile, model=model, messages=messages, max_new_tokens=max_new_tokens, temperature=temperature,
-                        top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stop_sequences)
+                        top_p=top_p, top_k=top_k, min_p=min_p, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stop_sequences)
         return expected
 
     monkeypatch.setattr(engine_api, "run_engine_fabric_chat", fake_route)
@@ -822,7 +833,7 @@ def test_engine_fabric_auto_chat_endpoint_routes_with_requested_profile(monkeypa
         "profile": "low-memory", "model": "tiny-local",
         "messages": [{"role": "user", "content": "Hello"}],
         "max_new_tokens": 64, "temperature": 0.2, "top_p": 0.75,
-        "top_k": 8, "repetition_penalty": 1.1, "seed": 7, "stop_sequences": ["STOP"],
+        "top_k": 8, "min_p": 0.08, "repetition_penalty": 1.1, "seed": 7, "stop_sequences": ["STOP"],
     })
     assert response.status_code == 200
     assert response.json() == expected
@@ -830,7 +841,7 @@ def test_engine_fabric_auto_chat_endpoint_routes_with_requested_profile(monkeypa
         "profile": "low-memory", "model": "tiny-local",
         "messages": [{"role": "user", "content": "Hello"}],
         "max_new_tokens": 64, "temperature": 0.2,
-        "top_p": 0.75, "top_k": 8, "repetition_penalty": 1.1,
+        "top_p": 0.75, "top_k": 8, "min_p": 0.08, "repetition_penalty": 1.1,
         "seed": 7, "stop_sequences": ["STOP"],
     }
 
@@ -860,7 +871,7 @@ def test_engine_fabric_native_backend_chat_endpoint_dispatches_in_process(monkey
         "backend_id": "axiom-native",
         "model": "qwen-tiny",
         "messages": [{"role": "user", "content": "Say hello."}],
-        "top_p": 0.8, "top_k": 32, "repetition_penalty": 1.1,
+        "top_p": 0.8, "top_k": 32, "min_p": 0.07, "repetition_penalty": 1.1,
         "seed": 9, "stop_sequences": ["END"],
     })
     assert response.status_code == 200, response.text
@@ -870,5 +881,27 @@ def test_engine_fabric_native_backend_chat_endpoint_dispatches_in_process(monkey
     assert result["response"] == "native answer"
     assert observed["provider"] == "axiom-local"
     assert observed["top_p"] == 0.8 and observed["top_k"] == 32
+    assert observed["min_p"] == 0.07
     assert observed["repetition_penalty"] == 1.1 and observed["seed"] == 9
     assert observed["stop_sequences"] == ("END",)
+
+def test_engine_fabric_auto_chat_does_not_expose_internal_exception_details(
+    monkeypatch,
+) -> None:
+    secret_detail = "internal failure at /private/runner/credential-store"
+
+    def fail_route(*_args, **_kwargs):
+        raise ValueError(secret_detail)
+
+    monkeypatch.setattr(engine_api, "run_engine_fabric_chat", fail_route)
+    response = _client().post("/api/engine/backends/auto-chat", json={
+        "profile": "balanced",
+        "model": "tiny-local",
+        "messages": [{"role": "user", "content": "Hello"}],
+    })
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "The routing request is invalid or unsupported."
+    assert secret_detail not in response.text
+    assert "/private/runner" not in response.text
+

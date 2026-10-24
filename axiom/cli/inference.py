@@ -228,7 +228,10 @@ def infer_models(json_output: bool = typer.Option(False, "--json", help="Print m
         console.print(name)
 
 
-@infer_app.command("run")
+@infer_app.command(
+    "run",
+    epilog="Advanced sampling options: --top-p, --top-k, --min-p, --repeat-penalty, --seed, --num-ctx, and repeatable --stop.",
+)
 def infer_run(
     model: str = typer.Argument(..., help="Name of an already-downloaded local Ollama model."),
     prompt: str | None = typer.Option(None, "--prompt", help="Prompt text (up to 12,000 characters)."),
@@ -237,6 +240,7 @@ def infer_run(
     temperature: float = typer.Option(0.7, min=0, max=2, help="Sampling temperature (0–2)."),
     top_p: float | None = typer.Option(None, "--top-p", min=0.001, max=1, help="Nucleus sampling threshold (0–1)."),
     top_k: int | None = typer.Option(None, "--top-k", min=0, max=100_000, help="Candidate token limit (0 uses runtime default)."),
+    min_p: float | None = typer.Option(None, "--min-p", min=0, max=1, help="Relative-probability cutoff (0 disables min-p)."),
     repetition_penalty: float | None = typer.Option(None, "--repeat-penalty", min=0.1, max=5, help="Repetition penalty (0.1–5)."),
     seed: int | None = typer.Option(None, "--seed", min=0, help="Optional deterministic seed."),
     num_ctx: int | None = typer.Option(None, "--num-ctx", min=512, max=131_072, help="Optional context window (512–131072 tokens)."),
@@ -258,6 +262,7 @@ def infer_run(
         sampling: dict[str, object] = {}
         if top_p is not None: sampling["top_p"] = top_p
         if top_k is not None: sampling["top_k"] = top_k
+        if min_p is not None: sampling["min_p"] = min_p
         if repetition_penalty is not None: sampling["repetition_penalty"] = repetition_penalty
         if seed is not None: sampling["seed"] = seed
         if num_ctx is not None: sampling["num_ctx"] = num_ctx

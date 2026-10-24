@@ -52,12 +52,12 @@ def test_dispatch_to_ollama_uses_native_chat_options(monkeypatch):
     monkeypatch.setattr(engine_fabric, "_request_json", fake_request)
     result = engine_fabric.run_engine_backend_chat(
         "ollama", "qwen2.5:0.5b", [{"role": "user", "content": "Answer locally."}],
-        top_p=0.85, top_k=32, repetition_penalty=1.2, seed=7, stop_sequences=["DONE"],
+        top_p=0.85, top_k=32, min_p=0.2, repetition_penalty=1.2, seed=7, stop_sequences=["DONE"],
     )
     assert observed["path"] == "/api/chat"
     assert observed["payload"]["options"] == {
         "num_predict": 256, "temperature": 0.7, "top_p": 0.85,
-        "top_k": 32, "repeat_penalty": 1.2, "seed": 7, "stop": ["DONE"],
+        "top_k": 32, "min_p": 0.2, "repeat_penalty": 1.2, "seed": 7, "stop": ["DONE"],
     }
     assert result["response"] == "Local answer"
     assert result["total_duration_ms"] == 3
@@ -83,12 +83,13 @@ def test_native_engine_dispatches_via_trusted_alias_and_never_external_http(monk
     monkeypatch.setattr(llm_client, "chat", fake_chat)
     result = engine_fabric.run_engine_backend_chat(
         "axiom-native", "local-model", [{"role": "user", "content": "Hi"}],
-        max_new_tokens=32, top_p=0.8, top_k=12, repetition_penalty=1.1,
+        max_new_tokens=32, top_p=0.8, top_k=12, min_p=0.24, repetition_penalty=1.1,
         seed=10, stop_sequences=["END"],
     )
     assert captured["provider"] == "axiom-local"
     assert captured["model"] == "local-model"
     assert captured["top_p"] == 0.8 and captured["top_k"] == 12
+    assert captured["min_p"] == 0.24
     assert captured["repetition_penalty"] == 1.1 and captured["seed"] == 10
     assert captured["stop_sequences"] == ("END",)
     assert result["backend_id"] == "axiom-native"
@@ -258,6 +259,7 @@ def test_sampling_validation_happens_before_any_backend_request(monkeypatch):
     )
     invalid_options = [
         {"top_p": 0}, {"top_p": float("nan")}, {"top_k": -1}, {"top_k": True},
+        {"min_p": -0.01}, {"min_p": 1.01}, {"min_p": float("nan")}, {"min_p": True},
         {"repetition_penalty": 0}, {"seed": -1}, {"seed": True},
         {"stop_sequences": [""]}, {"stop_sequences": ["x" * 257]},
         {"stop_sequences": ["one"] * 17},
@@ -273,6 +275,52 @@ def test_sampling_validation_happens_before_any_backend_request(monkeypatch):
             raise AssertionError(f"Expected invalid sampling settings to be rejected: {options!r}")
 
 
+def test_min_p_auto_route_filters_compatibility_before_candidate_limit(monkeypatch):
+    monkeypatch.setattr(engine_fabric, "discover_engine_backends", lambda profile: {
+        "profile": profile,
+        "backends": [
+            {"id": "vllm", "name": "vLLM", "status": "ready", "supports_chat": True, "models": ["tiny"]},
+            {"id": "llama-cpp", "name": "llama.cpp", "status": "ready", "supports_chat": True, "models": ["tiny"]},
+            {"id": "lm-studio", "name": "LM Studio", "status": "ready", "supports_chat": True, "models": ["tiny"]},
+            {"id": "ollama", "name": "Ollama", "status": "ready", "supports_chat": True, "models": ["tiny"]},
+        ],
+    })
+    observed = []
+
+    def fake_chat(backend_id, model, messages, **kwargs):
+        observed.append((backend_id, kwargs))
+        return {
+            "schema_version": 1, "backend_id": backend_id, "backend_name": "Ollama",
+            "model": model, "response": "filtered correctly", "done": True,
+            "prompt_eval_count": 2, "eval_count": 3, "total_duration_ms": 10.0,
+            "generated_at": "2026-10-24T00:00:00+00:00", "execution": "local_loopback",
+            "privacy": {"prompt_returned": False, "response_persisted": False, "cloud_provider_used": False},
+        }
+
+    monkeypatch.setattr(engine_fabric, "run_engine_backend_chat", fake_chat)
+    result = engine_fabric.run_engine_fabric_chat(
+        "throughput", "tiny", [{"role": "user", "content": "hello"}], min_p=0.2,
+    )
+    assert [backend_id for backend_id, _kwargs in observed] == ["ollama"]
+    assert observed[0][1]["min_p"] == 0.2
+    assert result["backend_id"] == "ollama"
+
+
+def test_min_p_is_rejected_for_backends_that_do_not_support_it(monkeypatch):
+    monkeypatch.setattr(
+        engine_fabric, "_request_json",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("unsupported sampling must not dispatch")),
+    )
+    try:
+        engine_fabric.run_engine_backend_chat(
+            "llama-cpp", "tiny-local", [{"role": "user", "content": "hello"}], min_p=0.2,
+        )
+    except ValueError as exc:
+        assert "AXIOM Native Engine and Ollama" in str(exc)
+    else:
+        raise AssertionError("nonzero min-p must not be silently dropped for external backends")
+
+
 def test_benchmark_forwards_sampling_options_without_disclosing_stop_text(monkeypatch):
     calls = []
 
@@ -283,15 +331,17 @@ def test_benchmark_forwards_sampling_options_without_disclosing_stop_text(monkey
     monkeypatch.setattr(engine_fabric, "run_engine_backend_chat", fake_chat)
     result = engine_fabric.run_engine_backend_benchmark(
         "ollama", "tiny-local", "private representative prompt",
-        warmup_runs=0, iterations=1, top_p=0.75, top_k=12,
+        warmup_runs=0, iterations=1, top_p=0.75, top_k=12, min_p=0.18,
         repetition_penalty=1.2, seed=99, stop_sequences=["SECRET_STOP"],
     )
     assert calls[0]["top_p"] == 0.75
     assert calls[0]["top_k"] == 12
+    assert calls[0]["min_p"] == 0.18
     assert calls[0]["repetition_penalty"] == 1.2
     assert calls[0]["seed"] == 99
     assert calls[0]["stop_sequences"] == ("SECRET_STOP",)
     assert result["configuration"]["stop_sequence_count"] == 1
+    assert result["configuration"]["min_p"] == 0.18
     assert "SECRET_STOP" not in str(result)
     assert "private representative prompt" not in str(result)
 
@@ -353,11 +403,15 @@ def test_generation_capabilities_describe_runtime_dialects_without_overclaiming(
     assert native["transport"] == "in_process"
     assert native["extension_sampling_controls"] == []
     assert native["parameter_mapping"]["repetition_penalty"] == "repetition_penalty"
+    assert native["parameter_mapping"]["min_p"] == "min_p"
+    assert "min_p" in native["native_sampling_controls"]
 
     ollama = engine_fabric._generation_capabilities("ollama")
     assert ollama["transport"] == "ollama_options"
     assert ollama["parameter_mapping"]["max_new_tokens"] == "options.num_predict"
     assert ollama["parameter_mapping"]["repetition_penalty"] == "options.repeat_penalty"
+    assert ollama["parameter_mapping"]["min_p"] == "options.min_p"
+    assert "min_p" in ollama["native_sampling_controls"]
     assert ollama["extension_sampling_controls"] == []
 
     vllm = engine_fabric._generation_capabilities("vllm")

@@ -55,7 +55,7 @@ export type EngineFabricChatResult = {
 
 export type EngineFabricBenchmarkResult = {
   schema_version: number; backend_id: EngineFabricChatResult["backend_id"]; backend_name: string; model: string;
-  configuration: { prompt_characters: number; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequence_count: number; warmup_runs: number; iterations: number; measured_requests: number };
+  configuration: { prompt_characters: number; max_new_tokens: number; temperature: number; top_p: number; top_k: number; min_p: number; repetition_penalty: number; seed: number | null; stop_sequence_count: number; warmup_runs: number; iterations: number; measured_requests: number };
   measurements: {
     wall_time_ms: number; requests_per_second: number; completion_tokens_known: number; total_completion_tokens: number | null;
     completion_tokens_per_second: number | null; latency_ms: { min: number; median: number; p95: number; max: number };
@@ -129,7 +129,7 @@ export type LocalInferenceResult = {
 };
 export type LocalInferenceInput = {
   model: string; prompt: string; num_predict: number; temperature: number;
-  top_p?: number; top_k?: number; repetition_penalty?: number; seed?: number;
+  top_p?: number; top_k?: number; min_p?: number; repetition_penalty?: number; seed?: number;
   num_ctx?: number; stop_sequences?: string[];
 };
 export type LocalInferenceStreamEvent =
@@ -280,7 +280,7 @@ export type AxiomEngineStatus = {
   setup_note: string; scope_note: string; checked_at: string;
 };
 export type AxiomEngineSampling = {
-  temperature: number; top_p: number; top_k: number;
+  temperature: number; top_p: number; top_k: number; min_p: number;
   repetition_penalty: number; seed: number | null;
 };
 export type AxiomEngineMemoryStats = {
@@ -347,7 +347,7 @@ export type LLMModelResult = {
 export type LLMChatMessage = { role: "system" | "user" | "assistant"; content: string };
 export type LLMChatRequest = LLMModelRequest & {
   model: string; messages: LLMChatMessage[]; max_tokens: number; temperature: number; consent: boolean;
-  top_p?: number; top_k?: number; repetition_penalty?: number; seed?: number | null; stop_sequences?: string[];
+  top_p?: number; top_k?: number; min_p?: number; repetition_penalty?: number; seed?: number | null; stop_sequences?: string[];
   device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu";
   memory_mode?: "auto" | "full" | "layer_streaming" | "disk_streaming";
   precision?: "auto" | "fp32" | "fp16" | "bf16";
@@ -1092,7 +1092,7 @@ async function streamLocalInferenceRequest(
 
 
 async function streamAxiomEngineRequest(
-  input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "auto" | "full" | "layer_streaming" | "disk_streaming"; precision?: "auto" | "fp32" | "fp16" | "bf16" },
+  input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; min_p: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "auto" | "full" | "layer_streaming" | "disk_streaming"; precision?: "auto" | "fp32" | "fp16" | "bf16" },
   onEvent: (event: AxiomEngineStreamEvent) => void,
   signal: AbortSignal,
 ): Promise<AxiomEngineResult> {
@@ -1553,11 +1553,11 @@ export const axiomApi = {
   }),
   axiomEngineStatus: () => requestJson<AxiomEngineStatus>("/api/engine/status"),
   engineBackends: (profile: EngineFabricProfile = "balanced") => requestJson<EngineFabricReport>("/api/engine/backends?" + new URLSearchParams({ profile })),
-  engineBackendChat: (input: { backend_id: EngineFabricChatResult["backend_id"]; model: string; messages: Array<{ role: "system" | "user" | "assistant"; content: string }>; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[] }) =>
+  engineBackendChat: (input: { backend_id: EngineFabricChatResult["backend_id"]; model: string; messages: Array<{ role: "system" | "user" | "assistant"; content: string }>; max_new_tokens: number; temperature: number; top_p: number; top_k: number; min_p: number; repetition_penalty: number; seed: number | null; stop_sequences: string[] }) =>
     requestJson<EngineFabricChatResult>("/api/engine/backends/chat", { method: "POST", body: JSON.stringify(input) }, 300_000),
-  engineBackendAutoChat: (input: { profile: EngineFabricProfile; model: string; messages: Array<{ role: "system" | "user" | "assistant"; content: string }>; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[] }) =>
+  engineBackendAutoChat: (input: { profile: EngineFabricProfile; model: string; messages: Array<{ role: "system" | "user" | "assistant"; content: string }>; max_new_tokens: number; temperature: number; top_p: number; top_k: number; min_p: number; repetition_penalty: number; seed: number | null; stop_sequences: string[] }) =>
     requestJson<EngineFabricChatResult>("/api/engine/backends/auto-chat", { method: "POST", body: JSON.stringify(input) }, 300_000),
-  engineBackendBenchmark: (input: { backend_id: EngineFabricChatResult["backend_id"]; model: string; prompt: string; max_new_tokens: number; warmup_runs: number; iterations: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[] }) =>
+  engineBackendBenchmark: (input: { backend_id: EngineFabricChatResult["backend_id"]; model: string; prompt: string; max_new_tokens: number; warmup_runs: number; iterations: number; temperature: number; top_p: number; top_k: number; min_p: number; repetition_penalty: number; seed: number | null; stop_sequences: string[] }) =>
     requestJson<EngineFabricBenchmarkResult>("/api/engine/backends/benchmark", { method: "POST", body: JSON.stringify(input) }, 300_000),
   axiomEngineTelemetry: () => requestJson<AxiomEngineSystemTelemetry>("/api/engine/telemetry"),
   axiomEngineModels: () => requestJson<AxiomEngineAssets>("/api/engine/models"),
@@ -1565,12 +1565,12 @@ export const axiomApi = {
     requestJson<AxiomEngineAdapterCompatibility>("/api/engine/adapters/compatibility", {
       method: "POST", body: JSON.stringify(input),
     }),
-  runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode?: "auto" | "full" | "layer_streaming" | "disk_streaming"; precision?: "auto" | "fp32" | "fp16" | "bf16" }) =>
+  runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; min_p: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode?: "auto" | "full" | "layer_streaming" | "disk_streaming"; precision?: "auto" | "fp32" | "fp16" | "bf16" }) =>
     requestJson<AxiomEngineResult>("/api/engine/generate", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
   streamAxiomEngine: (
-    input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "auto" | "full" | "layer_streaming" | "disk_streaming"; precision?: "auto" | "fp32" | "fp16" | "bf16" },
+    input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; min_p: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "auto" | "full" | "layer_streaming" | "disk_streaming"; precision?: "auto" | "fp32" | "fp16" | "bf16" },
     onEvent: (event: AxiomEngineStreamEvent) => void,
     signal: AbortSignal,
   ) => streamAxiomEngineRequest(input, onEvent, signal),

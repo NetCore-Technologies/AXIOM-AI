@@ -424,10 +424,10 @@ def inspect(root: Path) -> dict[str, Any]:
     for token in ("export type LocalInferenceInput", "stop_sequences?: string[]", "streamLocalInference:", "LocalInferenceStreamEvent", "runningOllamaModels:", "startLocalOllama:", "stopLocalOllama:", "startOllamaModelPull:", "cancelOllamaModelPull:", "inspectOllamaModel:", "unloadOllamaModel:", "export type OllamaModelDetails"):
         if token not in client:
             failures.append("Typed Ollama client is missing a local model operation: " + token)
-    for token in ("Advanced sampling options", "top_p: topPValue", "stop_sequences: stops", "Stop generation", "streamLocalInference(", "Start Ollama", "Stop AXIOM service", "Pull model", "Show loaded models", "Cancel download", "Inspect model", "Unload from memory", "Local model metadata"):
+    for token in ("Advanced sampling options", "top_p: topPValue", "min_p: minPValue", "stop_sequences: stops", "Stop generation", "streamLocalInference(", "Start Ollama", "Stop AXIOM service", "Pull model", "Show loaded models", "Cancel download", "Inspect model", "Unload from memory", "Local model metadata"):
         if token not in inference_panel:
             failures.append("Runtime GUI is missing Ollama service/model controls: " + token)
-    for token in ("--top-p", "--top-k", "--repeat-penalty", "--num-ctx", "--stop", '@infer_app.command("ps")', '@service_app.command("start")', '@service_app.command("stop")', '@infer_app.command("pull")', '@infer_app.command("inspect")', '@infer_app.command("unload")'):
+    for token in ("--top-p", "--top-k", "--min-p", "--repeat-penalty", "--num-ctx", "--stop", '@infer_app.command("ps")', '@service_app.command("start")', '@service_app.command("stop")', '@infer_app.command("pull")', '@infer_app.command("inspect")', '@infer_app.command("unload")'):
         if token not in ollama_cli:
             failures.append("Ollama CLI is missing a lifecycle/model command: " + token)
     for token in ("test_service_status_exposes_control_capabilities", "test_stop_refuses_to_signal_a_process_not_owned_by_axiom", "test_start_terminates_process_if_ownership_state_cannot_be_saved", "test_start_reaps_process_if_process_identity_cannot_be_verified", "test_progress_output_removes_terminal_controls"):
@@ -443,7 +443,7 @@ def inspect(root: Path) -> dict[str, Any]:
     for token in ("test_streaming_api_passes_advanced_sampling_options", "test_generate_api_rejects_oversized_context_and_stop_sequence_lists", "test_streaming_inference_emits_ndjson_token_deltas", "test_streaming_inference_sanitizes_runtime_failures"):
         if token not in ollama_api_tests:
             failures.append("Ollama streaming API coverage is missing: " + token)
-    for token in ('"/api/inference/generate/stream"', "top_p: 0.83", 'stop_sequences: ["DONE", "END"]', "Stop generation", "Hello from the mocked local model"):
+    for token in ('"/api/inference/generate/stream"', "top_p: 0.83", "min_p: 0.2", 'stop_sequences: ["DONE", "END"]', "Stop generation", "Hello from the mocked local model"):
         if token not in inference_stream_e2e:
             failures.append("Streaming generation browser acceptance coverage is missing: " + token)
     for token in ("start Ollama, pull a model with progress", "Show loaded models", "Inspect model", "Unload from memory", '"/api/inference/models/running"', '"/api/inference/models/inspect"', '"/api/inference/models/unload"'):

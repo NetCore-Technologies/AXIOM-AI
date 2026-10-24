@@ -171,12 +171,13 @@ def _generation_capabilities(backend_id: str) -> dict[str, Any]:
                 "temperature": "temperature",
                 "top_p": "top_p",
                 "top_k": "top_k",
+                "min_p": "min_p",
                 "repetition_penalty": "repetition_penalty",
                 "seed": "seed",
                 "stop_sequences": "stop_sequences",
             },
             "native_sampling_controls": [
-                "temperature", "top_p", "top_k", "repetition_penalty", "seed", "stop_sequences",
+                "temperature", "top_p", "top_k", "min_p", "repetition_penalty", "seed", "stop_sequences",
             ],
             "extension_sampling_controls": [],
             "note": "Controls are passed into AXIOM's own sampler; reproducibility still depends on device and kernel behavior.",
@@ -189,12 +190,13 @@ def _generation_capabilities(backend_id: str) -> dict[str, Any]:
                 "temperature": "options.temperature",
                 "top_p": "options.top_p",
                 "top_k": "options.top_k",
+                "min_p": "options.min_p",
                 "repetition_penalty": "options.repeat_penalty",
                 "seed": "options.seed",
                 "stop_sequences": "options.stop",
             },
             "native_sampling_controls": [
-                "temperature", "top_p", "top_k", "repetition_penalty", "seed", "stop_sequences",
+                "temperature", "top_p", "top_k", "min_p", "repetition_penalty", "seed", "stop_sequences",
             ],
             "extension_sampling_controls": [],
             "note": "Uses Ollama's /api/chat options dialect; exact output behavior depends on model and installed runtime version.",
@@ -425,15 +427,18 @@ def _validate_engine_chat_inputs(
 def _validate_sampling_options(
     top_p: float,
     top_k: int,
+    min_p: float,
     repetition_penalty: float,
     seed: int | None,
     stop_sequences: list[str] | tuple[str, ...],
-) -> tuple[float, int, float, int | None, tuple[str, ...]]:
+) -> tuple[float, int, float, float, int | None, tuple[str, ...]]:
     """Validate shared generation settings before contacting any runtime."""
     if isinstance(top_p, bool) or not isinstance(top_p, (int, float)) or not math.isfinite(float(top_p)) or not 0 < float(top_p) <= 1:
         raise ValueError("Top-p must be a finite number greater than 0 and at most 1.")
     if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
         raise ValueError("Top-k must be an integer between 0 and 100,000; 0 disables the limit.")
+    if isinstance(min_p, bool) or not isinstance(min_p, (int, float)) or not math.isfinite(float(min_p)) or not 0 <= float(min_p) <= 1:
+        raise ValueError("Min-p must be a finite number between 0 and 1.")
     if isinstance(repetition_penalty, bool) or not isinstance(repetition_penalty, (int, float)) or not math.isfinite(float(repetition_penalty)) or not 0.1 <= float(repetition_penalty) <= 5:
         raise ValueError("Repetition penalty must be a finite number between 0.1 and 5.")
     if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 9_223_372_036_854_775_807):
@@ -448,7 +453,7 @@ def _validate_sampling_options(
             raise ValueError("Each stop sequence is limited to 256 characters.")
         if stop not in stops:
             stops.append(stop)
-    return float(top_p), top_k, float(repetition_penalty), seed, tuple(stops)
+    return float(top_p), top_k, float(min_p), float(repetition_penalty), seed, tuple(stops)
 
 
 def run_engine_backend_chat(
@@ -460,6 +465,7 @@ def run_engine_backend_chat(
     temperature: float = 0.7,
     top_p: float = 0.9,
     top_k: int = 0,
+    min_p: float = 0.0,
     repetition_penalty: float = 1.0,
     seed: int | None = None,
     stop_sequences: list[str] | tuple[str, ...] = (),
@@ -469,9 +475,11 @@ def run_engine_backend_chat(
     if backend_id not in _BACKEND_BY_ID and backend_id != "axiom-native":
         raise ValueError("Choose a supported local backend from the engine inventory.")
     model, normalized = _validate_engine_chat_inputs(model, messages, max_new_tokens, temperature)
-    top_p, top_k, repetition_penalty, seed, stops = _validate_sampling_options(
-        top_p, top_k, repetition_penalty, seed, stop_sequences
+    top_p, top_k, min_p, repetition_penalty, seed, stops = _validate_sampling_options(
+        top_p, top_k, min_p, repetition_penalty, seed, stop_sequences
     )
+    if min_p > 0 and backend_id not in {"axiom-native", "ollama"}:
+        raise ValueError("Min-p is supported only by AXIOM Native Engine and Ollama backends.")
     if backend_id == "axiom-native":
         if request_timeout is not None:
             raise ValueError("AXIOM Native Engine runs in-process and does not accept an external HTTP request timeout.")
@@ -487,6 +495,7 @@ def run_engine_backend_chat(
                 temperature=temperature,
                 top_p=top_p,
                 top_k=top_k,
+                min_p=min_p,
                 repetition_penalty=repetition_penalty,
                 seed=seed,
                 stop_sequences=stops,
@@ -526,6 +535,8 @@ def run_engine_backend_chat(
         }
         if top_k:
             options["top_k"] = top_k
+        if min_p > 0:
+            options["min_p"] = min_p
         if repetition_penalty != 1.0:
             options["repeat_penalty"] = repetition_penalty
         if seed is not None:
@@ -611,6 +622,7 @@ def run_engine_fabric_chat(
     temperature: float = 0.7,
     top_p: float = 0.9,
     top_k: int = 0,
+    min_p: float = 0.0,
     repetition_penalty: float = 1.0,
     seed: int | None = None,
     stop_sequences: list[str] | tuple[str, ...] = (),
@@ -619,13 +631,17 @@ def run_engine_fabric_chat(
     if profile not in _PROFILES:
         raise ValueError("Profile must be one of: " + ", ".join(_PROFILES))
     model, normalized = _validate_engine_chat_inputs(model, messages, max_new_tokens, temperature)
-    top_p, top_k, repetition_penalty, seed, stops = _validate_sampling_options(
-        top_p, top_k, repetition_penalty, seed, stop_sequences
+    top_p, top_k, min_p, repetition_penalty, seed, stops = _validate_sampling_options(
+        top_p, top_k, min_p, repetition_penalty, seed, stop_sequences
     )
     report = discover_engine_backends(profile)
     inventory = {backend.get("id"): backend for backend in report.get("backends", []) if isinstance(backend, dict)}
     candidates: list[dict[str, Any]] = []
     for backend_id in _PROFILES[profile]:
+        # Filter incompatible runtimes before applying the attempt limit. Otherwise
+        # three earlier unsupported backends could hide a later native/Ollama match.
+        if min_p > 0 and backend_id not in {"axiom-native", "ollama"}:
+            continue
         backend = inventory.get(backend_id)
         if (
             isinstance(backend, dict)
@@ -637,6 +653,8 @@ def run_engine_fabric_chat(
         if len(candidates) >= _AUTO_ROUTE_MAX_ATTEMPTS:
             break
     if not candidates:
+        if min_p > 0:
+            raise EngineFabricError("Min-p requires a ready AXIOM Native Engine or Ollama backend with this exact model ID.")
         raise EngineFabricError(
             f"No ready local backend advertises the exact model ID {model!r}. "
             "Load/configure that model on a supported local service and refresh discovery."
@@ -652,6 +670,7 @@ def run_engine_fabric_chat(
                 "temperature": temperature,
                 "top_p": top_p,
                 "top_k": top_k,
+                "min_p": min_p,
                 "repetition_penalty": repetition_penalty,
                 "seed": seed,
                 "stop_sequences": stops,
@@ -695,6 +714,7 @@ def run_engine_backend_benchmark(
     temperature: float = 0.2,
     top_p: float = 0.9,
     top_k: int = 0,
+    min_p: float = 0.0,
     repetition_penalty: float = 1.0,
     seed: int | None = None,
     stop_sequences: list[str] | tuple[str, ...] = (),
@@ -716,15 +736,15 @@ def run_engine_backend_benchmark(
         raise ValueError("Benchmark temperature must be between 0 and 2.")
     if backend_id not in _BACKEND_BY_ID and backend_id != "axiom-native":
         raise ValueError("Choose a supported local backend.")
-    top_p, top_k, repetition_penalty, seed, stops = _validate_sampling_options(
-        top_p, top_k, repetition_penalty, seed, stop_sequences
+    top_p, top_k, min_p, repetition_penalty, seed, stops = _validate_sampling_options(
+        top_p, top_k, min_p, repetition_penalty, seed, stop_sequences
     )
 
     messages = [{"role": "user", "content": prompt}]
     for _ in range(warmup_runs):
         warmup = run_engine_backend_chat(
             backend_id, model, messages, max_new_tokens=max_new_tokens, temperature=temperature,
-            top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stops,
+            top_p=top_p, top_k=top_k, min_p=min_p, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stops,
         )
         del warmup
 
@@ -736,7 +756,7 @@ def run_engine_backend_benchmark(
         request_started = time.perf_counter()
         measured = run_engine_backend_chat(
             backend_id, model, messages, max_new_tokens=max_new_tokens, temperature=temperature,
-            top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stops,
+            top_p=top_p, top_k=top_k, min_p=min_p, repetition_penalty=repetition_penalty, seed=seed, stop_sequences=stops,
         )
         latency_ms = max(0.0, (time.perf_counter() - request_started) * 1000.0)
         latencies.append(round(latency_ms, 2))
@@ -764,6 +784,7 @@ def run_engine_backend_benchmark(
             "temperature": float(temperature),
             "top_p": top_p,
             "top_k": top_k,
+            "min_p": min_p,
             "repetition_penalty": repetition_penalty,
             "seed": seed,
             "stop_sequence_count": len(stops),

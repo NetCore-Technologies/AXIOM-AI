@@ -85,13 +85,13 @@ This stream uses the same `127.0.0.1:11434` Ollama endpoint as non-streaming API
 
 ## Advanced sampling options
 
-The Runtime panel's **Advanced sampling options** section exposes Ollama's top-p, top-k, repetition penalty, optional seed, optional context window, and up to 16 newline-separated stop sequences. Values pass through request bounds and core validation before reaching the fixed loopback request. Seed and context size are omitted when blank so Ollama can use the model/runtime defaults. The CLI supports the same settings:
+The Runtime panel's **Advanced sampling options** section exposes Ollama's top-p, top-k, min-p, repetition penalty, optional seed, optional context window, and up to 16 newline-separated stop sequences. Values pass through request bounds and core validation before reaching the fixed loopback request. Min-p is disabled at `0`; positive values retain tokens whose probability is at least the configured fraction of the most likely token. Seed and context size are omitted when blank so Ollama can use the model/runtime defaults. The CLI supports the same settings:
 
 ```bash
-axiom --no-banner infer run qwen2.5:0.5b --prompt "Explain AXIOM" --top-p 0.83 --top-k 36 --repeat-penalty 1.2 --seed 123 --num-ctx 8192 --stop DONE --stop END
+axiom --no-banner infer run qwen2.5:0.5b --prompt "Explain AXIOM" --top-p 0.83 --top-k 36 --min-p 0.15 --repeat-penalty 1.2 --seed 123 --num-ctx 8192 --stop DONE --stop END
 ```
 
-Top-p must be greater than 0 and at most 1; top-k is 0–100,000; repetition penalty is 0.1–5; context size is 512–131,072 tokens; seed is a non-negative signed 64-bit integer; and each of at most 16 stop strings is limited to 256 characters. These are runtime options, not measured hardware-fit claims.
+Top-p must be greater than 0 and at most 1; top-k is 0–100,000; min-p is 0–1 (with 0 disabling the cutoff); repetition penalty is 0.1–5; context size is 512–131,072 tokens; seed is a non-negative signed 64-bit integer; and each of at most 16 stop strings is limited to 256 characters. These are runtime options, not measured hardware-fit claims.
 
 
 ## AXIOM Engine Fabric

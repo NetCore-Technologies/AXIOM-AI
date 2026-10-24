@@ -23,18 +23,20 @@ def teardown_function() -> None:
 
 
 def test_generate_endpoint_returns_correlatable_request_id_and_never_traces_text(monkeypatch) -> None:
-    monkeypatch.setattr(
-        inference,
-        "run_local_inference",
-        lambda model, prompt, **kwargs: {
+    captured: dict[str, object] = {}
+
+    def fake_generate(model, prompt, **kwargs):
+        captured.update(kwargs)
+        return {
             "model": model,
             "response": "PRIVATE_RESPONSE_SENTINEL",
             "done": True,
             "prompt_eval_count": 4,
             "eval_count": 7,
             "generated_at": "ignored",
-        },
-    )
+        }
+
+    monkeypatch.setattr(inference, "run_local_inference", fake_generate)
     response = _client().post(
         "/api/inference/generate",
         json={
@@ -42,6 +44,7 @@ def test_generate_endpoint_returns_correlatable_request_id_and_never_traces_text
             "prompt": "PRIVATE_PROMPT_SENTINEL",
             "num_predict": 32,
             "temperature": 0.2,
+            "min_p": 0.2,
         },
     )
 
@@ -49,6 +52,7 @@ def test_generate_endpoint_returns_correlatable_request_id_and_never_traces_text
     request_id = response.headers["X-Request-ID"]
     assert response.json()["request_id"] == request_id
     assert response.json()["response"] == "PRIVATE_RESPONSE_SENTINEL"
+    assert captured["min_p"] == 0.2
     traces = _client().get("/api/diagnostics/runtime-traces").json()["traces"]
     trace = traces[0]
     assert trace["request_id"] == request_id
