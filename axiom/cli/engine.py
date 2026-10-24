@@ -11,7 +11,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, generate_local, generate_local_stream, runtime_status
+from axiom.core.engine import AxiomEngineError, discover_local_engine_assets, generate_local, generate_local_stream, runtime_status, runtime_telemetry
+from axiom.core import model_studio
 
 engine_app = typer.Typer(help="Run causal language models directly through AXIOM's local engine.", no_args_is_help=True)
 console = Console()
@@ -87,7 +88,7 @@ def engine_status(json_output: bool = typer.Option(False, "--json", help="Print 
             if device.get("memory_total_gib") is not None:
                 value += f" ({device.get('memory_free_gib') or 0} GiB free / {device['memory_total_gib']} GiB total)"
             table.add_row(f"Device: {device.get('name', device.get('id', 'unknown'))}", value)
-        table.add_row("Model downloads", "disabled")
+        table.add_row("Native model pull", "public Hugging Face safetensors via `axiom engine pull`")
         table.add_row("Remote model code", "disabled")
         console.print(table)
         if not report["ready"]:
@@ -96,13 +97,82 @@ def engine_status(json_output: bool = typer.Option(False, "--json", help="Print 
         raise typer.Exit(code=1)
 
 
+@engine_app.command("telemetry")
+def engine_telemetry(
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable resource telemetry."),
+) -> None:
+    """Inspect local CPU, RAM, device allocator and trusted model-storage resources."""
+    report = runtime_telemetry()
+    if json_output:
+        typer.echo(json.dumps(report, indent=2, ensure_ascii=False))
+        return
+    table = Table(title="AXIOM Engine resource telemetry")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Current sample")
+    table.add_row("Sampled at", report["sampled_at"])
+    table.add_row("CPU cores", str(report["cpu"].get("logical_cores") or "not exposed"))
+    table.add_row("System CPU", str(report["cpu"].get("system_percent")) + "%" if report["cpu"].get("system_percent") is not None else "not exposed")
+    table.add_row("Process CPU", str(report["cpu"].get("process_percent")) + "%" if report["cpu"].get("process_percent") is not None else "not exposed")
+    table.add_row("System RAM total", str(report["memory"].get("total_bytes")) + " bytes" if report["memory"].get("total_bytes") is not None else "not exposed")
+    table.add_row("System RAM available", str(report["memory"].get("available_bytes")) + " bytes" if report["memory"].get("available_bytes") is not None else "not exposed")
+    table.add_row("Process RSS", str(report["process"].get("rss_bytes")) + " bytes" if report["process"].get("rss_bytes") is not None else "not exposed")
+    table.add_row("Model loaded", "yes" if report["loaded_runtime"]["loaded"] else "no")
+    table.add_row("Active device", str(report["loaded_runtime"].get("device") or "none"))
+    console.print(table)
+    device_table = Table(title="Device memory")
+    device_table.add_column("Device", style="cyan")
+    device_table.add_column("Available")
+    device_table.add_column("Free / total")
+    for item in report["devices"]:
+        free = item.get("memory_free_gib")
+        total = item.get("memory_total_gib")
+        memory_text = f"{free} / {total} GiB" if free is not None and total is not None else "not exposed"
+        device_table.add_row(str(item.get("name") or item.get("id")), "yes" if item.get("available") else "no", memory_text)
+    console.print(device_table)
+    if report["disks"]:
+        disk_table = Table(title="Trusted model storage (paths hidden)")
+        disk_table.add_column("Root")
+        disk_table.add_column("Free bytes")
+        disk_table.add_column("Total bytes")
+        for disk in report["disks"]:
+            disk_table.add_row(disk["label"], str(disk["free_bytes"]), str(disk["total_bytes"]))
+        console.print(disk_table)
+    console.print(report["scope_note"])
+
+
+@engine_app.command("pull")
+def engine_pull(
+    repo_id: str = typer.Argument(..., help="Public Hugging Face repository ID, e.g. Qwen/Qwen2.5-0.5B-Instruct."),
+    json_output: bool = typer.Option(False, "--json", help="Print the install result as machine-readable JSON."),
+) -> None:
+    """Pull compatible public Llama/Mistral/Qwen2/Qwen3 safetensors directly for AXIOM Native Engine."""
+    try:
+        result = model_studio.pull_native_model(
+            repo_id,
+            on_log=(lambda message: console.print(message)) if not json_output else None,
+            on_progress=(lambda current, total: console.print(
+                "\rDownloaded " + f"{current:,}" + (f" / {total:,} bytes" if total else " bytes"),
+                end="",
+            )) if not json_output else None,
+        )
+    except (ValueError, model_studio.ModelStudioError) as exc:
+        _fail(str(exc))
+    if json_output:
+        console.print()
+        typer.echo(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+    console.print("\n[green]Installed for AXIOM Native Engine:[/green] " + result["path"])
+    console.print("[dim]Run it with:[/dim] axiom engine run --model-path " + repr(result["path"]) + " --prompt \"Hello.\"")
+
 @engine_app.command("run")
 def engine_run(
-    model_path: Path = typer.Option(..., "--model-path", exists=True, file_okay=False, dir_okay=True, help="Existing local Llama/Mistral safetensors model directory."),
+    model_path: Path = typer.Option(..., "--model-path", exists=True, file_okay=False, dir_okay=True, help="Existing local Llama/Mistral/Qwen2 safetensors model directory."),
     prompt: str | None = typer.Option(None, "--prompt", help="Prompt text; mutually exclusive with --prompt-file."),
     prompt_file: Path | None = typer.Option(None, "--prompt-file", exists=True, file_okay=True, dir_okay=False, help="Read the prompt from a local UTF-8 text file."),
     adapter_path: Path | None = typer.Option(None, "--adapter-path", exists=True, file_okay=False, dir_okay=True, help="Optional local native-compatible LoRA adapter directory."),
     device: str = typer.Option("auto", "--device", help="Execution backend: auto, cpu, cuda, rocm, mps, or xpu."),
+    memory_mode: str = typer.Option("auto", "--memory-mode", help="Memory policy: auto (fit to observed resources), full, layer_streaming (CPU-resident layers), or disk_streaming (read one safetensors layer at a time; lowest RAM/VRAM, slowest)."),
+    precision: str = typer.Option("auto", "--precision", help="Weight/compute dtype: auto (checkpoint dtype), fp32, fp16, or bf16."),
     max_new_tokens: int = typer.Option(256, "--max-new-tokens", min=1, max=2048, help="Maximum generated tokens (1–2048)."),
     temperature: float = typer.Option(0.7, "--temperature", min=0, max=2, help="Sampling temperature; 0 disables sampling."),
     stop_sequences: list[str] = typer.Option([], "--stop-sequence", help="Stop when this exact text is generated; repeat the option for multiple stop strings."),
@@ -136,6 +206,8 @@ def engine_run(
                 temperature=temperature,
                 stop_sequences=stop_sequences,
                 device_preference=device,
+                memory_mode=memory_mode,
+                precision=precision,
             )
             try:
                 with Live(console=console, refresh_per_second=12, transient=False) as live:
@@ -162,6 +234,8 @@ def engine_run(
                 temperature=temperature,
                 stop_sequences=stop_sequences,
                 device_preference=device,
+                memory_mode=memory_mode,
+                precision=precision,
             )
     except (ValueError, AxiomEngineError) as exc:
         _fail(str(exc))
@@ -173,7 +247,8 @@ def engine_run(
     device_reason = device_selection.get("reason", "")
     console.print(Panel.fit(
         f"Engine: AXIOM Native Engine\nModel: {result['model']}\nArchitecture: {result['architecture']}\n"
-        f"Execution device: {actual_device}\n"
+        f"Execution device: {actual_device}\nMemory mode: {result.get('memory_mode', memory_mode)}\n"
+        f"Compute precision: {result.get('precision', 'unknown')} (requested {result.get('precision_selection', {}).get('requested', precision) if isinstance(result.get('precision_selection'), dict) else precision})\n"
         f"{device_reason + chr(10) if device_reason else ''}"
         f"Generated tokens: {result['completion_tokens']}\nFinish reason: {result.get('stop_reason', 'unknown')}\nElapsed: {result['elapsed_ms']} ms",
         title="AXIOM ENGINE",

@@ -50,7 +50,7 @@ def _open_loopback(request: Request, timeout: float):
 
 
 def _request_json(path: str, *, payload: dict[str, Any] | None = None, timeout: float) -> dict[str, Any]:
-    if path not in {"/api/tags", "/api/generate"}:
+    if path not in {"/api/tags", "/api/generate", "/api/chat"}:
         raise ValueError("Unsupported local inference endpoint.")
     data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = Request(
@@ -152,6 +152,97 @@ def run_local_inference(
         "eval_count": result.get("eval_count") if isinstance(result.get("eval_count"), int) else None,
         "total_duration_ms": round(total_duration / 1_000_000, 2) if isinstance(total_duration, (int, float)) and total_duration >= 0 else None,
         "generated_at": datetime.now(UTC).isoformat(),
+    }
+
+
+
+def run_local_chat(
+    model: str,
+    messages: list[dict[str, str]],
+    *,
+    num_predict: int = 256,
+    temperature: float = 0.7,
+    top_p: float = 0.9,
+    top_k: int = 0,
+    repetition_penalty: float = 1.0,
+    seed: int | None = None,
+    stop_sequences: list[str] | tuple[str, ...] = (),
+) -> dict[str, Any]:
+    """Run a bounded multi-turn chat through the fixed loopback Ollama API."""
+    model = validate_model_name(model)
+    if not isinstance(messages, list) or not 1 <= len(messages) <= 64:
+        raise ValueError("Provide between 1 and 64 chat messages.")
+    normalized: list[dict[str, str]] = []
+    total_chars = 0
+    for item in messages:
+        if not isinstance(item, dict):
+            raise ValueError("Every chat message must be an object.")
+        role, content = item.get("role"), item.get("content")
+        if not isinstance(role, str) or role not in {"system", "user", "assistant"} or not isinstance(content, str) or not content.strip():
+            raise ValueError("Chat messages require system, user, or assistant roles with non-empty text.")
+        if len(content) > _MAX_PROMPT_CHARS:
+            raise ValueError(f"Each chat message must be at most {_MAX_PROMPT_CHARS:,} characters.")
+        total_chars += len(content)
+        normalized.append({"role": role, "content": content})
+    if total_chars > 24_000:
+        raise ValueError("Combined chat content must not exceed 24,000 characters.")
+    if not any(item["role"] == "user" for item in normalized):
+        raise ValueError("At least one user message is required.")
+    last_user = next(item["content"] for item in reversed(normalized) if item["role"] == "user")
+    _, num_predict, temperature = validate_generation(last_user, num_predict, temperature)
+    if isinstance(top_p, bool) or not isinstance(top_p, (int, float)) or not 0 < float(top_p) <= 1:
+        raise ValueError("top_p must be greater than 0 and at most 1.")
+    if isinstance(top_k, bool) or not isinstance(top_k, int) or not 0 <= top_k <= 100_000:
+        raise ValueError("top_k must be between 0 and 100,000.")
+    if isinstance(repetition_penalty, bool) or not isinstance(repetition_penalty, (int, float)) or not 0.1 <= float(repetition_penalty) <= 5:
+        raise ValueError("repetition_penalty must be between 0.1 and 5.")
+    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 9_223_372_036_854_775_807):
+        raise ValueError("seed must be a non-negative signed 64-bit integer.")
+    if not isinstance(stop_sequences, (list, tuple)) or len(stop_sequences) > 16:
+        raise ValueError("At most 16 stop sequences may be supplied.")
+    stops: list[str] = []
+    for value in stop_sequences:
+        if not isinstance(value, str) or not value.strip() or len(value) > 256:
+            raise ValueError("Each stop sequence must contain 1–256 non-whitespace characters.")
+        if value not in stops:
+            stops.append(value)
+    options: dict[str, Any] = {
+        "num_predict": num_predict,
+        "temperature": float(temperature),
+        "top_p": float(top_p),
+        "repeat_penalty": float(repetition_penalty),
+    }
+    if top_k > 0:
+        options["top_k"] = top_k
+    if seed is not None:
+        options["seed"] = seed
+    if stops:
+        options["stop"] = stops
+    result = _request_json(
+        "/api/chat",
+        payload={
+            "model": model,
+            "messages": normalized,
+            "stream": False,
+            "options": options,
+        },
+        timeout=_GENERATION_TIMEOUT_SECONDS,
+    )
+    message = result.get("message")
+    response = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(response, str):
+        raise InferenceRuntimeError("The local inference runtime did not return chat text.")
+    total_duration = result.get("total_duration")
+    return {
+        "model": model,
+        "response": response[:100_000],
+        "done": bool(result.get("done", True)),
+        "done_reason": result.get("done_reason") if isinstance(result.get("done_reason"), str) else None,
+        "prompt_eval_count": result.get("prompt_eval_count") if isinstance(result.get("prompt_eval_count"), int) else None,
+        "eval_count": result.get("eval_count") if isinstance(result.get("eval_count"), int) else None,
+        "total_duration_ms": round(total_duration / 1_000_000, 2) if isinstance(total_duration, (int, float)) and total_duration >= 0 else None,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "execution": "local",
     }
 
 

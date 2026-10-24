@@ -117,9 +117,9 @@ feature exists or a delivery-date promise.
 ### 08 · Runtime, optimization, and quantization
 
 - [R085 · Implemented; tests passing] Add passive runtime connector discovery and capability reporting without assuming a connection or credentials.
-- [R086 · Planned] Add explicit connect/disconnect controls with secret-safe storage.
-- [R087 · Implemented; tests passing] Report native-engine dependency readiness, supported Llama/Mistral checkpoint formats, explicit CPU/CUDA/ROCm/Metal/XPU execution-device selection and availability diagnostics, loaded backend/architecture, and local-only execution scope.
-- [R088 · In progress; validation pending] Report actual local inference wall time, prefill latency, cached-decode latency, time to first token, and generated tokens/second from AXIOM's native token loop; wall time includes stream processing while throughput is based on prefill+decode compute time.
+- [R086 · In progress; validation pending] Add explicit connect/disconnect controls with secret-safe storage. The unified LLM client now has explicit cloud consent and request-only key handling; persistent provider profiles and connection lifecycle controls remain outstanding.
+- [R087 · In progress; validation pending] Report native-engine dependency readiness, supported Llama/Mistral/Qwen2/Qwen3 floating-point safetensors checkpoints, public native-model acquisition with staged installs/progress, explicit CPU/CUDA/ROCm/Metal/XPU selection, loaded backend/architecture, and local-only execution scope. Experimental in-RAM layer-by-layer staging and disk-resident safetensors layer streaming with CPU KV-cache offload are now available with transfer telemetry, but require release/physical-device validation. GGUF/EXL2/GPTQ/AWQ loading and broader architectures remain outstanding.
+- [R088 · In progress; validation pending] Report actual local inference wall time, prefill latency, cached-decode latency, time to first token, generated tokens/second, and layer-streaming transfer counters from AXIOM's native token loop; wall time includes stream processing while throughput is based on prefill+decode compute time. Peak process/device memory telemetry and physical-hardware validation remain outstanding.
 - [R089 · Implemented; tests passing] Add prompt/token-limit inputs, excluded warm-up runs, bounded measured iterations, and explicit concurrency controls to the existing Runtime page.
 - [R090 · Planned] Add quantization estimates with formulas and overhead assumptions.
 - [R091 · Planned] Compare quantization candidates against selected memory budgets.
@@ -149,7 +149,7 @@ feature exists or a delivery-date promise.
 - [R109 · Implemented; tests passing] Add an allowlisted API playground with bounded payloads and timeouts.
 - [R110 · Planned] Add typed API examples generated from the supported contract.
 - [R111 · Planned] Add local hardware snapshot history with opt-in retention.
-- [R112 · Planned] Add sampled CPU, memory, GPU, and disk telemetry where available.
+- [R112 · In progress; validation pending] Expose point-in-time CPU, process RSS, system RAM, device allocator, and trusted-model-storage telemetry via `GET /api/engine/telemetry` and `axiom engine telemetry --json`; the endpoint omits raw paths and user content. Historical sampling/export and physical-hardware validation remain outstanding.
 - [R113 · Planned] Add benchmark-linked resource trend charts with missing-data labels.
 - [R114 · Planned] Add telemetry export, clear-history, and privacy controls.
 - [R115 · Planned] Add diagnostic checks for config, paths, dependencies, and storage.

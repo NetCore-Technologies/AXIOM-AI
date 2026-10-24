@@ -4,6 +4,7 @@ import ApiPlayground from "./components/ApiPlayground";
 import RuntimeConnectorPanel from "./components/RuntimeConnectorPanel";
 import RuntimeTracePanel from "./components/RuntimeTracePanel";
 import LocalInferencePanel from "./components/LocalInferencePanel";
+import LLMClientPanel from "./components/LLMClientPanel";
 import AgentProfiles from "./components/AgentProfiles";
 import ModelStudioPanel from "./components/ModelStudioPanel";
 import LocalFineTuningPanel from "./components/LocalFineTuningPanel";
@@ -3154,6 +3155,7 @@ function Runtime() {
     <div className="info-grid"><InfoCard icon={Cpu} label="Processor" value={hardware?.architecture || "—"} detail={hardware ? `${hardware.cpu_cores} CPU cores` : loading ? "Checking" : "Unavailable"} tone={hardware ? "success" : "neutral"} /><InfoCard icon={HardDrive} label="System memory" value={hardware ? `${hardware.ram_gb.toFixed(1)} GB` : "—"} detail="Detected locally" tone={hardware ? "success" : "neutral"} /><InfoCard icon={Zap} label="GPU memory" value={hardware?.vram_gb === null || hardware?.vram_gb === undefined ? "Not detected" : `${hardware.vram_gb.toFixed(1)} GB`} detail={hardware?.gpu_name || "No compatible GPU reported"} tone={hardware?.cuda_available ? "success" : "warning"} /></div>
     {error && <InlineAlert tone="warning" role="alert">{error}</InlineAlert>}
     <LocalInferencePanel />
+    <LLMClientPanel />
     <RuntimeTracePanel />
     <RuntimeConnectorPanel />
   </FeaturePage>;
@@ -3397,7 +3399,7 @@ function ModulesPage({ setPage }: { setPage: (page: Page) => void }) {
     { id: "training", title: "Training planner and experiments", description: "Estimate hardware-aware plans and manage saved plan snapshots. Training execution is not implied by a plan.", scope: "Planning", availability: "Planning + local LoRA", tone: "warning", icon: Hammer, page: "training", command: "axiom train --help" },
     { id: "workflows", title: "Workflow builder", description: "Create and validate graph designs, use templates, inspect revisions, duplicate designs, and run planning-only dry-runs.", scope: "Orchestration", availability: "Design only", tone: "warning", icon: GitBranch, page: "workflows", command: "axiom workflow --help" },
     { id: "evaluation", title: "Offline evaluation and regressions", description: "Score already-produced predictions, compare baselines, and review evaluation reports without model inference.", scope: "Quality gates", availability: "GUI + CLI", tone: "success", icon: CircleGauge, page: "evaluation", command: "axiom evaluation --help" },
-    { id: "runtime", title: "Runtime and local inference", description: "Run AXIOM-native Llama/Mistral inference from local safetensors checkpoints or use the separately configured Ollama connector.", scope: "Operations", availability: "Native inference + optional connector", tone: "success", icon: RadioTower, page: "runtime", command: "axiom engine --help" },
+    { id: "runtime", title: "Runtime and local inference", description: "Run AXIOM-native Llama/Mistral/Qwen2 inference from compatible local safetensors checkpoints or use the separately configured Ollama connector.", scope: "Operations", availability: "Native inference + optional connector", tone: "success", icon: RadioTower, page: "runtime", command: "axiom engine --help" },
     { id: "mcp", title: "MCP tools and permission profiles", description: "Inspect tool policy, named profiles, and supported local MCP surfaces. Tools remain deny-by-default until configured.", scope: "Integrations", availability: "GUI + CLI", tone: "success", icon: Network, page: "mcp", command: "axiom mcp --help" },
     { id: "diagnostics", title: "Diagnostics and support", description: "Check API and machine connectivity and access workspace warnings and support actions that are enabled.", scope: "Operations", availability: "GUI", tone: "success", icon: Wrench, page: "diagnostics", command: "axiom doctor --help" },
     { id: "api-playground", title: "API Playground", description: "Inspect a bounded allowlist of read-only HTTP endpoints and copy JSON responses.", scope: "Developer API", availability: "GUI · GET only", tone: "success", icon: Network, page: "api-playground" },

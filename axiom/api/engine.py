@@ -11,6 +11,7 @@ from typing import Any, AsyncIterator, Iterator
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
 from starlette.responses import StreamingResponse
+from axiom.core import model_studio
 
 from axiom.core.engine import (
     AxiomEngineError,
@@ -21,6 +22,7 @@ from axiom.core.engine import (
     generate_local_stream,
     resolve_local_model_directory,
     runtime_status,
+    runtime_telemetry,
     unload_local_model,
 )
 
@@ -40,6 +42,15 @@ def _validated_path(value: Any, label: str) -> Any:
     return resolve_local_model_directory(candidate, label)
 
 
+class NativePullRequest(BaseModel):
+    repo_id: str = Field(min_length=3, max_length=192)
+
+    @field_validator("repo_id")
+    @classmethod
+    def repository_must_be_validated(cls, value: str) -> str:
+        return model_studio.validate_repo_id(value)
+
+
 class GenerateRequest(BaseModel):
     model_path: str = Field(min_length=1, max_length=4096)
     adapter_path: str | None = Field(default=None, max_length=4096)
@@ -52,6 +63,8 @@ class GenerateRequest(BaseModel):
     seed: int | None = Field(default=None, ge=0, le=9223372036854775807)
     stop_sequences: list[str] = Field(default_factory=list, max_length=16)
     device: str = Field(default="auto", pattern="^(auto|cpu|cuda|rocm|mps|xpu)$")
+    memory_mode: str = Field(default="auto", pattern="^(auto|full|layer_streaming|disk_streaming)$")
+    precision: str = Field(default="auto", pattern="^(auto|fp32|fp16|bf16)$")
 
     @field_validator("model_path", mode="before")
     @classmethod
@@ -157,10 +170,27 @@ def engine_status() -> dict[str, Any]:
     return runtime_status()
 
 
+@router.get("/telemetry")
+def engine_telemetry() -> dict[str, Any]:
+    """Return local CPU, RAM, device allocator and trusted-model-storage telemetry."""
+    return runtime_telemetry()
+
+
 @router.post("/unload")
 def engine_unload() -> dict[str, Any]:
     """Release AXIOM's currently loaded local model and its cache references."""
     return unload_local_model()
+
+
+@router.post("/pull", status_code=202)
+def engine_pull(request: NativePullRequest) -> dict[str, Any]:
+    """Start a bounded public-Hub pull for a compatible AXIOM-native checkpoint."""
+    try:
+        return model_studio.start_job({"operation": "pull_native", "repo_id": request.repo_id})
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except model_studio.ModelStudioError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 @router.post("/generate")
@@ -178,6 +208,8 @@ def engine_generate(request: GenerateRequest) -> dict[str, Any]:
             seed=request.seed,
             stop_sequences=request.stop_sequences,
             device_preference=request.device,
+            memory_mode=request.memory_mode,
+            precision=request.precision,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
@@ -270,6 +302,8 @@ async def engine_generate_stream(
         stop_sequences=request.stop_sequences,
         cancel_event=cancel_event,
         device_preference=request.device,
+        memory_mode=request.memory_mode,
+        precision=request.precision,
     )
     producer = Thread(
         target=_produce_native_stream,

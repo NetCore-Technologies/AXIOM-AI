@@ -59,10 +59,12 @@ def dataset_inspection_payload(result) -> dict[str, object]:
 
 
 def package_version() -> str:
-    try:
-        return importlib.metadata.version("axiom-ai")
-    except importlib.metadata.PackageNotFoundError:
-        return "development"
+    for name in ("axiom-all", "axiom-ai"):
+        try:
+            return importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    return "development"
 
 
 def git_output(*args: str) -> str:

@@ -53,6 +53,27 @@ def pull(model_name: str = typer.Argument(..., help="Ollama library model tag, e
     except (ValueError, studio.ModelStudioError) as exc: _fail(str(exc))
     console.print(f"[green]Installed locally:[/green] {result['model_name']}")
 
+@studio_app.command("pull-native")
+def pull_native(repo_id: str = typer.Argument(..., help="Public Hugging Face repository ID for AXIOM-native safetensors."), json_output: bool = typer.Option(False, "--json")) -> None:
+    """Pull compatible Llama/Mistral/Qwen2 safetensors into AXIOM's native model store."""
+    try:
+        result = studio.pull_native_model(
+            repo_id,
+            on_log=(lambda message: console.print(message)) if not json_output else None,
+            on_progress=(lambda current, total: console.print(
+                "\rDownloaded " + f"{current:,}" + (f" / {total:,} bytes" if total else " bytes"),
+                end="",
+            )) if not json_output else None,
+        )
+    except (ValueError, studio.ModelStudioError) as exc:
+        _fail(str(exc))
+    if json_output:
+        console.print()
+        console.print_json(json.dumps(result, ensure_ascii=False))
+        return
+    console.print("\n[green]Installed for AXIOM Native Engine:[/green] " + result["path"])
+    console.print("Run: axiom engine run --model-path " + repr(result["path"]) + ' --prompt "Hello."')
+
 @studio_app.command("install-gguf")
 def install_gguf(repo_id: str, filename: str, model_name: str = typer.Option(..., "--name", help="Local Ollama model name."),
                  no_ollama: bool = typer.Option(False, "--download-only", help="Download GGUF without registering it with Ollama.")) -> None:

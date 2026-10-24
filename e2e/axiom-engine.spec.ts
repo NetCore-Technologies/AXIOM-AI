@@ -94,6 +94,7 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
     expect(requestBody.repetition_penalty).toBe(1.1);
     expect(requestBody.seed).toBe(42);
     expect(requestBody.stop_sequences).toEqual(["<END>", "###"]);
+    expect(requestBody.memory_mode).toBe("auto");
     const completed = {
       engine: "axiom-native-engine", execution_backend: "pytorch-native-axiom", transformers_generation_used: false, ollama_used: false,
       model: "llama-test", architecture: "LlamaForCausalLM", model_type: "llama", device: "cpu", checkpoint_format: "safetensors", decoder: "axiom-autoregressive-kv-cache", attention_backend: "pytorch-scaled-dot-product-attention",
@@ -126,7 +127,7 @@ test("Runtime page exposes direct AXIOM Engine inference with local model and ad
 
   const engine = page.locator(".axiom-engine-panel");
   await expect(engine.getByRole("heading", { name: "AXIOM Local Engine" })).toBeVisible();
-  await expect(engine).toContainText("own PyTorch Llama/Mistral forward pass");
+  await expect(engine).toContainText("own PyTorch Llama/Mistral/Qwen2 forward pass");
   await expect(engine).toContainText("safetensors");
   await expect(engine.getByText("ENGINE READY")).toBeVisible();
 

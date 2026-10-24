@@ -110,7 +110,7 @@ export type AxiomQuantizationCandidate = {
 export type AxiomQuantizationEstimate = {
   schema_version: number;
   model: {
-    name: string; model_type: "llama" | "mistral"; architecture: string;
+    name: string; model_type: "llama" | "mistral" | "qwen2" | "qwen3"; architecture: string;
     estimated_parameter_count: number; parameter_count_method: string;
   };
   request: {
@@ -128,7 +128,7 @@ export type AxiomQuantizationEstimate = {
 };
 
 export type AxiomEngineModel = {
-  path: string; name: string; model_type: "llama" | "mistral";
+  path: string; name: string; model_type: "llama" | "mistral" | "qwen2" | "qwen3";
   architecture: string; weight_format: string; ready_for_native_attempt: boolean;
 };
 export type AxiomEngineAdapter = {
@@ -146,7 +146,7 @@ export type AxiomEngineAdapterDevice = {
 };
 export type AxiomEngineAdapterCompatibility = {
   schema_version: number;
-  base_model: { name: string; model_type: "llama" | "mistral" | null; architecture: string | null };
+  base_model: { name: string; model_type: "llama" | "mistral" | "qwen2" | "qwen3" | null; architecture: string | null };
   adapter: { name: string; rank: number | null; alpha: number | null; target_modules: string[] };
   structurally_compatible: boolean;
   compatible_on_any_device: boolean;
@@ -157,11 +157,22 @@ export type AxiomEngineAdapterCompatibility = {
   scope_note: string;
 };
 
+export type AxiomEngineSystemTelemetry = {
+  schema_version: 1; sampled_at: string; sample_type: "point_in_time";
+  cpu: { logical_cores: number | null; system_percent: number | null; process_percent: number | null };
+  memory: { total_bytes: number | null; available_bytes: number | null; used_bytes: number | null; percent: number | null };
+  process: { pid: number; rss_bytes: number | null; threads: number | null };
+  devices: Array<{ id: string | null; name: string | null; available: boolean; memory_free_gib: number | null; memory_total_gib: number | null }>;
+  loaded_runtime: { loaded: boolean; model: string | null; architecture: string | null; device: string | null; memory_mode: "full" | "layer_streaming" | "disk_streaming" | null; precision: string | null; last_generation: Record<string, string | number> | null; device_allocator: AxiomEngineDeviceMemory | null };
+  disks: Array<{ label: string; total_bytes: number; free_bytes: number; used_bytes: number }>;
+  privacy_scope: { prompt_content_included: false; generated_content_included: false; model_paths_included: false; environment_values_included: false; credentials_included: false; network_access_performed: false };
+  scope_note: string;
+};
 export type AxiomEngineStatus = {
   engine: string; ready: boolean; packages: Record<string, boolean>; versions: Record<string, string | null>;
   minimum_versions?: Record<string, string>; problems?: string[];
   devices?: Array<{ id: "cpu" | "cuda" | "rocm" | "mps" | "xpu"; name: string; available: boolean; reason: string; memory_free_gib: number | null; memory_total_gib: number | null }>;
-  recommended_device?: "cpu" | "cuda" | "rocm" | "mps" | "xpu" | null; loaded_device?: string | null;
+  recommended_device?: "cpu" | "cuda" | "rocm" | "mps" | "xpu" | null; loaded_device?: string | null; loaded_memory_mode?: "full" | "layer_streaming" | "disk_streaming" | null; loaded_precision?: string | null;
   loaded: boolean; architecture: string | null; model_loading: "local_files_only" | "local_safetensors_only";
   execution_backend?: string; transformers_generation_used?: false; ollama_used?: false;
   supported_model_types?: string[]; supported_weights?: string[]; remote_code: false;
@@ -171,11 +182,36 @@ export type AxiomEngineSampling = {
   temperature: number; top_p: number; top_k: number;
   repetition_penalty: number; seed: number | null;
 };
+export type AxiomEngineMemoryStats = {
+  layer_weight_tensors_staged: number; layer_weight_bytes_staged: number;
+  layer_weight_bytes_returned_to_cpu: number; layer_weight_bytes_released: number;
+  disk_layer_weight_loads: number; disk_layer_weight_bytes_read: number;
+  kv_cache_layer_offloads: number; kv_cache_bytes_offloaded: number;
+};
+export type AxiomEngineDeviceMemory = {
+  backend: string; current_allocated_bytes: number | null; current_reserved_bytes: number | null;
+  peak_allocated_bytes: number | null; peak_reserved_bytes: number | null; peak_increment_bytes: number | null;
+  process_rss_bytes: number | null; process_rss_delta_bytes: number | null;
+  peak_reset_supported: boolean; device_allocator_metrics_supported: boolean;
+};
+export type AxiomEngineLiveTelemetry = {
+  type: "telemetry";
+  metrics: {
+    stage: "prefill" | "decode" | "complete" | string;
+    prompt_tokens: number; completion_tokens: number; prefill_ms: number; decode_ms: number;
+    time_to_first_token_ms: number; generation_tokens_per_second: number; elapsed_ms: number;
+    stop_reason?: string;
+  };
+  memory_mode: "full" | "layer_streaming" | "disk_streaming";
+  memory_selection?: { requested: string; selected: "full" | "layer_streaming" | "disk_streaming"; reason: string; estimated_checkpoint_weight_bytes?: number; estimated_kv_cache_bytes?: number; estimated_context_tokens?: number; available_system_ram_bytes?: number | null; available_device_memory_bytes?: number | null; estimates_are_advisory?: boolean };
+  memory_stats: AxiomEngineMemoryStats;
+  device_memory: AxiomEngineDeviceMemory;
+};
 export type AxiomEngineResult = {
   engine: "axiom-native-engine"; execution_backend: "pytorch-native-axiom";
   transformers_generation_used: false; ollama_used: false;
-  model: string; architecture: string; model_type: "llama" | "mistral";
-  adapter: string | null; device: string; device_selection?: { requested: string; selected: string; reason: string }; checkpoint_format: "safetensors";
+  model: string; architecture: string; model_type: "llama" | "mistral" | "qwen2" | "qwen3"; prompt_format?: string; context_management?: { chat_history_supplied: boolean; original_message_count: number; original_message_characters: number; messages_dropped_to_fit_context: number; prompt_tokens_before_token_truncation: number; prompt_tokens_used: number; token_truncation_applied: boolean; system_prompt_may_be_truncated: boolean };
+  adapter: string | null; device: string; device_selection?: { requested: string; selected: string; reason: string }; precision?: string; precision_selection?: { requested: string; selected: string }; memory_selection?: { requested: string; selected: "full" | "layer_streaming" | "disk_streaming"; reason: string; estimated_checkpoint_weight_bytes?: number; estimated_kv_cache_bytes?: number; estimated_context_tokens?: number; available_system_ram_bytes?: number | null; available_device_memory_bytes?: number | null; estimates_are_advisory?: boolean }; memory_mode?: "full" | "layer_streaming" | "disk_streaming"; memory_stats?: AxiomEngineMemoryStats; device_memory?: AxiomEngineDeviceMemory; checkpoint_format: "safetensors";
   decoder: "axiom-autoregressive-kv-cache"; attention_backend: string;
   prefill_ms: number; decode_ms: number; time_to_first_token_ms: number; generation_tokens_per_second: number;
   sampling: AxiomEngineSampling; stop_sequences: string[];
@@ -187,14 +223,41 @@ export type AxiomEngineResult = {
 export type AxiomEngineStreamEvent =
   | { type: "token"; response: string; completion_tokens: number }
   | { type: "complete"; result: AxiomEngineResult }
+  | AxiomEngineLiveTelemetry
   | { type: "error"; code: string; message: string };
 
 
 
 export type ModelStudioModel = { id: string; author: string; downloads: number; likes: number; pipeline_tag: string; last_modified: string; tags: string[]; url: string };
 export type ModelStudioFile = { filename: string; size_bytes: number | null; quantization: string };
-export type ModelStudioStatus = { schema_version: number; ollama_installed: boolean; ollama_endpoint: string; download_limit_bytes: number; gguf_directory: string; catalogue: string; network_search_is_explicit: boolean };
+export type ModelStudioStatus = { schema_version: number; ollama_installed: boolean; ollama_endpoint: string; download_limit_bytes: number; gguf_directory: string; native_model_root?: string; native_model_download_limit_bytes?: number; native_model_file_limit_bytes?: number; native_pull_available?: boolean; catalogue: string; network_search_is_explicit: boolean };
 export type ModelStudioJob = { schema_version: 1; id: string; status: "queued" | "running" | "completed" | "failed"; operation: string; created_at: string; updated_at: string; started_at?: string | null; finished_at?: string | null; config: Record<string, unknown>; progress_bytes: number; total_bytes: number | null; logs: string[]; error: string | null; result: Record<string, unknown> | null };
+export type LLMProvider = "axiom-local" | "ollama-local" | "openai" | "anthropic" | "gemini" | "deepseek" | "moonshot" | "openrouter" | "openai-compatible";
+export type LLMProviderInfo = {
+  id: LLMProvider; label: string; kind: "local" | "cloud"; requires_api_key: boolean;
+  supports_model_listing: boolean; privacy: "local-only" | "remote-consent-required"; note: string;
+};
+export type LLMProviderCatalog = { schema_version: 1; providers: LLMProviderInfo[]; credentials_persisted: false };
+export type LLMModelRequest = { provider: LLMProvider; api_key?: string; base_url?: string };
+export type LLMModelResult = {
+  provider: LLMProvider; models: string[]; model_details?: Array<{ id: string; model_type?: string | null; architecture?: string | null }>;
+  count?: number; credential_storage: "not_saved" | "not_applicable"; execution: "local" | "remote"; note?: string;
+};
+export type LLMChatMessage = { role: "system" | "user" | "assistant"; content: string };
+export type LLMChatRequest = LLMModelRequest & {
+  model: string; messages: LLMChatMessage[]; max_tokens: number; temperature: number; consent: boolean;
+  device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu";
+  memory_mode?: "auto" | "full" | "layer_streaming" | "disk_streaming";
+  precision?: "auto" | "fp32" | "fp16" | "bf16";
+};
+export type LLMChatResult = {
+  provider: LLMProvider; model: string; response: string; prompt_tokens: number | null;
+  completion_tokens: number | null; credential_storage: "not_saved" | "not_applicable";
+  execution: "local" | "remote"; device?: string | null; generated_at: string; precision?: string | null;
+  precision_selection?: { requested: string; selected: string } | null;
+  context_management?: { chat_history_supplied: boolean; original_message_count: number; original_message_characters: number; messages_dropped_to_fit_context: number; prompt_tokens_before_token_truncation: number; prompt_tokens_used: number; token_truncation_applied: boolean; system_prompt_may_be_truncated: boolean };
+};
+
 export type RemoteModelCatalog = { provider: string; base_url: string; models: string[]; count: number; credential_storage: "not_saved"; note: string };
 export type RemoteModelResponse = { provider: string; base_url: string; model: string; response: string; prompt_tokens: number | null; completion_tokens: number | null; credential_storage: "not_saved"; generated_at: string };
 
@@ -853,7 +916,7 @@ async function requestJson<T>(path: string, init: RequestInit = {}, timeoutMs = 
 }
 
 async function streamAxiomEngineRequest(
-  input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu" },
+  input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "auto" | "full" | "layer_streaming" | "disk_streaming"; precision?: "auto" | "fp32" | "fp16" | "bf16" },
   onEvent: (event: AxiomEngineStreamEvent) => void,
   signal: AbortSignal,
 ): Promise<AxiomEngineResult> {
@@ -1303,17 +1366,18 @@ export const axiomApi = {
     method: "POST", body: JSON.stringify(input),
   }),
   axiomEngineStatus: () => requestJson<AxiomEngineStatus>("/api/engine/status"),
+  axiomEngineTelemetry: () => requestJson<AxiomEngineSystemTelemetry>("/api/engine/telemetry"),
   axiomEngineModels: () => requestJson<AxiomEngineAssets>("/api/engine/models"),
   checkAxiomEngineAdapterCompatibility: (input: { model_path: string; adapter_path: string }) =>
     requestJson<AxiomEngineAdapterCompatibility>("/api/engine/adapters/compatibility", {
       method: "POST", body: JSON.stringify(input),
     }),
-  runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu" }) =>
+  runAxiomEngine: (input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device?: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode?: "auto" | "full" | "layer_streaming" | "disk_streaming"; precision?: "auto" | "fp32" | "fp16" | "bf16" }) =>
     requestJson<AxiomEngineResult>("/api/engine/generate", {
       method: "POST", body: JSON.stringify(input),
     }, 300_000),
   streamAxiomEngine: (
-    input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu" },
+    input: { model_path: string; adapter_path?: string; prompt: string; max_new_tokens: number; temperature: number; top_p: number; top_k: number; repetition_penalty: number; seed: number | null; stop_sequences: string[]; device: "auto" | "cpu" | "cuda" | "rocm" | "mps" | "xpu"; memory_mode: "auto" | "full" | "layer_streaming" | "disk_streaming"; precision?: "auto" | "fp32" | "fp16" | "bf16" },
     onEvent: (event: AxiomEngineStreamEvent) => void,
     signal: AbortSignal,
   ) => streamAxiomEngineRequest(input, onEvent, signal),
@@ -1324,11 +1388,14 @@ export const axiomApi = {
   modelStudioStatus: () => requestJson<ModelStudioStatus>("/api/models/studio/status"),
   modelStudioSearch: (q: string, limit = 12) => requestJson<{ provider: string; query: string; count: number; results: ModelStudioModel[]; note: string }>(`/api/models/studio/search?${new URLSearchParams({ q, limit: String(limit) })}`),
   modelStudioFiles: (repoId: string) => requestJson<{ repo_id: string; files: ModelStudioFile[]; count: number; url: string; note: string }>(`/api/models/studio/files?${new URLSearchParams({ repo_id: repoId })}`),
+  llmProviders: () => requestJson<LLMProviderCatalog>("/api/llm/providers"),
+  llmModels: (input: LLMModelRequest) => requestJson<LLMModelResult>("/api/llm/models", { method: "POST", body: JSON.stringify(input) }),
+  llmChat: (input: LLMChatRequest) => requestJson<LLMChatResult>("/api/llm/chat", { method: "POST", body: JSON.stringify(input) }, 300_000),
   testRemoteModelConnection: (input: { base_url: string; api_key: string }) => requestJson<RemoteModelCatalog>("/api/models/studio/remote/models", { method: "POST", body: JSON.stringify(input) }),
   remoteModelChat: (input: { base_url: string; api_key: string; model: string; prompt: string; max_tokens: number; temperature: number }) => requestJson<RemoteModelResponse>("/api/models/studio/remote/chat", { method: "POST", body: JSON.stringify(input) }),
   modelStudioJobs: (limit = 20) => requestJson<{ jobs: ModelStudioJob[] }>(`/api/models/studio/jobs?limit=${limit}`),
   modelStudioJob: (id: string) => requestJson<ModelStudioJob>(`/api/models/studio/jobs/${encodeURIComponent(id)}`),
-  startModelStudioJob: (config: { operation: "pull" | "install_gguf" | "convert_gguf"; [key: string]: unknown }) => requestJson<ModelStudioJob>("/api/models/studio/jobs", { method: "POST", body: JSON.stringify(config) }),
+  startModelStudioJob: (config: { operation: "pull" | "pull_native" | "install_gguf" | "convert_gguf"; [key: string]: unknown }) => requestJson<ModelStudioJob>("/api/models/studio/jobs", { method: "POST", body: JSON.stringify(config) }),
 
   runtimeConnectors: () => requestJson<RuntimeConnectorReport>("/api/diagnostics/runtime-connectors"),
   runtimeTraces: (limit = 50) => requestJson<RuntimeTraceReport>(`/api/diagnostics/runtime-traces?limit=${Math.min(200, Math.max(1, Math.floor(limit)))}`),

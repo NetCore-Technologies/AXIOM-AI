@@ -53,6 +53,35 @@ JSON mode does not imply that a requested action succeeded: validation and
 operation failures keep a non-zero exit code. Commands without a documented
 JSON option retain human-oriented output.
 
+
+## Unified LLM client
+
+List the available adapters and load a model inventory:
+
+```bash
+axiom llm providers
+axiom llm providers --json
+axiom llm models --provider axiom-local
+axiom llm models --provider ollama-local
+axiom llm models --provider deepseek
+axiom llm chat deepseek-chat "Explain KV caching briefly." --provider deepseek --send-to-provider
+```
+
+Cloud commands prompt for an API key with hidden input unless the variable selected by `--api-key-env` is already set (`AXIOM_LLM_API_KEY` by default). Cloud chat requires `--send-to-provider` because the prompt and system instruction are sent to the selected service. `--base-url` is only valid with `--provider openai-compatible`, which requires a public HTTPS API base URL ending in `/v1`. Credentials are not saved by AXIOM. See [Unified LLM client](Unified-LLM-Client.md).
+
+## Mobile-agent bridge
+
+The bridge exposes only AXIOM Native Engine model listing and chat completions with a per-process random bearer token:
+
+```bash
+axiom engine discover --json
+axiom mobile-bridge
+# For a separate device on a trusted private network:
+axiom mobile-bridge --listen-lan --port 40509
+```
+
+Configure an OpenAI-compatible mobile client with the printed base URL and token as its API key. Choose a native model ID from `axiom engine discover --json`, or an installed Ollama model ID with the `ollama/` prefix (for example `ollama/qwen2.5:0.5b`) from `/v1/models`. LAN mode uses HTTP, so never port-forward it; use it only on a trusted private network or through a VPN/encrypted tunnel.
+
 ## Local Control Center
 
 Run `axiom gui` to start the API on loopback and open the bundled Control

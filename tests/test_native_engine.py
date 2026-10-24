@@ -119,17 +119,34 @@ def test_native_stream_stops_on_a_sequence_spanning_token_boundaries(monkeypatch
     assert runtime.requested == 2
 
 
-def test_native_config_accepts_standard_llama_and_mistral() -> None:
+def test_native_config_accepts_llama_mistral_qwen2_and_qwen3() -> None:
     assert NativeLlamaConfig.from_mapping(_config()).model_type == "llama"
     assert NativeLlamaConfig.from_mapping(
         _config(model_type="mistral", architectures=["MistralForCausalLM"], sliding_window=16)
     ).sliding_window == 16
+    qwen = NativeLlamaConfig.from_mapping(_config(
+        model_type="qwen2",
+        architectures=["Qwen2ForCausalLM"],
+        rope_theta=1_000_000.0,
+        max_position_embeddings=32768,
+        tie_word_embeddings=True,
+    ))
+    assert qwen.model_type == "qwen2"
+    assert qwen.rope_theta == 1_000_000.0
+    assert qwen.max_position_embeddings == 32768
+    qwen3 = NativeLlamaConfig.from_mapping(_config(
+        model_type="qwen3", architectures=["Qwen3ForCausalLM"],
+        rope_theta=1_000_000.0, max_position_embeddings=32768,
+        tie_word_embeddings=True,
+    ))
+    assert qwen3.model_type == "qwen3"
+    assert qwen3.qk_norm is True
 
 
 @pytest.mark.parametrize(
     "overrides,detail",
     [
-        ({"model_type": "qwen2"}, "supports llama and mistral"),
+        ({"model_type": "gemma3"}, "supports llama, mistral, qwen2, and qwen3"),
         ({"hidden_size": 7}, "even-sized attention heads"),
         ({"rope_scaling": {"rope_type": "yarn", "factor": 2.0}}, "RoPE scaling"),
         ({"num_attention_heads": 3, "hidden_size": 12, "num_key_value_heads": 2}, "num_key_value_heads"),
@@ -454,8 +471,13 @@ def test_tiny_safetensors_checkpoint_generates_through_axiom_native_loop(
     events = list(generate_local_stream(str(model_dir), "hello world", max_new_tokens=2, temperature=0))
     assert events[-1]["type"] == "complete"
     assert events[-1]["result"]["response"] == result["response"]
-    assert all(event["type"] == "token" for event in events[:-1])
-    assert len(events[:-1]) == events[-1]["result"]["completion_tokens"]
+    assert all(event["type"] in {"token", "telemetry"} for event in events[:-1])
+    telemetry_events = [event for event in events if event["type"] == "telemetry"]
+    assert telemetry_events
+    assert telemetry_events[-1]["metrics"]["completion_tokens"] >= 1
+    assert telemetry_events[-1]["metrics"]["prefill_ms"] >= 0
+    token_events = [event for event in events[:-1] if event["type"] == "token"]
+    assert len(token_events) == events[-1]["result"]["completion_tokens"]
     assert isinstance(result["response"], str)
 
 
@@ -515,7 +537,16 @@ def test_auto_device_retries_cpu_after_accelerator_oom(monkeypatch, tmp_path: Pa
     monkeypatch.setattr(engine, "_LOADED_RUNTIME", None)
     monkeypatch.setattr(engine, "_LOADED_ARCHITECTURE", None)
     monkeypatch.setattr(engine, "_resolve_model_directory", lambda *_args: model_dir)
-    monkeypatch.setattr(engine, "_inspect_model_config", lambda _path: {"model_type": "llama", "architecture": "LlamaForCausalLM"})
+    config = _config()
+    shard = model_dir / "model.safetensors"
+    shard.write_bytes(b"x" * 8192)
+    monkeypatch.setattr(engine, "_inspect_model_config", lambda _path: {
+        "config": config, "model_type": "llama", "architecture": "LlamaForCausalLM",
+    })
+    monkeypatch.setattr("axiom.core.native_engine._resolve_safetensor_files", lambda *_args, **_kwargs: (
+        [shard], {"model.embed_tokens.weight": "model.safetensors"}
+    ))
+    monkeypatch.setattr(engine, "_available_system_memory_bytes", lambda: 8 * 1024**3)
     monkeypatch.setattr(engine, "_allowed_model_roots", lambda: (tmp_path.resolve(),))
     monkeypatch.setattr(engine, "_device_capability_rows", lambda _torch=None: [
         {"id": "cuda", "name": "NVIDIA CUDA", "available": True, "reason": "available", "memory_free_gib": 0.1, "memory_total_gib": 8.0},
@@ -563,7 +594,16 @@ def test_explicit_accelerator_does_not_silently_fall_back_after_oom(monkeypatch,
     monkeypatch.setattr(engine, "_LOADED_RUNTIME", None)
     monkeypatch.setattr(engine, "_LOADED_ARCHITECTURE", None)
     monkeypatch.setattr(engine, "_resolve_model_directory", lambda *_args: model_dir)
-    monkeypatch.setattr(engine, "_inspect_model_config", lambda _path: {"model_type": "llama", "architecture": "LlamaForCausalLM"})
+    config = _config()
+    shard = model_dir / "model.safetensors"
+    shard.write_bytes(b"x" * 8192)
+    monkeypatch.setattr(engine, "_inspect_model_config", lambda _path: {
+        "config": config, "model_type": "llama", "architecture": "LlamaForCausalLM",
+    })
+    monkeypatch.setattr("axiom.core.native_engine._resolve_safetensor_files", lambda *_args, **_kwargs: (
+        [shard], {"model.embed_tokens.weight": "model.safetensors"}
+    ))
+    monkeypatch.setattr(engine, "_available_system_memory_bytes", lambda: 8 * 1024**3)
     monkeypatch.setattr(engine, "_allowed_model_roots", lambda: (tmp_path.resolve(),))
     monkeypatch.setattr(engine, "_device_capability_rows", lambda _torch=None: [
         {"id": "cuda", "name": "NVIDIA CUDA", "available": True, "reason": "available", "memory_free_gib": 0.1, "memory_total_gib": 8.0},
@@ -582,3 +622,390 @@ def test_explicit_accelerator_does_not_silently_fall_back_after_oom(monkeypatch,
     with pytest.raises(ValueError, match="out of memory"):
         engine._load_local_model(str(model_dir), None, "cuda")
     assert calls == ["cuda"]
+
+
+def test_layer_streaming_mode_matches_full_cpu_forward_and_offloads_kv_cache() -> None:
+    torch = pytest.importorskip("torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    config = NativeLlamaConfig.from_mapping(_config())
+    base_weights = _tiny_weights(torch)
+    full = NativeLlamaRuntime(
+        config, {name: tensor.clone() for name, tensor in base_weights.items()},
+        torch, torch.device("cpu"), memory_mode="full",
+    )
+    streamed = NativeLlamaRuntime(
+        config, {name: tensor.clone() for name, tensor in base_weights.items()},
+        torch, torch.device("cpu"), memory_mode="layer_streaming",
+    )
+    tokens = torch.tensor([[1, 2, 3]], dtype=torch.long)
+
+    full_logits, _full_cache = full.forward(tokens)
+    streamed_logits, streamed_cache = streamed.forward(tokens)
+
+    assert torch.allclose(streamed_logits, full_logits, atol=1e-6, rtol=1e-5)
+    assert streamed.memory_mode == "layer_streaming"
+    assert len(streamed_cache) == config.num_hidden_layers
+    assert all(key.device.type == "cpu" and value.device.type == "cpu" for key, value in streamed_cache)
+    assert streamed.memory_stats["kv_cache_layer_offloads"] == config.num_hidden_layers
+    assert streamed.memory_stats["kv_cache_bytes_offloaded"] > 0
+    assert streamed.memory_stats["layer_weight_bytes_staged"] == 0
+
+
+def test_qwen3_native_loader_applies_query_key_rms_norm(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    safetensors_torch = pytest.importorskip("safetensors.torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    root = tmp_path / "trusted"
+    model_dir = root / "tiny-qwen3"
+    model_dir.mkdir(parents=True)
+    config = _config(model_type="qwen3", architectures=["Qwen3ForCausalLM"], rope_theta=1_000_000.0)
+    (model_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    (model_dir / "tokenizer.json").write_text("{}", encoding="utf-8")
+    weights = _tiny_weights(torch)
+    weights["model.layers.0.self_attn.q_norm.weight"] = torch.ones(4)
+    weights["model.layers.0.self_attn.k_norm.weight"] = torch.ones(4)
+    safetensors_torch.save_file(
+        {name: tensor.detach().cpu().contiguous() for name, tensor in weights.items()},
+        str(model_dir / "model.safetensors"),
+    )
+    runtime = NativeLlamaRuntime.from_directory(
+        model_dir, torch, torch.device("cpu"), trusted_roots=(root.resolve(),), memory_mode="full",
+    )
+    logits, cache = runtime.forward(torch.tensor([[1, 2, 3]], dtype=torch.long))
+    assert logits.shape == (1, config["vocab_size"])
+    assert len(cache) == config["num_hidden_layers"]
+    assert runtime.config.qk_norm is True
+
+
+def test_native_loader_explicit_fp16_precision_casts_model_weights(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    safetensors_torch = pytest.importorskip("safetensors.torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    root = tmp_path / "trusted"
+    model_dir = root / "tiny-fp32"
+    model_dir.mkdir(parents=True)
+    config = _config()
+    (model_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    (model_dir / "tokenizer.json").write_text("{}", encoding="utf-8")
+    safetensors_torch.save_file(
+        {name: tensor.float().detach().cpu().contiguous() for name, tensor in _tiny_weights(torch).items()},
+        str(model_dir / "model.safetensors"),
+    )
+    runtime = NativeLlamaRuntime.from_directory(
+        model_dir, torch, torch.device("cpu"), trusted_roots=(root.resolve(),),
+        memory_mode="full", precision="fp16",
+    )
+    assert runtime.dtype == torch.float16
+    assert all(tensor.dtype == torch.float16 for tensor in runtime.weights.values())
+
+
+def test_native_loader_rejects_unsupported_precision(tmp_path: Path) -> None:
+    from axiom.core.native_engine import NativeEngineError
+
+    with pytest.raises(NativeEngineError, match="Precision must be auto, fp32, fp16, or bf16"):
+        from axiom.core.native_engine import NativeLlamaRuntime
+        NativeLlamaRuntime.from_directory(
+            tmp_path, object(), object(), trusted_roots=(tmp_path.resolve(),), precision="int4",
+        )
+
+
+def test_disk_streaming_reads_layer_weights_on_demand_and_matches_full_forward(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    safetensors_torch = pytest.importorskip("safetensors.torch")
+    from axiom.core.native_engine import NativeLlamaRuntime
+
+    root = tmp_path / "trusted"
+    model_dir = root / "tiny-llama"
+    model_dir.mkdir(parents=True)
+    config = _config()
+    (model_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    (model_dir / "tokenizer.json").write_text("{}", encoding="utf-8")
+    safetensors_torch.save_file(
+        {name: tensor.detach().cpu().contiguous() for name, tensor in _tiny_weights(torch).items()},
+        str(model_dir / "model.safetensors"),
+    )
+
+    full = NativeLlamaRuntime.from_directory(
+        model_dir, torch, torch.device("cpu"), trusted_roots=(root.resolve(),), memory_mode="full",
+    )
+    streamed = NativeLlamaRuntime.from_directory(
+        model_dir, torch, torch.device("cpu"), trusted_roots=(root.resolve(),), memory_mode="disk_streaming",
+    )
+    tokens = torch.tensor([[1, 2, 3]], dtype=torch.long)
+
+    expected, _ = full.forward(tokens)
+    actual, cache = streamed.forward(tokens)
+
+    assert torch.allclose(actual, expected, atol=1e-6, rtol=1e-5)
+    assert streamed.memory_mode == "disk_streaming"
+    assert streamed.layer_weight_sources
+    assert not any(name.startswith("model.layers.") for name in streamed.weights)
+    assert streamed.memory_stats["disk_layer_weight_loads"] > 0
+    assert streamed.memory_stats["disk_layer_weight_bytes_read"] > 0
+    assert streamed.memory_stats["layer_weight_bytes_released"] > 0
+    assert all(key.device.type == "cpu" and value.device.type == "cpu" for key, value in cache)
+    assert streamed.memory_stats["kv_cache_layer_offloads"] == config["num_hidden_layers"]
+
+
+def _planner_fixture(tmp_path: Path, monkeypatch, *, system_memory: int | None):
+    from types import SimpleNamespace
+    import shutil
+
+    from axiom.core import engine as engine_module
+
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    shard = model_dir / "model.safetensors"
+    shard.write_bytes(b"x" * 8192)
+    monkeypatch.setattr(
+        "axiom.core.native_engine._resolve_safetensor_files",
+        lambda *_args, **_kwargs: ([shard], {"model.embed_tokens.weight": "model.safetensors"}),
+    )
+    monkeypatch.setattr(engine_module, "_available_system_memory_bytes", lambda: system_memory)
+    monkeypatch.setattr(engine_module, "_allowed_model_roots", lambda: (tmp_path.resolve(),))
+    monkeypatch.setattr(
+        engine_module,
+        "_device_capability_rows",
+        lambda _torch: [{"id": "cpu", "memory_free_gib": None, "memory_total_gib": None}],
+    )
+    monkeypatch.setattr(shutil, "disk_usage", lambda _path: SimpleNamespace(free=10 * 1024**3))
+    return engine_module, model_dir, {"config": _config()}
+
+
+def test_auto_memory_planner_selects_full_mode_when_cpu_ram_is_sufficient(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from axiom.core import engine as engine_module
+
+    memory = 8 * 1024**3
+    module, model_dir, inspected = _planner_fixture(tmp_path, monkeypatch, system_memory=memory)
+    mode, selection = module._choose_memory_mode(
+        model_dir, inspected, object(), SimpleNamespace(type="cpu"), {"selected": "cpu"}
+    )
+    assert mode == "full"
+    assert selection["selected"] == "full"
+    assert selection["available_system_ram_bytes"] == memory
+    assert selection["estimates_are_advisory"] is True
+
+
+def test_auto_memory_planner_counts_adapter_weights(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from axiom.core import engine as engine_module
+
+    module, model_dir, inspected = _planner_fixture(tmp_path, monkeypatch, system_memory=8 * 1024**3)
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir()
+    (adapter_dir / "adapter_model.safetensors").write_bytes(b"x" * 1024)
+    mode, selection = module._choose_memory_mode(
+        model_dir, inspected, object(), SimpleNamespace(type="cpu"), {"selected": "cpu"}, adapter_dir,
+    )
+    assert mode == "full"
+    assert selection["estimated_adapter_weight_bytes"] == 1024
+    assert selection["estimated_total_weight_bytes"] == selection["estimated_checkpoint_weight_bytes"] + 1024
+
+
+def test_auto_memory_planner_fails_closed_when_cpu_ram_is_unknown(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from axiom.core import engine as engine_module
+
+    module, model_dir, inspected = _planner_fixture(tmp_path, monkeypatch, system_memory=None)
+    with pytest.raises(engine_module.AxiomEngineError, match="available system RAM could not be measured"):
+        module._choose_memory_mode(
+            model_dir, inspected, object(), SimpleNamespace(type="cpu"), {"selected": "cpu"}
+        )
+
+
+def test_auto_memory_planner_does_not_choose_streaming_without_memory_measurements(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from axiom.core import engine as engine_module
+
+    module, model_dir, inspected = _planner_fixture(tmp_path, monkeypatch, system_memory=None)
+    monkeypatch.setattr(
+        module,
+        "_device_capability_rows",
+        lambda _torch: [{"id": "cuda", "memory_free_gib": None, "memory_total_gib": None}],
+    )
+    with pytest.raises(engine_module.AxiomEngineError, match="neither free accelerator memory nor available system RAM"):
+        module._choose_memory_mode(
+            model_dir, inspected, object(), SimpleNamespace(type="cuda"), {"selected": "cuda"}
+        )
+
+
+def test_qwen2_prompt_uses_chatml_when_template_metadata_is_missing(tmp_path: Path) -> None:
+    from axiom.core.engine import _format_prompt_for_native_model
+
+    class TinyTokenizer:
+        def token_to_id(self, token: str):
+            return None
+
+    formatted, source = _format_prompt_for_native_model(
+        "What is 2+2?", tmp_path, "qwen2", TinyTokenizer()
+    )
+    assert formatted == "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n"
+    assert source == "qwen2-chatml-fallback"
+
+
+def test_native_prompt_renders_checkpoint_chat_template_in_sandbox(tmp_path: Path) -> None:
+    pytest.importorskip("jinja2")
+    from axiom.core.engine import _format_prompt_for_native_model
+
+    template = "{% for message in messages %}{{ '<|im_start|>' + message['role'] + '\\n' + message['content'] + '<|im_end|>\\n' }}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\\n' }}{% endif %}"
+    (tmp_path / "tokenizer_config.json").write_text(json.dumps({
+        "chat_template": template,
+        "bos_token": "<|bos|>",
+        "eos_token": "<|eos|>",
+    }), encoding="utf-8")
+
+    class TinyTokenizer:
+        def token_to_id(self, token: str):
+            return 1 if token in {"<|bos|>", "<|eos|>"} else None
+
+    formatted, source = _format_prompt_for_native_model(
+        "Hello", tmp_path, "llama", TinyTokenizer(),
+        chat_messages=[
+            {"role": "system", "content": "Be concise."},
+            {"role": "user", "content": "Hello"},
+        ],
+    )
+    assert formatted == "<|im_start|>system\nBe concise.<|im_end|>\n<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n"
+    assert source == "tokenizer-config-template"
+
+
+def test_qwen2_chat_fallback_preserves_all_turns(tmp_path: Path) -> None:
+    from axiom.core.engine import _format_prompt_for_native_model
+
+    class TinyTokenizer:
+        def token_to_id(self, token: str):
+            return None
+
+    formatted, source = _format_prompt_for_native_model(
+        "last question", tmp_path, "qwen2", TinyTokenizer(),
+        chat_messages=[
+            {"role": "system", "content": "You are concise."},
+            {"role": "user", "content": "First question"},
+            {"role": "assistant", "content": "First answer"},
+            {"role": "user", "content": "last question"},
+        ],
+    )
+    assert formatted == (
+        "<|im_start|>system\nYou are concise.<|im_end|>\n"
+        "<|im_start|>user\nFirst question<|im_end|>\n"
+        "<|im_start|>assistant\nFirst answer<|im_end|>\n"
+        "<|im_start|>user\nlast question<|im_end|>\n"
+        "<|im_start|>assistant\n"
+    )
+    assert source == "qwen2-chatml-fallback"
+
+
+def test_native_prompt_rejects_invalid_chat_template_json(tmp_path: Path) -> None:
+    from axiom.core.engine import _format_prompt_for_native_model, AxiomEngineError
+
+    (tmp_path / "tokenizer_config.json").write_text("{bad", encoding="utf-8")
+
+    class TinyTokenizer:
+        def token_to_id(self, token: str):
+            return None
+
+    with pytest.raises(AxiomEngineError, match="chat template"):
+        _format_prompt_for_native_model("Hello", tmp_path, "llama", TinyTokenizer())
+
+
+
+def test_native_context_trims_old_history_before_token_truncation(monkeypatch, tmp_path: Path) -> None:
+    from types import SimpleNamespace
+    from axiom.core import engine
+
+    class TokenizerFixture:
+        def encode(self, text, add_special_tokens=False):
+            return SimpleNamespace(ids=[1] * len(text))
+
+        def decode(self, token_ids, skip_special_tokens=True):
+            return "answer" if token_ids else ""
+
+    class RuntimeFixture:
+        config = SimpleNamespace(max_position_embeddings=64, bos_token_id=None, eos_token_ids=())
+        last_attention_backend = "axiom-manual-matmul-attention"
+        memory_mode = "full"
+        memory_stats = {}
+
+        def __init__(self):
+            self.last_generation = {}
+            self.prompt_ids = []
+
+        def iter_generate(self, prompt_token_ids, **_kwargs):
+            self.prompt_ids = list(prompt_token_ids)
+            try:
+                yield 101
+            finally:
+                self.last_generation.update({
+                    "prompt_tokens": len(prompt_token_ids),
+                    "completion_tokens": 1,
+                    "decoder": "axiom-autoregressive-kv-cache",
+                    "prefill_ms": 1.0,
+                    "decode_ms": 1.0,
+                    "time_to_first_token_ms": 1.0,
+                    "generation_tokens_per_second": 500.0,
+                    "stop_reason": "max_new_tokens",
+                })
+
+    runtime = RuntimeFixture()
+    tokenizer = TokenizerFixture()
+    monkeypatch.setattr(engine, "_load_local_model", lambda *_args, **_kwargs: (
+        runtime, tokenizer, None, "cpu", {
+            "model_directory_name": "fixture",
+            "model_directory_path": str(tmp_path),
+            "adapter_directory_name": None,
+            "architecture": "LlamaForCausalLM",
+            "model_type": "llama",
+            "add_bos_token": False,
+            "device_selection": {"requested": "cpu", "selected": "cpu", "reason": "test"},
+        }
+    ))
+
+    events = list(engine.generate_local_stream(
+        str(tmp_path), "new ask", max_new_tokens=2, temperature=0,
+        chat_messages=[
+            {"role": "system", "content": "Be terse."},
+            {"role": "user", "content": "old user history " * 5},
+            {"role": "assistant", "content": "old assistant history " * 5},
+            {"role": "user", "content": "new ask"},
+        ],
+        include_token_events=False,
+    ))
+    result = events[-1]["result"]
+    context = result["context_management"]
+    assert context["messages_dropped_to_fit_context"] == 2
+    assert context["token_truncation_applied"] is False
+    assert context["prompt_tokens_used"] <= 62
+    assert context["original_message_count"] == 4
+    assert result["prompt_tokens"] == context["prompt_tokens_used"]
+
+
+def test_engine_admission_wait_is_bounded(monkeypatch) -> None:
+    from axiom.core import engine as engine_module
+
+    monkeypatch.setattr(engine_module, "_MAX_ENGINE_QUEUE_WAIT_SECONDS", 0.01)
+    assert engine_module._ENGINE_LOCK.acquire(blocking=False)
+    try:
+        with pytest.raises(engine_module.AxiomEngineError, match="busy with another request"):
+            with engine_module._engine_request_lock():
+                pytest.fail("Should not enter while another request owns the engine")
+    finally:
+        engine_module._ENGINE_LOCK.release()
+
+
+def test_engine_admission_wait_honors_cancellation(monkeypatch) -> None:
+    from threading import Event
+    from axiom.core import engine as engine_module
+
+    cancelled = Event()
+    cancelled.set()
+    with pytest.raises(engine_module.AxiomEngineError, match="cancelled while waiting"):
+        with engine_module._engine_request_lock(cancelled):
+            pytest.fail("Cancelled request must not acquire the engine lock")

@@ -96,10 +96,10 @@ test.describe("AXIOM landing page", () => {
 
     await expect(githubLinks.first()).toHaveAttribute("target", "_blank");
     await expect(page.locator("#unix-command")).toHaveText(
-      "curl -fsSL https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.sh | bash",
+      "curl -fsSL https://raw.githubusercontent.com/manit6752025/AXIOM-AI/main/installers/install.sh | bash",
     );
     await expect(page.locator("#windows-command")).toHaveText(
-      "irm https://raw.githubusercontent.com/NetCore-Technologies/AXIOM-AI/main/installers/install.ps1 | iex",
+      "irm https://raw.githubusercontent.com/manit6752025/AXIOM-AI/main/installers/install.ps1 | iex",
     );
     await expect(page.getByRole("link", { name: "Check it out on GitHub" })).toBeVisible();
     await expect(page.locator("#install")).toContainText("run");

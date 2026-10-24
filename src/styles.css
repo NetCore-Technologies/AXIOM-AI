@@ -286,6 +286,24 @@ code, kbd { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .info-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .info-card { min-height: 126px; }
 .info-card strong { margin-top: 20px; }
+.llm-client-panel { margin-top: 18px; }
+.llm-client-panel .surface-head { gap: 18px; }
+.llm-client-panel .surface-head > div { min-width: 0; }
+.llm-client-panel .consent-check { display: flex; align-items: flex-start; gap: 10px; margin: 18px 0 8px; color: var(--muted); font-size: 11px; line-height: 1.65; }
+.llm-client-panel .consent-check input { margin-top: 3px; accent-color: var(--accent); }
+.llm-client-panel .agent-bridge-note { display: grid; gap: 8px; margin-top: 22px; padding: 16px; border: 1px solid var(--line); background: var(--surface-soft); color: var(--muted); font-size: 11px; line-height: 1.7; }
+.llm-client-panel .agent-bridge-note p { margin: 0; }
+.llm-client-panel .agent-bridge-note .surface-eyebrow { display: flex; align-items: center; gap: 7px; color: var(--ink-strong); font-size: 9px; letter-spacing: .12em; }
+.llm-client-panel .agent-bridge-note code { overflow-wrap: anywhere; color: var(--accent); }
+.llm-client-panel .llm-conversation { display: grid; gap: 12px; margin: 18px 0 12px; }
+.llm-client-panel .llm-message { display: grid; gap: 7px; min-width: 0; padding: 13px 15px; border: 1px solid var(--line); background: var(--surface-soft); }
+.llm-client-panel .llm-message.user-message { border-left: 2px solid var(--line-strong); }
+.llm-client-panel .llm-message.assistant-message { border-left: 2px solid var(--accent); }
+.llm-client-panel .llm-message-role { color: var(--muted); font-size: 9px; font-weight: 750; letter-spacing: .12em; }
+.llm-client-panel .llm-message .local-inference-output { margin: 0; padding: 0; border: 0; background: transparent; color: var(--ink); font-size: 12px; line-height: 1.7; }
+.llm-client-panel .local-inference-output { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 720px) { .llm-client-panel .surface-head { align-items: flex-start; flex-wrap: wrap; } }
+
 .two-column-grid, .mcp-layout, .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
 .two-column-grid > .surface, .mcp-layout > .surface { min-height: 300px; }
 .empty-state { min-height: 245px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 18px; text-align: center; }

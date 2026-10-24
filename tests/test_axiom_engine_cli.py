@@ -53,6 +53,31 @@ def test_engine_discover_json_lists_local_model_and_adapter_metadata(tmp_path: P
     assert "not loaded or fully validated" in payload["scope_note"]
 
 
+def test_engine_telemetry_json_is_machine_readable_and_path_private(monkeypatch) -> None:
+    monkeypatch.setattr(engine_cli, "runtime_telemetry", lambda: {
+        "schema_version": 1,
+        "sampled_at": "2026-10-24T04:00:00+00:00",
+        "sample_type": "point_in_time",
+        "cpu": {"logical_cores": 8, "system_percent": None, "process_percent": None},
+        "memory": {"total_bytes": None, "available_bytes": None, "used_bytes": None, "percent": None},
+        "process": {"pid": 1, "rss_bytes": None, "threads": None},
+        "devices": [],
+        "loaded_runtime": {"loaded": False},
+        "disks": [{"label": "trusted_model_root_1", "total_bytes": 1000, "free_bytes": 500, "used_bytes": 500}],
+        "privacy_scope": {"model_paths_included": False},
+        "scope_note": "Paths omitted.",
+    })
+    result = runner.invoke(engine_app, ["telemetry", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["sample_type"] == "point_in_time"
+    assert payload["disks"][0]["label"] == "trusted_model_root_1"
+    serialized = json.dumps(payload).lower()
+    assert "/home/" not in serialized
+    assert "/tmp/" not in serialized
+    assert payload["privacy_scope"]["model_paths_included"] is False
+
+
 def test_engine_discover_json_returns_empty_inventory_cleanly(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path / "trusted-models"
     root.mkdir()
@@ -91,7 +116,7 @@ def test_engine_run_stream_shows_live_output_and_final_metrics(tmp_path: Path, m
     monkeypatch.setattr(engine_cli, "generate_local_stream", fake_stream)
     result = runner.invoke(engine_app, [
         "run", "--model-path", str(model_path), "--prompt", "Say hello.",
-        "--stream", "--max-new-tokens", "4", "--temperature", "0",
+        "--stream", "--max-new-tokens", "4", "--temperature", "0", "--precision", "fp16",
         "--stop-sequence", "<END>", "--stop-sequence", "###",
     ])
 
@@ -101,6 +126,8 @@ def test_engine_run_stream_shows_live_output_and_final_metrics(tmp_path: Path, m
     assert "Generated tokens: 4" in result.output
     assert "Finish reason: stop_sequence" in result.output
     assert observed["stop_sequences"] == ["<END>", "###"]
+    assert observed["memory_mode"] == "auto"
+    assert observed["precision"] == "fp16"
 
 
 def test_engine_run_rejects_stream_with_json_mode(tmp_path: Path) -> None:
@@ -134,9 +161,54 @@ def test_engine_run_passes_explicit_device_to_native_stream(tmp_path: Path, monk
     monkeypatch.setattr(engine_cli, "generate_local_stream", fake_stream)
     result = runner.invoke(engine_app, [
         "run", "--model-path", str(model_path), "--prompt", "Say hello.",
-        "--stream", "--device", "cpu",
+        "--stream", "--device", "cpu", "--memory-mode", "layer_streaming",
     ])
 
     assert result.exit_code == 0, result.output
     assert observed["device_preference"] == "cpu"
+    assert observed["memory_mode"] == "layer_streaming"
+    assert "Memory mode: layer_streaming" in result.output
     assert "CPU-selected response" in result.output
+
+
+def test_engine_pull_downloads_native_model_for_axiom_runtime(monkeypatch, tmp_path: Path) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_pull(repo_id, *, on_log=None, on_progress=None):
+        observed["repo_id"] = repo_id
+        observed["on_log"] = on_log
+        observed["on_progress"] = on_progress
+        if on_log:
+            on_log("validated native checkpoint")
+        if on_progress:
+            on_progress(128, 256)
+        return {
+            "operation": "pull_native",
+            "repo_id": repo_id,
+            "model_type": "qwen2",
+            "path": str(tmp_path / "qwen"),
+            "runtime": "axiom-native",
+        }
+
+    monkeypatch.setattr(engine_cli.model_studio, "pull_native_model", fake_pull)
+    result = runner.invoke(engine_app, ["pull", "Qwen/Qwen2.5-0.5B-Instruct", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["operation"] == "pull_native"
+    assert payload["model_type"] == "qwen2"
+    assert observed["repo_id"] == "Qwen/Qwen2.5-0.5B-Instruct"
+    assert observed["on_log"] is None
+    assert observed["on_progress"] is None
+
+
+def test_engine_pull_reports_unsupported_model_cleanly(monkeypatch) -> None:
+    from axiom.core.model_studio import ModelStudioError
+
+    monkeypatch.setattr(
+        engine_cli.model_studio,
+        "pull_native_model",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ModelStudioError("unsupported architecture")),
+    )
+    result = runner.invoke(engine_app, ["pull", "example/unsupported"])
+    assert result.exit_code == 1
+    assert "unsupported architecture" in result.output

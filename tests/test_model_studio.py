@@ -58,3 +58,106 @@ def test_remote_provider_requires_public_https_and_rejects_private_addresses(mon
     monkeypatch.setattr(studio.socket, "getaddrinfo", lambda *_a, **_k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))])
     with pytest.raises(ValueError, match="public IP"):
         studio.validate_remote_base_url("https://provider.example/v1")
+
+
+def test_native_hub_pull_installs_only_supported_safetensors_assets(tmp_path, monkeypatch):
+    import json
+
+    config = {
+        "model_type": "qwen2",
+        "architectures": ["Qwen2ForCausalLM"],
+        "hidden_size": 8,
+        "intermediate_size": 12,
+        "num_hidden_layers": 1,
+        "num_attention_heads": 2,
+        "num_key_value_heads": 1,
+        "vocab_size": 16,
+        "max_position_embeddings": 32,
+        "rms_norm_eps": 1e-6,
+        "rope_theta": 1_000_000.0,
+        "tie_word_embeddings": True,
+    }
+    manifest = {
+        "siblings": [
+            {"rfilename": "config.json", "size": 180},
+            {"rfilename": "tokenizer.json", "size": 20},
+            {"rfilename": "tokenizer_config.json", "size": 25},
+            {"rfilename": "model.safetensors", "size": 64},
+            {"rfilename": "remote_model.py", "size": 1000},
+            {"rfilename": "../escape.safetensors", "size": 1000},
+        ]
+    }
+
+    def fake_read(url, timeout=12.0):
+        if "/api/models/" in url:
+            return manifest
+        if url.endswith("/resolve/main/config.json"):
+            return config
+        raise AssertionError(f"unexpected metadata request: {url}")
+
+    def fake_download(repo_id, filename, destination, **kwargs):
+        assert repo_id == "Qwen/Qwen2.5-0.5B-Instruct"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(config).encode() if filename == "config.json" else b"{}" if filename in {"tokenizer.json", "tokenizer_config.json"} else b"fake-safe-tensor"
+        destination.write_bytes(payload)
+        callback = kwargs.get("on_progress")
+        if callback:
+            callback(kwargs.get("progress_offset", 0) + len(payload), kwargs.get("progress_total"))
+        return len(payload)
+
+    monkeypatch.setattr(studio, "_read_public_json", fake_read)
+    monkeypatch.setattr(studio, "native_model_root", lambda: tmp_path / "native-models")
+    monkeypatch.setattr(studio, "_download_native_file", fake_download)
+    logs, progress = [], []
+
+    result = studio.pull_native_model(
+        "Qwen/Qwen2.5-0.5B-Instruct",
+        on_log=logs.append,
+        on_progress=lambda current, total: progress.append((current, total)),
+    )
+
+    installed = tmp_path / "native-models" / "qwen-qwen2.5-0.5b-instruct"
+    assert result["operation"] == "pull_native"
+    assert result["model_type"] == "qwen2"
+    assert result["architecture"] == "Qwen2ForCausalLM"
+    assert result["path"] == str(installed)
+    assert (installed / "config.json").is_file()
+    assert (installed / "tokenizer.json").is_file()
+    assert (installed / "model.safetensors").is_file()
+    assert not (installed / "remote_model.py").exists()
+    assert not (tmp_path / "native-models" / "escape.safetensors").exists()
+    assert logs and progress
+    assert result["remote_code_executed"] is False
+
+
+def test_native_hub_pull_rejects_unsupported_architecture_before_weights(tmp_path, monkeypatch):
+    unsupported = {
+        "model_type": "gemma3",
+        "architectures": ["Gemma3ForConditionalGeneration"],
+    }
+    monkeypatch.setattr(studio, "_read_public_json", lambda url, timeout=12.0: (
+        {"siblings": [{"rfilename": "config.json", "size": 10}, {"rfilename": "tokenizer.json", "size": 10}, {"rfilename": "model.safetensors", "size": 100}]}
+        if "/api/models/" in url else unsupported
+    ))
+    monkeypatch.setattr(studio, "native_model_root", lambda: tmp_path / "native-models")
+    monkeypatch.setattr(studio, "_download_native_file", lambda *_a, **_k: pytest.fail("weights must not download for unsupported model"))
+    with pytest.raises(studio.ModelStudioError, match="not supported by AXIOM Native Engine"):
+        studio.pull_native_model("example/unsupported")
+    assert not (tmp_path / "native-models").exists()
+
+
+def test_unified_local_provider_lists_qwen3_native_models(monkeypatch):
+    from axiom.core import llm_client
+
+    monkeypatch.setattr(llm_client, "discover_local_engine_assets", lambda: {
+        "models": [
+            {"name": "qwen3-local", "path": "/trusted/qwen3", "model_type": "qwen3", "architecture": "Qwen3ForCausalLM"},
+            {"name": "llama-local", "path": "/trusted/llama", "model_type": "llama", "architecture": "LlamaForCausalLM"},
+            {"name": "unsupported-local", "path": "/trusted/other", "model_type": "gemma", "architecture": "GemmaForCausalLM"},
+        ]
+    })
+
+    result = llm_client.list_models("axiom-local")
+    assert result["execution"] == "local"
+    assert result["models"] == ["qwen3-local", "llama-local"]
+    assert {item["model_type"] for item in result["model_details"]} == {"qwen3", "llama"}

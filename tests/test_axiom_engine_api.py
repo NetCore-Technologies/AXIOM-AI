@@ -7,11 +7,13 @@ from pydantic import ValidationError
 import pytest
 
 from axiom.api import engine as engine_api
+from axiom.api import openai_compat
 
 
 def _client() -> TestClient:
     app = FastAPI()
     app.include_router(engine_api.router)
+    app.include_router(openai_compat.router)
     return TestClient(app)
 
 
@@ -23,6 +25,11 @@ def test_engine_request_accepts_absolute_paths_only_inside_explicit_roots(tmp_pa
     monkeypatch.setenv("AXIOM_MODEL_ROOTS", str(root))
 
     request = engine_api.GenerateRequest(model_path=str(model), prompt="hello")
+    assert request.memory_mode == "auto"
+    assert request.precision == "auto"
+    assert engine_api.GenerateRequest(model_path=str(model), prompt="hello", precision="fp16").precision == "fp16"
+    with pytest.raises(ValidationError, match="precision"):
+        engine_api.GenerateRequest(model_path=str(model), prompt="hello", precision="int4")
 
     assert request.model_path == str(model.resolve())
 
@@ -54,6 +61,30 @@ def test_engine_request_rejects_symlink_escape(tmp_path, monkeypatch) -> None:
         engine_api.GenerateRequest(model_path=str(escape), prompt="hello")
 
 
+def test_engine_telemetry_endpoint_returns_privacy_bounded_snapshot(monkeypatch) -> None:
+    expected = {
+        "schema_version": 1,
+        "sampled_at": "2026-10-24T04:00:00+00:00",
+        "sample_type": "point_in_time",
+        "cpu": {"logical_cores": 8, "system_percent": 12.5, "process_percent": 1.0},
+        "memory": {"total_bytes": 1000, "available_bytes": 400, "used_bytes": 600, "percent": 60.0},
+        "process": {"pid": 1, "rss_bytes": 200, "threads": 4},
+        "devices": [],
+        "loaded_runtime": {"loaded": False},
+        "disks": [],
+        "privacy_scope": {
+            "prompt_content_included": False, "generated_content_included": False,
+            "model_paths_included": False, "environment_values_included": False,
+            "credentials_included": False, "network_access_performed": False,
+        },
+        "scope_note": "Point-in-time telemetry only.",
+    }
+    monkeypatch.setattr(engine_api, "runtime_telemetry", lambda: expected)
+    response = _client().get("/api/engine/telemetry")
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
 def test_engine_unload_endpoint_calls_lifecycle_handler(monkeypatch) -> None:
     expected = {
         "schema_version": 1,
@@ -78,7 +109,7 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
     def fake_stream(
         model_path, prompt, *, adapter_path=None, max_new_tokens=256, temperature=0.7,
         top_p=0.9, top_k=0, repetition_penalty=1.0, seed=None, stop_sequences=(), include_token_events=True,
-        cancel_event=None, device_preference="auto",
+        cancel_event=None, device_preference="auto", memory_mode="full", precision="auto",
     ):
         observed.update({
             "model_path": model_path, "prompt": prompt, "max_new_tokens": max_new_tokens,
@@ -87,6 +118,8 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
             "stop_sequences": list(stop_sequences),
             "include_token_events": include_token_events,
             "device_preference": device_preference,
+            "memory_mode": memory_mode,
+            "precision": precision,
         })
         yield {"type": "token", "response": "hi", "completion_tokens": 1}
         yield {
@@ -114,6 +147,8 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
             "seed": 42,
             "stop_sequences": ["<END>", "###"],
             "device": "cpu",
+            "memory_mode": "layer_streaming",
+            "precision": "bf16",
         },
     )
 
@@ -135,6 +170,8 @@ def test_native_stream_api_emits_ndjson_token_and_completion_events(monkeypatch)
         "stop_sequences": ["<END>", "###"],
         "include_token_events": True,
         "device_preference": "cpu",
+        "memory_mode": "layer_streaming",
+        "precision": "bf16",
     }
 
 
@@ -147,6 +184,9 @@ def test_generate_request_rejects_invalid_stop_sequence_lists(monkeypatch) -> No
     base = {"model_path": "/trusted/models/tiny", "prompt": "hello"}
     with pytest.raises(ValidationError, match="device"):
         engine_api.GenerateRequest(**base, device="network")
+    assert engine_api.GenerateRequest(**base, memory_mode="disk_streaming").memory_mode == "disk_streaming"
+    with pytest.raises(ValidationError, match="memory_mode"):
+        engine_api.GenerateRequest(**base, memory_mode="automatic")
     with pytest.raises(ValidationError, match="stop sequences|Stop sequences"):
         GenerateRequest(**base, stop_sequences=[" "])
     with pytest.raises(ValidationError, match="stop sequence|Stop sequence"):
@@ -462,3 +502,202 @@ def test_engine_stream_endpoint_yields_token_snapshots_and_final_metrics(tmp_pat
         "repetition_penalty": 1.0,
         "seed": None,
     }
+
+
+def test_native_engine_pull_endpoint_starts_model_studio_job(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+    job = {"job_id": "native-job-123", "status": "queued", "operation": "pull_native"}
+
+    def fake_start_job(config):
+        observed.update(config)
+        return job
+
+    monkeypatch.setattr(engine_api.model_studio, "start_job", fake_start_job)
+    response = _client().post("/api/engine/pull", json={"repo_id": "Qwen/Qwen2.5-0.5B-Instruct"})
+
+    assert response.status_code == 202, response.text
+    assert response.json() == job
+    assert observed == {"operation": "pull_native", "repo_id": "Qwen/Qwen2.5-0.5B-Instruct"}
+
+
+def test_native_engine_pull_endpoint_rejects_invalid_repository_id() -> None:
+    response = _client().post("/api/engine/pull", json={"repo_id": "../escape"})
+    assert response.status_code == 422
+
+
+
+def test_openai_models_lists_only_discovered_native_models(monkeypatch) -> None:
+    monkeypatch.setattr(openai_compat, "discover_local_engine_assets", lambda: {
+        "models": [
+            {"name": "tiny-llama", "path": "/trusted/models/tiny", "model_type": "llama"},
+            {"name": "unsupported-model", "path": "/trusted/models/other", "model_type": "gemma"},
+            {"name": "qwen", "path": "/trusted/models/qwen", "model_type": "qwen2"},
+        ],
+    })
+    response = _client().get("/v1/models")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["object"] == "list"
+    assert [item["id"] for item in payload["data"]] == ["tiny-llama", "qwen"]
+    assert all(item["owned_by"] == "axiom" for item in payload["data"])
+
+
+def test_openai_chat_completion_calls_axiom_native_stream_with_chat_messages(monkeypatch) -> None:
+    monkeypatch.setattr(openai_compat, "discover_local_engine_assets", lambda: {
+        "models": [{"name": "tiny-llama", "path": "/trusted/models/tiny", "model_type": "llama"}],
+    })
+    observed: dict[str, object] = {}
+
+    def fake_stream(**kwargs):
+        observed.update(kwargs)
+        yield {"type": "complete", "result": {
+            "response": "Hello there.",
+            "prompt_tokens": 12,
+            "completion_tokens": 3,
+            "stop_reason": "eos_token",
+        }}
+
+    monkeypatch.setattr(openai_compat, "generate_local_stream", fake_stream)
+    response = _client().post("/v1/chat/completions", json={
+        "model": "tiny-llama",
+        "messages": [
+            {"role": "system", "content": "Be concise."},
+            {"role": "user", "content": "Hello."},
+        ],
+        "temperature": 0,
+    })
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["object"] == "chat.completion"
+    assert result["choices"][0]["message"] == {"role": "assistant", "content": "Hello there."}
+    assert result["choices"][0]["finish_reason"] == "stop"
+    assert result["usage"] == {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15}
+    assert observed["model_path"] == "/trusted/models/tiny"
+    assert observed["chat_messages"] == [
+        {"role": "system", "content": "Be concise."},
+        {"role": "user", "content": "Hello."},
+    ]
+    assert observed["include_token_events"] is False
+
+
+def test_openai_chat_stream_formats_cumulative_tokens_as_sse_deltas(monkeypatch) -> None:
+    monkeypatch.setattr(openai_compat, "discover_local_engine_assets", lambda: {
+        "models": [{"name": "tiny-llama", "path": "/trusted/models/tiny", "model_type": "llama"}],
+    })
+
+    def fake_stream(**_kwargs):
+        yield {"type": "token", "response": "H", "completion_tokens": 1}
+        yield {"type": "telemetry", "metrics": {"stage": "decode"}}
+        yield {"type": "token", "response": "Hello", "completion_tokens": 2}
+        yield {"type": "complete", "result": {"response": "Hello", "stop_reason": "max_new_tokens"}}
+
+    monkeypatch.setattr(openai_compat, "generate_local_stream", fake_stream)
+    response = _client().post("/v1/chat/completions", json={
+        "model": "tiny-llama", "messages": [{"role": "user", "content": "hi"}], "stream": True,
+    })
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert '"content": "H"' in response.text
+    assert '"content": "ello"' in response.text
+    assert '"finish_reason": "length"' in response.text
+    assert "data: [DONE]" in response.text
+
+
+def test_openai_chat_rejects_unknown_native_model_and_unsupported_message_role(monkeypatch) -> None:
+    monkeypatch.setattr(openai_compat, "discover_local_engine_assets", lambda: {"models": []})
+    missing = _client().post("/v1/chat/completions", json={
+        "model": "not-installed", "messages": [{"role": "user", "content": "hello"}],
+    })
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "model_not_found"
+    invalid = _client().post("/v1/chat/completions", json={
+        "model": "not-installed", "messages": [{"role": "tool", "content": "hello"}],
+    })
+    assert invalid.status_code == 422
+
+
+def test_openai_bridge_lists_ollama_models_with_explicit_namespace(monkeypatch) -> None:
+    monkeypatch.delenv("AXIOM_OPENAI_API_TOKEN", raising=False)
+    monkeypatch.setattr(openai_compat, "_native_models", lambda: [
+        {"name": "tiny-native", "path": "/trusted/tiny-native", "model_type": "llama"}
+    ])
+    monkeypatch.setattr(openai_compat, "_ollama_model_names", lambda: ["qwen2.5:0.5b", "deepseek-r1:8b"])
+
+    response = _client().get("/v1/models")
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["data"]] == [
+        "tiny-native", "ollama/qwen2.5:0.5b", "ollama/deepseek-r1:8b"
+    ]
+    assert response.json()["data"][0]["owned_by"] == "axiom"
+    assert response.json()["data"][1]["owned_by"] == "ollama"
+
+
+def test_openai_bridge_routes_namespaced_ollama_chat_with_sampling_options(monkeypatch) -> None:
+    monkeypatch.setenv("AXIOM_OPENAI_API_TOKEN", "bridge-token")
+    monkeypatch.setattr(openai_compat, "_ollama_model_names", lambda: ["qwen2.5:0.5b"])
+    captured = {}
+
+    def fake_chat(model, messages, **kwargs):
+        captured.update({"model": model, "messages": messages, **kwargs})
+        return {
+            "model": model,
+            "response": "Local Ollama answer",
+            "prompt_eval_count": 9,
+            "eval_count": 4,
+            "done_reason": "stop",
+        }
+
+    monkeypatch.setattr(openai_compat, "run_local_chat", fake_chat)
+    response = _client().post("/v1/chat/completions", headers={
+        "Authorization": "Bearer bridge-token",
+    }, json={
+        "model": "ollama/qwen2.5:0.5b",
+        "messages": [
+            {"role": "system", "content": "Be precise."},
+            {"role": "user", "content": "Hello"},
+        ],
+        "max_tokens": 30,
+        "temperature": 0.2,
+        "top_p": 0.8,
+        "top_k": 4,
+        "repetition_penalty": 1.2,
+        "seed": 42,
+        "stop": ["END"],
+    })
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["model"] == "ollama/qwen2.5:0.5b"
+    assert body["choices"][0]["message"]["content"] == "Local Ollama answer"
+    assert body["usage"] == {"prompt_tokens": 9, "completion_tokens": 4, "total_tokens": 13}
+    assert captured == {
+        "model": "qwen2.5:0.5b",
+        "messages": [
+            {"role": "system", "content": "Be precise."},
+            {"role": "user", "content": "Hello"},
+        ],
+        "num_predict": 30,
+        "temperature": 0.2,
+        "top_p": 0.8,
+        "top_k": 4,
+        "repetition_penalty": 1.2,
+        "seed": 42,
+        "stop_sequences": ["END"],
+    }
+    assert "bridge-token" not in response.text
+
+
+def test_openai_bridge_rejects_unknown_namespaced_ollama_model(monkeypatch) -> None:
+    monkeypatch.setenv("AXIOM_OPENAI_API_TOKEN", "bridge-token")
+    monkeypatch.setattr(openai_compat, "_ollama_model_names", lambda: ["qwen2.5:0.5b"])
+    response = _client().post("/v1/chat/completions", headers={
+        "Authorization": "Bearer bridge-token",
+    }, json={
+        "model": "ollama/other-model:latest",
+        "messages": [{"role": "user", "content": "hello"}],
+    })
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "model_not_found"
+

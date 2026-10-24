@@ -8,6 +8,7 @@ Transformers model generation or an Ollama service.
 from __future__ import annotations
 
 import gc
+from contextlib import contextmanager
 from functools import lru_cache
 import importlib.metadata
 import importlib.util
@@ -16,6 +17,7 @@ import logging
 import math
 import os
 import re
+import shutil
 import threading
 import time
 from datetime import UTC, datetime
@@ -23,12 +25,39 @@ from pathlib import Path
 from typing import Any, Iterator
 
 _MAX_PROMPT_CHARS = 12_000
+_MAX_CHAT_CHARS = 24_000
 _MAX_NEW_TOKENS = 2_048
+_MAX_ENGINE_QUEUE_WAIT_SECONDS = 30.0
 _MAX_INPUT_TOKENS = 8_192
 _MAX_CONFIG_BYTES = 1_048_576
 _LOG = logging.getLogger(__name__)
 # A plain Lock is deliberate: the streaming generator may resume on a different worker thread.
 _ENGINE_LOCK = threading.Lock()
+
+
+@contextmanager
+def _engine_request_lock(cancel_event: threading.Event | None = None) -> Iterator[None]:
+    """Bound admission wait for the single loaded native runtime.
+
+    The current engine executes one request per loaded runtime. Waiting
+    requests are bounded and cooperatively cancellable instead of accumulating
+    indefinitely behind the runtime lock.
+    """
+    deadline = time.monotonic() + _MAX_ENGINE_QUEUE_WAIT_SECONDS
+    acquired = False
+    while not acquired:
+        if cancel_event is not None and cancel_event.is_set():
+            raise AxiomEngineError("Native generation was cancelled while waiting for the engine.")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise AxiomEngineError(
+                "AXIOM Native Engine is busy with another request. Retry shortly or use a second AXIOM process for concurrent inference."
+            )
+        acquired = _ENGINE_LOCK.acquire(timeout=min(0.1, remaining))
+    try:
+        yield
+    finally:
+        _ENGINE_LOCK.release()
 _LOADED_RUNTIME: dict[str, Any] | None = None
 _LOADED_ARCHITECTURE: str | None = None
 _MODEL_ROOT_ENV = "AXIOM_MODEL_ROOTS"
@@ -164,6 +193,107 @@ def _clear_device_cache(torch_module: Any | None, device: Any | None) -> None:
         _LOG.debug("Device allocator cache cleanup was unavailable for %s.", device_type, exc_info=True)
 
 
+
+def _reset_device_peak_memory(torch_module: Any | None, device: Any | None) -> bool:
+    """Reset device allocator peak counters when the selected backend exposes them."""
+    if torch_module is None or device is None:
+        return False
+    device_type = str(getattr(device, "type", device)).split(":", 1)[0]
+    backend = getattr(torch_module, "cuda", None) if device_type == "cuda" else getattr(torch_module, "xpu", None) if device_type == "xpu" else None
+    reset = getattr(backend, "reset_peak_memory_stats", None)
+    if not callable(reset):
+        return False
+    try:
+        reset(device)
+        return True
+    except TypeError:
+        try:
+            reset()
+            return True
+        except Exception:
+            return False
+    except Exception:
+        _LOG.debug("Peak memory counters could not be reset for %s.", device_type, exc_info=True)
+        return False
+
+
+def _device_memory_snapshot(
+    torch_module: Any | None,
+    device: Any | None,
+    *,
+    selected_backend: str | None = None,
+    baseline: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Read allocator counters where supported; unavailable metrics remain null, never guessed."""
+    device_type = str(getattr(device, "type", device)).split(":", 1)[0] if device is not None else "unknown"
+    result: dict[str, Any] = {
+        "backend": selected_backend or device_type,
+        "current_allocated_bytes": None,
+        "current_reserved_bytes": None,
+        "peak_allocated_bytes": None,
+        "peak_reserved_bytes": None,
+        "peak_increment_bytes": None,
+        "process_rss_bytes": None,
+        "process_rss_delta_bytes": None,
+        "peak_reset_supported": False,
+        "device_allocator_metrics_supported": False,
+    }
+    if torch_module is not None and device is not None:
+        try:
+            if device_type in {"cuda", "xpu"}:
+                backend = getattr(torch_module, device_type, None)
+                methods = {
+                    "current_allocated_bytes": "memory_allocated",
+                    "current_reserved_bytes": "memory_reserved",
+                    "peak_allocated_bytes": "max_memory_allocated",
+                    "peak_reserved_bytes": "max_memory_reserved",
+                }
+                for target, name in methods.items():
+                    function = getattr(backend, name, None)
+                    if not callable(function):
+                        continue
+                    try:
+                        value = function(device)
+                    except TypeError:
+                        value = function()
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        result[target] = max(0, int(value))
+                result["device_allocator_metrics_supported"] = any(
+                    result[key] is not None for key in methods
+                )
+            elif device_type == "mps":
+                backend = getattr(torch_module, "mps", None)
+                current = getattr(backend, "current_allocated_memory", None)
+                reserved = getattr(backend, "driver_allocated_memory", None)
+                if callable(current):
+                    value = current()
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        result["current_allocated_bytes"] = max(0, int(value))
+                if callable(reserved):
+                    value = reserved()
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        result["current_reserved_bytes"] = max(0, int(value))
+                result["device_allocator_metrics_supported"] = (
+                    result["current_allocated_bytes"] is not None
+                    or result["current_reserved_bytes"] is not None
+                )
+        except Exception:
+            _LOG.debug("Live allocator memory telemetry unavailable for %s.", device_type, exc_info=True)
+    try:
+        import psutil
+        rss = psutil.Process().memory_info().rss
+        result["process_rss_bytes"] = max(0, int(rss))
+        if baseline and isinstance(baseline.get("process_rss_bytes"), int):
+            result["process_rss_delta_bytes"] = int(rss) - baseline["process_rss_bytes"]
+    except (ImportError, OSError, RuntimeError, AttributeError):
+        pass
+    if baseline and isinstance(baseline.get("current_allocated_bytes"), int) and isinstance(result.get("peak_allocated_bytes"), int):
+        result["peak_increment_bytes"] = max(0, result["peak_allocated_bytes"] - baseline["current_allocated_bytes"])
+    if baseline:
+        result["peak_reset_supported"] = bool(baseline.get("peak_reset_supported"))
+    return result
+
+
 def runtime_status() -> dict[str, Any]:
     packages: dict[str, bool] = {}
     versions: dict[str, str | None] = {}
@@ -191,7 +321,7 @@ def runtime_status() -> dict[str, Any]:
         "cpu" if any(item["id"] == "cpu" and item["available"] for item in devices) else None,
     )
     return {
-        "engine": "axiom-native-pytorch-llama",
+        "engine": "axiom-native-pytorch-causal-lm",
         "ready": ready,
         "packages": packages,
         "versions": versions,
@@ -200,6 +330,8 @@ def runtime_status() -> dict[str, Any]:
         "loaded": _LOADED_RUNTIME is not None,
         "architecture": _LOADED_ARCHITECTURE,
         "loaded_device": str(_LOADED_RUNTIME.get("device")) if _LOADED_RUNTIME is not None else None,
+        "loaded_memory_mode": _LOADED_RUNTIME["model"].memory_mode if _LOADED_RUNTIME is not None else None,
+        "loaded_precision": _LOADED_RUNTIME["details"].get("precision") if _LOADED_RUNTIME is not None else None,
         "devices": devices,
         "recommended_device": recommended_device,
         "model_loading": "local_safetensors_only",
@@ -207,21 +339,166 @@ def runtime_status() -> dict[str, Any]:
         "transformers_generation_used": False,
         "ollama_used": False,
         "remote_code": False,
-        "supported_model_types": ["llama", "mistral"],
+        "supported_model_types": ["llama", "mistral", "qwen2", "qwen3"],
         "supported_weights": ["safetensors"],
         "setup_note": (
-            "AXIOM Native Engine is ready for supported local Llama/Mistral safetensors checkpoints."
+            "AXIOM Native Engine is ready for supported local Llama/Mistral/Qwen2/Qwen3 safetensors checkpoints."
             if ready else
             "AXIOM Native Engine setup required: " + "; ".join(problems)
             + ". Install with: python -m pip install -e '.[native-inference]'"
         ),
         "scope_note": (
-            "AXIOM implements its own Llama/Mistral forward pass, RMSNorm, RoPE, grouped-query attention, KV cache, "
-            "LoRA application and token-by-token decoder using PyTorch tensor operations. It does not call "
-            "Transformers model.generate or an Ollama server. Checkpoint acquisition and model training are separate."
+            "AXIOM implements its own Llama/Mistral/Qwen2/Qwen3 forward pass, RMSNorm, RoPE, grouped-query attention, KV cache, "
+            "LoRA application and token-by-token decoder using PyTorch tensor operations. It supports full-weight, "
+            "CPU-staged layer streaming, and disk-resident safetensors layer streaming with CPU KV-cache offload. It does not call "
+            "Transformers model.generate or an Ollama server. Model Studio can pull compatible public checkpoints; quantized "
+            "checkpoint formats, additional architectures, and training remain separate capabilities."
         ),
         "checked_at": datetime.now(UTC).isoformat(),
     }
+
+def runtime_telemetry() -> dict[str, Any]:
+    """Return a privacy-bounded, point-in-time view of local runtime resources."""
+    sampled_at = datetime.now(UTC).isoformat()
+    cpu: dict[str, Any] = {
+        "logical_cores": os.cpu_count(),
+        "system_percent": None,
+        "process_percent": None,
+    }
+    memory: dict[str, Any] = {
+        "total_bytes": None,
+        "available_bytes": None,
+        "used_bytes": None,
+        "percent": None,
+    }
+    process: dict[str, Any] = {
+        "pid": os.getpid(),
+        "rss_bytes": None,
+        "threads": None,
+    }
+    try:
+        import psutil
+        cpu["system_percent"] = float(psutil.cpu_percent(interval=None))
+        process_handle = psutil.Process()
+        process["rss_bytes"] = int(process_handle.memory_info().rss)
+        process["threads"] = int(process_handle.num_threads())
+        cpu["process_percent"] = float(process_handle.cpu_percent(interval=None))
+        virtual = psutil.virtual_memory()
+        memory.update({
+            "total_bytes": int(virtual.total),
+            "available_bytes": int(virtual.available),
+            "used_bytes": int(virtual.used),
+            "percent": float(virtual.percent),
+        })
+    except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
+        _LOG.debug("psutil telemetry unavailable; trying basic operating-system memory counters.", exc_info=True)
+
+    if memory["total_bytes"] is None and os.name == "posix":
+        try:
+            page_size = int(os.sysconf("SC_PAGE_SIZE"))
+            total_pages = int(os.sysconf("SC_PHYS_PAGES"))
+            available_pages = int(os.sysconf("SC_AVPHYS_PAGES"))
+            total_bytes = total_pages * page_size
+            available_bytes = available_pages * page_size
+            if total_bytes > 0 and available_bytes >= 0:
+                memory.update({
+                    "total_bytes": total_bytes,
+                    "available_bytes": available_bytes,
+                    "used_bytes": max(0, total_bytes - available_bytes),
+                    "percent": round((total_bytes - available_bytes) * 100 / total_bytes, 2),
+                })
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+
+    loaded = _LOADED_RUNTIME
+    loaded_details = loaded.get("details", {}) if isinstance(loaded, dict) else {}
+    loaded_model = loaded.get("model") if isinstance(loaded, dict) else None
+    loaded_device = loaded.get("device") if isinstance(loaded, dict) else None
+    loaded_torch = loaded.get("torch") if isinstance(loaded, dict) else None
+    selected_backend = loaded_details.get("device_selection", {}).get("selected") if isinstance(loaded_details, dict) else None
+    try:
+        device_rows = [
+            {
+                "id": item.get("id"),
+                "name": item.get("name"),
+                "available": bool(item.get("available")),
+                "memory_free_gib": item.get("memory_free_gib"),
+                "memory_total_gib": item.get("memory_total_gib"),
+            }
+            for item in _device_capability_rows(loaded_torch)
+        ]
+    except Exception:
+        _LOG.debug("Device capability telemetry could not be collected.", exc_info=True)
+        device_rows = []
+
+    allocator = None
+    if loaded_torch is not None and loaded_device is not None:
+        allocator = _device_memory_snapshot(loaded_torch, loaded_device, selected_backend=selected_backend)
+
+    generation = None
+    if loaded_model is not None:
+        last = getattr(loaded_model, "last_generation", {})
+        if isinstance(last, dict):
+            allowed = {
+                "prompt_tokens", "completion_tokens", "prefill_ms", "decode_ms",
+                "time_to_first_token_ms", "generation_tokens_per_second",
+                "stop_reason", "cache_layers",
+            }
+            generation = {
+                key: value for key, value in last.items()
+                if key in allowed and isinstance(value, (str, int, float))
+            }
+
+    disks: list[dict[str, Any]] = []
+    try:
+        roots = _allowed_model_roots()
+    except (OSError, ValueError):
+        roots = ()
+    for index, root in enumerate(roots[:12], start=1):
+        try:
+            usage = shutil.disk_usage(root)
+            disks.append({
+                "label": f"trusted_model_root_{index}",
+                "total_bytes": int(usage.total),
+                "free_bytes": int(usage.free),
+                "used_bytes": int(usage.used),
+            })
+        except OSError:
+            continue
+
+    return {
+        "schema_version": 1,
+        "sampled_at": sampled_at,
+        "sample_type": "point_in_time",
+        "cpu": cpu,
+        "memory": memory,
+        "process": process,
+        "devices": device_rows,
+        "loaded_runtime": {
+            "loaded": loaded_model is not None,
+            "model": loaded_details.get("model_directory_name") if isinstance(loaded_details, dict) else None,
+            "architecture": loaded_details.get("architecture") if isinstance(loaded_details, dict) else None,
+            "device": str(loaded_device) if loaded_device is not None else None,
+            "memory_mode": getattr(loaded_model, "memory_mode", None) if loaded_model is not None else None,
+            "precision": loaded_details.get("precision") if isinstance(loaded_details, dict) else None,
+            "last_generation": generation,
+            "device_allocator": allocator,
+        },
+        "disks": disks,
+        "privacy_scope": {
+            "prompt_content_included": False,
+            "generated_content_included": False,
+            "model_paths_included": False,
+            "environment_values_included": False,
+            "credentials_included": False,
+            "network_access_performed": False,
+        },
+        "scope_note": (
+            "This is a local point-in-time resource snapshot, not a persisted time series. "
+            "Poll this endpoint for samples; unsupported driver metrics remain null."
+        ),
+    }
+
 
 def _allowed_model_roots() -> tuple[Path, ...]:
     """Return canonical roots from trusted defaults and AXIOM_MODEL_ROOTS.
@@ -738,7 +1015,188 @@ def _pending_stop_prefix_length(text: str, stop_sequences: tuple[str, ...]) -> i
     return longest
 
 
-def _load_local_model(model_path: str, adapter_path: str | None, device_preference: str = "auto"):
+def _available_system_memory_bytes() -> int | None:
+    """Get observable available system RAM without assuming psutil is installed."""
+    try:
+        import psutil
+        return max(0, int(psutil.virtual_memory().available))
+    except (ImportError, OSError, RuntimeError, AttributeError):
+        pass
+    if os.name == "posix":
+        try:
+            pages = int(os.sysconf("SC_AVPHYS_PAGES"))
+            page_size = int(os.sysconf("SC_PAGE_SIZE"))
+            if pages > 0 and page_size > 0:
+                return pages * page_size
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+    return None
+
+
+def _choose_memory_mode(
+    model_dir: Path,
+    inspected: dict[str, Any],
+    torch_module: Any,
+    device: Any,
+    device_selection: dict[str, str],
+    adapter_dir: Path | None = None,
+    precision: str = "auto",
+) -> tuple[str, dict[str, Any]]:
+    """Choose a native loading strategy from observed RAM/VRAM and model dimensions.
+
+    Estimates intentionally use a safety margin and return their assumptions.
+    A choice is advisory, not a guarantee that the selected kernel/model will fit.
+    """
+    from axiom.core.native_engine import NativeLlamaConfig, _resolve_safetensor_files, _resolve_trusted_file
+
+    try:
+        config = NativeLlamaConfig.from_mapping(inspected["config"])
+        weight_files, _weight_map = _resolve_safetensor_files(model_dir, _allowed_model_roots())
+        weight_bytes = sum(int(path.stat().st_size) for path in weight_files)
+        if weight_bytes <= 0:
+            raise ValueError("the checkpoint weight file size is unavailable")
+        adapter_weight_bytes = 0
+        if adapter_dir is not None:
+            adapter_file = _resolve_trusted_file(
+                adapter_dir / "adapter_model.safetensors",
+                _allowed_model_roots(),
+                "LoRA safetensors checkpoint",
+            )
+            adapter_weight_bytes = int(adapter_file.stat().st_size)
+            if adapter_weight_bytes <= 0:
+                raise ValueError("the LoRA adapter weight file is empty")
+        dtype_bytes = {"fp32": 4, "fp16": 2, "bf16": 2}.get(precision, 4)
+        try:
+            from safetensors import safe_open
+            for shard in weight_files:
+                with safe_open(str(shard), framework="pt", device="cpu") as handle:
+                    if "model.embed_tokens.weight" not in handle.keys():
+                        continue
+                    dtype_name = handle.get_slice("model.embed_tokens.weight").get_dtype()
+                    if precision == "auto":
+                        dtype_bytes = {"F16": 2, "BF16": 2, "F32": 4}.get(str(dtype_name).upper(), 4)
+                    break
+        except Exception:
+            # Header inspection is an optional precision improvement. Keep the
+            # conservative FP32 estimate if a driver/format cannot expose dtype.
+            _LOG.debug("Could not inspect checkpoint dtype for memory planning.", exc_info=True)
+    except Exception as exc:
+        raise AxiomEngineError(f"AXIOM could not safely estimate this checkpoint for automatic memory selection: {exc}") from None
+
+    gib = 1024 ** 3
+    context = min(config.max_position_embeddings, _MAX_INPUT_TOKENS + _MAX_NEW_TOKENS)
+    head_dim = config.hidden_size // config.num_attention_heads
+    embedding_bytes = config.vocab_size * config.hidden_size * dtype_bytes
+    head_bytes = 0 if config.tie_word_embeddings else embedding_bytes
+    norm_bytes = config.hidden_size * dtype_bytes
+    resident_non_layer = embedding_bytes + head_bytes + norm_bytes
+    resident_with_adapter = resident_non_layer + adapter_weight_bytes
+    total_weight_bytes = weight_bytes + adapter_weight_bytes
+    kv_total = 2 * config.num_hidden_layers * config.num_key_value_heads * head_dim * context * dtype_bytes
+    kv_per_layer = 2 * config.num_key_value_heads * head_dim * context * dtype_bytes
+    workspace = max(context * config.intermediate_size * dtype_bytes * 2, config.hidden_size * context * dtype_bytes * 4)
+    non_layer_weight_bytes = resident_with_adapter
+    layer_bytes = max(0, weight_bytes - resident_non_layer) / max(1, config.num_hidden_layers)
+    active_layer_bytes = int(layer_bytes * 1.25)
+    full_required = int((total_weight_bytes + kv_total + workspace) * 1.25)
+    cpu_layer_required = int((total_weight_bytes + kv_total + workspace) * 1.15)
+    disk_cpu_required = int((resident_with_adapter + active_layer_bytes + kv_total + workspace) * 1.30)
+    streamed_device_required = int((resident_with_adapter + active_layer_bytes + kv_per_layer + workspace) * 1.25)
+    system_available = _available_system_memory_bytes()
+    try:
+        disk_free = int(shutil.disk_usage(model_dir).free)
+    except OSError:
+        disk_free = None
+    rows = _device_capability_rows(torch_module)
+    selected_id = device_selection.get("selected", str(getattr(device, "type", device)))
+    device_row = next((row for row in rows if row.get("id") == selected_id), None)
+    device_free = None
+    if device_row and isinstance(device_row.get("memory_free_gib"), (int, float)):
+        device_free = int(float(device_row["memory_free_gib"]) * gib)
+    device_type = str(getattr(device, "type", device)).split(":", 1)[0]
+    base = {
+        "requested": "auto",
+        "selected": "full",
+        "reason": "",
+        "estimated_checkpoint_weight_bytes": weight_bytes,
+        "estimated_adapter_weight_bytes": adapter_weight_bytes,
+        "estimated_total_weight_bytes": total_weight_bytes,
+        "estimated_non_layer_weight_bytes": non_layer_weight_bytes,
+        "estimated_kv_cache_bytes": kv_total,
+        "estimated_context_tokens": context,
+        "estimated_dtype_bytes": dtype_bytes,
+        "estimated_full_execution_bytes": full_required,
+        "estimated_streaming_device_bytes": streamed_device_required,
+        "estimated_disk_streaming_system_ram_bytes": disk_cpu_required,
+        "available_system_ram_bytes": system_available,
+        "available_device_memory_bytes": device_free,
+        "available_checkpoint_disk_bytes": disk_free,
+        "estimates_are_advisory": True,
+    }
+    if device_type == "cpu":
+        if system_available is not None and system_available >= full_required:
+            mode, reason = "full", "The model plus estimated KV/workspace fits available system RAM with a safety margin."
+        elif system_available is not None and system_available >= disk_cpu_required:
+            mode, reason = "disk_streaming", "Full checkpoint residency is too large for available RAM; disk-resident layer loading has a lower estimated RAM footprint."
+        else:
+            if system_available is None:
+                raise AxiomEngineError(
+                    "Automatic memory planning cannot safely select CPU execution because available system RAM could not be measured. "
+                    "Install psutil or choose an explicit memory mode after checking your machine's memory."
+                )
+            raise AxiomEngineError(
+                "Automatic memory planning found no estimated CPU strategy that fits available RAM. "
+                f"Estimated full RAM need: {full_required / gib:.2f} GiB; "
+                f"disk-streaming RAM need: {disk_cpu_required / gib:.2f} GiB; "
+                f"available RAM: {system_available / gib:.2f} GiB. "
+                "Free memory or select a smaller model/context."
+            )
+    elif device_free is None:
+        if system_available is None:
+            raise AxiomEngineError(
+                "Automatic memory planning cannot safely choose a streaming mode because neither free accelerator memory "
+                "nor available system RAM was measurable. Install psutil or choose an explicit memory mode after checking resources."
+            )
+        if system_available >= cpu_layer_required:
+            mode, reason = "layer_streaming", "PyTorch did not expose free VRAM; available system RAM is estimated to hold the model's layer weights and KV/workspace."
+        elif system_available >= disk_cpu_required:
+            mode, reason = "disk_streaming", "PyTorch did not expose free VRAM; available system RAM is estimated to be insufficient for all layer weights, so on-demand disk loading is selected."
+        else:
+            raise AxiomEngineError(
+                "Automatic memory planning found no estimated streaming strategy that fits available system RAM. "
+                f"Estimated in-RAM streaming need: {cpu_layer_required / gib:.2f} GiB; "
+                f"disk-streaming need: {disk_cpu_required / gib:.2f} GiB; available RAM: {system_available / gib:.2f} GiB."
+            )
+    elif device_free >= full_required:
+        mode, reason = "full", "The checkpoint plus estimated KV/workspace fits observed free accelerator memory with a safety margin."
+    elif device_free >= streamed_device_required and system_available is not None and system_available >= cpu_layer_required:
+        mode, reason = "layer_streaming", "The full checkpoint exceeds observed accelerator memory, while CPU RAM can hold layer weights and the estimated KV/workspace."
+    elif device_free >= streamed_device_required and system_available is not None and system_available >= disk_cpu_required:
+        mode, reason = "disk_streaming", "The full checkpoint exceeds accelerator memory and RAM cannot comfortably hold every layer; selected on-demand disk layer reads."
+    else:
+        ram_text = (
+            f"{system_available / gib:.2f} GiB"
+            if system_available is not None
+            else "not measurable"
+        )
+        raise AxiomEngineError(
+            "Automatic memory planning could not find an estimated strategy that fits this device. "
+            f"Estimated full accelerator need: {full_required / gib:.2f} GiB; "
+            f"streamed-device need: {streamed_device_required / gib:.2f} GiB; "
+            f"observed free accelerator memory: {device_free / gib:.2f} GiB; "
+            f"available system RAM: {ram_text}. Try a smaller model/context, free memory, or use CPU."
+        )
+    base["selected"] = mode
+    base["reason"] = reason
+    return mode, base
+
+def _load_local_model(
+    model_path: str,
+    adapter_path: str | None,
+    device_preference: str = "auto",
+    memory_mode: str = "auto",
+    precision: str = "auto",
+):
     global _LOADED_RUNTIME, _LOADED_ARCHITECTURE
     try:
         import torch
@@ -747,6 +1205,11 @@ def _load_local_model(model_path: str, adapter_path: str | None, device_preferen
             "AXIOM Native Engine requires PyTorch. Install with: python -m pip install -e '.[native-inference]'"
         ) from None
 
+    if memory_mode not in {"auto", "full", "layer_streaming", "disk_streaming"}:
+        raise ValueError("Memory mode must be auto, full, layer_streaming, or disk_streaming.")
+    if precision not in {"auto", "fp32", "fp16", "bf16"}:
+        raise ValueError("Precision must be auto, fp32, fp16, or bf16.")
+    requested_memory_mode = memory_mode
     base_dir = _resolve_model_directory(model_path, "Base model")
     inspected = _inspect_model_config(base_dir)
     resolved_adapter: Path | None = None
@@ -760,7 +1223,15 @@ def _load_local_model(model_path: str, adapter_path: str | None, device_preferen
         resolved_adapter = adapter_dir
 
     device, device_selection = _resolve_execution_device(torch, device_preference)
-    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None, str(device), device_preference)
+    memory_selection: dict[str, Any] = {
+        "requested": requested_memory_mode,
+        "selected": memory_mode,
+        "reason": "Memory strategy was explicitly selected by the caller." if requested_memory_mode != "auto" else "",
+        "estimates_are_advisory": True,
+    }
+    if requested_memory_mode == "auto":
+        memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection, resolved_adapter, precision)
+    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None, str(device), device_preference, memory_mode, requested_memory_mode, precision)
     if _LOADED_RUNTIME is not None and _LOADED_RUNTIME["key"] == key:
         return (
             _LOADED_RUNTIME["model"],
@@ -783,7 +1254,7 @@ def _load_local_model(model_path: str, adapter_path: str | None, device_preferen
     from axiom.core.native_engine import NativeDependencyError, NativeEngineError, load_native_runtime
     try:
         model, tokenizer, native_details = load_native_runtime(
-            base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots()
+            base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots(), memory_mode=memory_mode, precision=precision
         )
     except NativeDependencyError as exc:
         raise AxiomEngineError(str(exc)) from None
@@ -802,9 +1273,11 @@ def _load_local_model(model_path: str, adapter_path: str | None, device_preferen
             "selected": "cpu",
             "reason": "The preferred accelerator ran out of memory during model loading; AXIOM retried on CPU.",
         }
+        if requested_memory_mode == "auto":
+            memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection, resolved_adapter, precision)
         try:
             model, tokenizer, native_details = load_native_runtime(
-                base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots()
+                base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots(), memory_mode=memory_mode, precision=precision
             )
         except NativeDependencyError as retry_exc:
             raise AxiomEngineError(str(retry_exc)) from None
@@ -822,9 +1295,11 @@ def _load_local_model(model_path: str, adapter_path: str | None, device_preferen
             gc.collect()
             device = torch.device("cpu")
             device_selection = {"requested": "auto", "selected": "cpu", "reason": "The preferred accelerator ran out of memory during model loading; AXIOM retried on CPU."}
+            if requested_memory_mode == "auto":
+                memory_mode, memory_selection = _choose_memory_mode(base_dir, inspected, torch, device, device_selection, resolved_adapter, precision)
             try:
                 model, tokenizer, native_details = load_native_runtime(
-                    base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots()
+                    base_dir, torch, device, adapter_dir=resolved_adapter, trusted_roots=_allowed_model_roots(), memory_mode=memory_mode, precision=precision
                 )
             except (NativeDependencyError, NativeEngineError, OSError, RuntimeError) as retry_exc:
                 _LOG.debug("CPU retry after accelerator OOM failed.", exc_info=True)
@@ -836,10 +1311,14 @@ def _load_local_model(model_path: str, adapter_path: str | None, device_preferen
                 "Confirm supported safetensors weights and available memory."
             ) from None
 
+    # The selected backend may change after a transparent auto-mode CPU retry.
+    key = (str(base_dir), str(resolved_adapter) if resolved_adapter else None, str(device), device_preference, memory_mode, requested_memory_mode, precision)
     details = {
         **inspected,
         **native_details,
         "device_selection": device_selection,
+        "memory_selection": memory_selection,
+        "precision_selection": {"requested": precision, "selected": native_details.get("precision", precision)},
         "config": {"max_position_embeddings": model.config.max_position_embeddings},
     }
     _LOADED_RUNTIME = {
@@ -877,6 +1356,106 @@ def unload_local_model() -> dict[str, Any]:
         }
 
 
+
+def _format_prompt_for_native_model(
+    prompt: str,
+    model_dir: Path,
+    model_type: str,
+    tokenizer: Any,
+    chat_messages: list[dict[str, str]] | None = None,
+) -> tuple[str, str]:
+    """Apply a checkpoint's safe chat template when present; keep raw completion for base models.
+
+    Qwen2 text-instruct models have a ChatML fallback because the standard native
+    decoder has no Transformers dependency and many repositories omit template metadata.
+    Model-provided templates run only inside Jinja's sandbox with a small, explicit context.
+    """
+    tokenizer_config: dict[str, Any] = {}
+    config_path = model_dir / "tokenizer_config.json"
+    if config_path.is_file():
+        try:
+            if config_path.stat().st_size > _MAX_CONFIG_BYTES:
+                raise AxiomEngineError("tokenizer_config.json exceeds AXIOM's 1 MiB chat-template limit.")
+            value = json.loads(config_path.read_text(encoding="utf-8"))
+            if not isinstance(value, dict):
+                raise AxiomEngineError("tokenizer_config.json must be a JSON object.")
+            tokenizer_config = value
+        except AxiomEngineError:
+            raise
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            raise AxiomEngineError("tokenizer_config.json could not be read while resolving the model's chat template.") from None
+
+    template = tokenizer_config.get("chat_template")
+    if isinstance(template, list):
+        named = [entry for entry in template if isinstance(entry, dict) and isinstance(entry.get("template"), str)]
+        preferred = next((entry for entry in named if entry.get("name") in {"default", "chat"}), named[0] if named else None)
+        template = preferred["template"] if preferred else None
+    if isinstance(template, str) and template.strip():
+        try:
+            from jinja2.sandbox import SandboxedEnvironment
+        except ImportError:
+            if model_type in {"qwen2", "qwen3"}:
+                fallback_messages = chat_messages or [{"role": "user", "content": prompt}]
+                rendered = "".join(
+                    f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>\n"
+                    for message in fallback_messages
+                ) + "<|im_start|>assistant\n"
+                return rendered, f"{model_type}-chatml-fallback"
+            raise AxiomEngineError(
+                "This checkpoint supplies a chat template, but Jinja2 is unavailable. Install the template runtime dependency or use a raw/completion checkpoint."
+            ) from None
+        def special_token(key: str) -> str:
+            raw = tokenizer_config.get(key)
+            if isinstance(raw, dict):
+                raw = raw.get("content")
+            if not isinstance(raw, str):
+                return ""
+            return raw if tokenizer.token_to_id(raw) is not None else ""
+        environment = SandboxedEnvironment(autoescape=False, keep_trailing_newline=True)
+        environment.globals.clear()
+        environment.globals.update({
+            "raise_exception": lambda message: (_ for _ in ()).throw(ValueError(str(message))),
+            "strftime_now": lambda fmt: datetime.now(UTC).strftime(fmt),
+        })
+        environment.filters["tojson"] = lambda value: json.dumps(value, ensure_ascii=False)
+        template_messages = chat_messages or [{"role": "user", "content": prompt}]
+        context = {
+            "messages": template_messages,
+            "add_generation_prompt": True,
+            "bos_token": special_token("bos_token"),
+            "eos_token": special_token("eos_token"),
+            "tools": None,
+            "documents": None,
+        }
+        try:
+            rendered = environment.from_string(template).render(**context)
+        except Exception as exc:
+            raise AxiomEngineError(
+                f"AXIOM could not safely render this checkpoint's chat template: {type(exc).__name__}. "
+                "Use a compatible tokenizer_config.json or a base/completion checkpoint."
+            ) from None
+        if not isinstance(rendered, str) or not rendered.strip():
+            raise AxiomEngineError("The checkpoint's chat template produced an empty prompt.")
+        return rendered, "tokenizer-config-template"
+
+    if chat_messages:
+        if model_type in {"qwen2", "qwen3"}:
+            rendered = "".join(
+                f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>\n"
+                for message in chat_messages
+            ) + "<|im_start|>assistant\n"
+            return rendered, f"{model_type}-chatml-fallback"
+        rendered = "\n\n".join(
+            f"{message['role'].upper()}:\n{message['content']}" for message in chat_messages
+        ) + "\n\nASSISTANT:\n"
+        return rendered, "role-labelled-chat-fallback"
+    if model_type in {"qwen2", "qwen3"}:
+        # Standard Qwen2/Qwen3 text-instruct checkpoints use ChatML markers even when
+        # older/custom releases omit an exported chat_template.
+        return f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n", f"{model_type}-chatml-fallback"
+    return prompt, "raw-completion"
+
+
 def generate_local_stream(
     model_path: str,
     prompt: str,
@@ -892,6 +1471,9 @@ def generate_local_stream(
     include_token_events: bool = True,
     cancel_event: threading.Event | None = None,
     device_preference: str = "auto",
+    memory_mode: str = "auto",
+    chat_messages: list[dict[str, str]] | None = None,
+    precision: str = "auto",
 ) -> Iterator[dict[str, Any]]:
     """Yield cumulative decoded text updates and one final metrics event.
 
@@ -900,27 +1482,101 @@ def generate_local_stream(
     the iterator closes the native token iterator and releases that lock.
     """
     prompt, max_new_tokens, temperature = validate_generation(prompt, max_new_tokens, temperature)
+    if chat_messages is not None:
+        if not isinstance(chat_messages, list) or not 1 <= len(chat_messages) <= 128:
+            raise ValueError("Chat messages must contain between 1 and 128 entries.")
+        normalized_messages: list[dict[str, str]] = []
+        total_message_chars = 0
+        valid_roles = {"system", "user", "assistant"}
+        for item in chat_messages:
+            if not isinstance(item, dict) or item.get("role") not in valid_roles or not isinstance(item.get("content"), str):
+                raise ValueError("Native chat messages support only system, user, and assistant roles with string content.")
+            role = item["role"]
+            text_value = item["content"]
+            if not text_value.strip() or len(text_value) > _MAX_PROMPT_CHARS:
+                raise ValueError("Each chat message must contain non-blank text within the prompt limit.")
+            total_message_chars += len(text_value)
+            if total_message_chars > _MAX_CHAT_CHARS:
+                raise ValueError(f"Combined chat messages exceed the {_MAX_CHAT_CHARS:,}-character limit.")
+            normalized_messages.append({"role": role, "content": text_value})
+        if not any(message["role"] == "user" for message in normalized_messages):
+            raise ValueError("Native chat requests must contain at least one user message.")
+        chat_messages = normalized_messages
+        prompt = next(message["content"] for message in reversed(chat_messages) if message["role"] == "user")
     top_p, top_k, repetition_penalty, seed = validate_sampling_parameters(top_p, top_k, repetition_penalty, seed)
     stop_sequences = validate_stop_sequences(stop_sequences)
-    with _ENGINE_LOCK:
-        model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path, device_preference)
+    with _engine_request_lock(cancel_event):
+        model, tokenizer, torch, device, details = _load_local_model(model_path, adapter_path, device_preference, memory_mode, precision)
+        selected_backend = details.get("device_selection", {}).get("selected")
+        device_memory_before = _device_memory_snapshot(torch, device, selected_backend=selected_backend)
+        device_memory_before["peak_reset_supported"] = _reset_device_peak_memory(torch, device)
         context_cap = max(2, min(model.config.max_position_embeddings, _MAX_INPUT_TOKENS + max_new_tokens))
         effective_max_new_tokens = min(max_new_tokens, context_cap - 1)
         input_limit = max(1, min(_MAX_INPUT_TOKENS, context_cap - effective_max_new_tokens))
-        try:
-            encoded = tokenizer.encode(prompt, add_special_tokens=False)
-            prompt_ids = list(encoded.ids)
-        except Exception:
-            raise ValueError("Prompt could not be tokenized by the local tokenizer.json.") from None
-        if not prompt_ids:
-            raise ValueError("Prompt tokenization returned no tokens.")
+        original_message_count = len(chat_messages or [])
+        original_message_chars = sum(len(message["content"]) for message in (chat_messages or []))
+        dropped_history_messages = 0
         bos_id = model.config.bos_token_id
-        if details.get("add_bos_token") and bos_id is not None and prompt_ids[0] != bos_id:
-            prompt_ids.insert(0, bos_id)
-        if len(prompt_ids) > input_limit:
+
+        def encode_current_context() -> tuple[list[int], str]:
+            formatted, source = _format_prompt_for_native_model(
+                prompt,
+                Path(details.get("model_directory_path", ".")),
+                details["model_type"],
+                tokenizer,
+                chat_messages=chat_messages,
+            )
+            try:
+                encoded = tokenizer.encode(formatted, add_special_tokens=False)
+                ids = list(encoded.ids)
+            except Exception:
+                raise ValueError("Prompt could not be tokenized by the local tokenizer.json.") from None
+            if details.get("add_bos_token") and bos_id is not None and (not ids or ids[0] != bos_id):
+                ids.insert(0, bos_id)
+            return ids, source
+
+        prompt_ids, prompt_format = encode_current_context()
+        # Preserve system instructions and the newest user request when the context
+        # budget is exceeded. Drop the oldest non-system turn first, re-rendering the
+        # model's real chat template so message boundaries remain valid.
+        while chat_messages and len(prompt_ids) > input_limit:
+            latest_user_index = max(
+                (index for index, message in enumerate(chat_messages) if message["role"] == "user"),
+                default=-1,
+            )
+            drop_index = next(
+                (index for index, message in enumerate(chat_messages)
+                 if message["role"] != "system" and index != latest_user_index),
+                None,
+            )
+            if drop_index is None:
+                break
+            del chat_messages[drop_index]
+            dropped_history_messages += 1
+            prompt_ids, prompt_format = encode_current_context()
+
+        prompt_tokens_before_truncation = len(prompt_ids)
+        token_truncation_applied = prompt_tokens_before_truncation > input_limit
+        if token_truncation_applied:
             prompt_ids = prompt_ids[-input_limit:]
+            # Reserve the leading token for BOS, rather than duplicating it.
             if details.get("add_bos_token") and bos_id is not None and prompt_ids:
                 prompt_ids[0] = bos_id
+        if not prompt_ids:
+            raise ValueError("Prompt tokenization returned no tokens.")
+        context_management = {
+            "chat_history_supplied": bool(original_message_count),
+            "original_message_count": original_message_count,
+            "original_message_characters": original_message_chars,
+            "messages_dropped_to_fit_context": dropped_history_messages,
+            "prompt_tokens_before_token_truncation": prompt_tokens_before_truncation,
+            "prompt_tokens_used": len(prompt_ids),
+            "token_truncation_applied": token_truncation_applied,
+            "system_prompt_may_be_truncated": bool(
+                token_truncation_applied
+                and any(message["role"] == "system" for message in (chat_messages or []))
+            ),
+        }
         effective_max_new_tokens = min(effective_max_new_tokens, max(1, context_cap - len(prompt_ids)))
         started = time.perf_counter()
         generated_ids: list[int] = []
@@ -967,6 +1623,18 @@ def generate_local_stream(
                             "response": response,
                             "completion_tokens": len(generated_ids),
                         }
+                        live_metrics = getattr(model, "live_generation", None)
+                        if isinstance(live_metrics, dict):
+                            yield {
+                                "type": "telemetry",
+                                "metrics": dict(live_metrics),
+                                "memory_mode": getattr(model, "memory_mode", memory_mode),
+                                "memory_selection": details.get("memory_selection"),
+                                "memory_stats": dict(getattr(model, "memory_stats", {})),
+                                "device_memory": _device_memory_snapshot(
+                                    torch, device, selected_backend=selected_backend, baseline=device_memory_before
+                                ),
+                            }
                     # Closing now finalizes the native generator's metrics and
                     # releases the KV cache before the completion event is built.
                     close_iterator = getattr(iterator, "close", None)
@@ -982,6 +1650,18 @@ def generate_local_stream(
                         "response": response,
                         "completion_tokens": len(generated_ids),
                     }
+                    live_metrics = getattr(model, "live_generation", None)
+                    if isinstance(live_metrics, dict):
+                        yield {
+                            "type": "telemetry",
+                            "metrics": dict(live_metrics),
+                            "memory_mode": getattr(model, "memory_mode", memory_mode),
+                            "memory_selection": details.get("memory_selection"),
+                            "memory_stats": dict(getattr(model, "memory_stats", {})),
+                            "device_memory": _device_memory_snapshot(
+                                torch, device, selected_backend=selected_backend, baseline=device_memory_before
+                            ),
+                        }
 
             if stop_reason != "stop_sequence":
                 # Flush any partial stop-prefix back into the final text if no
@@ -1000,9 +1680,19 @@ def generate_local_stream(
                 "model": details["model_directory_name"] or "local-model",
                 "architecture": details["architecture"],
                 "model_type": details["model_type"],
+                "prompt_format": prompt_format,
+                "context_management": context_management,
                 "adapter": details["adapter_directory_name"],
                 "device": str(device),
                 "device_selection": details.get("device_selection"),
+                "precision_selection": details.get("precision_selection"),
+                "precision": details.get("precision"),
+                "memory_mode": getattr(model, "memory_mode", memory_mode),
+                "memory_selection": details.get("memory_selection"),
+                "memory_stats": dict(getattr(model, "memory_stats", {})),
+                "device_memory": _device_memory_snapshot(
+                    torch, device, selected_backend=selected_backend, baseline=device_memory_before
+                ),
                 "checkpoint_format": "safetensors",
                 "decoder": model.last_generation.get("decoder", "axiom-autoregressive-kv-cache"),
                 "attention_backend": model.last_attention_backend,
@@ -1054,6 +1744,8 @@ def generate_local(
     seed: int | None = None,
     stop_sequences: list[str] | tuple[str, ...] = (),
     device_preference: str = "auto",
+    memory_mode: str = "auto",
+    precision: str = "auto",
 ) -> dict[str, Any]:
     """Generate a complete local response through the streaming decoder."""
     completed: dict[str, Any] | None = None
@@ -1070,6 +1762,8 @@ def generate_local(
         stop_sequences=stop_sequences,
         include_token_events=False,
         device_preference=device_preference,
+        memory_mode=memory_mode,
+        precision=precision,
     ):
         if event.get("type") == "complete" and isinstance(event.get("result"), dict):
             completed = event["result"]

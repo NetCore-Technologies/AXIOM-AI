@@ -110,7 +110,8 @@ def run(
 
             console.print(f"[green]✓ Model available at {model}[/green]")
         except Exception as exc:  # noqa: BLE001
-            raise typer.Exit(f"Could not download Hugging Face model: {exc}")
+            console.print(f"[red]Error:[/red] Could not download Hugging Face model: {exc}")
+            raise typer.Exit(code=1) from exc
 
     info = inspect_model(model)
 
