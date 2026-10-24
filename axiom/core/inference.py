@@ -237,6 +237,7 @@ def run_local_chat(
         "model": model,
         "response": response[:100_000],
         "done": bool(result.get("done", True)),
+        "done_reason": result.get("done_reason") if isinstance(result.get("done_reason"), str) else None,
         "prompt_eval_count": result.get("prompt_eval_count") if isinstance(result.get("prompt_eval_count"), int) else None,
         "eval_count": result.get("eval_count") if isinstance(result.get("eval_count"), int) else None,
         "total_duration_ms": round(total_duration / 1_000_000, 2) if isinstance(total_duration, (int, float)) and total_duration >= 0 else None,
